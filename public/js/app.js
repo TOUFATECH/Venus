@@ -177,11 +177,11 @@ function hideBoot() {
   if (!el) return;
   // Toute première ouverture : on laisse l'intro du Soleil se jouer jusqu'au bout (environ 3,5 s)
   const first = document.documentElement.classList.contains('first-open');
-  const wait = Math.max(0, (first ? 3800 : 1000) - performance.now()); // compté depuis l'ouverture de la page
+  // Compté depuis l'ouverture de la page, et toujours un moment pour voir le Soleil tourner
+  const wait = Math.max(first ? 3800 - performance.now() : 0, first ? 1400 : 700);
   setTimeout(() => {
     el.classList.add('out');
     setTimeout(() => { el.remove(); document.documentElement.classList.remove('first-open'); }, 500);
-    if (first) { try { localStorage.setItem('vn_intro_seen', '1'); } catch { /* */ } }
   }, wait);
 }
 export function bootNote(text) { const n = document.querySelector('.boot-note'); if (n) n.textContent = text; }
