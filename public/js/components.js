@@ -98,7 +98,7 @@ function attachPreview(el, item) {
       if (livePreview !== state) return;
       const v = h('video', { class: 'pv', muted: true, loop: true, playsinline: true, preload: 'auto', 'aria-hidden': 'true' });
       v.muted = !prefs.get('hoverSound');
-      v.src = `/api/items/${item.id}/preview`;
+      v.src = window.__VN_PREVIEW ? window.__VN_PREVIEW(item.id) : `/api/items/${item.id}/preview`;
       v.addEventListener('playing', () => { if (livePreview === state) el.classList.add('previewing'); });
       v.addEventListener('error', () => v.remove(), { once: true });
       state.video = v;
