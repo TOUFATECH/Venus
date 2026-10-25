@@ -24,7 +24,8 @@ export const NAV_ITEMS = [
   { id: 'remote', action: 'remote', label: 'Télécommande', icon: 'remote', hint: 'Piloter Venus avec votre téléphone' },
   { id: 'add', href: '/ajouter', label: 'Ajouter', icon: 'add', admin: true, hint: 'Envoyer des vidéos sur le serveur' },
 ];
-const DEFAULT_HIDDEN = ['mylist', 'seance', 'remote', 'add'];
+// Menu court par défaut : Aujourd'hui, Accueil, Films, Séries, Animés, Nouveautés, Recherche ; le reste dans « Plus »
+const DEFAULT_HIDDEN = ['clips', 'tv', 'mylist', 'seance', 'remote', 'add'];
 const labelOf = (it) => (typeof it.label === 'function' ? it.label() : it.label);
 const iconOf = (it) => (typeof it.icon === 'function' ? it.icon() : it.icon);
 export { labelOf, iconOf };

@@ -222,7 +222,15 @@ async function mount(viewModule, params, { withNav, path }) {
   // Barre de chargement fine en haut de l'écran pendant la préparation de la page suivante
   const bar = document.querySelector('.route-bar') || document.body.appendChild(h('div', { class: 'route-bar', 'aria-hidden': 'true' }));
   bar.classList.add('on');
-  const mod = await viewModule;
+  let mod;
+  try { mod = await viewModule; } catch (e) {
+    // Code de la page introuvable ou d'une autre version (mise à jour en cours) : on recharge une fois
+    let again = false;
+    try { again = !sessionStorage.getItem('vn_reloaded'); sessionStorage.setItem('vn_reloaded', '1'); } catch { /* */ }
+    if (again) { location.reload(); return; }
+    throw e;
+  }
+  try { sessionStorage.removeItem('vn_reloaded'); } catch { /* */ }
   const main = h('main', { class: withNav ? 'with-nav' : '' });
   const finish = (view) => {
     bar.classList.remove('on');
