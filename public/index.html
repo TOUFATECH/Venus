@@ -16,6 +16,7 @@
   <link rel="apple-touch-icon" href="/icons/icon-180.png">
   <link rel="preload" href="/fonts/archivo.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/app.css">
+  <script>try{if(!localStorage.getItem("vn_intro_seen"))document.documentElement.classList.add("first-open")}catch(e){}</script>
   <script>/* Thème planète appliqué avant le premier affichage (pas de clignotement) */(function(){try{var id=localStorage.getItem("vn_theme"),T={"mercure":["MERCURE","#d2c4b3","#9c8c7e","172deg,#ddd6cc 0%,#bdb3a7 14%,#d3cabe 29%,#a69a8c 43%,#c7bcae 57%,#91857a 71%,#c0b4a6 86%,#7c7065 100%"],"venus":["VENUS","#f4cf9c","#e3907a","172deg,#fce9cb 0%,#f0c08b 14%,#fde5c3 29%,#e79f7b 43%,#f7d2a3 57%,#d88469 71%,#efbb88 86%,#b9634f 100%"],"terre":["TERRE","#86cdf6","#68d29c","172deg,#7fc4ef 0%,#3d8fd1 14%,#5aaee6 29%,#2f76bd 43%,#4b9ddd 57%,#2a69ad 71%,#3f8bcf 86%,#1f4f8a 100%"],"mars":["MARS","#ff9a6e","#d5583b","172deg,#f6b48c 0%,#de7a52 14%,#eea079 29%,#c9603f 43%,#e48c64 57%,#b44f33 71%,#d97a55 86%,#8f3a24 100%"],"jupiter":["JUPITER","#f3c48f","#c97c50","180deg,#f6e3c6 0%,#d9a774 14%,#f2dcbc 29%,#b97a52 43%,#efd2ad 57%,#c58a5c 71%,#ead0ae 86%,#9c5f3f 100%"],"saturne":["SATURNE","#f1d99f","#c9a766","180deg,#f7ebc9 0%,#e2c98f 14%,#f3e3b7 29%,#d3b479 43%,#efdcaa 57%,#c9a86b 71%,#e8d29d 86%,#a98a52 100%"],"uranus":["URANUS","#97e6ec","#58bcc7","180deg,#d2f6f7 0%,#a6e6ea 14%,#c1f0f2 29%,#8fd8de 43%,#b3eaee 57%,#7ccbd3 71%,#a4e1e6 86%,#5fb1bb 100%"],"neptune":["NEPTUNE","#8eb0ff","#4f68e3","180deg,#8fb2ff 0%,#4f74e6 14%,#7798f7 29%,#3c5bd1 43%,#6a8cf0 57%,#3350c2 71%,#5c7de6 86%,#25399a 100%"],"pluton":["PLUTON","#efcdb9","#bd8d7c","172deg,#f3e2d6 0%,#d8b8a5 14%,#efd8c9 29%,#c6a08c 43%,#e8cdbb 57%,#b48b78 71%,#dfc1ae 86%,#8f6a5a 100%"]},t=T[id];if(!t)return;var r=document.documentElement;r.style.setProperty("--sulfur",t[1]);r.style.setProperty("--dawn",t[2]);r.style.setProperty("--planet-bands","linear-gradient("+t[3]+")");var V=localStorage.getItem("vn_theme_vars");if(V){V.split(";").forEach(function(d){var i=d.indexOf(":");if(i>0)r.style.setProperty(d.slice(0,i),d.slice(i+1));});var m=document.querySelector('meta[name="theme-color"]');var n=/--night:([^;]+)/.exec(V);if(m&&n)m.setAttribute("content",n[1]);}r.dataset.planet=id;window.__vnBrand=t[0];document.addEventListener("DOMContentLoaded",function(){var w=document.querySelector(".boot-word");if(w)w.textContent=t[0];});}catch(e){}})();</script>
   <link rel="modulepreload" href="/js/app.js">
   <link rel="modulepreload" href="/js/api.js">
@@ -24,10 +25,20 @@
 </head>
 <body>
   <div class="boot" role="status" aria-label="Chargement de Venus">
+    <div class="boot-sky" aria-hidden="true"></div>
     <div class="boot-inner">
-      <div class="planet"></div>
+      <div class="system" aria-hidden="true">
+        <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div>
+        <div class="corona"></div>
+        <div class="sun"><div class="sun-surface"></div><div class="sun-spots"></div></div>
+        <div class="orb o1"><div class="oy"><i class="pl p-mercure"></i></div></div>
+        <div class="orb o2"><div class="oy"><div class="planet"></div></div></div>
+        <div class="orb o3"><div class="oy"><i class="pl p-far"></i></div></div>
+      </div>
       <div class="boot-word">VENUS</div>
+      <div class="boot-tag">Vos films, séries et animés, en orbite</div>
       <div class="boot-line"><i></i></div>
+      <div class="boot-note"></div>
     </div>
   </div>
   <div id="app"></div>

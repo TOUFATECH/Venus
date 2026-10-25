@@ -175,8 +175,14 @@ function hideBoot() {
   bootDone = true;
   const el = document.querySelector('.boot');
   if (!el) return;
-  const wait = Math.max(0, 700 - (performance.now() - bootStarted));
-  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 500); }, wait);
+  // Toute première ouverture : on laisse l'intro du Soleil se jouer jusqu'au bout (environ 3,5 s)
+  const first = document.documentElement.classList.contains('first-open');
+  const wait = Math.max(0, (first ? 3800 : 1000) - performance.now()); // compté depuis l'ouverture de la page
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => { el.remove(); document.documentElement.classList.remove('first-open'); }, 500);
+    if (first) { try { localStorage.setItem('vn_intro_seen', '1'); } catch { /* */ } }
+  }, wait);
 }
 export function bootNote(text) { const n = document.querySelector('.boot-note'); if (n) n.textContent = text; }
 

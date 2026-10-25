@@ -1572,8 +1572,111 @@ html:not(.touch) .theme-opt:hover .mark { filter: drop-shadow(0 0 10px color-mix
 
 /* Écran de démarrage : la planète du thème, avec son atmosphère */
 .boot { background: var(--night); }
-.boot .planet { box-shadow: 0 0 60px color-mix(in oklab, var(--sulfur) 30%, transparent), 0 0 140px color-mix(in oklab, var(--dawn) 18%, transparent); }
 
 @media (prefers-reduced-motion: reduce) {
   body::before, .mark .spin2, .mark .atmo, .mark .twinkle, .theme-opt .mark, .moon, .mark.planet-saturne .body { animation: none !important; }
+}
+
+/* ================================================================ écran de chargement : le Soleil qui tourne
+   Le Soleil (surface qui défile, taches, couronne en rotation), trois orbites inclinées ;
+   la planète du thème tourne sur l'orbite du milieu et passe devant puis derrière le Soleil.
+   À la toute première ouverture, l'intro est plus longue : le Soleil s'allume, les orbites apparaissent. */
+.boot { overflow: hidden; background: radial-gradient(120% 90% at 50% 40%, color-mix(in oklab, var(--night) 70%, #1a1206), var(--night) 70%); }
+.boot-sky { position: absolute; inset: 0; pointer-events: none; opacity: .8;
+  background:
+    radial-gradient(1px 1px at 12% 18%, #fff, transparent), radial-gradient(1px 1px at 28% 72%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 44% 12%, #fff, transparent), radial-gradient(1px 1px at 63% 84%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 78% 26%, #fff, transparent), radial-gradient(1px 1px at 88% 62%, #fff, transparent),
+    radial-gradient(1px 1px at 8% 88%, #fff, transparent), radial-gradient(1px 1px at 54% 46%, rgba(255,255,255,.6), transparent),
+    radial-gradient(1px 1px at 35% 38%, rgba(255,255,255,.5), transparent), radial-gradient(1.5px 1.5px at 93% 9%, #fff, transparent),
+    radial-gradient(1px 1px at 20% 52%, rgba(255,255,255,.7), transparent), radial-gradient(1px 1px at 71% 55%, rgba(255,255,255,.6), transparent);
+  animation: stars 4s ease-in-out infinite alternate; }
+@keyframes stars { from { opacity: .45; } to { opacity: .95; } }
+.boot-inner { position: relative; display: grid; justify-items: center; gap: 18px; }
+.system { position: relative; width: 300px; height: 230px; margin-bottom: 4px; }
+@media (max-width: 380px) { .system { transform: scale(.86); margin: -12px 0 -8px; } }
+
+/* Le Soleil */
+.sun { position: absolute; left: 50%; top: 50%; width: 92px; height: 92px; margin: -46px; border-radius: 50%; z-index: 3; overflow: hidden;
+  background: radial-gradient(circle at 42% 40%, #fffbe0 0%, #ffe680 22%, #ffbf3a 52%, #ff8a1c 78%, #e2520e 100%);
+  box-shadow: 0 0 30px 6px rgba(255,196,64,.7), 0 0 90px 30px rgba(255,140,30,.35), 0 0 180px 70px rgba(255,110,20,.14);
+  animation: sun-pulse 4s ease-in-out infinite; }
+.sun-surface, .sun-spots { position: absolute; top: 0; left: 0; width: 200%; height: 100%; }
+.sun-surface { opacity: .4; filter: blur(.6px); mix-blend-mode: overlay; animation: sun-turn 14s linear infinite;
+  background:
+    radial-gradient(circle at 25% 25%, #fff 0 3px, transparent 4px) 0 0 / 23px 19px,
+    radial-gradient(circle at 70% 60%, #fff 0 2px, transparent 3px) 0 0 / 17px 21px,
+    radial-gradient(circle at 50% 50%, rgba(160,40,0,.9) 0 2px, transparent 3px) 0 0 / 13px 15px,
+    repeating-linear-gradient(100deg, rgba(255,255,255,.25) 0 6px, rgba(180,60,0,.25) 6px 13px); }
+.sun-spots { animation: sun-turn 14s linear infinite;
+  background:
+    radial-gradient(ellipse 5px 3.5px at 18% 38%, rgba(90,20,0,.75), transparent 100%),
+    radial-gradient(ellipse 3px 2px at 22% 44%, rgba(90,20,0,.6), transparent 100%),
+    radial-gradient(ellipse 4px 3px at 64% 62%, rgba(90,20,0,.7), transparent 100%),
+    radial-gradient(ellipse 5px 3.5px at 68% 38%, rgba(90,20,0,.75), transparent 100%),
+    radial-gradient(ellipse 3px 2px at 72% 44%, rgba(90,20,0,.6), transparent 100%),
+    radial-gradient(ellipse 4px 3px at 14% 62%, rgba(90,20,0,.7), transparent 100%); }
+/* Bord du disque plus sombre : il paraît rond, et la surface qui défile semble tourner */
+.sun::after { content: ''; position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, transparent 52%, rgba(200,70,0,.35) 78%, rgba(150,30,0,.75) 100%); }
+@keyframes sun-turn { to { transform: translateX(-50%); } }
+@keyframes sun-pulse { 0%, 100% { box-shadow: 0 0 30px 6px rgba(255,196,64,.7), 0 0 90px 30px rgba(255,140,30,.35), 0 0 180px 70px rgba(255,110,20,.14); }
+  50% { box-shadow: 0 0 38px 10px rgba(255,206,80,.8), 0 0 110px 38px rgba(255,150,40,.4), 0 0 200px 80px rgba(255,110,20,.18); } }
+/* Couronne : rayons qui tournent lentement */
+.corona { position: absolute; left: 50%; top: 50%; width: 190px; height: 190px; margin: -95px; border-radius: 50%; z-index: 2; pointer-events: none;
+  background: repeating-conic-gradient(from 0deg, rgba(255,200,90,.32) 0deg 4deg, transparent 4deg 15deg);
+  -webkit-mask: radial-gradient(circle, #000 26%, transparent 70%); mask: radial-gradient(circle, #000 26%, transparent 70%);
+  filter: blur(2px); animation: corona 30s linear infinite; }
+.corona::after { content: ''; position: absolute; inset: 14px; border-radius: 50%;
+  background: repeating-conic-gradient(from 7deg, rgba(255,170,60,.28) 0deg 3deg, transparent 3deg 11deg); animation: corona 18s linear infinite reverse; }
+@keyframes corona { to { transform: rotate(360deg); } }
+
+/* Orbites inclinées : x et y animés séparément donnent une ellipse ; on passe devant le Soleil puis derrière */
+.ring { position: absolute; left: 50%; top: 50%; border-radius: 50%; border: 1px solid color-mix(in oklab, var(--paper) 16%, transparent); z-index: 1; }
+.r1 { width: 150px; height: 46px; margin: -23px -75px; }
+.r2 { width: 220px; height: 70px; margin: -35px -110px; border-color: color-mix(in oklab, var(--sulfur) 35%, transparent); }
+.r3 { width: 290px; height: 92px; margin: -46px -145px; }
+.orb { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+.orb .oy { position: absolute; }
+.orb .pl, .orb .planet { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; }
+.o1 { --R: 75px; --ry: 23px; --T: 4.2s; }
+.o2 { --R: 110px; --ry: 35px; --T: 7s; }
+.o3 { --R: 145px; --ry: 46px; --T: 11s; }
+.orb { animation: orb-x calc(var(--T) / 2) cubic-bezier(.37, 0, .63, 1) infinite alternate, orb-z var(--T) linear infinite; }
+.orb .oy { animation: orb-y calc(var(--T) / 2) cubic-bezier(.37, 0, .63, 1) calc(var(--T) / -4) infinite alternate; }
+.o3, .o3 .oy { animation-direction: alternate-reverse; }
+@keyframes orb-x { from { transform: translateX(calc(var(--R) * -1)); } to { transform: translateX(var(--R)); } }
+@keyframes orb-y { from { transform: translateY(calc(var(--ry) * -1)); } to { transform: translateY(var(--ry)); } }
+@keyframes orb-z { 0%, 49.9% { z-index: 6; } 50%, 99.9% { z-index: 1; } 100% { z-index: 6; } }
+.o3 { animation-name: orb-x, orb-z3; }
+@keyframes orb-z3 { 0%, 49.9% { z-index: 1; } 50%, 99.9% { z-index: 6; } 100% { z-index: 1; } }
+.pl { display: block; }
+.p-mercure { width: 9px; height: 9px; background: radial-gradient(circle at 35% 35%, #e9e2d8, #9a8f84 70%, #5e564f); }
+.p-far { width: 13px; height: 13px; background: radial-gradient(circle at 35% 35%, #d8f6ff, #69a9e0 60%, #2b4f8f); box-shadow: 0 0 8px rgba(120,190,255,.35); }
+.orb .planet { width: 22px; animation-duration: 6s; box-shadow: 0 0 12px color-mix(in oklab, var(--sulfur) 55%, transparent); }
+
+/* Texte */
+.boot-word { font-size: 1.25rem; text-shadow: 0 0 24px color-mix(in oklab, var(--sulfur) 45%, transparent); }
+.boot-tag { display: none; color: var(--haze); font-size: .88rem; letter-spacing: .02em; margin-top: -8px; }
+
+/* Toute première ouverture : le Soleil s'allume, les orbites et les planètes apparaissent, puis le nom */
+.first-open .boot-tag { display: block; }
+.first-open .sun { animation: sun-on 1.4s cubic-bezier(.2, .7, .2, 1) both, sun-pulse 4s ease-in-out 1.4s infinite; }
+@keyframes sun-on { from { transform: scale(.1); filter: brightness(3); opacity: 0; } 60% { opacity: 1; } to { transform: scale(1); filter: brightness(1); } }
+.first-open .corona { animation: corona-in 1.6s ease .5s both, corona 30s linear 2.1s infinite; }
+@keyframes corona-in { from { opacity: 0; transform: scale(.4) rotate(-40deg); } to { opacity: 1; transform: scale(1) rotate(0deg); } }
+.first-open .ring { animation: ring-in .9s cubic-bezier(.2, .7, .2, 1) both; }
+.first-open .r1 { animation-delay: .8s; } .first-open .r2 { animation-delay: 1s; } .first-open .r3 { animation-delay: 1.2s; }
+@keyframes ring-in { from { opacity: 0; transform: scale(.5); } to { opacity: 1; transform: scale(1); } }
+.first-open .orb .oy > * { animation: pl-in .8s ease both; }
+.first-open .o1 .oy > * { animation-delay: 1.1s; } .first-open .o2 .oy > .planet { animation: pl-in .8s ease 1.3s both, drift 6s linear infinite; } .first-open .o3 .oy > * { animation-delay: 1.5s; }
+@keyframes pl-in { from { opacity: 0; } to { opacity: 1; } }
+.first-open .boot-word { animation: word-in 1.1s cubic-bezier(.2, .7, .2, 1) 1.5s both; }
+@keyframes word-in { from { opacity: 0; letter-spacing: 1.1em; filter: blur(6px); } to { opacity: 1; letter-spacing: .4em; filter: none; } }
+.first-open .boot-tag { animation: pl-in .9s ease 2.2s both; }
+.first-open .boot-line { animation: pl-in .6s ease 2.4s both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sun, .sun-surface, .sun-spots, .corona, .corona::after, .orb, .orb .oy, .boot-sky, .first-open .boot-word { animation: none !important; }
+  .orb { display: none; }
 }
