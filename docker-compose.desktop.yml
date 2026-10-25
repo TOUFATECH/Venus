@@ -1,0 +1,39 @@
+# Venus avec Docker Desktop (Windows ou Mac).
+#
+# 1. Copiez .env.example en .env et indiquez vos dossiers de vidéos
+# 2. docker compose -f docker-compose.desktop.yml up -d --build
+# 3. Ouvrez http://localhost:8096
+#
+# Docker Desktop fait tourner les conteneurs dans une petite machine virtuelle :
+#  - la carte graphique du PC / du Mac n'est pas accessible : la conversion se fait au processeur
+#    (l'installation sans Docker, scripts/install-windows.ps1 ou scripts/install-macos.sh, utilise la carte graphique) ;
+#  - Venus ne voit pas tout seul les appareils de la maison : renseignez LAN_SUBNET dans .env
+#    pour la recherche automatique des NAS, ou saisissez leur adresse à la main.
+services:
+  venus:
+    build: .
+    image: venus:latest
+    container_name: venus
+    restart: unless-stopped
+    ports:
+      - "${VENUS_PORT:-8096}:8096"
+    cap_add:
+      - SYS_ADMIN          # montage des partages réseau depuis l'interface
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
+    environment:
+      - TZ=${TZ:-Europe/Paris}
+      - PORT=8096
+      - LAN_SUBNET=${LAN_SUBNET:-192.168.1}
+      - TMDB_API_KEY=${TMDB_API_KEY:-}
+    volumes:
+      - ./config:/config
+      - venus-transcode:/transcode                       # volume Docker : bien plus rapide qu'un dossier Windows
+      - "${VENUS_MOVIES:-./media/films}:/media/films"
+      - "${VENUS_SHOWS:-./media/series}:/media/series"
+      - "${VENUS_ANIME:-./media/animes}:/media/animes"
+      - "${VENUS_CLIPS:-./media/clips}:/media/clips"
+
+volumes:
+  venus-transcode:

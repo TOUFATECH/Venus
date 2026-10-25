@@ -5,11 +5,20 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import dns from 'node:dns/promises';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
+const require_mount = () => execFileSync('mount', [], { timeout: 3000 }).toString();
 import { config } from './config.js';
 import { all, run } from './db.js';
+import { runtime, mountAdvice } from './env.js';
 
-export const MOUNT_ROOT = process.env.MOUNT_ROOT || '/mnt/venus';
+const PLATFORM = process.platform; // linux | darwin | win32
+function defaultMountRoot() {
+  if (PLATFORM === 'linux') {
+    try { fs.mkdirSync('/mnt/venus', { recursive: true }); fs.accessSync('/mnt/venus', fs.constants.W_OK); return '/mnt/venus'; } catch { /* pas root */ }
+  }
+  return path.join(config.dataDir, 'mounts');
+}
+export const MOUNT_ROOT = process.env.MOUNT_ROOT || defaultMountRoot();
 const credDir = path.join(config.dataDir, 'net');
 fs.mkdirSync(credDir, { recursive: true, mode: 0o700 });
 
@@ -18,7 +27,8 @@ const sh = (cmd, args, timeout = 20000) => new Promise((resolve) => {
     resolve({ ok: !err, code: err && err.code, out: String(stdout), err: String(stderr || (err && err.message) || '') });
   });
 });
-const which = async (bin) => (await sh('sh', ['-c', `command -v ${bin}`], 3000)).ok;
+const which = async (bin) => (PLATFORM === 'win32' ? (await sh('where', [bin], 3000)).ok : (await sh('sh', ['-c', `command -v ${bin}`], 3000)).ok);
+const unc = (host, share) => `\\\\${host}\\${share.replace(/\//g, '\\')}`;
 
 // ------------------------------------------------------------------ découverte du réseau local
 function probe(host, port, timeout = 450) {
@@ -55,7 +65,9 @@ async function hostName(ip) {
 let lastScan = { at: 0, hosts: [] };
 export async function discover({ force = false } = {}) {
   if (!force && Date.now() - lastScan.at < 60000) return lastScan.hosts;
-  const subnets = localSubnets();
+  // LAN_SUBNET=192.168.1 (Docker Desktop : le conteneur ne voit pas le réseau de la maison tout seul)
+  const extra = String(process.env.LAN_SUBNET || '').split(',').map((x) => x.trim().split('.').slice(0, 3).join('.')).filter((x) => /^\d+\.\d+\.\d+$/.test(x));
+  const subnets = [...new Set([...extra, ...localSubnets()])];
   const targets = [];
   for (const s of subnets) for (let i = 1; i < 255; i++) targets.push(`${s}.${i}`);
   const found = [];
@@ -83,6 +95,20 @@ export async function listShares({ proto, host, user, pass }) {
     if (!r.ok) throw new Error(`Impossible de lister les partages NFS de ${host}`);
     return r.out.split('\n').map((l) => l.trim().split(/\s+/)[0]).filter(Boolean).map((name) => ({ name, comment: '' }));
   }
+  if (PLATFORM === 'win32') {
+    if (user) await sh('net', ['use', `\\\\${host}\\IPC$`, pass || '', `/user:${user}`, '/persistent:no'], 15000);
+    const r = await sh('net', ['view', `\\\\${host}`, '/all'], 15000);
+    if (!r.ok) throw new Error(/5\b|refus|denied/i.test(r.err + r.out) ? 'Identifiant ou mot de passe refusé par cet appareil' : `Impossible de joindre ${host}`);
+    return r.out.split('\n').map((l) => /^(.+?)\s{2,}(Disk|Disque)\b\s*(.*)$/i.exec(l.trim())).filter(Boolean)
+      .map((m) => ({ name: m[1].trim(), comment: (m[3] || '').trim() })).filter((x) => !/\$$/.test(x.name));
+  }
+  if (PLATFORM === 'darwin') {
+    const who = user ? `${encodeURIComponent(user)}:${encodeURIComponent(pass || '')}` : 'guest:';
+    const r = await sh('smbutil', ['view', '-N', `//${who}@${host}`], 15000);
+    if (!r.ok) throw new Error(/auth|denied/i.test(r.err) ? 'Identifiant ou mot de passe refusé par cet appareil' : `Impossible de joindre ${host}`);
+    return r.out.split('\n').map((l) => /^(.+?)\s+Disk\s*(.*)$/.exec(l.trim())).filter(Boolean)
+      .map((m) => ({ name: m[1].trim(), comment: (m[2] || '').trim() })).filter((x) => !/\$$/.test(x.name));
+  }
   if (!(await which('smbclient'))) throw new Error('Outil SMB absent (paquet smbclient). Indiquez le nom du partage à la main.');
   const auth = user ? ['-U', `${user}%${pass || ''}`] : ['-N'];
   const r = await sh('smbclient', ['-g', '-L', `//${host}`, ...auth, '-m', 'SMB3'], 15000);
@@ -103,7 +129,15 @@ export function describe(remote) {
   return remote.proto === 'nfs' ? `nfs://${remote.host}${remote.share.startsWith('/') ? '' : '/'}${remote.share}` : `\\\\${remote.host}\\${remote.share.replace(/\//g, '\\')}`;
 }
 
+let macMounts = { at: 0, text: '' };
 function isMounted(target) {
+  if (PLATFORM === 'win32') { try { fs.readdirSync(target); return true; } catch { return false; } }
+  if (PLATFORM === 'darwin') {
+    if (Date.now() - macMounts.at > 3000) {
+      try { macMounts = { at: Date.now(), text: require_mount() }; } catch { macMounts = { at: Date.now(), text: '' }; }
+    }
+    return macMounts.text.includes(` on ${target} (`);
+  }
   try {
     const m = fs.readFileSync('/proc/mounts', 'utf8');
     return m.split('\n').some((l) => l.split(' ')[1] === target.replace(/ /g, '\\040'));
@@ -126,8 +160,34 @@ export function mountArgs(id, remote, target) {
   return ['-t', 'cifs', `//${remote.host}/${remote.share}`, target, '-o', opts];
 }
 
+async function mountWindows(id, remote) {
+  if (remote.proto === 'nfs') return { ok: false, error: 'Sous Windows, utilisez un partage SMB (le client NFS de Windows n’est pas pris en charge par Venus).' };
+  const root = unc(remote.host, remote.share);
+  try { fs.readdirSync(root); return { ok: true, path: root }; } catch { /* connexion nécessaire */ }
+  const args = ['use', root];
+  if (remote.user) args.push(remote.pass || '', `/user:${remote.domain ? `${remote.domain}\\` : ''}${remote.user}`);
+  args.push('/persistent:yes');
+  const r = await sh('net', args, 30000);
+  try { fs.readdirSync(root); return { ok: true, path: root }; }
+  catch { return { ok: false, path: root, error: explain(r.err + r.out, remote) }; }
+}
+
+async function mountMac(id, remote, target) {
+  if (isMounted(target)) return { ok: true, path: target };
+  let r;
+  if (remote.proto === 'nfs') r = await sh('mount', ['-t', 'nfs', '-o', `resvport,${remote.writable ? 'rw' : 'ro'}`, `${remote.host}:${remote.share}`, target], 30000);
+  else {
+    const who = remote.user ? `${encodeURIComponent(remote.user)}:${encodeURIComponent(remote.pass || '')}` : 'guest:';
+    r = await sh('mount_smbfs', ['-N', `//${who}@${remote.host}/${remote.share.split('/').map(encodeURIComponent).join('/')}`, target], 30000);
+  }
+  macMounts.at = 0;
+  return r.ok ? { ok: true, path: target } : { ok: false, path: target, error: explain(r.err, remote) };
+}
+
 export async function mountRemote(id, remote) {
+  if (PLATFORM === 'win32') return mountWindows(id, remote);
   const target = path.join(MOUNT_ROOT, String(id));
+  if (PLATFORM === 'darwin') { fs.mkdirSync(target, { recursive: true }); return mountMac(id, remote, target); }
   fs.mkdirSync(target, { recursive: true });
   if (isMounted(target)) return { ok: true, path: target };
   if (remote.proto !== 'nfs' && remote.user) {
@@ -146,8 +206,9 @@ export async function mountRemote(id, remote) {
 }
 
 function explain(err, remote) {
-  if (/Operation not permitted|must be superuser|only root/i.test(err)) {
-    return 'Venus n’a pas le droit de monter des partages réseau. Avec Docker, utilisez le docker-compose.yml fourni (lignes cap_add: SYS_ADMIN), puis relancez « docker compose up -d ».';
+  if (/Operation not permitted|must be superuser|only root|permission denied.*mount/i.test(err) || !runtime.canMount) {
+    const a = mountAdvice();
+    return `${a.title} : ${a.text}${a.command ? ` Commande : ${a.command}` : ''}`;
   }
   if (/No such device|unknown filesystem type|helper program/i.test(err)) return `Le support ${remote.proto === 'nfs' ? 'NFS' : 'SMB'} manque sur le serveur (paquet ${remote.proto === 'nfs' ? 'nfs-common' : 'cifs-utils'}). L’image Docker de Venus l’inclut.`;
   if (/Permission denied|error\(13\)|LOGON|access denied/i.test(err)) return 'Accès refusé : vérifiez l’identifiant et le mot de passe du partage.';
@@ -156,8 +217,10 @@ function explain(err, remote) {
   return `Montage impossible : ${err.trim().split('\n').pop() || 'erreur inconnue'}`;
 }
 
-export async function unmountRemote(id) {
+export async function unmountRemote(id, remote) {
+  if (PLATFORM === 'win32') { if (remote) await sh('net', ['use', unc(remote.host, remote.share), '/delete', '/y'], 15000); return; }
   const target = path.join(MOUNT_ROOT, String(id));
+  if (PLATFORM === 'darwin') { if (isMounted(target)) await sh('umount', [target], 15000); try { fs.rmdirSync(target); } catch { /* */ } return; }
   if (isMounted(target)) await sh('umount', ['-l', target], 15000);
   fs.rmSync(path.join(credDir, `${id}.cred`), { force: true });
   try { fs.rmdirSync(target); } catch { /* déjà supprimé ou non vide */ }
@@ -165,6 +228,7 @@ export async function unmountRemote(id) {
 
 // Un partage réseau est-il réellement monté ? (sinon le dossier est vide et tout semblerait supprimé)
 export function remoteReady(lib) {
+  if (PLATFORM === 'win32') { const r = remoteOf(lib); return !!r && isMounted(unc(r.host, r.share)); }
   return isMounted(path.join(MOUNT_ROOT, String(lib.id)));
 }
 
@@ -195,7 +259,7 @@ export function watchMounts(onChange) {
     for (const lib of all('SELECT * FROM libraries WHERE remote IS NOT NULL')) {
       const r = remoteOf(lib);
       let alive = false;
-      try { fs.readdirSync(lib.path); alive = isMounted(path.join(MOUNT_ROOT, String(lib.id))); } catch { alive = false; }
+      try { fs.readdirSync(lib.path); alive = remoteReady(lib); } catch { alive = false; }
       if (!alive) {
         const res = await mountRemote(lib.id, r);
         netState.set(lib.id, { ok: res.ok, error: res.error || null, at: Date.now() });

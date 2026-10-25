@@ -171,6 +171,8 @@ class HlsSession {
   // Évite de transcoder tout le film d'avance : économise CPU/GPU et disque
   throttle() {
     if (this.exited || !this.proc || this.decision.copyVideo || this.live) return;
+    // Windows ne connaît pas SIGSTOP/SIGCONT (Node y tuerait ffmpeg) : pas de mise en pause là-bas
+    if (process.platform === 'win32') return;
     const ahead = this.segmentCount() - this.lastSeg;
     try {
       if (!this.paused && ahead > MAX_AHEAD) { this.proc.kill('SIGSTOP'); this.paused = true; }
@@ -180,7 +182,7 @@ class HlsSession {
 
   stop() {
     this.killed = true;
-    try { if (this.paused) this.proc.kill('SIGCONT'); this.proc.kill('SIGKILL'); } catch { /* déjà arrêté */ }
+    try { if (this.paused && process.platform !== 'win32') this.proc.kill('SIGCONT'); this.proc.kill('SIGKILL'); } catch { /* déjà arrêté */ }
     setTimeout(() => fs.rmSync(this.dir, { recursive: true, force: true }), 500);
     sessions.delete(this.id);
   }
@@ -252,7 +254,7 @@ export async function serveSegment(req, res, sid, name) {
   const file = path.join(s.dir, name);
   const deadline = Date.now() + 30000;
   while (!fs.existsSync(file)) {
-    if (s.paused) { try { s.proc.kill('SIGCONT'); s.paused = false; } catch { /* */ } }
+    if (s.paused && process.platform !== 'win32') { try { s.proc.kill('SIGCONT'); s.paused = false; } catch { /* */ } }
     if (s.exited || Date.now() > deadline) throw new HttpError(404, 'Segment indisponible');
     await wait(100);
   }

@@ -38,6 +38,13 @@ function candidates() {
   if (fs.existsSync('/dev/video11')) {
     list.push({ type: 'v4l2m2m', label: 'Raspberry Pi (V4L2)', encoder: 'h264_v4l2m2m', test: [...TEST_INPUT, '-vf', 'format=yuv420p', '-c:v', 'h264_v4l2m2m', '-f', 'null', '-'] });
   }
+  if (os.platform() === 'win32') {
+    // Sous Windows, pas de /dev : on essaie simplement chaque encodeur matériel
+    list.push({ type: 'nvenc', label: 'NVIDIA NVENC', encoder: 'h264_nvenc', test: [...TEST_INPUT, '-vf', 'format=yuv420p', '-c:v', 'h264_nvenc', '-f', 'null', '-'] });
+    list.push({ type: 'qsv', label: 'Intel Quick Sync', encoder: 'h264_qsv', device: null,
+      test: ['-hide_banner', '-loglevel', 'error', '-init_hw_device', 'qsv=hw', '-filter_hw_device', 'hw', '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=24:duration=1', '-vf', 'format=nv12,hwupload=extra_hw_frames=64', '-c:v', 'h264_qsv', '-f', 'null', '-'] });
+    list.push({ type: 'amf', label: 'AMD AMF', encoder: 'h264_amf', test: [...TEST_INPUT, '-vf', 'format=yuv420p', '-c:v', 'h264_amf', '-f', 'null', '-'] });
+  }
   if (os.platform() === 'darwin') {
     list.push({ type: 'videotoolbox', label: 'Apple VideoToolbox', encoder: 'h264_videotoolbox', test: [...TEST_INPUT, '-c:v', 'h264_videotoolbox', '-f', 'null', '-'] });
   }
@@ -114,8 +121,10 @@ export function videoPipelines(opts) {
       pipelines.push({ name: 'qsv-full', input: ['-hwaccel', 'qsv', '-hwaccel_output_format', 'qsv'],
         video: ['-map', '0:v:0', '-vf', `scale_qsv=w=${width}:h=${height}:format=nv12`, ...enc] });
     }
-    pipelines.push({ name: 'qsv', input: ['-init_hw_device', `qsv=hw:${hw.device}`, '-filter_hw_device', 'hw'],
+    pipelines.push({ name: 'qsv', input: ['-init_hw_device', hw.device ? `qsv=hw:${hw.device}` : 'qsv=hw', '-filter_hw_device', 'hw'],
       video: [...mkFilter(`${swTonemap}${swScale},format=nv12,hwupload=extra_hw_frames=64`), ...enc] });
+  } else if (hw.type === 'amf') {
+    pipelines.push({ name: 'amf', input: [], video: [...mkFilter(`${swTonemap}${swScale},format=yuv420p`), '-c:v', 'h264_amf', '-quality', 'speed', '-rc', 'vbr_peak', ...rate, ...gopArgs] });
   } else if (hw.type === 'v4l2m2m') {
     pipelines.push({ name: 'v4l2m2m', input: [], video: [...mkFilter(`${swScale},format=yuv420p`), '-c:v', 'h264_v4l2m2m', '-b:v', `${kbit}k`, ...gopArgs] });
   } else if (hw.type === 'videotoolbox') {

@@ -17,6 +17,7 @@ import {
 } from './stream.js';
 import { detectHardware } from './hw.js';
 import { probeLive } from './probe.js';
+import { runtime, mountAdvice, gpuAdvice } from './env.js';
 import { discover, listShares, mountRemote, unmountRemote, remoteOf, describe, netState, xtreamUrl } from './netshare.js';
 
 export const router = new Router();
@@ -624,6 +625,7 @@ router.get('/api/admin', (ctx) => {
     version: config.version,
     hw: { type: hw.type, label: hw.label, tested: hw.tested, tonemap: hw.filters.has('zscale') || hw.filters.has('tonemap_vaapi') || hw.filters.has('tonemap_cuda') },
     sessions: [...sessions.values()].map((s) => s.info()),
+    runtime: { kind: runtime.kind, unprivileged: runtime.unprivileged, canMount: runtime.canMount, mount: runtime.canMount && !runtime.unprivileged ? null : mountAdvice(), gpu: gpuAdvice() },
     scan: scanState,
     libraries: all('SELECT * FROM libraries').map(publicLibrary),
     counts,
@@ -725,6 +727,13 @@ router.get('/api/admin/network/discover', async (ctx) => {
   sendJson(ctx.res, await discover({ force: ctx.url.searchParams.get('force') === '1' }));
 });
 
+// Ce serveur peut-il monter lui-même un partage ? Sinon : conseil adapté (LXC Proxmox, Docker…)
+router.get('/api/admin/network/capability', (ctx) => {
+  requireAdmin(ctx);
+  const blocked = !runtime.canMount || runtime.unprivileged;
+  sendJson(ctx.res, { canMount: !blocked, advice: blocked ? mountAdvice() : null });
+});
+
 router.post('/api/admin/network/shares', async (ctx) => {
   requireAdmin(ctx);
   const b = await readBody(ctx.req);
@@ -761,13 +770,13 @@ router.post('/api/admin/libraries', async (ctx) => {
     const res = await mountRemote(id, remote);
     if (!res.ok) {
       run('DELETE FROM libraries WHERE id = ?', id);
-      await unmountRemote(id);
+      await unmountRemote(id, remote);
       throw new HttpError(422, res.error);
     }
     const full = path.join(res.path, remote.sub);
     if (!fs.existsSync(full)) {
       run('DELETE FROM libraries WHERE id = ?', id);
-      await unmountRemote(id);
+      await unmountRemote(id, remote);
       throw new HttpError(400, `Le dossier « ${remote.sub} » n’existe pas dans ce partage`);
     }
     run('UPDATE libraries SET path = ?, remote = ? WHERE id = ?', full, JSON.stringify(remote), id);
@@ -813,7 +822,7 @@ router.del('/api/admin/libraries/:id', async (ctx) => {
   requireAdmin(ctx);
   const lib = get('SELECT * FROM libraries WHERE id = ?', Number(ctx.params.id));
   run('DELETE FROM libraries WHERE id = ?', Number(ctx.params.id));
-  if (lib && lib.remote) { await unmountRemote(lib.id); netState.delete(lib.id); }
+  if (lib && lib.remote) { await unmountRemote(lib.id, remoteOf(lib)); netState.delete(lib.id); }
   watchLibraries();
   sendJson(ctx.res, { ok: true });
 });
@@ -827,14 +836,30 @@ router.post('/api/admin/scan', async (ctx) => {
 
 router.get('/api/admin/fs', (ctx) => {
   requireAdmin(ctx);
-  const dir = path.resolve(ctx.url.searchParams.get('path') || '/');
+  let asked = ctx.url.searchParams.get('path') || '/';
+  // « start » : premier dossier pertinent qui existe sur ce système
+  if (asked === 'start') {
+    const home = os.homedir();
+    const tries = process.platform === 'win32' ? ['/']
+      : process.platform === 'darwin' ? [path.join(home, 'Movies'), '/Volumes', home]
+        : ['/media', '/mnt', '/srv', home];
+    asked = tries.find((t) => { try { return t === '/' || fs.statSync(t).isDirectory(); } catch { return false; } }) || '/';
+  }
+  // Windows : la racine liste les lecteurs (C:, D:…) et les dossiers de partage déjà connectés
+  if (process.platform === 'win32' && (asked === '/' || asked === '\\' || asked === '')) {
+    const drives = [];
+    for (let c = 67; c <= 90; c++) { const d = `${String.fromCharCode(c)}:\\`; try { fs.accessSync(d); drives.push(d); } catch { /* lecteur absent */ } }
+    return sendJson(ctx.res, { path: '/', parent: '/', dirs: drives, absolute: true });
+  }
+  const dir = path.resolve(asked);
   let entries = [];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true })
       .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
       .map((e) => e.name).sort((a, b) => a.localeCompare(b));
   } catch { throw new HttpError(400, 'Dossier illisible'); }
-  sendJson(ctx.res, { path: dir, parent: path.dirname(dir), dirs: entries });
+  const parent = path.dirname(dir);
+  sendJson(ctx.res, { path: dir, parent: process.platform === 'win32' && parent === dir ? '/' : parent, dirs: entries });
 });
 
 router.get('/api/admin/match/:id', async (ctx) => {
