@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS mylist (
 
 // Migrations légères (bases créées par une version précédente)
 const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
-for (const [col, def] of [['category', 'TEXT'], ['release_date', 'TEXT'], ['popularity', 'REAL'], ['stream_url', 'TEXT'], ['grp', 'TEXT']]) {
+for (const [col, def] of [['category', 'TEXT'], ['release_date', 'TEXT'], ['popularity', 'REAL'], ['stream_url', 'TEXT'], ['grp', 'TEXT'],
+  ['imdb_id', 'TEXT'], ['anilist_id', 'INTEGER'], ['mal_id', 'INTEGER'], ['ratings', 'TEXT'], ['ratings_at', 'INTEGER'], ['trailer', 'TEXT'], ['channel_num', 'INTEGER']]) {
   if (!cols('items').includes(col)) db.exec(`ALTER TABLE items ADD COLUMN ${col} ${def}`);
 }
 if (!cols('libraries').includes('remote')) db.exec('ALTER TABLE libraries ADD COLUMN remote TEXT');

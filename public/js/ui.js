@@ -1,4 +1,5 @@
 // Petits outils d'interface (sans framework)
+import { planetMarkup, brandName } from './themes.js';
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -42,6 +43,7 @@ const P = {
   plus: '<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   info: '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 11v6M12 7.5v.1" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+  cal: '<rect x="4" y="5.5" width="16" height="14.5" rx="2.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 12.6l1 2 2.2.3-1.6 1.5.4 2.2-2-1-2 1 .4-2.2-1.6-1.5 2.2-.3z" fill="currentColor"/>',
   prev: '<path d="M18 5.5v13a1 1 0 0 1-1.5.86L7 13.5V18.5H5v-13h2v5l9.5-5.86A1 1 0 0 1 18 5.5z" fill="currentColor"/>',
   sun: '<circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
   skip: '<path d="M5 6.2v11.6a.8.8 0 0 0 1.2.7l8.6-5.8a.8.8 0 0 0 0-1.4L6.2 5.5A.8.8 0 0 0 5 6.2z" fill="currentColor"/><rect x="16.5" y="5.5" width="2.5" height="13" rx="1" fill="currentColor"/>',
@@ -78,11 +80,9 @@ export function icon(name) {
   return span;
 }
 
-const MARK = `<svg class="mark" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"> <defs>  <linearGradient id="vn-bands" gradientUnits="userSpaceOnUse" x1="22" y1="4" x2="36" y2="60">   <stop offset="0" stop-color="#fce9cb"/>   <stop offset=".15" stop-color="#f0c08b"/>   <stop offset=".29" stop-color="#fde5c3"/>   <stop offset=".44" stop-color="#e79f7b"/>   <stop offset=".57" stop-color="#f7d2a3"/>   <stop offset=".71" stop-color="#d88469"/>   <stop offset=".85" stop-color="#efbb88"/>   <stop offset="1" stop-color="#b9634f"/>  </linearGradient>  <radialGradient id="vn-night" gradientUnits="userSpaceOnUse" cx="66" cy="28" r="46">   <stop offset="0" stop-color="#0d1016" stop-opacity=".97"/>   <stop offset=".52" stop-color="#0d1016" stop-opacity=".9"/>   <stop offset=".74" stop-color="#0d1016" stop-opacity=".35"/>   <stop offset="1" stop-color="#0d1016" stop-opacity="0"/>  </radialGradient>  <radialGradient id="vn-light" gradientUnits="userSpaceOnUse" cx="19" cy="22" r="22">   <stop offset="0" stop-color="#fffaf0" stop-opacity=".55"/>   <stop offset="1" stop-color="#fffaf0" stop-opacity="0"/>  </radialGradient>  <clipPath id="vn-disc"><circle cx="30" cy="34" r="24"/></clipPath> </defs> <g clip-path="url(#vn-disc)">  <rect x="0" y="0" width="64" height="64" fill="url(#vn-bands)"/>  <path d="M2 25c9-4 17 3 26-1s18-3 28 2" stroke="#fff4e2" stroke-opacity=".5" stroke-width="2" fill="none"/>  <path d="M2 41c8 3 16-4 25 0s19 4 30-2" stroke="#fff4e2" stroke-opacity=".35" stroke-width="1.5" fill="none"/>  <rect x="0" y="0" width="64" height="64" fill="url(#vn-light)"/>  <rect x="0" y="0" width="64" height="64" fill="url(#vn-night)"/> </g> <path d="M53 4.5l1.3 4.2 4.2 1.3-4.2 1.3-1.3 4.2-1.3-4.2-4.2-1.3 4.2-1.3z" fill="#fff1d6"/></svg>`;
-let markN = 0;
-// Identifiants uniques par copie : un dégradé référencé dans un bloc masqué ne s'afficherait pas ailleurs
-export function logoMark() { const t = document.createElement('template'); const n = ++markN; t.innerHTML = MARK.replace(/vn-(bands|night|light|disc)/g, `vn-$1-${n}`); return t.content.firstChild; }
-export function brand(cls = '') { return h('span', { class: `brand ${cls}` }, logoMark(), h('span', {}, 'VENUS')); }
+// Logo : la planète du thème choisi, dont la surface tourne (voir themes.js)
+export function logoMark() { const t = document.createElement('template'); t.innerHTML = planetMarkup().trim(); return t.content.firstChild; }
+export function brand(cls = '') { return h('span', { class: `brand ${cls}` }, logoMark(), h('span', { class: 'brand-name' }, brandName())); }
 
 export const img = (name) => (!name ? null : /^(data:|blob:|https?:)/.test(name) ? name : `/img/${encodeURIComponent(name)}`);
 export const hueOf = (s) => { let x = 0; for (const c of String(s)) x = (x * 31 + c.charCodeAt(0)) % 360; return x; };

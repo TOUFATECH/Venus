@@ -1,12 +1,13 @@
 // Lecteur vidéo plein écran : lecture directe ou HLS, sous-titres, pistes, qualité, épisode suivant, Chromecast, AirPlay
 import { api, auth, deviceCaps, castCaps, preferredQuality, setPreferredQuality, prefs } from '../api.js';
 import { h, icon, sheet, fmtTime, langName, toast, img, isBack } from '../ui.js';
-import { go, back } from '../app.js';
+import { go, back, setTitle } from '../app.js';
 import { focusEl } from '../nav.js';
 import { castSupported, loadCast, castContext, castMedia, remote } from '../cast.js';
 import { ambilight, ambianceOn } from '../ambiance.js';
 import { joinParty, partyPanel, showInvite, floatReaction } from '../party.js';
 import { scrollArrows } from '../components.js';
+import { numberZapper } from '../live.js';
 import { queueAround, toggleShuffle } from '../queue.js';
 
 let hlsLib = null;
@@ -94,6 +95,9 @@ export async function render(main, { id, query }) {
   } }, icon('shuffle'));
   // « Passer l'intro » / « Passer le générique » : visible même quand les commandes sont cachées
   const skipBtn = h('button', { class: 'p-skip f', hidden: true, onclick: () => doSkip() }, icon('skip'), h('span', {}, 'Passer l’intro'));
+  // TV en direct : liste des chaînes à droite, pour zapper sans quitter l'image
+  const chListBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, 'aria-label': 'Liste des chaînes', onclick: () => toggleChannels() }, icon('list'), h('span', { class: 'lbl' }, 'Chaînes'));
+  const chPanel = h('aside', { class: 'ch-panel', hidden: true, 'aria-label': 'Chaînes' });
   const nextPanel = h('div', { class: 'p-next', hidden: true });
   const overlay = h('div', { class: 'p-error', hidden: true });
 
@@ -107,8 +111,8 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, ambBtn, castBtn, airBtn, fsBtn)),
-    nextPanel, overlay, volOsd, skipBtn);
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, ambBtn, castBtn, airBtn, fsBtn)),
+    nextPanel, overlay, volOsd, skipBtn, chPanel);
   main.append(root);
   document.body.style.overflow = 'hidden';
   // Plein écran dès le lancement (réglable dans Réglages). Demandé tout de suite, pendant que le clic
@@ -165,7 +169,7 @@ export async function render(main, { id, query }) {
     nextShown = false;
     titleEl.textContent = info.title;
     subEl.textContent = info.subtitle;
-    document.title = `${info.title} — Venus`;
+    setTitle(info.title);
     badge.textContent = info.mode === 'direct' ? 'Direct' : info.mode === 'remux' ? 'Remux' : `Converti · ${info.hwLabel || 'processeur'}`;
     badge.title = info.reason;
     qualityBtn.textContent = (info.qualities.find((q) => q.id === quality) || { label: 'Auto' }).label;
@@ -319,7 +323,7 @@ export async function render(main, { id, query }) {
     if (!stay && !video.paused && !casting) uiTimer = setTimeout(hideUi, 3500);
   }
   function hideUi() {
-    if (document.querySelector('.sheet-wrap') || video.paused || casting || !overlay.hidden) return;
+    if (document.querySelector('.sheet-wrap') || video.paused || casting || !overlay.hidden || !chPanel.hidden) return;
     root.classList.remove('ui-on');
     if (root.contains(document.activeElement)) document.activeElement.blur();
   }
@@ -454,6 +458,8 @@ export async function render(main, { id, query }) {
     if (!uiOn && !document.documentElement.classList.contains('tv') && (k === 'ArrowUp' || k === 'ArrowDown')) { consume(); setVolume(video.volume + (k === 'ArrowUp' ? 0.1 : -0.1), true); return; }
     if (k === 'a' && !e.ctrlKey && !e.metaKey) { consume(); setAmbiance(!ambOn); return; }
     if (isBack(e)) { consume(); if (uiOn && root.contains(active) && active !== playBtn && active !== track) { focusEl(playBtn); showUi(); } else exit(); return; }
+    if (info && info.live && !chListBtn.hidden && (k === 'l' || (!uiOn && chPanel.hidden && (k === 'ArrowLeft' || k === 'ArrowRight' || code === 37 || code === 39)))) { consume(); toggleChannels(); return; }
+    if (!chPanel.hidden && isBack(e)) { consume(); toggleChannels(false); return; }
     if (!uiOn) {
       if (k === 'ArrowLeft' || k === 'ArrowRight' || code === 37 || code === 39) { consume(); seekBy(k === 'ArrowLeft' || code === 37 ? -10 : 10); showUi(); focusEl(track); return; }
       if (k === 'Enter' || k.startsWith('Arrow') || code === 13) { consume(); showUi(); focusEl(playBtn); return; }
@@ -688,7 +694,33 @@ export async function render(main, { id, query }) {
 
   // ---------------------------------------------------------------- sortie
   // Zapping entre chaînes (boutons, touches P+ / P- de la télécommande)
-  let channelList = null;
+  let channelList = null, zapper = null;
+  async function setupLive() {
+    if (!channelList) channelList = await api('/api/library?type=channel').catch(() => []);
+    if (destroyed || !channelList.length) return;
+    chListBtn.hidden = false;
+    if (!zapper) {
+      zapper = numberZapper(channelList, (c) => { if (c.id !== id) go(`/lecture/${c.id}`, { replace: true }); }, root);
+      document.addEventListener('keydown', zapper.onKey, true);
+    }
+    const cur = channelList.find((c) => c.id === id);
+    if (cur && cur.number) titleEl.textContent = `${cur.number}. ${info.title}`;
+  }
+  function toggleChannels(force) {
+    const open = force ?? chPanel.hidden;
+    chPanel.hidden = !open;
+    root.classList.toggle('ch-open', open);
+    if (!open) { focusEl(chListBtn, { scroll: false }); return; }
+    const items = (channelList || []).map((c) => h('button', { class: `ch-item f${c.id === id ? ' on' : ''}`, 'aria-current': c.id === id ? 'true' : null, onclick: () => { if (c.id !== id) go(`/lecture/${c.id}`, { replace: true }); else toggleChannels(false); } },
+      h('span', { class: 'ch-n' }, c.number || ''),
+      c.poster ? h('img', { src: img(c.poster), alt: '', loading: 'lazy', onerror: (e) => e.target.remove() }) : h('span', { class: 'ch-ph' }),
+      h('span', { class: 'ch-t' }, h('b', {}, c.title), c.group ? h('small', {}, c.group) : null)));
+    chPanel.replaceChildren(h('div', { class: 'ch-head' }, h('b', {}, 'Chaînes'), h('small', {}, 'Tapez un numéro pour y aller'),
+      h('button', { class: 'p-icon small f', 'aria-label': 'Fermer la liste', onclick: () => toggleChannels(false) }, icon('close'))), h('div', { class: 'ch-list' }, items));
+    const cur = chPanel.querySelector('.ch-item.on');
+    requestAnimationFrame(() => { if (cur) cur.scrollIntoView({ block: 'center' }); focusEl(cur || chPanel.querySelector('.ch-item'), { scroll: false }); });
+    showUi(true);
+  }
   async function zap(dir) {
     if (!channelList) channelList = await api('/api/library?type=channel').catch(() => []);
     const i = channelList.findIndex((c) => c.id === id);
@@ -811,6 +843,7 @@ export async function render(main, { id, query }) {
     saveProgress();
     clearInterval(saveTimer); clearInterval(subsTimer); clearInterval(nextTimer); clearTimeout(uiTimer); clearTimeout(seekTimer);
     document.removeEventListener('keydown', onKey, true);
+    if (zapper) { zapper.stop(); document.removeEventListener('keydown', zapper.onKey, true); }
     if (stopAmb) stopAmb();
     if (party) party.close();
     clearInterval(syncTimer);
@@ -831,7 +864,7 @@ export async function render(main, { id, query }) {
     try { roomInfo = await api(`/api/rooms/${roomCode}`); } catch (e) { toast(e.message, true); roomCode = null; }
   }
   await load(roomInfo ? roomInfo.state.position : startParam != null ? Number(startParam) : null);
-  if (info && info.live) partyBtn.hidden = true;
+  if (info && info.live) { partyBtn.hidden = true; setupLive(); }
   if (roomInfo) connectParty(roomInfo.code, roomInfo.title);
   setAmbiance(ambianceOn.get());
   requestAnimationFrame(() => focusEl(playBtn, { scroll: false }));

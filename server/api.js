@@ -19,6 +19,8 @@ import { detectHardware } from './hw.js';
 import { probeLive } from './probe.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
 import { getSegments, scheduleSeason } from './segments.js';
+import { scheduleRatings, refreshRatings, omdbKey, simklId } from './ratings.js';
+import { discover as discoverTitles, discoverAvailable, seerrOn, seerrStatus, seerrRequest, seerrTest, seerrConf, resolveTmdb, trailerFor } from './discover.js';
 import { discover, listShares, mountRemote, unmountRemote, remoteOf, describe, netState, xtreamUrl } from './netshare.js';
 
 export const router = new Router();
@@ -67,8 +69,28 @@ function card(i, prog) {
     progress: prog ? { position: prog.position, duration: prog.duration, watched: !!prog.watched } : undefined,
     added: i.added_at, category: i.category, released: i.release_date || null,
     popularity: i.popularity, group: i.grp,
+    ratings: i.ratings ? parseJson(i.ratings, null) : null, trailer: i.trailer ? (parseJson(i.trailer, null) || {}).key || null : null,
+    number: i.type === 'channel' ? channelNumber(i) : undefined,
   };
 }
+
+// Numéros de chaîne : numéro de la liste M3U (tvg-chno) sinon ordre des listes, sans doublon
+let chanNums = null;
+function channelNumber(i) {
+  if (!chanNums) {
+    chanNums = new Map();
+    const rows = all("SELECT id, channel_num FROM items WHERE type='channel' ORDER BY library_id, episode_num");
+    const used = new Set(rows.map((r) => r.channel_num).filter(Boolean));
+    let n = 0;
+    for (const r of rows) {
+      if (r.channel_num) { chanNums.set(r.id, r.channel_num); continue; }
+      do n++; while (used.has(n));
+      chanNums.set(r.id, n);
+    }
+  }
+  return chanNums.get(i.id) || null;
+}
+events.on('library', () => { chanNums = null; });
 
 // État vu / en cours / non vu, par profil (films, clips, et séries épisode par épisode)
 function statusIndex(pid) {
@@ -386,7 +408,9 @@ router.get('/api/library', (ctx) => {
   }[type] || "i.type IN ('movie','show','clip')";
   const items = all(`SELECT i.* FROM items i WHERE ${where} AND ${age.sql} ORDER BY ${type === 'channel' ? 'i.episode_num' : 'i.sort_title'}`, ...age.args);
   const idx = statusIndex(p.id);
-  sendJson(ctx.res, items.map((i) => withStatus(card(i), idx)));
+  const out = items.map((i) => withStatus(card(i), idx));
+  if (type === 'channel') out.sort((a, b) => (a.number || 0) - (b.number || 0));
+  sendJson(ctx.res, out);
 });
 
 router.get('/api/items/:id', (ctx) => {
@@ -398,6 +422,15 @@ router.get('/api/items/:id', (ctx) => {
   const out = card(item);
   out.originalTitle = item.original_title;
   out.tagline = item.tagline;
+  out.imdbId = item.imdb_id;
+  // Notes jamais récupérées (ou anciennes) : on les demande tout de suite, elles seront là à la prochaine visite
+  if (!item.ratings_at || Date.now() - item.ratings_at > 10 * 86400000) scheduleRatings([item.id], true);
+  out.links = {
+    senscritique: `https://www.senscritique.com/search?query=${encodeURIComponent(item.title)}`,
+    imdb: item.imdb_id ? `https://www.imdb.com/fr/title/${item.imdb_id}/` : null,
+    anilist: item.anilist_id ? `https://anilist.co/anime/${item.anilist_id}` : null,
+    mal: item.mal_id ? `https://myanimelist.net/anime/${item.mal_id}` : null,
+  };
   out.inList = !!get('SELECT 1 FROM mylist WHERE profile_id=? AND item_id=?', p.id, item.id);
 
   if (item.type === 'movie') {
@@ -647,6 +680,37 @@ router.get('/img/:name', (ctx) => {
   sendFile(ctx.req, ctx.res, path.join(imagesDir, name), { cache: 'public, max-age=2592000, immutable' });
 });
 
+// ------------------------------------------------------------------ nouveautés et demandes (Seerr)
+router.get('/api/discover', async (ctx) => {
+  requireProfile(ctx);
+  const kind = ['movie', 'show', 'anime'].includes(ctx.url.searchParams.get('kind')) ? ctx.url.searchParams.get('kind') : 'movie';
+  sendJson(ctx.res, { available: discoverAvailable(), sections: await discoverTitles(kind) });
+});
+router.get('/api/discover/status', async (ctx) => {
+  requireProfile(ctx);
+  if (!seerrOn()) return sendJson(ctx.res, { state: 'off' });
+  const q = ctx.url.searchParams;
+  const item = { type: q.get('type') === 'movie' ? 'movie' : 'tv', tmdbId: Number(q.get('tmdbId')) || null, anilistId: Number(q.get('anilistId')) || null, title: q.get('title') || '', original: q.get('original') || '' };
+  const id = await resolveTmdb(item).catch(() => null);
+  if (!id) return sendJson(ctx.res, { state: 'unknown' });
+  try { sendJson(ctx.res, { tmdbId: id, ...(await seerrStatus(item.type, id)) }); } catch (e) { sendJson(ctx.res, { state: 'error', error: e.message }); }
+});
+router.post('/api/discover/request', async (ctx) => {
+  const p = requireProfile(ctx);
+  if (p.max_age != null) throw new HttpError(403, 'Les profils enfants ne peuvent pas faire de demande');
+  if (!seerrOn()) throw new HttpError(400, 'Reliez Seerr dans Réglages pour demander un titre');
+  const b = await readBody(ctx.req);
+  const item = { type: b.type === 'movie' ? 'movie' : 'tv', tmdbId: Number(b.tmdbId) || null, anilistId: Number(b.anilistId) || null, title: b.title || '', original: b.original || '' };
+  const id = await resolveTmdb(item);
+  if (!id) throw new HttpError(404, 'Titre introuvable sur TMDB, Seerr ne peut pas le demander');
+  try { sendJson(ctx.res, { tmdbId: id, ...(await seerrRequest(item.type, id)) }); } catch (e) { throw new HttpError(502, e.message); }
+});
+router.get('/api/discover/trailer', async (ctx) => {
+  requireProfile(ctx);
+  const q = ctx.url.searchParams;
+  sendJson(ctx.res, { trailer: await trailerFor(q.get('type'), Number(q.get('tmdbId'))).catch(() => null) });
+});
+
 // ------------------------------------------------------------------ administration
 router.get('/api/admin', (ctx) => {
   requireAdmin(ctx);
@@ -666,9 +730,15 @@ router.get('/api/admin', (ctx) => {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
       maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0',
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
+      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
   });
+});
+
+router.post('/api/admin/ratings/refresh', (ctx) => {
+  requireAdmin(ctx);
+  sendJson(ctx.res, { queued: refreshRatings({ force: true }) });
 });
 
 router.put('/api/admin/settings', async (ctx) => {
@@ -679,6 +749,23 @@ router.put('/api/admin/settings', async (ctx) => {
     setSetting('tmdb_key', b.tmdbKey || '');
     if (b.tmdbKey) { run("UPDATE items SET matched = 0 WHERE type IN ('movie','show') AND matched <= 0"); scanAll(); }
   }
+  let ratingsChanged = false;
+  if (b.omdbKey !== undefined) {
+    const k = String(b.omdbKey || '').trim();
+    if (k) {
+      const r = await fetch(`https://www.omdbapi.com/?i=tt0111161&apikey=${encodeURIComponent(k)}`, { signal: AbortSignal.timeout(10000) }).then((x) => x.json()).catch(() => null);
+      if (!r || r.Response === 'False') throw new HttpError(400, r && r.Error ? `Clé OMDb refusée : ${r.Error}` : 'OMDb injoignable');
+    }
+    setSetting('omdb_key', k); ratingsChanged = true;
+  }
+  if (b.simklClientId !== undefined) { setSetting('simkl_client_id', String(b.simklClientId || '').trim()); ratingsChanged = true; }
+  if (b.seerrUrl !== undefined || b.seerrKey !== undefined) {
+    const conf = { url: String(b.seerrUrl ?? seerrConf().url).trim().replace(/\/+$/, ''), key: String(b.seerrKey ?? seerrConf().key).trim() };
+    if (conf.url && !/^https?:\/\//.test(conf.url)) conf.url = `http://${conf.url}`;
+    if (conf.url && conf.key) { try { await seerrTest(conf); } catch (e) { throw new HttpError(400, `Seerr : ${e.message}`); } }
+    setSetting('seerr_url', conf.url); setSetting('seerr_key', conf.key);
+  }
+  if (ratingsChanged) refreshRatings({ force: true });
   if (b.serverName) setSetting('server_name', String(b.serverName).slice(0, 40));
   if (b.maxSessions) setSetting('max_sessions', Math.max(1, Math.min(20, Number(b.maxSessions))));
   if (typeof b.detectSegments === 'boolean') setSetting('detect_segments', b.detectSegments ? '1' : '0');

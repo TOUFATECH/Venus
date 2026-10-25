@@ -1,5 +1,6 @@
 // Accueil : grande affiche + rangées. L'affiche suit la carte sélectionnée (télécommande ou souris).
-import { api } from '../api.js';
+import { api, heroTrailers } from '../api.js';
+import { trailerPlayer } from '../trailer.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime } from '../ui.js';
 import { row, playPath, metaLine, frameImage } from '../components.js';
 import { go, state, currentPath } from '../app.js';
@@ -18,9 +19,49 @@ export async function render(main) {
     data.hero.map((it, i) => h('button', { type: 'button', role: 'tab', tabindex: '-1', 'aria-label': it.title, onclick: () => { goTo(i); restart(); } }, h('i'))));
   const arrow = (dir) => h('button', { type: 'button', class: `hero-arrow ${dir < 0 ? 'prev' : 'next'}`, tabindex: '-1', 'aria-label': dir < 0 ? 'Titre précédent' : 'Titre suivant',
     onclick: () => { goTo(heroIdx + dir); restart(); } }, icon(dir < 0 ? 'back' : 'fwd'));
-  const hero = h('section', { class: 'hero', style: { '--rotate': `${ROTATE_MS}ms` } }, bg, body, many ? arrow(-1) : null, many ? arrow(1) : null, many ? dots : null);
+  // Bande-annonce de la diapositive : muette, avec un bouton pour le son (mémorisé le temps de la visite)
+  let trailer = null, trailerTimer = null, trailerOn = false, soundOn = false;
+  const soundBtn = h('button', { type: 'button', class: 'hero-sound', hidden: true, tabindex: '-1', onclick: () => { soundOn = !soundOn; if (trailer) trailer.mute(!soundOn); paintSound(); } });
+  const paintSound = () => { soundBtn.replaceChildren(icon(soundOn ? 'vol' : 'mute')); soundBtn.setAttribute('aria-label', soundOn ? 'Couper le son de la bande-annonce' : 'Activer le son de la bande-annonce'); };
+  paintSound();
+  const hero = h('section', { class: 'hero', style: { '--rotate': `${ROTATE_MS}ms` } }, bg, body, many ? arrow(-1) : null, many ? arrow(1) : null, soundBtn, many ? dots : null);
   const layers = new Map();
   let shown = null, heroIdx = 0, timer = null, keyboardInRows = false, hovering = false;
+
+  // La bande-annonce couvre toute l'affiche (rognée comme une image en « cover »)
+  const fit = () => {
+    if (!trailer) return;
+    const w = hero.clientWidth, hh = hero.clientHeight;
+    const W = Math.max(w, (hh * 16) / 9) * 1.18;
+    Object.assign(trailer.el.style, { width: `${W}px`, height: `${(W * 9) / 16}px` });
+  };
+  const ro = new ResizeObserver(fit);
+  ro.observe(hero);
+  function stopTrailer() {
+    clearTimeout(trailerTimer);
+    if (trailer) { trailer.destroy(); trailer = null; }
+    trailerOn = false;
+    hero.classList.remove('trailer-on');
+    soundBtn.hidden = true;
+  }
+  function startTrailer(item) {
+    stopTrailer();
+    if (!item.trailer || !heroTrailers()) return;
+    trailerTimer = setTimeout(() => {
+      if (shown !== item || document.hidden) return;
+      const t = trailerPlayer(item.trailer, {
+        mute: !soundOn,
+        onPlaying: () => { if (trailer !== t) return; trailerOn = true; hero.classList.add('trailer-on'); soundBtn.hidden = false; restart(); },
+        // Fin de la bande-annonce : on passe au titre suivant, qui lance la sienne
+        onEnd: () => { if (trailer !== t) return; stopTrailer(); if (many) { goTo(heroIdx + 1); restart(); } },
+        onError: () => { if (trailer === t) stopTrailer(); },
+      });
+      trailer = t;
+      t.el.classList.add('hero-yt');
+      bg.append(t.el);
+      fit();
+    }, 2200);
+  }
 
   function setBackground(item) {
     const key = item.backdrop ? item.backdrop : `th:${item.id}`;
@@ -38,6 +79,7 @@ export async function render(main) {
   function show(item) {
     if (shown && shown.id === item.id) return;
     shown = item;
+    startTrailer(item);
     const hadFocus = body.contains(document.activeElement);
     setBackground(item);
     tintFrom(img(item.backdrop || item.poster));
@@ -76,13 +118,14 @@ export async function render(main) {
     const dot = dots.children[heroIdx];
     if (dot) { dot.classList.remove('on'); void dot.offsetWidth; dot.classList.add('on'); }
     if (!many || paused()) return;
-    timer = setTimeout(() => { goTo(heroIdx + 1); restart(); }, ROTATE_MS);
+    // Pendant une bande-annonce, on attend sa fin (au plus 3 minutes)
+    timer = setTimeout(() => { goTo(heroIdx + 1); restart(); }, trailerOn ? 180000 : ROTATE_MS);
   }
 
   // À la télécommande, la carte sélectionnée éclaire l'affiche (comme un projecteur qui suit le regard)
   const onFocus = (item) => {
     if (item.type === 'episode' || !document.documentElement.classList.contains('keys')) return;
-    keyboardInRows = true; restart();
+    keyboardInRows = true; stopTrailer(); restart();
     setBackground(item);
     tintFrom(img(item.backdrop || item.poster || item.still));
   };
@@ -92,7 +135,7 @@ export async function render(main) {
   hero.addEventListener('focusin', () => { if (shown) setBackground(shown); });
   hero.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') { hovering = true; restart(); } });
   hero.addEventListener('pointerleave', () => { hovering = false; restart(); });
-  const onVis = () => restart();
+  const onVis = () => { if (trailer) (document.hidden ? trailer.pause() : trailer.play()); restart(); };
   document.addEventListener('visibilitychange', onVis);
 
   main.classList.add('home');
@@ -110,7 +153,7 @@ export async function render(main) {
     tx = null;
   });
 
-  return { destroy: () => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVis); } };
+  return { destroy: () => { clearTimeout(timer); stopTrailer(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); } };
 }
 
 export async function playItem(item) {

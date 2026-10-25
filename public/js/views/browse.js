@@ -1,7 +1,7 @@
 // Films, Séries, Animés, Clips, Ma liste : grille avec filtres (vu / non vu / en cours), tris et genres
 import { api } from '../api.js';
 import { h, icon } from '../ui.js';
-import { card, playPath } from '../components.js';
+import { card, playPath, RATING_SOURCES } from '../components.js';
 import { setQueue } from '../queue.js';
 import { go } from '../app.js';
 
@@ -11,9 +11,16 @@ const SORTS = [
   ['added', 'Date d’ajout', (a, b) => (b.added || 0) - (a.added || 0)],
   ['released', 'Date de sortie', (a, b) => rel(b).localeCompare(rel(a))],
   ['az', 'Titre (A à Z)', (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base' })],
-  ['vote', 'Note', (a, b) => (b.vote || 0) - (a.vote || 0)],
+  ['score', 'Note moyenne', (a, b) => norm(b) - norm(a)],
   ['popular', 'Popularité', (a, b) => (b.popularity || 0) - (a.popularity || 0) || (b.vote || 0) - (a.vote || 0)],
 ];
+// Note d'un titre pour une source (sur 100), ou moyenne de toutes les sources
+const norm = (i, src) => {
+  const r = i.ratings || {};
+  if (!src) return r.score || (i.vote ? i.vote * 10 : 0);
+  const x = r[src];
+  return x && x.v ? (x.v / x.max) * 100 : -1;
+};
 const STATUS = [['all', 'Tous'], ['unseen', 'Non vus'], ['progress', 'En cours'], ['seen', 'Déjà vus']];
 
 const store = {
@@ -24,7 +31,11 @@ const store = {
 export async function render(main, { kind }) {
   const items = kind === 'mylist' ? await api('/api/mylist') : await api(`/api/library?type=${kind}`);
   const key = `vn_filters_${kind}`;
+  // Tri par note de chaque site, seulement pour les sites qui ont noté au moins un titre ici
+  const sorts = [...SORTS, ...RATING_SOURCES.filter(([k]) => items.some((i) => i.ratings && i.ratings[k])).map(([k, label]) => [`r-${k}`, `Note ${label}`, (a, b) => norm(b, k) - norm(a, k)])];
   const f = { sort: kind === 'mylist' ? null : 'added', status: 'all', genre: '', ...store.get(key, {}) };
+  if (f.sort === 'vote') f.sort = 'score';
+  if (f.sort && !sorts.some((x) => x[0] === f.sort)) f.sort = 'added';
   const save = () => store.set(key, f);
   const isClip = kind === 'clip';
 
@@ -39,7 +50,7 @@ export async function render(main, { kind }) {
 
   const paint = () => {
     let list = items.filter((i) => (f.status === 'all' || i.status === f.status) && (!f.genre || (i.genres || []).includes(f.genre)));
-    if (f.sort) list.sort(SORTS.find((s) => s[0] === f.sort)[2]);
+    if (f.sort) list.sort(sorts.find((s) => s[0] === f.sort)[2]);
     shown = list;
     grid.replaceChildren(...list.map((i) => card(i, { poster: !isClip, queue: isClip ? () => shown : null })));
     if (playAll) playAll.hidden = list.length < 1;
@@ -63,7 +74,7 @@ export async function render(main, { kind }) {
   }));
   const sortSel = f.sort ? h('select', { class: 'input pill-select f', id: `sort-${kind}`, 'aria-label': 'Trier par',
     onchange: (e) => { f.sort = e.target.value; save(); paint(); } },
-  SORTS.filter(([id]) => !isClip || ['added', 'az'].includes(id)).map(([id, label]) => h('option', { value: id, selected: id === f.sort }, `Trier : ${label}`))) : null;
+  sorts.filter(([id]) => !isClip || ['added', 'az'].includes(id)).map(([id, label]) => h('option', { value: id, selected: id === f.sort }, `Trier : ${label}`))) : null;
   const genreSel = genres.length > 1 ? h('select', { class: 'input pill-select f', id: `genre-${kind}`, 'aria-label': 'Genre',
     onchange: (e) => { f.genre = e.target.value; save(); paint(); } },
   h('option', { value: '' }, 'Tous les genres'), genres.map((g) => h('option', { value: g, selected: g === f.genre }, g))) : null;

@@ -1,9 +1,10 @@
 // Réglages : mon profil (tous) + administration du serveur (administrateur)
-import { api, auth, preferredQuality, setPreferredQuality, prefs } from '../api.js';
+import { api, auth, preferredQuality, setPreferredQuality, prefs, hoverMode, heroTrailers } from '../api.js';
 import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet } from '../ui.js';
 import { state, switchProfile, go } from '../app.js';
 import { openSourceWizard } from './source-wizard.js';
 import { NAV_ITEMS, menuPrefs, saveMenuPrefs, resetMenuPrefs, labelOf, iconOf } from '../menu.js';
+import { PLANETS, currentPlanet, setPlanet, planetMarkup } from '../themes.js';
 
 const AGES = [['', 'Aucune limite'], ['3', '3 ans et +'], ['7', '7 ans et +'], ['10', '10 ans et +'], ['12', '12 ans et +'], ['16', '16 ans et +']];
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
@@ -53,8 +54,11 @@ export async function render(main, { query } = {}) {
       { onchange: (e) => { setPreferredQuality(e.target.value); toast('Qualité enregistrée pour cet appareil'); } })),
     h('h3', { class: 'box-sub' }, 'Lecture sur cet appareil'),
     prefSwitch('fullscreenOnPlay', 'Plein écran au lancement d’une vidéo'),
-    prefSwitch('hoverPreview', 'Aperçu vidéo au survol d’une affiche'),
-    prefSwitch('hoverSound', 'Aperçu avec le son'),
+    field('Au survol d’une affiche', select([['trailer', 'Bande-annonce (sinon un extrait)'], ['extract', 'Extrait de la vidéo'], ['off', 'Rien']], hoverMode(),
+      { onchange: (e) => { prefs.set('hoverMode', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
+    prefSwitch('hoverSound', 'Aperçus et bandes-annonces avec le son'),
+    h('label', { class: 'switch' }, h('span', {}, 'Bandes-annonces dans l’affiche d’accueil'),
+      h('input', { type: 'checkbox', class: 'f', checked: heroTrailers(), onchange: (e) => { prefs.set('heroTrailer', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
     prefSwitch('autoSkip', 'Passer automatiquement les génériques (opening, ending)'),
     h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
       h('button', { class: 'btn btn-small f', onclick: () => editProfile(me, true, () => window.dispatchEvent(new CustomEvent('vn:reboot'))) }, 'Modifier nom, couleur et code PIN'),
@@ -68,9 +72,14 @@ export async function render(main, { query } = {}) {
   }
 
   const menuBox = menuEditor(me);
+  const themeBox = themeEditor();
   page.append(h('div', { class: 'page-head' }, h('h1', {}, 'Réglages')));
-  const toMenu = () => { if (query && query.get('section') === 'menu') requestAnimationFrame(() => menuBox.scrollIntoView({ block: 'start' })); };
-  if (!me.isAdmin) { page.append(h('div', { class: 'admin-grid' }, menuBox, myBox)); toMenu(); return; }
+  const toMenu = () => {
+    const sec = query && query.get('section');
+    if (!sec) return;
+    requestAnimationFrame(() => { const el = sec === 'menu' ? menuBox : document.getElementById(sec); if (el) el.scrollIntoView({ block: 'start' }); });
+  };
+  if (!me.isAdmin) { page.append(h('div', { class: 'admin-grid' }, themeBox, menuBox, myBox)); toMenu(); return; }
 
   // ----------------------------------------------------------- administration
   const grid = h('div', { class: 'admin-grid' });
@@ -80,7 +89,7 @@ export async function render(main, { query } = {}) {
     let a;
     try { a = await api('/api/admin'); } catch (e) { grid.replaceChildren(h('p', { class: 'error-text' }, e.message)); return; }
     const first = !grid.children.length;
-    grid.replaceChildren(libraryBox(a), myBox, menuBox, playbackBox(a), profilesBox(a), metadataBox(a), serverBox(a), devicesBox(a));
+    grid.replaceChildren(libraryBox(a), myBox, themeBox, menuBox, playbackBox(a), profilesBox(a), metadataBox(a), ratingsBox(a), seerrBox(a), serverBox(a), devicesBox(a));
     if (first) toMenu();
     clearTimeout(timer);
     const delay = a.scan.running || a.sessions.length ? 3000 : 15000;
@@ -183,9 +192,62 @@ export async function render(main, { query } = {}) {
         h('input', { type: 'checkbox', class: 'f', checked: a.settings.kidsAllowUnrated, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { kidsAllowUnrated: e.target.checked } }); toast('Enregistré'); } })));
   }
 
+  // Notes des sites : clés facultatives (OMDb pour IMDb / Rotten Tomatoes / Metacritic, Simkl)
+  function ratingsBox(a) {
+    const link = (href, text) => h('a', { href, target: '_blank', rel: 'noopener', style: { textDecoration: 'underline' } }, text);
+    const omdb = h('input', { class: 'input', placeholder: a.settings.omdbConfigured ? 'Clé enregistrée (laisser vide pour conserver)' : 'Clé OMDb' });
+    const simkl = h('input', { class: 'input', placeholder: a.settings.simklConfigured ? 'Identifiant enregistré (laisser vide pour conserver)' : 'Client ID Simkl' });
+    const err = h('p', { class: 'error-text' });
+    const save = async (body, btn) => {
+      err.textContent = ''; btn.disabled = true;
+      try { await api('/api/admin/settings', { method: 'PUT', body }); toast('Enregistré : les notes se mettent à jour en arrière-plan'); refresh(); }
+      catch (e) { err.textContent = e.message; } finally { btn.disabled = false; }
+    };
+    return h('section', { class: 'box', id: 'ratings' },
+      h('h2', {}, 'Notes des sites'),
+      h('p', {}, 'Venus affiche les notes sur chaque fiche et permet de trier par note. AniList et MyAnimeList (animés) fonctionnent sans clé ; TMDB utilise la clé des affiches.'),
+      h('div', { class: 'src-list' },
+        h('span', { class: 'src ok' }, 'AniList'), h('span', { class: 'src ok' }, 'MyAnimeList'),
+        h('span', { class: `src${a.settings.tmdbConfigured ? ' ok' : ''}` }, 'TMDB'),
+        h('span', { class: `src${a.settings.omdbConfigured ? ' ok' : ''}` }, 'IMDb'), h('span', { class: `src${a.settings.omdbConfigured ? ' ok' : ''}` }, 'Rotten Tomatoes'),
+        h('span', { class: `src${a.settings.omdbConfigured ? ' ok' : ''}` }, 'Metacritic'), h('span', { class: `src${a.settings.simklConfigured ? ' ok' : ''}` }, 'Simkl'),
+        h('span', { class: 'src link', title: 'SensCritique n’a pas d’API publique : un lien vers sa page est proposé sur chaque fiche' }, 'SensCritique (lien)')),
+      field('Clé OMDb : notes IMDb, Rotten Tomatoes et Metacritic', omdb, h('span', {}, 'Gratuite (1 000 titres par jour) sur ', link('https://www.omdbapi.com/apikey.aspx', 'omdbapi.com'), '.')),
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+        h('button', { class: 'btn btn-small f', onclick: (e) => omdb.value.trim() && save({ omdbKey: omdb.value.trim() }, e.currentTarget) }, 'Enregistrer'),
+        a.settings.omdbConfigured ? h('button', { class: 'btn btn-small btn-ghost f', onclick: (e) => save({ omdbKey: '' }, e.currentTarget) }, 'Retirer') : null),
+      field('Client ID Simkl', simkl, h('span', {}, 'Gratuit : créez une application sur ', link('https://simkl.com/settings/developer/', 'simkl.com/settings/developer'), '.')),
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+        h('button', { class: 'btn btn-small f', onclick: (e) => simkl.value.trim() && save({ simklClientId: simkl.value.trim() }, e.currentTarget) }, 'Enregistrer'),
+        a.settings.simklConfigured ? h('button', { class: 'btn btn-small btn-ghost f', onclick: (e) => save({ simklClientId: '' }, e.currentTarget) }, 'Retirer') : null),
+      err,
+      h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { const r = await api('/api/admin/ratings/refresh', { method: 'POST' }); toast(`${r.queued} titre(s) en cours de mise à jour`); } }, 'Mettre à jour toutes les notes'));
+  }
+
+  // Seerr (Overseerr / Jellyseerr) : demander un titre depuis Nouveautés, Radarr / Sonarr le téléchargent
+  function seerrBox(a) {
+    const url = h('input', { class: 'input', id: 'seerr-url', placeholder: 'http://192.168.1.20:5055', value: a.settings.seerrUrl || '', inputmode: 'url', autocomplete: 'off' });
+    const key = h('input', { class: 'input', id: 'seerr-key', placeholder: a.settings.seerrConfigured ? 'Clé enregistrée (laisser vide pour conserver)' : 'Clé API (Réglages → Général dans Seerr)', autocomplete: 'off' });
+    const err = h('p', { class: 'error-text' });
+    return h('section', { class: 'box', id: 'seerr' },
+      h('h2', {}, 'Seerr : demandes de téléchargement'),
+      h('p', {}, a.settings.seerrConfigured
+        ? 'Seerr est relié : dans Nouveautés, le bouton « Demander » lance la recherche dans Radarr / Sonarr, et la progression du téléchargement s’affiche. Le titre arrive ensuite dans Venus tout seul.'
+        : 'Reliez Seerr (Overseerr ou Jellyseerr) pour demander un film, une série ou un animé depuis la page Nouveautés : la recherche et le téléchargement se lancent automatiquement.'),
+      a.settings.seerrConfigured ? h('div', { class: 'auto-pill', style: { marginBottom: '12px' } }, h('span', { class: 'dot' }), 'Relié') : null,
+      field('Adresse de Seerr', url), field('Clé API', key), err,
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+        h('button', { class: 'btn btn-small f', onclick: async (e) => {
+          const btn = e.currentTarget; err.textContent = ''; btn.disabled = true; btn.textContent = 'Test de la connexion…';
+          try { await api('/api/admin/settings', { method: 'PUT', body: { seerrUrl: url.value.trim(), ...(key.value.trim() ? { seerrKey: key.value.trim() } : {}) } }); toast('Seerr relié'); refresh(); }
+          catch (e2) { err.textContent = e2.message; btn.disabled = false; btn.textContent = 'Tester et enregistrer'; }
+        } }, 'Tester et enregistrer'),
+        a.settings.seerrConfigured ? h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { await api('/api/admin/settings', { method: 'PUT', body: { seerrUrl: '', seerrKey: '' } }); toast('Seerr retiré'); refresh(); } }, 'Retirer') : null));
+  }
+
   function metadataBox(a) {
     const key = h('input', { class: 'input', placeholder: a.settings.tmdbConfigured ? 'Clé enregistrée (laisser vide pour conserver)' : 'Collez votre clé API ou jeton TMDB' });
-    return h('section', { class: 'box' },
+    return h('section', { class: 'box', id: 'sources' },
       h('h2', {}, 'Affiches et résumés'),
       h('p', {}, a.settings.tmdbConfigured ? 'TMDB est connecté : affiches, résumés en français et classifications d’âge sont récupérés automatiquement.'
         : 'Ajoutez une clé TMDB gratuite pour obtenir les affiches et résumés en français, et activer le contrôle parental automatique.'),
@@ -308,6 +370,23 @@ function menuEditor(me) {
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
         h('button', { class: 'btn btn-small btn-ghost f', onclick: () => { resetMenuPrefs(me.id); paint(); toast('Menu d’origine rétabli'); } }, 'Rétablir le menu d’origine')));
     if (focusId) { const b = box.querySelector(`[data-id="${focusId}"][data-dir="${focusDir}"]`); (b && !b.disabled ? b : box.querySelector(`[data-id="${focusId}"]`))?.focus(); }
+  };
+  paint();
+  return box;
+}
+
+// Thème : une planète du système solaire (couleurs, nom, logo qui tourne)
+function themeEditor() {
+  const box = h('section', { class: 'box' });
+  const paint = () => {
+    const cur = currentPlanet();
+    const markOf = (id) => { const t = document.createElement('template'); t.innerHTML = planetMarkup(id).trim(); return t.content.firstChild; };
+    box.replaceChildren(h('h2', {}, 'Thème'),
+      h('p', {}, 'Choisissez votre planète : les couleurs, le nom et le logo de l’application changent sur cet appareil.'),
+      h('div', { class: 'theme-grid', role: 'radiogroup', 'aria-label': 'Planète' }, Object.entries(PLANETS).map(([id, t]) => h('button', {
+        class: `theme-opt f${id === cur ? ' on' : ''}`, role: 'radio', 'aria-checked': String(id === cur),
+        onclick: () => { setPlanet(id); paint(); toast(`Bienvenue sur ${t.name}`); box.querySelector(`[data-id="${id}"]`)?.focus(); }, 'data-id': id,
+      }, markOf(id), t.name))));
   };
   paint();
   return box;

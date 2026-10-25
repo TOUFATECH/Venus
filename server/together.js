@@ -135,8 +135,8 @@ together.post('/api/remote/:code', async (ctx) => {
   const r = remotes.get(String(ctx.params.code));
   if (!r) throw new HttpError(404, 'Écran déconnecté');
   const b = await readBody(ctx.req);
-  const ALLOWED = ['up', 'down', 'left', 'right', 'ok', 'back', 'home', 'playpause', 'rew', 'fwd', 'text', 'open', 'play', 'hello'];
+  const ALLOWED = ['up', 'down', 'left', 'right', 'ok', 'back', 'home', 'playpause', 'rew', 'fwd', 'text', 'open', 'play', 'hello', 'digit', 'tv'];
   if (!ALLOWED.includes(b.cmd)) throw new HttpError(400, 'Commande inconnue');
-  r.send('cmd', { cmd: b.cmd, text: typeof b.text === 'string' ? b.text.slice(0, 120) : undefined, id: Number(b.id) || undefined });
+  r.send('cmd', { cmd: b.cmd, text: typeof b.text === 'string' ? b.text.slice(0, 120) : undefined, id: Number(b.id) || undefined, digit: /^[0-9]$/.test(String(b.digit)) ? String(b.digit) : undefined });
   sendJson(ctx.res, { ok: true });
 });

@@ -3,6 +3,8 @@ import { api, auth } from './api.js';
 import { h, icon, avatar, toast, logoMark, brand, sheet } from './ui.js';
 import { initNav, focusFirst } from './nav.js';
 import { menuItems, menuPrefs, labelOf, iconOf, dayPart } from './menu.js';
+import { applyTheme, currentPlanet, planet } from './themes.js';
+applyTheme();
 
 export const state = { status: null, profile: null, categories: null };
 const app = document.getElementById('app');
@@ -16,6 +18,7 @@ const ROUTES = [
   [/^\/animes$/, () => import('./views/browse.js'), { kind: 'anime' }],
   [/^\/clips$/, () => import('./views/browse.js'), { kind: 'clip' }],
   [/^\/tv$/, () => import('./views/tv.js')],
+  [/^\/nouveautes$/, () => import('./views/nouveautes.js')],
   [/^\/ajouter$/, () => import('./views/add.js')],
   [/^\/recherche$/, () => import('./views/search.js')],
   [/^\/titre\/(\d+)$/, () => import('./views/details.js'), (m) => ({ id: Number(m[1]) })],
@@ -108,7 +111,7 @@ function shell(path) {
 
 // La coque (menu) reste en place d'une page à l'autre : seul le contenu change, sans clignotement
 let chrome = null;
-const shellSig = () => JSON.stringify([state.profile.id, state.profile.isAdmin, state.profile.name, state.profile.avatar, state.categories, menuPrefs(state.profile.id), dayPart()]);
+const shellSig = () => JSON.stringify([currentPlanet(), state.profile.id, state.profile.isAdmin, state.profile.name, state.profile.avatar, state.categories, menuPrefs(state.profile.id), dayPart()]);
 function ensureShell(path) {
   const sig = shellSig();
   if (!chrome || chrome.sig !== sig || !app.contains(chrome.rail)) {
@@ -123,6 +126,18 @@ function ensureShell(path) {
   return chrome;
 }
 function dropShell() { if (chrome) { chrome.cleanup(); chrome = null; } }
+// Nouveau thème : logos, nom et menu redessinés sur place
+window.addEventListener('vn:theme', () => {
+  document.querySelectorAll('svg.mark').forEach((m) => m.replaceWith(logoMark()));
+  document.querySelectorAll('.brand-name').forEach((e) => { e.textContent = planet().name.toUpperCase(); });
+  setTitle();
+  window.dispatchEvent(new CustomEvent('vn:menu'));
+});
+// Nom du serveur dans l'onglet : celui choisi par l'administrateur, sinon le nom de la planète
+export function setTitle(prefix) {
+  const custom = state.status && state.status.name && state.status.name !== 'Venus' ? state.status.name : planet().name;
+  document.title = prefix ? `${prefix} — ${custom}` : custom;
+}
 window.addEventListener('vn:menu', () => {
   if (!chrome || !state.profile) return;
   const { path } = parseHash();
@@ -305,7 +320,7 @@ async function boot() {
     hideBoot();
     return;
   }
-  document.title = state.status.name || 'Venus';
+  setTitle();
   if (!state.status.setup) return showGate('setup');
   if (!state.status.authenticated) return showGate('login');
   if (!state.status.profile) return showGate('profiles');

@@ -1,8 +1,9 @@
 // Fiche d'un film ou d'une série
 import { api } from '../api.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince } from '../ui.js';
-import { row, playPath, metaLine, frameImage, framePoster } from '../components.js';
-import { go, state } from '../app.js';
+import { row, playPath, metaLine, frameImage, framePoster, ratingChips } from '../components.js';
+import { trailerUrl } from '../trailer.js';
+import { go, state, setTitle } from '../app.js';
 import { focusEl } from '../nav.js';
 import { tintFrom } from '../ambiance.js';
 
@@ -10,7 +11,7 @@ export async function render(main, { id }) {
   const d = await api(`/api/items/${id}`);
   const isShow = d.type === 'show';
   tintFrom(img(d.backdrop || d.poster));
-  document.title = `${d.title} — Venus`;
+  setTitle(d.title);
 
   const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : frameImage(d.id, d.title, { fade: false }));
   const posterEl = h('div', { class: 'details-poster' }, d.poster ? picture(img(d.poster), d.title, { lazy: false }) : framePoster(d));
@@ -36,6 +37,9 @@ export async function render(main, { id }) {
     toast(r.inList ? 'Ajouté à ma liste' : 'Retiré de ma liste');
   };
   actions.append(listBtn);
+  if (d.trailer) {
+    actions.append(h('button', { class: 'btn btn-ghost f', onclick: () => openTrailer(d) }, icon('play'), 'Bande-annonce'));
+  }
   const allWatched = isShow ? d.seasons.every((s) => s.episodes.every((e) => e.progress && e.progress.watched)) : prog && prog.watched;
   actions.append(h('button', { class: 'btn btn-ghost btn-small f', style: { alignSelf: 'center' }, onclick: async () => {
     await api(`/api/items/${d.id}/watched`, { method: 'POST', body: { watched: !allWatched } });
@@ -64,6 +68,7 @@ export async function render(main, { id }) {
   const mainInfo = h('div', { class: 'details-main' },
     d.logo ? h('img', { class: 'hero-logo', src: img(d.logo), alt: d.title }) : h('h1', { class: 'hero-title' }, d.title),
     h('div', { class: 'meta' }, meta),
+    ratingChips(d.ratings, d.links),
     d.tagline ? h('p', { style: { fontStyle: 'italic', color: 'var(--mist)', margin: '0 0 10px' } }, d.tagline) : null,
     d.overview ? h('p', { class: 'hero-overview' }, d.overview) : null,
     actions, tech, facts,
@@ -149,4 +154,10 @@ export function fixMatch(item) {
     list);
   const s = sheet('Corriger l’identification', form);
   search();
+}
+
+// Bande-annonce avec le son, dans une grande fenêtre
+function openTrailer(d) {
+  const frame = h('iframe', { class: 'trailer-frame', src: trailerUrl(d.trailer), title: `Bande-annonce de ${d.title}`, allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin' });
+  sheet(`Bande-annonce : ${d.title}`, h('div', { class: 'trailer-box' }, frame), { wide: true, onClose: () => frame.remove() });
 }
