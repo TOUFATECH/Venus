@@ -1,7 +1,7 @@
 // Accueil : grande affiche + rangées. L'affiche suit la carte sélectionnée (télécommande ou souris).
 import { api } from '../api.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime } from '../ui.js';
-import { row, playPath, metaLine } from '../components.js';
+import { row, playPath, metaLine, frameImage } from '../components.js';
 import { go, state, currentPath } from '../app.js';
 import { tintFrom } from '../ambiance.js';
 
@@ -9,18 +9,23 @@ export async function render(main) {
   const data = await api('/api/home');
   if (data.empty) return renderEmpty(main, data);
 
+  const ROTATE_MS = 8000;
   const bg = h('div', { class: 'hero-bg' });
   const body = h('div', { class: 'hero-body' });
-  const dots = h('div', { class: 'hero-dots' }, data.hero.map(() => h('span')));
-  const hero = h('section', { class: 'hero' }, bg, body, data.hero.length > 1 ? dots : null);
+  const many = data.hero.length > 1;
+  const dots = h('div', { class: 'hero-dots', role: 'tablist', 'aria-label': 'À la une' },
+    data.hero.map((it, i) => h('button', { type: 'button', role: 'tab', tabindex: '-1', 'aria-label': it.title, onclick: () => { goTo(i); restart(); } }, h('i'))));
+  const arrow = (dir) => h('button', { type: 'button', class: `hero-arrow ${dir < 0 ? 'prev' : 'next'}`, tabindex: '-1', 'aria-label': dir < 0 ? 'Titre précédent' : 'Titre suivant',
+    onclick: () => { goTo(heroIdx + dir); restart(); } }, icon(dir < 0 ? 'back' : 'fwd'));
+  const hero = h('section', { class: 'hero', style: { '--rotate': `${ROTATE_MS}ms` } }, bg, body, many ? arrow(-1) : null, many ? arrow(1) : null, many ? dots : null);
   const layers = new Map();
-  let shown = null, heroIdx = 0, timer = null, focusedInRows = false;
+  let shown = null, heroIdx = 0, timer = null, keyboardInRows = false, hovering = false;
 
   function setBackground(item) {
-    const key = item.backdrop || `ph:${item.title}`;
+    const key = item.backdrop ? item.backdrop : `th:${item.id}`;
     let layer = layers.get(key);
     if (!layer) {
-      layer = item.backdrop ? picture(img(item.backdrop), item.title, { lazy: false }) : placeholder(item.title);
+      layer = item.backdrop ? picture(img(item.backdrop), item.title, { lazy: false }) : frameImage(item.id, item.title);
       layers.set(key, layer);
       bg.append(layer);
     }
@@ -29,16 +34,17 @@ export async function render(main) {
     });
   }
 
-  function show(item, { withActions = true } = {}) {
+  function show(item) {
     if (shown && shown.id === item.id) return;
     shown = item;
+    const hadFocus = body.contains(document.activeElement);
     setBackground(item);
     tintFrom(img(item.backdrop || item.poster));
     const isShow = item.type === 'show';
     const meta = metaLine(item, [
       ageBadge(item),
       item.type === 'movie' && item.runtime ? h('span', {}, fmtRuntime(item.runtime)) : null,
-      isShow ? h('span', {}, 'Série') : null,
+      isShow ? h('span', {}, item.category === 'anime' ? 'Animé' : 'Série') : null,
       item.genres && item.genres.length ? h('span', {}, item.genres.slice(0, 2).join(', ')) : null,
     ].filter(Boolean));
     const playBtn = h('button', { class: 'btn btn-play f', 'data-autofocus': true, onclick: () => playItem(item) }, icon('play'), 'Lecture');
@@ -46,48 +52,64 @@ export async function render(main) {
       item.logo ? h('img', { class: 'hero-logo', src: img(item.logo), alt: item.title }) : h('h1', { class: 'hero-title' }, item.title),
       h('div', { class: 'meta' }, meta),
       item.overview ? h('p', { class: 'hero-overview' }, item.overview) : null,
-      withActions ? h('div', { class: 'actions' }, playBtn,
+      h('div', { class: 'actions' }, playBtn,
         h('button', { class: 'btn btn-ghost f', onclick: () => go(`/titre/${item.id}`) }, icon('info'), 'Plus d’infos'),
-        h('button', { class: 'btn btn-ghost btn-tonight f', onclick: () => go('/cesoir') }, icon('moon'), 'Que regarder ce soir ?')) : null,
+        h('button', { class: 'btn btn-ghost btn-tonight f', onclick: () => go('/cesoir') }, icon('moon'), 'Que regarder ce soir ?')),
     ].filter(Boolean));
+    body.classList.remove('swap'); void body.offsetWidth; body.classList.add('swap');
+    if (hadFocus) playBtn.focus({ preventScroll: true }); // la télécommande ne perd pas sa place
   }
 
-  function rotate(step = 1) {
+  function goTo(i) {
     if (!data.hero.length) return;
-    heroIdx = (heroIdx + step + data.hero.length) % data.hero.length;
-    [...dots.children].forEach((d, i) => d.classList.toggle('on', i === heroIdx));
+    heroIdx = (i + data.hero.length) % data.hero.length;
+    [...dots.children].forEach((d, j) => { d.classList.toggle('on', j === heroIdx); d.setAttribute('aria-selected', String(j === heroIdx)); });
     show(data.hero[heroIdx]);
   }
-  const startTimer = () => { clearInterval(timer); timer = setInterval(() => { if (!focusedInRows && !hero.contains(document.activeElement)) rotate(); }, 9000); };
+  // Défilement automatique, en pause quand la souris est sur l'affiche, quand on navigue dans les rangées
+  // à la télécommande, ou quand l'onglet est caché
+  const paused = () => hovering || keyboardInRows || document.hidden;
+  function restart() {
+    clearTimeout(timer);
+    hero.classList.toggle('paused', paused());
+    const dot = dots.children[heroIdx];
+    if (dot) { dot.classList.remove('on'); void dot.offsetWidth; dot.classList.add('on'); }
+    if (!many || paused()) return;
+    timer = setTimeout(() => { goTo(heroIdx + 1); restart(); }, ROTATE_MS);
+  }
 
-  // Quand une carte est sélectionnée, l'affiche se met à jour (comme un projecteur qui suit le regard)
+  // À la télécommande, la carte sélectionnée éclaire l'affiche (comme un projecteur qui suit le regard)
   const onFocus = (item) => {
-    if (item.type === 'episode') return;
-    focusedInRows = true;
+    if (item.type === 'episode' || !document.documentElement.classList.contains('keys')) return;
+    keyboardInRows = true; restart();
     setBackground(item);
     tintFrom(img(item.backdrop || item.poster || item.still));
   };
 
   const rows = h('div', { class: 'rows' }, data.rows.map((r) => row(r, { onFocus })));
-  rows.addEventListener('focusout', () => { focusedInRows = false; });
+  rows.addEventListener('focusout', (e) => { if (!rows.contains(e.relatedTarget)) { keyboardInRows = false; restart(); } });
   hero.addEventListener('focusin', () => { if (shown) setBackground(shown); });
+  hero.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') { hovering = true; restart(); } });
+  hero.addEventListener('pointerleave', () => { hovering = false; restart(); });
+  const onVis = () => restart();
+  document.addEventListener('visibilitychange', onVis);
 
   main.classList.add('home');
   main.append(hero, rows);
-  if (data.hero.length) { rotate(0); startTimer(); }
+  if (data.hero.length) { goTo(0); restart(); }
   else hero.remove();
 
-  // Balayage horizontal du héros sur mobile
-  let tx = null;
-  hero.addEventListener('touchstart', (e) => { tx = e.touches[0].clientX; }, { passive: true });
+  // Balayage horizontal de l'affiche au doigt
+  let tx = null, ty = null;
+  hero.addEventListener('touchstart', (e) => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
   hero.addEventListener('touchend', (e) => {
     if (tx == null) return;
-    const dx = e.changedTouches[0].clientX - tx;
-    if (Math.abs(dx) > 50) { rotate(dx < 0 ? 1 : -1); startTimer(); }
+    const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
+    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) { goTo(heroIdx + (dx < 0 ? 1 : -1)); restart(); }
     tx = null;
   });
 
-  return { destroy: () => clearInterval(timer) };
+  return { destroy: () => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVis); } };
 }
 
 export async function playItem(item) {

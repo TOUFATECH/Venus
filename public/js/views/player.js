@@ -1,11 +1,12 @@
 // Lecteur vidéo plein écran : lecture directe ou HLS, sous-titres, pistes, qualité, épisode suivant, Chromecast, AirPlay
-import { api, auth, deviceCaps, castCaps, preferredQuality, setPreferredQuality } from '../api.js';
+import { api, auth, deviceCaps, castCaps, preferredQuality, setPreferredQuality, prefs } from '../api.js';
 import { h, icon, sheet, fmtTime, langName, toast, img, isBack } from '../ui.js';
 import { go, back } from '../app.js';
 import { focusEl } from '../nav.js';
 import { castSupported, loadCast, castContext, castMedia, remote } from '../cast.js';
 import { ambilight, ambianceOn } from '../ambiance.js';
 import { joinParty, partyPanel, showInvite, floatReaction } from '../party.js';
+import { scrollArrows } from '../components.js';
 
 let hlsLib = null;
 function loadHls() {
@@ -69,30 +70,43 @@ export async function render(main, { id, query }) {
   const remEl = h('span', {}, '');
   const tracksBtn = h('button', { class: 'p-icon f', 'aria-label': 'Audio et sous-titres', onclick: () => openTracks() }, icon('subs'));
   const qualityBtn = h('button', { class: 'btn btn-ghost btn-small f', onclick: () => openQuality() }, 'Auto');
-  const nextBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, onclick: () => playNext() }, icon('next'), 'Épisode suivant');
+  const nextBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, onclick: () => playNext(), 'aria-label': 'Épisode suivant' }, icon('next'), h('span', { class: 'lbl' }, 'Épisode suivant'));
   const chPrev = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Chaîne précédente', onclick: () => zap(-1) }, icon('up'));
   const chNext = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Chaîne suivante', onclick: () => zap(1) }, icon('down'));
   const liveTag = h('span', { class: 'live-tag', hidden: true }, 'En direct');
   const castBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Diffuser sur un Chromecast', onclick: () => startCast() }, icon('cast'));
   const airBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'AirPlay', onclick: () => video.webkitShowPlaybackTargetPicker && video.webkitShowPlaybackTargetPicker() }, icon('airplay'));
   const fsBtn = h('button', { class: 'p-icon f', 'aria-label': 'Plein écran', onclick: () => toggleFullscreen() }, icon('fs'));
+  // Volume : bouton muet + curseur (mémorisés sur cet appareil)
+  const muteBtn = h('button', { class: 'p-icon f', 'aria-label': 'Couper le son', onclick: () => setMuted(!video.muted) }, icon('vol'));
+  const volRange = h('input', { class: 'p-volrange', type: 'range', min: '0', max: '1', step: '0.05', 'aria-label': 'Volume' });
+  volRange.addEventListener('input', () => { setVolume(Number(volRange.value)); showUi(); });
+  volRange.addEventListener('keydown', (e) => { if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); e.stopPropagation(); setVolume(video.volume + (e.key === 'ArrowUp' ? 0.1 : -0.1)); } });
+  const volBox = h('div', { class: 'p-vol' }, muteBtn, volRange);
+  const volOsd = h('div', { class: 'p-osd', hidden: true });
+  const epsBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, onclick: () => openEpisodes(), 'aria-label': 'Épisodes' }, icon('eps'), h('span', { class: 'lbl' }, 'Épisodes'));
+  const chatBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Afficher ou masquer la discussion', 'aria-pressed': 'true', onclick: () => setChat(root.classList.contains('chat-hidden')) }, icon('chat'), h('span', { class: 'p-unread', hidden: true }));
   const nextPanel = h('div', { class: 'p-next', hidden: true });
   const overlay = h('div', { class: 'p-error', hidden: true });
 
   const ambCanvas = h('canvas', { class: 'amb-canvas', 'aria-hidden': 'true' });
   const reactLayer = h('div', { class: 'react-layer', 'aria-hidden': 'true' });
   const ambBtn = h('button', { class: 'p-icon f', 'aria-label': 'Mode Ambiance', 'aria-pressed': 'false', title: 'Ambiance : la lumière du film déborde autour de l’image', onclick: () => setAmbiance(!ambOn) }, icon('glow'));
-  const partyBtn = h('button', { class: 'btn btn-ghost btn-small f', title: 'Regarder ensemble, chacun sur son écran', onclick: () => startParty() }, icon('people'), 'Ensemble');
+  const partyBtn = h('button', { class: 'btn btn-ghost btn-small f', title: 'Regarder ensemble, chacun sur son écran', onclick: () => startParty(), 'aria-label': 'Regarder ensemble' }, icon('people'), h('span', { class: 'lbl' }, 'Ensemble'));
   const root = h('div', { class: 'player ui-on', role: 'region', 'aria-label': 'Lecteur vidéo' },
     ambCanvas, video, reactLayer, h('div', { class: 'scrim' }), subsLayer, spinner,
     h('div', { class: 'p-top' }, backBtn, h('div', { style: { minWidth: 0, flex: 1 } }, titleEl, subEl), badge),
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), partyBtn, nextBtn, ambBtn, castBtn, airBtn, fsBtn)),
-    nextPanel, overlay);
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), partyBtn, chatBtn, epsBtn, nextBtn, ambBtn, castBtn, airBtn, fsBtn)),
+    nextPanel, overlay, volOsd);
   main.append(root);
   document.body.style.overflow = 'hidden';
+  // Plein écran dès le lancement (réglable dans Réglages). Demandé tout de suite, pendant que le clic
+  // sur « Lecture » compte encore comme une action de l'utilisateur.
+  if (prefs.get('fullscreenOnPlay') && document.documentElement.requestFullscreen && !document.fullscreenElement) enterFullscreen();
+  applyVolume();
 
   // ---------------------------------------------------------------- utilitaires de temps
   const position = () => (casting ? casting.position() : offset + (video.currentTime || 0));
@@ -144,15 +158,16 @@ export async function render(main, { id, query }) {
     titleEl.textContent = info.title;
     subEl.textContent = info.subtitle;
     document.title = `${info.title} — Venus`;
-    badge.textContent = info.mode === 'direct' ? 'Direct' : info.mode === 'remux' ? 'Remux' : `Converti (${info.hwLabel || 'CPU'})`;
+    badge.textContent = info.mode === 'direct' ? 'Direct' : info.mode === 'remux' ? 'Remux' : `Converti · ${info.hwLabel || 'processeur'}`;
     badge.title = info.reason;
     qualityBtn.textContent = (info.qualities.find((q) => q.id === quality) || { label: 'Auto' }).label;
     nextBtn.hidden = !info.next;
+    epsBtn.hidden = !info.showId;
     const live = !!info.live;
     root.classList.toggle('is-live', live);
     liveTag.hidden = !live; chPrev.hidden = !live; chNext.hidden = !live;
     qualityBtn.hidden = !info.qualities.length;
-    if (live) badge.textContent = info.mode === 'transcode' ? `Direct converti (${info.hwLabel || 'CPU'})` : 'Direct';
+    if (live) badge.textContent = info.mode === 'transcode' ? `Direct converti · ${info.hwLabel || 'processeur'}` : 'Direct';
     tracksBtn.hidden = info.audio.length < 2 && !info.subs.length;
     if (reason) toast(reason);
 
@@ -303,10 +318,76 @@ export async function render(main, { id, query }) {
   async function toggleFullscreen() {
     const d = document;
     if (d.fullscreenElement || d.webkitFullscreenElement) { (d.exitFullscreen || d.webkitExitFullscreen).call(d); return; }
-    if (root.requestFullscreen) {
-      await root.requestFullscreen().catch(() => {});
-      try { await screen.orientation.lock('landscape'); } catch { /* non pris en charge */ }
-    } else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+    if (document.documentElement.requestFullscreen) await enterFullscreen();
+    else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+  }
+  async function enterFullscreen() {
+    // Toute la page passe en plein écran (pas seulement ce lecteur) : on y reste en changeant d'épisode
+    try { await document.documentElement.requestFullscreen({ navigationUI: 'hide' }); } catch { return; }
+    try { await screen.orientation.lock('landscape'); } catch { /* non pris en charge */ }
+  }
+
+  // ---------------------------------------------------------------- volume
+  function applyVolume() {
+    video.volume = Math.max(0, Math.min(1, prefs.get('volume')));
+    video.muted = !!prefs.get('muted');
+    paintVolume();
+  }
+  function paintVolume() {
+    const v = video.muted ? 0 : video.volume;
+    muteBtn.replaceChildren(icon(v === 0 ? 'mute' : v < 0.5 ? 'vollow' : 'vol'));
+    muteBtn.setAttribute('aria-label', video.muted ? 'Rétablir le son' : 'Couper le son');
+    volRange.value = String(v);
+    volRange.style.setProperty('--v', `${v * 100}%`);
+  }
+  function setVolume(v, osd = false) {
+    v = Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
+    video.volume = v; video.muted = v === 0;
+    prefs.set('volume', v || prefs.get('volume')); prefs.set('muted', video.muted);
+    paintVolume();
+    if (osd) flashOsd();
+  }
+  function setMuted(m) {
+    video.muted = m;
+    if (!m && video.volume === 0) video.volume = 0.5;
+    prefs.set('muted', m);
+    paintVolume(); flashOsd();
+  }
+  let osdTimer = null;
+  function flashOsd() {
+    const v = video.muted ? 0 : Math.round(video.volume * 100);
+    volOsd.replaceChildren(icon(v === 0 ? 'mute' : v < 50 ? 'vollow' : 'vol'), h('div', { class: 'osd-bar' }, h('i', { style: { width: `${v}%` } })), h('b', {}, `${v} %`));
+    volOsd.hidden = false;
+    clearTimeout(osdTimer); osdTimer = setTimeout(() => { volOsd.hidden = true; }, 1200);
+  }
+  video.addEventListener('volumechange', paintVolume);
+
+  // ---------------------------------------------------------------- liste des épisodes (sans quitter la vidéo)
+  async function openEpisodes() {
+    if (!info || !info.showId) return;
+    let d;
+    try { d = await api(`/api/items/${info.showId}`); } catch (e) { toast(e.message, true); return; }
+    const strip = h('div', { class: 'ep-strip' });
+    const tabs = h('div', { class: 'chips' });
+    const paint = (season) => {
+      [...tabs.children].forEach((t) => t.classList.toggle('on', t.dataset.n === String(season.number)));
+      strip.replaceChildren(...season.episodes.map((e) => {
+        const cur = e.id === Number(id);
+        const p = e.progress, pct = p && p.duration ? Math.min(100, (p.position / p.duration) * 100) : 0;
+        const im = h('img', { src: e.still ? img(e.still) : `/api/items/${e.id}/thumb`, alt: '', loading: 'lazy' });
+        return h('button', { class: `ep-tile f${cur ? ' current' : ''}`, onclick: () => { s.close(); if (!cur) go(`/lecture/${e.id}${roomCode ? `?salle=${roomCode}` : ''}`, { replace: true }); } },
+          h('div', { class: 'ep-shot' }, im, cur ? h('span', { class: 'ep-now' }, 'En cours') : null,
+            pct > 0 && !(p && p.watched) ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
+            p && p.watched ? h('span', { class: 'check' }, icon('check')) : null),
+          h('b', {}, `${e.episode}. ${e.title}`),
+          e.overview ? h('small', {}, e.overview) : null);
+      }));
+      const cur = strip.querySelector('.current');
+      requestAnimationFrame(() => { if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' }); focusEl(cur || strip.firstChild, { scroll: false }); });
+    };
+    d.seasons.forEach((se) => tabs.append(h('button', { class: 'chip f', 'data-n': se.number, onclick: () => paint(se) }, se.title || (se.number === 0 ? 'Bonus' : `Saison ${se.number}`))));
+    const s = sheet(d.title, h('div', { class: 'ep-panel' }, d.seasons.length > 1 ? tabs : null, scrollArrows(strip)), { wide: true });
+    paint(d.seasons.find((se) => se.number === info.season) || d.seasons[0]);
   }
 
   // Timeline : clic, glisser, survol
@@ -357,6 +438,9 @@ export async function render(main, { id, query }) {
     if (info && info.live && (k === 'ChannelUp' || k === 'PageUp' || code === 427 || code === 33)) { consume(); zap(-1); return; }
     if (info && info.live && (k === 'ChannelDown' || k === 'PageDown' || code === 428 || code === 34)) { consume(); zap(1); return; }
     if (k === 'f') { consume(); toggleFullscreen(); return; }
+    if (k === 'm') { consume(); setMuted(!video.muted); return; }
+    if (k === 'c' && !chatBtn.hidden) { consume(); setChat(root.classList.contains('chat-hidden')); return; }
+    if (!uiOn && !document.documentElement.classList.contains('tv') && (k === 'ArrowUp' || k === 'ArrowDown')) { consume(); setVolume(video.volume + (k === 'ArrowUp' ? 0.1 : -0.1), true); return; }
     if (k === 'a' && !e.ctrlKey && !e.metaKey) { consume(); setAmbiance(!ambOn); return; }
     if (isBack(e)) { consume(); if (uiOn && root.contains(active) && active !== playBtn && active !== track) { focusEl(playBtn); showUi(); } else exit(); return; }
     if (!uiOn) {
@@ -582,16 +666,19 @@ export async function render(main, { id, query }) {
       onChat: (t) => party.send('chat', { text: t }),
       onInvite: () => showInvite(code, title),
       onLeave: () => leaveParty(),
+      onHide: () => setChat(false),
     });
     root.append(panel.el);
     root.classList.add('in-party');
     partyBtn.hidden = true;
+    chatBtn.hidden = false;
+    setChat(prefs.get('chatOverlay'), false);
     party = joinParty(code, {
       room: (r) => applyRemote(r.state, true),
       members: (m) => panel.setMembers(m),
       state: (st) => applyRemote(st),
-      chat: (c) => { panel.message(c); },
-      react: (r) => floatReaction(reactLayer, r.emoji, r.name),
+      chat: (c) => { panel.message(c); if (root.classList.contains('chat-hidden')) bumpUnread(); },
+      react: (r) => { floatReaction(reactLayer, r.emoji, r.name); panel.react(r.emoji, r.name); },
       notice: (n) => panel.notice(n.text),
       item: (i) => go(`/lecture/${i.itemId}?t=0&salle=${code}`, { replace: true }),
     });
@@ -600,11 +687,26 @@ export async function render(main, { id, query }) {
       if (party && party.isHost() && !video.paused) party.send('state', { playing: true, position: position(), reason: 'sync' });
     }, 10000);
   }
+  let unread = 0;
+  function bumpUnread() {
+    unread++;
+    const b = chatBtn.querySelector('.p-unread');
+    b.hidden = false; b.textContent = unread > 9 ? '9+' : String(unread);
+  }
+  // Discussion transparente à droite de l'image : visible pendant la lecture, masquable d'un bouton
+  function setChat(on, remember = true) {
+    root.classList.toggle('chat-hidden', !on);
+    chatBtn.setAttribute('aria-pressed', String(on));
+    chatBtn.classList.toggle('on', on);
+    if (on) { unread = 0; chatBtn.querySelector('.p-unread').hidden = true; }
+    if (remember) prefs.set('chatOverlay', on);
+  }
   function leaveParty() {
     if (party) party.close();
     party = null; clearInterval(syncTimer);
     if (panel) panel.el.remove();
-    root.classList.remove('in-party');
+    root.classList.remove('in-party', 'chat-hidden');
+    chatBtn.hidden = true;
     partyBtn.hidden = !!(info && info.live);
     roomCode = null;
     toast('Vous avez quitté la séance');
@@ -636,7 +738,8 @@ export async function render(main, { id, query }) {
     if (info && info.sessionId && !casting) stopSession(info.sessionId);
     teardownSource();
     document.body.style.overflow = '';
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    // On quitte le plein écran seulement si on ne passe pas directement à une autre vidéo
+    setTimeout(() => { if (!document.querySelector('.player') && document.fullscreenElement) document.exitFullscreen().catch(() => {}); }, 60);
     if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
   }
 

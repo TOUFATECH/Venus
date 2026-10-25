@@ -86,3 +86,12 @@ export function openStream(path, handlers) {
   }
   return () => es.close();
 }
+
+// Préférences de cet appareil (aperçu au survol, plein écran au lancement, volume)
+const PREF_DEFAULTS = { hoverPreview: true, hoverSound: false, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true };
+export const prefs = {
+  get(k) {
+    try { const v = localStorage.getItem(`vn_pref_${k}`); return v == null ? PREF_DEFAULTS[k] : JSON.parse(v); } catch { return PREF_DEFAULTS[k]; }
+  },
+  set(k, v) { try { localStorage.setItem(`vn_pref_${k}`, JSON.stringify(v)); } catch { /* navigation privée */ } },
+};

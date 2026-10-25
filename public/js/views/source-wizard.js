@@ -51,27 +51,15 @@ export function openSourceWizard(preset = 'movies', onDone) {
 
   // ------------------------------------------------------------ dossier local
   function local() {
-    const pathIn = h('input', { class: 'input', id: 'src-path', value: '' });
-    const list = h('div', { class: 'folder-list' });
+    const picker = pathPicker({ onError: (m) => { err.textContent = m; } });
     const nameIn = h('input', { class: 'input', id: 'src-name', value: NAMES[type] });
     const err = h('p', { class: 'error-text' });
     const btn = h('button', { class: 'btn btn-play f', type: 'submit' }, 'Ajouter ce dossier');
-    const browse = async (p) => {
-      try {
-        const r = await api(`/api/admin/fs?path=${encodeURIComponent(p)}`);
-        pathIn.value = r.path;
-        list.replaceChildren(...[
-          r.path !== '/' ? h('button', { type: 'button', class: 'f', onclick: () => browse(r.parent) }, icon('back'), 'Dossier parent') : null,
-          ...r.dirs.map((d) => h('button', { type: 'button', class: 'f', onclick: () => browse(r.absolute ? d : joinPath(r.path, d)) }, icon('folder'), d))].filter(Boolean));
-        pathIn.placeholder = r.path === '/' && r.absolute ? 'Choisissez un lecteur' : '';
-        if (r.path === '/' && r.absolute) pathIn.value = '';
-      } catch (e) { if (p !== '/') browse('/'); else err.textContent = e.message; }
-    };
     body.replaceChildren(typeBar(), backLink(start),
-      h('form', { onsubmit: (e) => { e.preventDefault(); finish({ name: nameIn.value, path: pathIn.value }, btn, err); } },
-        field('Dossier', pathIn, 'Touchez un dossier pour y entrer. Le chemin affiché est celui qui sera ajouté.'), list,
-        field('Nom affiché', nameIn), err, h('div', { class: 'form-actions' }, btn)));
-    browse('start');
+      h('form', { onsubmit: (e) => { e.preventDefault(); if (!picker.value()) { err.textContent = 'Choisissez un dossier.'; return; } finish({ name: nameIn.value, path: picker.value() }, btn, err); } },
+        h('h3', { class: 'wiz-q' }, `Choisissez le dossier de vos ${NAMES[type].toLowerCase()}`),
+        picker.el, field('Nom affiché', nameIn), err, h('div', { class: 'form-actions' }, btn)));
+    picker.open('start');
   }
 
   // ------------------------------------------------------------ partage réseau : 1. l'appareil
@@ -194,17 +182,72 @@ export function openSourceWizard(preset = 'movies', onDone) {
     setTimeout(() => url.focus(), 30);
   }
   function file() {
-    const p = h('input', { class: 'input', id: 'm3u-file', placeholder: '/media/tv/chaines.m3u', autocomplete: 'off' });
+    const picker = pathPicker({ files: ['m3u', 'm3u8'], onError: (m) => { err.textContent = m; } });
     const nameIn = h('input', { class: 'input', id: 'm3u-fname', value: NAMES.iptv });
     const err = h('p', { class: 'error-text' });
     const btn = h('button', { class: 'btn btn-play f', type: 'submit' }, 'Ajouter la liste');
     body.replaceChildren(typeBar(), backLink(start),
-      h('form', { onsubmit: (e) => { e.preventDefault(); finish({ name: nameIn.value, path: p.value.trim() }, btn, err); } },
-        field('Chemin du fichier .m3u sur le serveur', p), field('Nom affiché', nameIn), err, h('div', { class: 'form-actions' }, btn)));
-    setTimeout(() => p.focus(), 30);
+      h('form', { onsubmit: (e) => { e.preventDefault(); if (!picker.file()) { err.textContent = 'Choisissez un fichier .m3u dans la liste.'; return; } finish({ name: nameIn.value, path: picker.file() }, btn, err); } },
+        h('h3', { class: 'wiz-q' }, 'Choisissez le fichier .m3u'),
+        picker.el, field('Nom affiché', nameIn), err, h('div', { class: 'form-actions' }, btn)));
+    picker.open('start');
   }
 
   function backLink(fn) { return h('button', { type: 'button', class: 'row-link f wiz-back', onclick: fn }, icon('back'), 'Retour'); }
 
   start();
+}
+
+// Explorateur de dossiers du serveur : fil d'Ariane cliquable, dossiers (et fichiers si demandés).
+// Rien à taper, mais le chemin reste modifiable à la main pour les habitués.
+function pathPicker({ files = null, onError } = {}) {
+  let current = '', chosenFile = '';
+  const crumbs = h('div', { class: 'pp-crumbs' });
+  const list = h('div', { class: 'folder-list', role: 'listbox' });
+  const manual = h('input', { class: 'input', placeholder: 'ou saisissez un chemin, puis Entrée', autocomplete: 'off', spellcheck: 'false' });
+  const chosen = h('div', { class: 'picked', hidden: true });
+  manual.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); open(manual.value.trim() || '/'); } });
+  const sep = (p) => (p.includes('\\') ? '\\' : '/');
+  function paintCrumbs(r) {
+    const parts = [];
+    if (r.path === '/' || !r.path) parts.push(['/', r.absolute ? 'Ce PC' : 'Racine']);
+    else {
+      const sp = sep(r.path);
+      const bits = r.path.split(sp).filter(Boolean);
+      let acc = sp === '/' ? '' : '';
+      parts.push(['/', sp === '/' ? 'Racine' : 'Ce PC']);
+      bits.forEach((b, i) => {
+        acc = sp === '/' ? `${acc}/${b}` : (i === 0 ? `${b}\\` : `${acc.replace(/\\$/, '')}\\${b}`);
+        parts.push([acc, b]);
+      });
+    }
+    crumbs.replaceChildren(...parts.flatMap(([p, label], i) => [i ? h('span', { class: 'sep', 'aria-hidden': 'true' }, '›') : null,
+      h('button', { type: 'button', class: `crumb f${i === parts.length - 1 ? ' on' : ''}`, onclick: () => open(p) }, label)]).filter(Boolean));
+  }
+  function pickFile(path, btn) {
+    chosenFile = path;
+    list.querySelectorAll('.is-picked').forEach((x) => x.classList.remove('is-picked'));
+    btn.classList.add('is-picked');
+    chosen.hidden = false; chosen.replaceChildren(icon('check'), h('span', {}, path));
+  }
+  async function open(p) {
+    try {
+      const r = await api(`/api/admin/fs?path=${encodeURIComponent(p)}${files ? `&files=${files.join(',')}` : ''}`);
+      current = r.absolute && r.path === '/' ? '' : r.path;
+      manual.value = current;
+      paintCrumbs(r);
+      const items = [
+        r.path !== '/' ? h('button', { type: 'button', class: 'f', onclick: () => open(r.parent) }, icon('back'), '..') : null,
+        ...r.dirs.map((d) => h('button', { type: 'button', class: 'f', onclick: () => open(r.absolute ? d : joinPath(r.path, d)) }, icon('folder'), h('span', {}, d))),
+        ...(r.files || []).map((f) => { const full = joinPath(r.path, f); const b = h('button', { type: 'button', class: 'f file', onclick: () => pickFile(full, b) }, icon('tv'), h('span', {}, f)); if (full === chosenFile) b.classList.add('is-picked'); return b; }),
+      ].filter(Boolean);
+      if (!r.dirs.length && !(r.files || []).length) items.push(h('p', { class: 'muted folder-empty' }, files ? 'Aucun sous-dossier ni fichier .m3u ici.' : 'Aucun sous-dossier : ce dossier peut être choisi.'));
+      list.replaceChildren(...items);
+      list.scrollTop = 0;
+    } catch (e) { if (p !== '/') open('/'); else onError && onError(e.message); }
+  }
+  const el = h('div', { class: 'path-picker' }, crumbs, list,
+    files ? chosen : h('p', { class: 'picker-hint' }, 'Entrez dans le dossier voulu : c’est le dossier affiché en haut qui sera ajouté.'),
+    h('details', { class: 'wiz-manual' }, h('summary', {}, 'Saisir le chemin à la main'), manual));
+  return { el, open, value: () => current, file: () => chosenFile };
 }

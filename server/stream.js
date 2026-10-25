@@ -324,6 +324,39 @@ export function thumbnail(item, duration) {
   });
 }
 
+// ---------------------------------------------------------------- aperçu vidéo au survol (12 s, 360p, sans son)
+// Petit MP4 H.264 lisible partout, fabriqué une seule fois puis gardé en cache.
+const previews = path.join(config.dataDir, 'cache', 'previews');
+fs.mkdirSync(previews, { recursive: true });
+const previewInflight = new Map();
+let previewBusy = 0;
+const previewQueue = [];
+export function previewClip(item) {
+  const out = path.join(previews, `pv_${item.id}_${item.mtime || 0}.mp4`);
+  if (fs.existsSync(out)) return Promise.resolve(out);
+  if (previewInflight.has(out)) return previewInflight.get(out);
+  const p = new Promise((resolve, reject) => {
+    const job = () => {
+      previewBusy++;
+      const dur = item.duration || 600;
+      const at = Math.max(0, Math.floor(dur * (item.type === 'clip' ? 0.3 : 0.22)));
+      const tmp = `${out}.part.mp4`;
+      execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', item.path, '-t', '12', '-an', '-sn', '-dn',
+        '-vf', 'scale=-2:360:flags=fast_bilinear,fps=24,format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30',
+        '-movflags', '+faststart', '-y', tmp], { timeout: 90000 }, (err) => {
+        previewBusy--;
+        const next = previewQueue.shift(); if (next) next();
+        previewInflight.delete(out);
+        try { if (!err) fs.renameSync(tmp, out); else fs.rmSync(tmp, { force: true }); } catch { /* */ }
+        if (err || !fs.existsSync(out)) reject(new HttpError(404, 'Aperçu indisponible')); else resolve(out);
+      });
+    };
+    if (previewBusy < 2) job(); else if (previewQueue.length < 6) previewQueue.push(job); else reject(new HttpError(503, 'Occupé'));
+  });
+  previewInflight.set(out, p);
+  return p;
+}
+
 // ---------------------------------------------------------------- aperçus des chaînes TV (image actuelle, cache 2 min)
 const liveShots = path.join(config.dataDir, 'cache', 'live');
 fs.mkdirSync(liveShots, { recursive: true });
