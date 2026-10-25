@@ -337,8 +337,11 @@ html:not(.touch) .card:hover .shot { transform: scale(1.03); }
 .p-badge { padding: 4px 9px; border-radius: 4px; border: 1px solid var(--edge); font-size: 0.78rem; font-weight: 650; color: var(--haze); }
 .p-loading { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px; border-radius: 50%; border: 3px solid rgba(236,234,228,.15); border-top-color: var(--sulfur); animation: spin 0.9s linear infinite; pointer-events: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.p-subs { position: absolute; left: 6%; right: 6%; bottom: 9%; text-align: center; pointer-events: none; transition: bottom .3s var(--ease); }
-.player.ui-on .p-subs { bottom: 24%; }
+.p-subs { position: absolute; left: 6%; right: 6%; bottom: 4.5%; text-align: center; pointer-events: none; transition: bottom .3s var(--ease); }
+/* Commandes affichées : les sous-titres remontent juste au-dessus de la barre de lecture */
+.player.ui-on .p-subs { bottom: 19%; }
+/* Mode Ambiance : l'image est un peu réduite, les sous-titres restent dans l'image */
+.player.amb-on:not(.ui-on) .p-subs { bottom: 8.5%; }
 /* Sous-titres : texte blanc seul, avec un contour sombre pour rester lisible sur toutes les images */
 .p-subs { --sub-size: clamp(1.15rem, 2.7vw, 2.2rem); }
 .p-subs span { display: inline; font: 650 var(--sub-size)/1.4 var(--sans); color: #fff; letter-spacing: .01em;
