@@ -7,7 +7,7 @@ export const auth = {
 
 export class ApiError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 
-export async function api(path, { method = 'GET', body, signal } = {}) {
+async function raw(path, { method = 'GET', body, signal } = {}) {
   const headers = {};
   if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -26,6 +26,43 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
     throw err;
   }
   return data;
+}
+
+// Cache des pages déjà vues : affichées tout de suite, puis rafraîchies en arrière-plan.
+// Toute modification (POST, PUT…) vide le cache ; les nouveautés et la fin d'une lecture aussi.
+const CACHEABLE = /^\/api\/(home|library|items\/\d+$|mylist|categories|upcoming)/;
+const cache = new Map(); // adresse -> { t, data, p }
+const FRESH = 20000, STALE = 300000;
+const copy = (d) => { try { return structuredClone(d); } catch { return JSON.parse(JSON.stringify(d)); } };
+export function clearApiCache() { cache.clear(); }
+export async function api(path, opts = {}) {
+  const method = opts.method || 'GET';
+  if (method !== 'GET') { cache.clear(); return raw(path, opts); }
+  if (!CACHEABLE.test(path) || opts.signal) return raw(path, opts);
+  const now = Date.now();
+  const c = cache.get(path);
+  if (c && c.data !== undefined && now - c.t < STALE) {
+    if (now - c.t > FRESH && !c.p) {
+      c.p = raw(path).then((d) => { cache.set(path, { t: Date.now(), data: d }); }).catch(() => {}).finally(() => { c.p = null; });
+    }
+    return copy(c.data);
+  }
+  if (c && c.p && c.data === undefined) {
+    try { await c.p; } catch { /* */ }
+    const c2 = cache.get(path);
+    if (c2 && c2.data !== undefined) return copy(c2.data);
+  }
+  const p = raw(path, opts);
+  cache.set(path, { t: 0, p });
+  try { const d = await p; cache.set(path, { t: Date.now(), data: d }); return copy(d); }
+  catch (e) { cache.delete(path); throw e; }
+}
+// Préchargement (survol d'une affiche, début d'un appui) : la fiche s'ouvre instantanément
+export function prefetch(path) {
+  if (!CACHEABLE.test(path)) return;
+  const c = cache.get(path);
+  if (c && (c.p || Date.now() - c.t < FRESH)) return;
+  api(path).catch(() => {});
 }
 
 // Ce que ce navigateur sait lire sans conversion (pour décider lecture directe / remux / transcodage)
@@ -88,7 +125,7 @@ export function openStream(path, handlers) {
 }
 
 // Préférences de cet appareil (aperçu au survol, plein écran au lancement, volume)
-const PREF_DEFAULTS = { hoverPreview: true, hoverSound: false, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true, chatSound: true, autoSkip: false, hoverMode: null, heroTrailer: null, detailsTrailer: null, detailsSound: false, subStyle: 'text', subSize: 'medium' };
+const PREF_DEFAULTS = { hoverPreview: true, hoverSound: false, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true, chatSound: true, autoSkip: false, hoverMode: null, heroTrailer: null, detailsTrailer: null, detailsSound: false, subStyle: 'text', subSize: 'medium', miniPlayer: true, notifyBrowser: true };
 export const prefs = {
   get(k) {
     try { const v = localStorage.getItem(`vn_pref_${k}`); return v == null ? PREF_DEFAULTS[k] : JSON.parse(v); } catch { return PREF_DEFAULTS[k]; }

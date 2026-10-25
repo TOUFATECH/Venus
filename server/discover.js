@@ -61,7 +61,7 @@ export async function seerrStatus(type, tmdbId) {
   });
 }
 
-export async function seerrRequest(type, tmdbId, { userId = null, seasons = null } = {}) {
+export async function seerrRequest(type, tmdbId, { userId = null, seasons = null, is4k = false } = {}) {
   let body;
   if (type === 'movie') body = { mediaType: 'movie', mediaId: Number(tmdbId) };
   else {
@@ -74,6 +74,7 @@ export async function seerrRequest(type, tmdbId, { userId = null, seasons = null
   }
   // La demande est faite au nom de l'utilisateur Seerr relié au profil (quotas, historique)
   if (userId) body.userId = Number(userId);
+  if (is4k) body.is4k = true;
   await seerr('/request', { method: 'POST', body });
   cache.delete(`st:${type}:${tmdbId}`);
   return seerrStatus(type, tmdbId);
@@ -212,3 +213,24 @@ export function discoverAvailable() {
   return { tmdb: !!tmdbKey(), seerr: seerrOn(), anime: true };
 }
 export const libraryItem = (id) => get('SELECT id FROM items WHERE id = ?', id);
+
+// ------------------------------------------------------------------ recherche en ligne (titres pas encore dans Venus)
+export async function searchOnline(q) {
+  q = String(q || '').trim();
+  if (q.length < 2) return [];
+  return cached(`search:${q.toLowerCase()}`, 600000, async () => {
+    let list = [];
+    if (tmdbKey()) {
+      const d = await tmdb('/search/multi', { query: q, language: lang(), include_adult: 'false' });
+      list = (d.results || []).filter((x) => (x.media_type === 'movie' || x.media_type === 'tv') && (x.poster_path || x.backdrop_path)).map((x) => fromTmdb(x, x.media_type));
+    } else if (seerrOn()) {
+      const d = await seerr(`/search?query=${encodeURIComponent(q)}&page=1&language=${lang().split('-')[0]}`);
+      list = (d.results || []).filter((x) => x.mediaType === 'movie' || x.mediaType === 'tv').map((x) => ({
+        ...fromTmdb({ ...x, poster_path: x.posterPath, backdrop_path: x.backdropPath, vote_average: x.voteAverage, vote_count: x.voteCount, release_date: x.releaseDate, first_air_date: x.firstAirDate, original_language: x.originalLanguage, genre_ids: x.genreIds }, x.mediaType),
+        seerr: mediaState(x.mediaInfo),
+      }));
+    }
+    const lib = libraryIndex();
+    return list.slice(0, 20).map((x) => ({ ...x, inLibrary: lib.byTmdb.get(`${x.type}:${x.tmdbId}`) || null }));
+  });
+}

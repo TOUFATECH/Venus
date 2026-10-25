@@ -25,6 +25,19 @@ Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec un
 - **TV en direct** : numéros de chaîne (ceux de la liste M3U, `tvg-chno`, sinon dans l'ordre), saisie d'un numéro au clavier, à la télécommande ou au pavé numérique du téléphone, liste des chaînes à droite pendant la lecture (touche L).
 - **Thèmes planètes** : Mercure, Vénus, Terre, Mars, Jupiter, Saturne, Uranus, Neptune, Pluton. Couleurs, nom et logo animé changent (**Réglages → Thème**).
 
+## Sur le téléphone, le soir, et pour l'administrateur
+
+- **Comme une vraie appli sur téléphone** : bandeau « Installer Venus » (sur iPhone, les étapes Safari sont expliquées), glisser vers le bas pour fermer une fenêtre, tirer vers le bas pour actualiser, appui long sur une affiche pour un menu rapide (lecture, Ma liste, vu, bande-annonce, téléchargement), verrouillage de l'écran tactile pendant la lecture (pour les enfants), et **mini-lecteur** : en quittant le lecteur, la vidéo continue en petit pendant qu'on navigue.
+- **Fluide** : transition animée de l'affiche vers la fiche, fiches préchargées au survol ou dès le début d'un appui, pages déjà vues affichées instantanément puis rafraîchies, images redimensionnées par le serveur à la taille de l'écran.
+- **Le soir** : épisode suivant façon Netflix (image, résumé, compte à rebours), **minuterie de sommeil** (fin de l'épisode ou 15 à 90 min, avec baisse douce du son), **vote en famille** depuis « Ce soir » (chacun vote sur son téléphone avec un code ou un QR code), et **Mes statistiques** : heures regardées, mois par mois, genres, séries préférées, « votre année sur Venus ».
+- **Recherche instantanée** : titres, acteurs et réalisateurs, genres, années, recherches récentes, et les titres pas encore dans Venus avec un ♡ pour les demander à Seerr.
+- **Accueil personnalisé** : « Parce que vous avez regardé… », « Avec (acteur) », pépites non vues, films de moins d'1 h 30, et les **sagas** (rangée sur la fiche de chaque film d'une saga).
+- **Téléchargements pour regarder sans réseau** : fichier d'origine, ou version légère 720p / 480p préparée par le serveur (film, épisode ou saison entière). Désactivable dans les réglages.
+- **Sous-titres en ligne** : dans le lecteur, « Chercher des sous-titres en ligne » via [OpenSubtitles](https://www.opensubtitles.com/fr/consumers) (clé API gratuite à coller dans **Réglages → Sous-titres en ligne**), les sous-titres de la même version que votre fichier sont proposés en premier. Décalage des sous-titres réglable (± 0,1 s, touches G et H), mémorisé par titre.
+- **Notifications** : « nouveau sur Venus », « votre envie est arrivée ». Sur l'appareil (notifications du navigateur, **HTTPS obligatoire**, voir plus bas), et pour toute la maison par [ntfy](https://ntfy.sh) (le plus simple, marche sans HTTPS : installez l'appli ntfy et abonnez-vous au sujet choisi), Discord ou Telegram : **Réglages → Notifications**.
+- **Sauvegardes** : profils, vus, listes, envies et réglages sauvegardés chaque nuit (les 10 dernières sont gardées, dans `DATA_DIR/backups`), téléchargeables et restaurables en un clic (Venus redémarre tout seul sous Docker ; sinon, redémarrez-le). Vos vidéos ne sont pas concernées.
+- **Qualité de la médiathèque** (Tableau de bord → Qualité) : définition, codecs, HDR, poids par heure, titres à améliorer (SD, 720p, débit trop faible), avec « Meilleure version » qui redemande le titre à Seerr (en 4K si Seerr a un serveur 4K).
+
 ## Ce que Netflix ne fait pas
 
 - **Mode Ambiance** : la lumière du film déborde autour de l'image, comme une TV Ambilight, et toute l'interface prend la couleur du titre que vous survolez. Bouton dans le lecteur, ou touche A.
@@ -202,7 +215,7 @@ Raccourcis du lecteur : flèches ← → (10 s), espace (pause), F (plein écran
 
 ## Accès depuis l'extérieur et Chromecast (HTTPS)
 
-Le Chromecast et l'installation de l'application exigent une adresse HTTPS. Le plus simple est Caddy, qui obtient le certificat tout seul :
+Le Chromecast, l'installation de l'application et les notifications sur le téléphone exigent une adresse HTTPS (sinon, utilisez ntfy pour les notifications). Le plus simple est Caddy, qui obtient le certificat tout seul :
 
 ```
 # Caddyfile
@@ -237,7 +250,12 @@ server/
   scanner.js    analyse des bibliothèques, surveillance des dossiers
   netshare.js   partages réseau SMB / NFS (Linux, Windows, Mac), recherche des NAS, Xtream
   env.js        détection Docker / LXC Proxmox / machine, conseils GPU et montage
-  together.js   séances à plusieurs et téléphone-télécommande
+  together.js   séances à plusieurs, téléphone-télécommande, vote en famille
+  watch.js      Seerr : envies et séries suivies demandées automatiquement
+  notify.js     notifications : Web Push (VAPID, chiffrement RFC 8291), ntfy, Discord, Telegram
+  backup.js     sauvegardes nocturnes de la base et restauration
+  downloads.js  versions légères 720p / 480p pour regarder sans réseau
+  subtitles.js  sous-titres en ligne (OpenSubtitles)
   metadata.js   TMDB : affiches, résumés, classifications d'âge
   parse.js      nettoyage des noms de fichiers
   probe.js      ffprobe, sous-titres externes
@@ -248,4 +266,4 @@ public/         interface (JavaScript natif, sans framework ni compilation)
 
 ## Honnêtement, par rapport à Plex et Jellyfin
 
-Venus fait mieux sur la légèreté, la simplicité d'installation et la sobriété de l'interface. Plex et Jellyfin restent plus complets sur certains points qui ne sont pas (encore) dans cette version : applications natives dans les stores des TV, guide des programmes (EPG) pour l'IPTV, musique et photos, téléchargement hors-ligne, vignettes d'aperçu sur la barre de progression, saut automatique du générique de début, plugins.
+Venus fait mieux sur la légèreté, la simplicité d'installation et la sobriété de l'interface. Plex et Jellyfin restent plus complets sur certains points qui ne sont pas (encore) dans cette version : applications natives dans les stores des TV, guide des programmes (EPG) pour l'IPTV, musique et photos, vignettes d'aperçu sur la barre de progression, saut automatique du générique de début, plugins.

@@ -116,6 +116,7 @@ export async function render(main) {
         h('p', { class: 'grid-empty' }, 'Essayez une autre envie ou plus de temps : votre bibliothèque n’a rien qui colle à ces trois critères.'),
       h('div', { class: 'actions tonight-actions' },
         picks.length ? h('button', { class: 'btn f', onclick: results }, icon('shuffle'), 'Trois autres idées') : null,
+        picks.length >= 2 ? h('button', { class: 'btn btn-ghost f', onclick: async () => { const m = await import('./vote.js'); m.startVote(picks.map((p) => p.item.id)); } }, icon('people'), 'Voter en famille') : null,
         h('button', { class: 'btn btn-ghost f', onclick: () => { shown.clear(); ask(0); } }, 'Recommencer'))].filter(Boolean));
     requestAnimationFrame(() => { const f = wrap.querySelector('.pick .btn-play'); if (f) f.focus({ preventScroll: true }); });
   }

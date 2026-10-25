@@ -96,7 +96,8 @@ export function icon(name) {
 export function logoMark() { const t = document.createElement('template'); t.innerHTML = planetMarkup().trim(); return t.content.firstChild; }
 export function brand(cls = '') { return h('span', { class: `brand ${cls}` }, logoMark(), h('span', { class: 'brand-name' }, brandName())); }
 
-export const img = (name) => (!name ? null : /^(data:|blob:|https?:)/.test(name) ? name : `/img/${encodeURIComponent(name)}`);
+// Image du serveur ; w = largeur voulue (342 affiches, 780 vignettes) : le serveur l'envoie déjà réduite, bien plus légère
+export const img = (name, w) => (!name ? null : /^(data:|blob:|https?:)/.test(name) ? name : `/img/${encodeURIComponent(name)}${w ? `?w=${w}` : ''}`);
 export const hueOf = (s) => { let x = 0; for (const c of String(s)) x = (x * 31 + c.charCodeAt(0)) % 360; return x; };
 
 export function placeholder(title, cls = 'ph') {
@@ -203,6 +204,26 @@ export function sheet(title, content, { onClose, keepBackspace = false, wide = f
   const onKey = (e) => { if (keepBackspace && e.key === 'Backspace') return; if (isBack(e)) { e.preventDefault(); e.stopPropagation(); close(); } };
   wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
   document.addEventListener('keydown', onKey, true);
+  // Tactile : glisser la fenêtre vers le bas pour la fermer (depuis le haut, quand elle n'est pas défilée)
+  let y0 = null, dy = 0;
+  box.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch' || box.scrollTop > 0 || e.clientY - box.getBoundingClientRect().top > 90 || e.target.closest('input, textarea, select')) return;
+    y0 = e.clientY; dy = 0;
+  });
+  box.addEventListener('pointermove', (e) => {
+    if (y0 == null) return;
+    dy = Math.max(0, e.clientY - y0);
+    if (dy > 4) { box.style.transition = 'none'; box.style.transform = `translateY(${dy}px)`; wrap.style.background = `rgba(0,0,0,${Math.max(0.1, 0.55 - dy / 600)})`; }
+  });
+  const endDrag = () => {
+    if (y0 == null) return;
+    y0 = null; box.style.transition = '';
+    if (dy > 110) { box.style.transform = 'translateY(100%)'; setTimeout(close, 180); }
+    else { box.style.transform = ''; wrap.style.background = ''; }
+  };
+  box.addEventListener('pointerup', endDrag);
+  box.addEventListener('pointercancel', endDrag);
+  box.prepend(h('span', { class: 'sheet-grab', 'aria-hidden': 'true' }));
   overlayHost().append(wrap);
   requestAnimationFrame(() => (box.querySelector('.opt.on, .f, input, button') || box).focus());
   return { close, box };

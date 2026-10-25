@@ -3,7 +3,25 @@ import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { config } from './config.js';
 
-export const db = new DatabaseSync(path.join(config.dataDir, 'venus.db'));
+import fs from 'node:fs';
+
+// Restauration d'une sauvegarde demandée depuis le tableau de bord : appliquée au démarrage, avant d'ouvrir la base
+const dbFile = path.join(config.dataDir, 'venus.db');
+const pending = path.join(config.dataDir, 'backups', 'restore.pending');
+try {
+  if (fs.existsSync(pending)) {
+    const src = path.join(config.dataDir, 'backups', path.basename(fs.readFileSync(pending, 'utf8').trim()));
+    if (fs.existsSync(src)) {
+      if (fs.existsSync(dbFile)) fs.copyFileSync(dbFile, `${dbFile}.avant-restauration`);
+      for (const ext of ['-wal', '-shm']) { try { fs.unlinkSync(dbFile + ext); } catch { /* */ } }
+      fs.copyFileSync(src, dbFile);
+      console.log(`  ↺ Sauvegarde restaurée : ${path.basename(src)}`);
+    }
+    fs.unlinkSync(pending);
+  }
+} catch (e) { console.warn('[sauvegarde] restauration impossible :', e.message); }
+
+export const db = new DatabaseSync(dbFile);
 
 db.exec(`
 PRAGMA journal_mode = WAL;

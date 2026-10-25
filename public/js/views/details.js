@@ -64,6 +64,10 @@ export async function render(main, { id, query }) {
     const what = isShow ? (d.seasons.length > 1 ? `Les ${d.seasons.length} saisons` : 'Toute la série') : d.title;
     toast(allWatched ? `${what} : marqué comme non vu` : `${what} : marqué comme vu`, { type: 'success', action: { label: 'Annuler', onClick: () => set(allWatched) } });
   } }, icon('eye')));
+  if (!isShow) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Télécharger pour regarder sans réseau', title: 'Télécharger', onclick: async () => {
+    const m = await import('./downloads.js');
+    m.openDownload({ id: d.id, title: d.title, size: d.file && d.file.size, duration: d.duration || (d.runtime ? d.runtime * 60 : 0) });
+  } }, icon('down')));
   if (state.profile.isAdmin && !isClip) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Corriger l’identification', title: 'Corriger l’identification', onclick: () => fixMatch(d) }, icon('gear')));
 
   // ---------------------------------------------------------------- ligne d'infos : année, âge, durée, heure de fin
@@ -140,7 +144,8 @@ export async function render(main, { id, query }) {
           h('span', {}, [`${total} épisode${total > 1 ? 's' : ''}`, mins ? fmtRuntime(mins) : null, seen && !all ? `${total - seen} à voir` : null].filter(Boolean).join(' · '))),
         h('div', { class: 'sh-actions' },
           next ? h('button', { class: 'btn btn-small f', onclick: () => go(playPath(next.id)) }, icon('play'), all ? 'Revoir la saison' : seen ? `Continuer É${next.episode}` : 'Lire la saison') : null,
-          h('button', { class: `btn btn-small btn-ghost f${all ? ' is-on' : ''}`, onclick: () => markSeason(s, !all) }, icon('eye'), all ? 'Saison vue' : 'Marquer la saison vue')));
+          h('button', { class: `btn btn-small btn-ghost f${all ? ' is-on' : ''}`, onclick: () => markSeason(s, !all) }, icon('eye'), all ? 'Saison vue' : 'Marquer la saison vue'),
+          h('button', { class: 'btn btn-small btn-ghost btn-icon f', 'aria-label': 'Télécharger la saison', title: 'Télécharger la saison', onclick: async () => { const m = await import('./downloads.js'); m.openDownload({ id: s.id, title: seasonName(s), season: true }); } }, icon('down'))));
     };
     const showSeason = (s, focusId = null) => {
       current = s;
@@ -248,6 +253,9 @@ export async function render(main, { id, query }) {
       cr.tags && cr.tags.length ? h('div', { class: 'tag-cloud' }, h('span', { class: 'tag-cloud-label' }, 'Étiquettes'), cr.tags.map((t) => h('span', { class: 'tag ghost' }, t))) : null));
   }
 
+  if (d.saga && d.saga.items.length > 1) {
+    content.append(h('div', { class: 'd-similar' }, row({ title: `Saga : ${d.saga.name.replace(/ - (Saga|Collection)$|^Saga /i, '')}`, items: d.saga.items })));
+  }
   if (d.similar && d.similar.length) {
     content.append(h('div', { class: 'd-similar' }, row({ title: isClip ? 'Autres clips' : 'Plus de ce genre', items: d.similar })));
   }
@@ -349,7 +357,7 @@ function personCard(p) {
 }
 
 // Une personne : ses titres présents dans la médiathèque
-async function openPerson(p) {
+export async function openPerson(p) {
   const list = h('div', { class: 'grid person-grid' }, h('p', { class: 'grid-empty' }, 'Recherche dans votre médiathèque…'));
   const links = h('p', { class: 'person-links' },
     h('a', { href: `https://www.themoviedb.org/search/person?query=${encodeURIComponent(p.name)}`, target: '_blank', rel: 'noopener' }, 'Voir sur TMDB'), ' · ',
