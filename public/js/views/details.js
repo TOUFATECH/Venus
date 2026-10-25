@@ -1,7 +1,7 @@
 // Fiche d'un film ou d'une série
 import { api } from '../api.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince } from '../ui.js';
-import { row, playPath, metaLine } from '../components.js';
+import { row, playPath, metaLine, frameImage, framePoster } from '../components.js';
 import { go, state } from '../app.js';
 import { focusEl } from '../nav.js';
 import { tintFrom } from '../ambiance.js';
@@ -12,7 +12,8 @@ export async function render(main, { id }) {
   tintFrom(img(d.backdrop || d.poster));
   document.title = `${d.title} — Venus`;
 
-  const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : placeholder(d.title));
+  const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : frameImage(d.id, d.title));
+  const posterEl = h('div', { class: 'details-poster' }, d.poster ? picture(img(d.poster), d.title, { lazy: false }) : framePoster(d));
 
   // Bouton principal : Lecture / Reprendre / Épisode suivant
   const actions = h('div', { class: 'actions' });
@@ -68,7 +69,7 @@ export async function render(main, { id }) {
     actions, tech, facts,
     state.profile.isAdmin ? h('button', { class: 'btn btn-ghost btn-small f', style: { marginTop: '18px' }, onclick: () => fixMatch(d) }, 'Corriger l’identification') : null);
 
-  const content = h('div', { class: 'details-body' }, mainInfo);
+  const content = h('div', { class: 'details-body' }, h('div', { class: 'details-top' }, posterEl, mainInfo));
 
   if (isShow && d.seasons.length) {
     const epList = h('div', { class: 'episodes' });
@@ -92,10 +93,10 @@ export async function render(main, { id }) {
         return b;
       }));
     for (const s of d.seasons) {
-      tabs.append(h('button', { class: 'chip f', role: 'tab', 'data-id': s.id, onclick: () => showSeason(s) }, s.title));
+      tabs.append(h('button', { class: 'chip f', role: 'tab', 'data-id': s.id, onclick: () => showSeason(s) }, s.title || (s.number === 0 ? 'Bonus' : `Saison ${s.number}`)));
     }
     const startSeason = d.seasons.find((s) => d.nextUp && s.episodes.some((e) => e.id === d.nextUp.id)) || d.seasons[0];
-    content.append(h('div', { class: 'ep-head' }, h('h2', { class: 'section-title' }, 'Épisodes'), epChips), d.seasons.length > 1 ? tabs : null, epList);
+    content.append(...[h('div', { class: 'ep-head' }, h('h2', { class: 'section-title' }, 'Épisodes'), epChips), d.seasons.length > 1 ? tabs : null, epList].filter(Boolean));
     showSeason(startSeason);
   }
 

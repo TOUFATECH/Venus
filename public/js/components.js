@@ -1,6 +1,7 @@
 // Composants partagés : cartes, rangées, actions de lecture
 import { h, icon, img, picture, placeholder, fmtDate, daysSince } from './ui.js';
 import { go } from './app.js';
+import { prefs } from './api.js';
 
 export function playPath(id, t) { return `/lecture/${id}${t != null ? `?t=${Math.floor(t)}` : ''}`; }
 
@@ -32,10 +33,10 @@ export function card(item, { poster = false, rank = null, onFocus } = {}) {
 
   let media;
   if (poster && !isClip) {
-    media = item.poster ? picture(img(item.poster), item.title) : placeholder(item.title);
+    media = item.poster ? picture(img(item.poster), item.title) : framePoster(item);
   } else {
     const src = img(item.backdrop || item.still);
-    media = src ? picture(src, title) : isEp || isClip ? h('img', { src: `/api/items/${item.id}/thumb`, alt: '', loading: 'lazy' }) : placeholder(title);
+    media = src ? picture(src, title) : frameImage(item.id, title);
   }
 
   let sub;
@@ -62,8 +63,67 @@ export function card(item, { poster = false, rank = null, onFocus } = {}) {
     pct > 0 && !(p && p.watched) ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
     seen ? h('span', { class: 'check', title: 'Déjà vu' }, icon('check')) : null),
   h('div', { class: 'cap' }, h('b', {}, title), sub ? h('small', {}, sub) : null));
-  if (onFocus) { el.addEventListener('focus', () => onFocus(item)); el.addEventListener('mouseenter', () => onFocus(item)); }
+  if (onFocus) el.addEventListener('focus', () => onFocus(item));
+  attachPreview(el, item);
   return el;
+}
+
+// Image tirée de la vidéo quand il n'y a pas d'affiche (pas de clé TMDB, titre inconnu…)
+export function frameImage(id, title) {
+  const el = h('img', { src: `/api/items/${id}/thumb`, alt: '', loading: 'lazy', decoding: 'async' });
+  el.addEventListener('error', () => el.replaceWith(placeholder(title)), { once: true });
+  return el;
+}
+export function framePoster(item) {
+  return h('div', { class: 'gen-poster' }, frameImage(item.id, item.title), h('b', {}, item.title));
+}
+
+// Aperçu vidéo au survol de la souris (une seule carte à la fois)
+let livePreview = null;
+function stopPreview() {
+  if (!livePreview) return;
+  clearTimeout(livePreview.timer);
+  if (livePreview.video) { livePreview.video.pause(); livePreview.video.removeAttribute('src'); livePreview.video.load(); livePreview.video.remove(); }
+  livePreview.el.classList.remove('previewing');
+  livePreview = null;
+}
+function attachPreview(el, item) {
+  if (item.type === 'channel') return;
+  el.addEventListener('mouseenter', () => {
+    if (document.documentElement.classList.contains('touch') || !prefs.get('hoverPreview')) return;
+    stopPreview();
+    const state = { el, video: null, timer: null };
+    livePreview = state;
+    state.timer = setTimeout(() => {
+      if (livePreview !== state) return;
+      const v = h('video', { class: 'pv', muted: true, loop: true, playsinline: true, preload: 'auto', 'aria-hidden': 'true' });
+      v.muted = !prefs.get('hoverSound');
+      v.src = `/api/items/${item.id}/preview`;
+      v.addEventListener('playing', () => { if (livePreview === state) el.classList.add('previewing'); });
+      v.addEventListener('error', () => v.remove(), { once: true });
+      state.video = v;
+      el.querySelector('.shot').append(v);
+      v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
+    }, 650);
+  });
+  el.addEventListener('mouseleave', () => { if (livePreview && livePreview.el === el) stopPreview(); });
+  el.addEventListener('click', stopPreview);
+}
+window.addEventListener('hashchange', stopPreview);
+
+// Flèches gauche / droite sur une rangée qui défile (souris) ; le doigt et le pavé tactile glissent normalement
+export function scrollArrows(scroller) {
+  const mk = (dir) => h('button', { type: 'button', class: `row-arrow ${dir < 0 ? 'prev' : 'next'}`, tabindex: '-1', 'aria-label': dir < 0 ? 'Précédent' : 'Suivant',
+    onclick: () => scroller.scrollBy({ left: dir * Math.max(240, scroller.clientWidth * 0.82), behavior: 'smooth' }) }, icon(dir < 0 ? 'back' : 'fwd'));
+  const prev = mk(-1), next = mk(1);
+  const update = () => {
+    prev.classList.toggle('off', scroller.scrollLeft < 8);
+    next.classList.toggle('off', scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 8);
+  };
+  scroller.addEventListener('scroll', update, { passive: true });
+  new ResizeObserver(update).observe(scroller);
+  requestAnimationFrame(update);
+  return h('div', { class: 'row-body' }, prev, scroller, next);
 }
 
 export function row(r, opts = {}) {
@@ -79,7 +139,7 @@ export function row(r, opts = {}) {
   if (r.more) tools.push(h('button', { class: 'row-link f', onclick: () => go(r.more) }, 'Tout voir'));
   return h('section', { class: `row${r.style === 'channels' ? ' row-channels' : ''}`, 'aria-label': r.title },
     h('div', { class: 'row-head' }, h('h2', {}, r.title), tools.length ? h('div', { class: 'row-tools' }, tools) : null),
-    scroller);
+    scrollArrows(scroller));
 }
 
 export function metaLine(item, extra = []) {

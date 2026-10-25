@@ -113,6 +113,8 @@ if (libSql && /CHECK/.test(libSql.sql)) {
 }
 db.exec("UPDATE items SET category = CASE type WHEN 'movie' THEN 'movie' WHEN 'clip' THEN 'clip' WHEN 'channel' THEN 'channel' ELSE (SELECT CASE l.type WHEN 'anime' THEN 'anime' ELSE 'show' END FROM libraries l WHERE l.id = items.library_id) END WHERE category IS NULL");
 db.exec('CREATE INDEX IF NOT EXISTS idx_items_cat ON items(category, type)');
+// Doubles épisodes mal reconnus par une version précédente (ex. « S01E01-2160p »)
+db.exec("UPDATE items SET episode_end = NULL WHERE episode_end IS NOT NULL AND (episode_end <= episode_num OR episode_end - episode_num > 3)");
 
 // Cache des requêtes préparées
 const cache = new Map();

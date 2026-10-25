@@ -41,7 +41,7 @@ export function parseMovie(filePath, libRoot) {
 }
 
 const EP_PATTERNS = [
-  /\bS(\d{1,2})[ ._-]*E(\d{1,3})(?:[ ._-]*(?:E|-E?)(\d{1,3}))?/i,
+  /\bS(\d{1,2})[ ._-]*E(\d{1,3})(?:[ ._-]*(?:E|-E?)(\d{1,3})(?![\dpi]))?/i,
   /\b(\d{1,2})x(\d{2,3})\b/i,
   /\bSaison[ ._-]*(\d{1,2})[ ._-]*(?:Episode|Épisode|Ep)[ ._-]*(\d{1,3})/i,
   /\bSeason[ ._-]*(\d{1,2})[ ._-]*(?:Episode|Ep)[ ._-]*(\d{1,3})/i,
@@ -54,7 +54,13 @@ export function parseEpisode(filePath, libRoot) {
   let season = null, episode = null, episodeEnd = null, matchIdx = -1;
   for (const re of EP_PATTERNS) {
     const m = re.exec(file);
-    if (m) { season = Number(m[1]); episode = Number(m[2]); episodeEnd = m[3] ? Number(m[3]) : null; matchIdx = m.index; break; }
+    if (m) {
+      season = Number(m[1]); episode = Number(m[2]); matchIdx = m.index;
+      // Double épisode (S01E01-E02) seulement si la fin suit vraiment le début
+      const end = m[3] ? Number(m[3]) : null;
+      episodeEnd = end && end > episode && end - episode <= 3 ? end : null;
+      break;
+    }
   }
   // Saison depuis le dossier
   const seasonDir = parts.slice(0, -1).reverse().find((p) => /^(season|saison|s)[ ._-]*\d{1,2}$/i.test(p) || /^specials?$/i.test(p));
@@ -76,7 +82,7 @@ export function parseEpisode(filePath, libRoot) {
   if (matchIdx >= 0) {
     const after = file.slice(matchIdx).replace(EP_PATTERNS.find((re) => re.test(file)), '');
     const t = cleanTitle(after.replace(/^[\s._-]+/, ''), { fallback: false }).title;
-    if (t && t.length > 1 && !/^\d+$/.test(t)) epTitle = t;
+    if (t && t.length > 1 && !/^[\d\s.]+$/.test(t)) epTitle = t;
   }
   return { show: show.title, showYear: show.year, season, episode: episode ?? 1, episodeEnd, title: epTitle };
 }

@@ -40,7 +40,7 @@ export function joinParty(code, handlers) {
 }
 
 // Panneau latéral : participants, réactions, discussion
-export function partyPanel(code, { onReact, onChat, onInvite, onLeave }) {
+export function partyPanel(code, { onReact, onChat, onInvite, onLeave, onHide }) {
   const membersEl = h('div', { class: 'pp-members' });
   const log = h('div', { class: 'pp-log', 'aria-live': 'polite' });
   const input = h('input', { class: 'input', id: 'pp-text', placeholder: 'Écrire un message', maxlength: 280, autocomplete: 'off' });
@@ -49,8 +49,8 @@ export function partyPanel(code, { onReact, onChat, onInvite, onLeave }) {
       h('div', {}, h('b', {}, 'Séance'), h('span', { class: 'pp-code' }, code)),
       h('div', { class: 'pp-tools' },
         h('button', { class: 'p-icon small f', 'aria-label': 'Inviter', onclick: onInvite }, icon('people')),
-        h('button', { class: 'p-icon small f', 'aria-label': 'Masquer la discussion', onclick: () => panel.classList.toggle('folded') }, icon('chat')),
-        h('button', { class: 'p-icon small f', 'aria-label': 'Quitter la séance', onclick: onLeave }, icon('close')))),
+        h('button', { class: 'p-icon small f', 'aria-label': 'Masquer la discussion', title: 'Masquer (touche C)', onclick: () => onHide && onHide() }, icon('close')),
+        h('button', { class: 'btn btn-ghost btn-small f', onclick: onLeave }, 'Quitter'))),
     membersEl,
     h('div', { class: 'pp-reacts' }, REACTIONS.map((e) => h('button', { class: 'react-btn f', 'aria-label': `Réagir ${e}`, onclick: () => onReact(e) }, e))),
     log,
@@ -67,6 +67,10 @@ export function partyPanel(code, { onReact, onChat, onInvite, onLeave }) {
     message(c) {
       log.append(h('div', { class: 'pp-msg' }, h('b', {}, c.name), ' ', c.text));
       while (log.children.length > 60) log.firstChild.remove();
+      log.scrollTop = log.scrollHeight;
+    },
+    react(emoji, name) {
+      log.append(h('div', { class: 'pp-msg pp-react' }, name ? h('b', {}, name) : null, ' ', h('span', {}, emoji)));
       log.scrollTop = log.scrollHeight;
     },
     notice(text) {

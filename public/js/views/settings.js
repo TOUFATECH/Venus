@@ -1,5 +1,5 @@
 // Réglages : mon profil (tous) + administration du serveur (administrateur)
-import { api, auth, preferredQuality, setPreferredQuality } from '../api.js';
+import { api, auth, preferredQuality, setPreferredQuality, prefs } from '../api.js';
 import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet } from '../ui.js';
 import { state, switchProfile, go } from '../app.js';
 import { openSourceWizard } from './source-wizard.js';
@@ -32,6 +32,8 @@ function adviceBox(adv) {
       h('button', { class: 'btn btn-small f', type: 'button', 'aria-label': 'Copier la commande', onclick: copy }, icon('copy'), 'Copier')) : null,
     adv.command && adv.command.includes('<ID-du-conteneur>') ? h('small', {}, 'À lancer sur l’hôte Proxmox, dans le dossier Venus (ou via la commande curl du README). Remplacez <ID-du-conteneur> par le numéro du conteneur, par exemple 7700.') : null);
 }
+const prefSwitch = (key, label) => h('label', { class: 'switch' }, h('span', {}, label),
+  h('input', { type: 'checkbox', class: 'f', checked: !!prefs.get(key), onchange: (e) => { prefs.set(key, e.target.checked); toast('Préférence enregistrée pour cet appareil'); } }));
 const fmtBytes = (b) => `${(b / 1073741824).toFixed(1).replace('.', ',')} Go`;
 
 export async function render(main) {
@@ -48,6 +50,10 @@ export async function render(main) {
       'Si l’audio est déjà dans votre langue, seuls les sous-titres « forcés » s’affichent.'),
     field('Qualité sur cet appareil', select([['auto', 'Auto'], ['original', 'Originale'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p'], ['360p', '360p (data mobile)']], preferredQuality(),
       { onchange: (e) => { setPreferredQuality(e.target.value); toast('Qualité enregistrée pour cet appareil'); } })),
+    h('h3', { class: 'box-sub' }, 'Lecture sur cet appareil'),
+    prefSwitch('fullscreenOnPlay', 'Plein écran au lancement d’une vidéo'),
+    prefSwitch('hoverPreview', 'Aperçu vidéo au survol d’une affiche'),
+    prefSwitch('hoverSound', 'Aperçu avec le son'),
     h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
       h('button', { class: 'btn btn-small f', onclick: () => editProfile(me, true, () => window.dispatchEvent(new CustomEvent('vn:reboot'))) }, 'Modifier nom, couleur et code PIN'),
       h('button', { class: 'btn btn-small f', onclick: switchProfile }, 'Changer de profil'),
@@ -88,7 +94,7 @@ export async function render(main) {
     const typeCard = ([type, label, hint]) => {
       const libs = a.libraries.filter((l) => l.type === type);
       const [n, word] = COUNTS[type];
-      return h('div', { class: `lib-card${libs.length ? '' : ' empty'}` },
+      return h('div', { class: `lib-card${libs.length ? '' : ' is-empty'}` },
         h('div', { class: 'lib-head' }, icon(LIB_ICON[type]), h('b', {}, label),
           libs.length && n ? h('small', {}, `${n} ${word}${n > 1 ? 's' : ''}`) : null),
         libs.length ? libs.map((l) => h('div', { class: 'list-row' },

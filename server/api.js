@@ -13,7 +13,7 @@ import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scan
 import { pipeline } from 'node:stream/promises';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow } from './metadata.js';
 import {
-  decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, QUALITIES, hw, channelSnapshot,
+  decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot,
 } from './stream.js';
 import { detectHardware } from './hw.js';
 import { probeLive } from './probe.js';
@@ -534,7 +534,7 @@ router.post('/api/play/:id', async (ctx) => {
   sendJson(ctx.res, {
     itemId: item.id, type: item.type, mode: decision.mode, reason: decision.reason, url, sessionId, offset,
     hwLabel: decision.mode === 'transcode' ? hw.label : null,
-    duration: probe.duration, title: item.show_title || item.title,
+    duration: probe.duration, title: item.show_title || item.title, showId: item.show_id || null, season: item.season_num ?? null,
     subtitle: item.type === 'episode' ? `S${item.season_num} · É${item.episode_num} — ${item.title}` : (item.year ? String(item.year) : ''),
     backdrop: item.show_backdrop || item.backdrop || item.still, logo: item.show_logo || item.logo,
     startAt: start,
@@ -605,10 +605,29 @@ router.get('/api/subs/:id/:sub', async (ctx) => {
   sendFile(ctx.req, ctx.res, file, { cache: 'private, max-age=86400', type: 'text/vtt; charset=utf-8' });
 });
 
+// Fichier vidéo qui représente un titre : le film lui-même, ou le premier épisode d'une série / saison
+function playableOf(item) {
+  if (!item) return null;
+  if (item.path && item.type !== 'channel') return item;
+  if (item.type === 'show' || item.type === 'season') {
+    const col = item.type === 'show' ? 'show_id' : 'season_id';
+    return get(`SELECT * FROM items WHERE type='episode' AND ${col} = ? AND path IS NOT NULL ORDER BY season_num = 0, season_num, episode_num LIMIT 1`, item.id) || null;
+  }
+  return null;
+}
+
 router.get('/api/items/:id/thumb', async (ctx) => {
-  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
-  if (!item || !item.path) throw new HttpError(404, 'Introuvable');
+  const item = playableOf(get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)));
+  if (!item) throw new HttpError(404, 'Introuvable');
   const file = await thumbnail(item, item.duration);
+  sendFile(ctx.req, ctx.res, file, { cache: 'public, max-age=2592000, immutable' });
+});
+
+// Aperçu muet joué au survol d'une affiche
+router.get('/api/items/:id/preview', async (ctx) => {
+  const item = playableOf(get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)));
+  if (!item) throw new HttpError(404, 'Introuvable');
+  const file = await previewClip(item);
   sendFile(ctx.req, ctx.res, file, { cache: 'public, max-age=2592000, immutable' });
 });
 
@@ -852,6 +871,15 @@ router.get('/api/admin/fs', (ctx) => {
     return sendJson(ctx.res, { path: '/', parent: '/', dirs: drives, absolute: true });
   }
   const dir = path.resolve(asked);
+  const exts = (ctx.url.searchParams.get('files') || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  let files = [];
+  if (exts.length) {
+    try {
+      files = fs.readdirSync(dir, { withFileTypes: true })
+        .filter((e) => e.isFile() && exts.includes(path.extname(e.name).slice(1).toLowerCase()))
+        .map((e) => e.name).sort((a, b) => a.localeCompare(b));
+    } catch { /* illisible : traité plus bas */ }
+  }
   let entries = [];
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true })
@@ -859,7 +887,7 @@ router.get('/api/admin/fs', (ctx) => {
       .map((e) => e.name).sort((a, b) => a.localeCompare(b));
   } catch { throw new HttpError(400, 'Dossier illisible'); }
   const parent = path.dirname(dir);
-  sendJson(ctx.res, { path: dir, parent: process.platform === 'win32' && parent === dir ? '/' : parent, dirs: entries });
+  sendJson(ctx.res, { path: dir, parent: process.platform === 'win32' && parent === dir ? '/' : parent, dirs: entries, files });
 });
 
 router.get('/api/admin/match/:id', async (ctx) => {

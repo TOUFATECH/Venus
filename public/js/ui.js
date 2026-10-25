@@ -42,6 +42,11 @@ const P = {
   plus: '<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   info: '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 11v6M12 7.5v.1" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+  fwd: '<path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
+  vol: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  vollow: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  mute: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  eps: '<rect x="3.5" y="5" width="11" height="8" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M18 7v8.5a1.5 1.5 0 0 1-1.5 1.5H7M21 10v8.5a1.5 1.5 0 0 1-1.5 1.5H10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
   back: '<path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   search: '<circle cx="11" cy="11" r="6.5" stroke="currentColor" stroke-width="2.2" fill="none"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
   home: '<path d="M4 10.5L12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z" fill="currentColor"/>',
@@ -98,17 +103,21 @@ export function avatar(profile, cls = '') {
 }
 
 export function toast(msg, err = false) {
-  let wrap = document.querySelector('.toasts');
-  if (!wrap) { wrap = h('div', { class: 'toasts', role: 'status' }); document.body.append(wrap); }
+  const host = overlayHost();
+  let wrap = host.querySelector(':scope > .toasts');
+  if (!wrap) { wrap = h('div', { class: 'toasts', role: 'status' }); host.append(wrap); }
   const t = h('div', { class: `toast${err ? ' err' : ''}` }, msg);
   wrap.append(t);
   setTimeout(() => t.remove(), 3500);
 }
 
 // Feuille modale (menus) — se ferme avec Retour / Échap / clic à l'extérieur
-export function sheet(title, content, { onClose, keepBackspace = false } = {}) {
+// En plein écran, seul l'élément plein écran est visible : les fenêtres et messages s'y affichent
+export const overlayHost = () => { const f = document.fullscreenElement || document.webkitFullscreenElement; return f && f !== document.documentElement ? f : document.body; };
+
+export function sheet(title, content, { onClose, keepBackspace = false, wide = false } = {}) {
   const prevFocus = document.activeElement;
-  const box = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, title ? h('h2', {}, title) : null, content);
+  const box = h('div', { class: `sheet${wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, title ? h('h2', {}, title) : null, content);
   const wrap = h('div', { class: 'sheet-wrap' }, box);
   const close = () => {
     wrap.remove(); document.removeEventListener('keydown', onKey, true);
@@ -117,7 +126,7 @@ export function sheet(title, content, { onClose, keepBackspace = false } = {}) {
   const onKey = (e) => { if (keepBackspace && e.key === 'Backspace') return; if (isBack(e)) { e.preventDefault(); e.stopPropagation(); close(); } };
   wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
   document.addEventListener('keydown', onKey, true);
-  document.body.append(wrap);
+  overlayHost().append(wrap);
   requestAnimationFrame(() => (box.querySelector('.opt.on, .f, input, button') || box).focus());
   return { close, box };
 }
