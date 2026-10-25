@@ -56,8 +56,10 @@ export async function render(main, { id, query }) {
   const video = h('video', { playsinline: true, 'webkit-playsinline': true, 'x-webkit-airplay': 'allow', preload: 'auto' });
   const subsLayer = h('div', { class: 'p-subs', 'aria-live': 'off' });
   const spinner = h('div', { class: 'p-loading' });
-  const titleEl = h('div', { class: 'p-title' });
-  const subEl = h('div', { class: 'p-sub' });
+  // Le nom du titre ramène à sa fiche (film, clip) ou à la liste des épisodes (série, animé)
+  const openSheet = () => { const t = detailsPath(); if (t) go(t); };
+  const titleEl = h('button', { class: 'p-title p-link f', title: 'Voir la fiche', onclick: openSheet });
+  const subEl = h('button', { class: 'p-sub p-link f', title: 'Voir tous les épisodes', onclick: openSheet });
   const badge = h('span', { class: 'p-badge' });
   const backBtn = h('button', { class: 'p-icon f', 'aria-label': 'Retour', onclick: () => exit() }, icon('back'));
   const playBtn = h('button', { class: 'p-icon big f', 'aria-label': 'Lecture / pause', 'data-autofocus': true, onclick: () => togglePlay() }, icon('play'));
@@ -172,6 +174,8 @@ export async function render(main, { id, query }) {
     nextShown = false;
     titleEl.textContent = info.title;
     subEl.textContent = info.subtitle;
+    titleEl.title = info.showId ? 'Voir la série et tous ses épisodes' : info.type === 'channel' ? 'Toutes les chaînes' : 'Voir la fiche';
+    subEl.hidden = !info.subtitle;
     setTitle(info.title);
     badge.textContent = info.mode === 'direct' ? 'Direct' : info.mode === 'remux' ? 'Remux' : `Converti · ${info.hwLabel || 'processeur'}`;
     badge.title = info.reason;
@@ -509,6 +513,24 @@ export async function render(main, { id, query }) {
     if (!video.paused || casting) saveProgress();
     else if (info && info.sessionId) fetch(`/api/hls/${info.sessionId}/ping`, { method: 'POST' }).catch(() => {});
   }, 10000);
+  // Tableau de bord : le lecteur signale ce qu'il joue, et obéit aux commandes de l'administrateur
+  const beat = (stop = false) => {
+    if (!info || !auth.token) return;
+    const body = stop ? { stop: true } : { itemId: info.itemId, position: info.live ? 0 : position(), duration: info.live ? 0 : duration(), paused: video.paused && !casting, live: !!info.live, mode: info.mode, quality, hw: info.hwLabel || null, sessionId: info.sessionId || null };
+    fetch('/api/nowplaying', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` }, body: JSON.stringify(body) }).catch(() => {});
+  };
+  const beatTimer = setInterval(() => beat(), 10000);
+  let beatSoon = null;
+  const beatLater = () => { clearTimeout(beatSoon); beatSoon = setTimeout(() => beat(), 800); };
+  video.addEventListener('playing', beatLater);
+  video.addEventListener('pause', beatLater);
+  const onControl = (e) => {
+    const d = e.detail || {};
+    if (d.cmd === 'pause') { video.pause(); toast(`${d.from || 'L’administrateur'} a mis la lecture en pause`); }
+    else if (d.cmd === 'play') video.play().catch(() => {});
+    else if (d.cmd === 'stop') { toast(`${d.from || 'L’administrateur'} a arrêté la lecture`); exit(); }
+  };
+  window.addEventListener('vn:control', onControl);
   const onHide = () => { if (document.visibilityState === 'hidden') saveProgress(); };
   document.addEventListener('visibilitychange', onHide);
   // Fermeture de l'onglet / rechargement : on libère tout de suite la conversion côté serveur
@@ -837,6 +859,13 @@ export async function render(main, { id, query }) {
     } catch (e) { toast(e.message, true); }
   }
 
+  function detailsPath() {
+    if (!info) return null;
+    if (info.type === 'channel') return '/tv';
+    if (info.showId) return `/titre/${info.showId}?ep=${id}`;
+    return `/titre/${id}`;
+  }
+
   function exit() {
     back(info && info.type === 'channel' ? '/tv' : info && ['episode', 'clip'].includes(info.type) ? '/' : `/titre/${id}`);
   }
@@ -844,6 +873,7 @@ export async function render(main, { id, query }) {
   function destroy() {
     destroyed = true;
     saveProgress();
+    clearInterval(beatTimer); clearTimeout(beatSoon); window.removeEventListener('vn:control', onControl); beat(true);
     clearInterval(saveTimer); clearInterval(subsTimer); clearInterval(nextTimer); clearTimeout(uiTimer); clearTimeout(seekTimer);
     document.removeEventListener('keydown', onKey, true);
     if (zapper) { zapper.stop(); document.removeEventListener('keydown', zapper.onKey, true); }

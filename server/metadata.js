@@ -39,7 +39,7 @@ export async function testKey(key) {
 }
 
 // Téléchargement et mise en cache local des images (l'interface ne dépend plus d'internet ensuite)
-async function downloadImage(tmdbPath, size) {
+export async function downloadImage(tmdbPath, size) {
   if (!tmdbPath) return null;
   const name = `t_${size}_${tmdbPath.replace(/^\//, '').replace(/[^\w.]/g, '')}`;
   const dest = path.join(imagesDir, name);

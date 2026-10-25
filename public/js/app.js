@@ -1,6 +1,6 @@
 // Venus — démarrage, routage et coque de l'application
 import { api, auth } from './api.js';
-import { h, icon, avatar, toast, logoMark, brand, sheet } from './ui.js';
+import { h, icon, avatar, toast, logoMark, brand, sheet, overlayHost } from './ui.js';
 import { initNav, focusFirst } from './nav.js';
 import { menuItems, menuPrefs, labelOf, iconOf, dayPart } from './menu.js';
 import { applyTheme, currentPlanet, planet } from './themes.js';
@@ -24,6 +24,7 @@ const ROUTES = [
   [/^\/titre\/(\d+)$/, () => import('./views/details.js'), (m) => ({ id: Number(m[1]) })],
   [/^\/lecture\/(\d+)$/, () => import('./views/player.js'), (m) => ({ id: Number(m[1]) })],
   [/^\/reglages$/, () => import('./views/settings.js')],
+  [/^\/tableau-de-bord$/, () => import('./views/dashboard.js')],
   [/^\/cesoir$/, () => import('./views/cesoir.js')],
   [/^\/seance$/, () => import('./views/seance.js')],
   [/^\/telecommande$/, () => import('./views/telecommande.js')],
@@ -185,6 +186,12 @@ function listenEvents() {
   if (events || !window.EventSource || window.__VN_MEMORY_ROUTER) return;
   events = new EventSource(`/api/events?token=${encodeURIComponent(auth.token || '')}`);
   events.addEventListener('library', (e) => { try { onLibrary(JSON.parse(e.data)); } catch { /* message illisible */ } });
+  // Commandes de l'administrateur : message affiché, ou pause / reprise / arrêt (gérés par le lecteur)
+  events.addEventListener('control', (e) => {
+    let d; try { d = JSON.parse(e.data); } catch { return; }
+    if (d.cmd === 'message') adminMessage(d);
+    window.dispatchEvent(new CustomEvent('vn:control', { detail: d }));
+  });
   events.onerror = () => { /* le navigateur se reconnecte tout seul */ };
 }
 window.addEventListener('vn:library', (e) => onLibrary(e.detail));
@@ -200,6 +207,14 @@ async function onLibrary(d) {
       const y = scrollY; await route(); window.scrollTo(0, y);
     }
   }
+}
+function adminMessage(d) {
+  const host = overlayHost();
+  const box = h('div', { class: 'admin-msg', role: 'alertdialog', 'aria-live': 'assertive' },
+    h('b', {}, `Message de ${d.from || 'l’administrateur'}`), h('p', {}, d.text),
+    h('button', { class: 'btn btn-small f', onclick: () => box.remove() }, 'OK'));
+  host.append(box);
+  setTimeout(() => box.remove(), 20000);
 }
 export function stopEvents() { if (events) { events.close(); events = null; } }
 

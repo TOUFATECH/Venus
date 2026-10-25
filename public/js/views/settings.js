@@ -1,5 +1,5 @@
 // Réglages : mon profil (tous) + administration du serveur (administrateur)
-import { api, auth, preferredQuality, setPreferredQuality, prefs, hoverMode, heroTrailers } from '../api.js';
+import { api, auth, preferredQuality, setPreferredQuality, prefs, hoverMode, heroTrailers, detailsTrailers } from '../api.js';
 import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet } from '../ui.js';
 import { state, switchProfile, go } from '../app.js';
 import { openSourceWizard } from './source-wizard.js';
@@ -59,6 +59,10 @@ export async function render(main, { query } = {}) {
     prefSwitch('hoverSound', 'Aperçus et bandes-annonces avec le son'),
     h('label', { class: 'switch' }, h('span', {}, 'Bandes-annonces dans l’affiche d’accueil'),
       h('input', { type: 'checkbox', class: 'f', checked: heroTrailers(), onchange: (e) => { prefs.set('heroTrailer', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
+    h('label', { class: 'switch' }, h('span', {}, 'Bande-annonce en fond des fiches (films, séries, animés)'),
+      h('input', { type: 'checkbox', class: 'f', checked: detailsTrailers(), onchange: (e) => { prefs.set('detailsTrailer', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
+    h('label', { class: 'switch' }, h('span', {}, 'Avec le son'),
+      h('input', { type: 'checkbox', class: 'f', checked: !!prefs.get('detailsSound'), onchange: (e) => { prefs.set('detailsSound', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
     h('div', { class: 'two-cols wide' },
       field('Sous-titres', select([['text', 'Texte blanc seul'], ['box', 'Texte sur fond noir']], prefs.get('subStyle'), { onchange: (e) => { prefs.set('subStyle', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
       field('Taille', select([['small', 'Petite'], ['medium', 'Moyenne'], ['large', 'Grande']], prefs.get('subSize'), { onchange: (e) => { prefs.set('subSize', e.target.value); toast('Préférence enregistrée pour cet appareil'); } }))),
@@ -76,7 +80,8 @@ export async function render(main, { query } = {}) {
 
   const menuBox = menuEditor(me);
   const themeBox = themeEditor();
-  page.append(h('div', { class: 'page-head' }, h('h1', {}, 'Réglages')));
+  page.append(h('div', { class: 'page-head' }, h('h1', {}, 'Réglages'),
+    me.isAdmin ? h('button', { class: 'tool f', onclick: () => go('/tableau-de-bord') }, icon('gauge'), 'Tableau de bord') : null));
   const toMenu = () => {
     const sec = query && query.get('section');
     if (!sec) return;

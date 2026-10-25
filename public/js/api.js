@@ -21,7 +21,7 @@ export async function api(path, { method = 'GET', body, signal } = {}) {
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     const err = new ApiError(res.status, (data && data.error) || `Erreur ${res.status}`);
-    if (res.status === 401 && path !== '/api/login') window.dispatchEvent(new CustomEvent('vn:unauth'));
+    if (res.status === 401 && !path.startsWith('/api/login')) window.dispatchEvent(new CustomEvent('vn:unauth'));
     if (res.status === 403 && err.message === 'Choisissez un profil') window.dispatchEvent(new CustomEvent('vn:noprofile'));
     throw err;
   }
@@ -88,7 +88,7 @@ export function openStream(path, handlers) {
 }
 
 // Préférences de cet appareil (aperçu au survol, plein écran au lancement, volume)
-const PREF_DEFAULTS = { hoverPreview: true, hoverSound: false, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true, chatSound: true, autoSkip: false, hoverMode: null, heroTrailer: null, subStyle: 'text', subSize: 'medium' };
+const PREF_DEFAULTS = { hoverPreview: true, hoverSound: false, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true, chatSound: true, autoSkip: false, hoverMode: null, heroTrailer: null, detailsTrailer: null, detailsSound: false, subStyle: 'text', subSize: 'medium' };
 export const prefs = {
   get(k) {
     try { const v = localStorage.getItem(`vn_pref_${k}`); return v == null ? PREF_DEFAULTS[k] : JSON.parse(v); } catch { return PREF_DEFAULTS[k]; }
@@ -103,6 +103,11 @@ export function hoverMode() {
   return prefs.get('hoverPreview') === false ? 'off' : 'trailer';
 }
 // Bandes-annonces dans l'affiche d'accueil : activées par défaut sur ordinateur et TV, pas sur téléphone (données mobiles)
+// Bande-annonce en fond des fiches : même réglage par défaut que l'accueil
+export function detailsTrailers() {
+  const v = prefs.get('detailsTrailer');
+  return v != null ? !!v : heroTrailers();
+}
 export function heroTrailers() {
   const v = prefs.get('heroTrailer');
   if (v != null) return !!v;

@@ -183,6 +183,7 @@ const snap = (t) => (t < 3 ? 0 : t);
 // ------------------------------------------------------------------ file d'attente (une saison à la fois)
 const queue = [];
 let busy = false;
+export const segmentsPending = () => queue.length;
 export function scheduleSeason(seasonId, urgent = false) {
   if (!seasonId || queue.includes(seasonId)) return;
   if (urgent) queue.unshift(seasonId); else queue.push(seasonId);

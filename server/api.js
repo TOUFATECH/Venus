@@ -11,15 +11,16 @@ import {
 } from './auth.js';
 import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scanner.js';
 import { pipeline } from 'node:stream/promises';
-import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow } from './metadata.js';
+import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage } from './metadata.js';
 import {
   decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot,
 } from './stream.js';
 import { detectHardware } from './hw.js';
 import { probeLive } from './probe.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
-import { getSegments, scheduleSeason } from './segments.js';
-import { scheduleRatings, refreshRatings, omdbKey, simklId } from './ratings.js';
+import { getSegments, scheduleSeason, segmentsPending } from './segments.js';
+import { control, deviceId, logActivity, recentActivity, heartbeat, stopHeartbeat, nowPlaying, tokenOfDevice, loginCode, useLoginCode, loginCodeActive } from './activity.js';
+import { scheduleRatings, refreshRatings, omdbKey, simklId, ratingsPending } from './ratings.js';
 import { discover as discoverTitles, discoverAvailable, seerrOn, seerrStatus, seerrRequest, seerrTest, seerrConf, resolveTmdb, trailerFor } from './discover.js';
 import { discover, listShares, mountRemote, unmountRemote, remoteOf, describe, netState, xtreamUrl } from './netshare.js';
 
@@ -57,8 +58,16 @@ function mediaSummary(probeJson) {
     resolution: res, hdr: p.video.hdr ? (p.video.dovi ? 'Dolby Vision' : 'HDR') : null, codec: p.video.codec,
     surround: surround ? (p.audio.some((a) => /atmos/i.test(a.title) || a.profile === 'TrueHD Atmos') ? 'Dolby Atmos' : '5.1') : null,
     audio: [...new Set(p.audio.map((a) => a.lang))], subs: [...new Set(p.subs.map((s) => s.lang))],
+    // Détail des pistes, comme sur la fiche technique
+    container: p.container || null, bitrate: p.bitrate || null,
+    video: { codec: CODEC[p.video.codec] || String(p.video.codec || '').toUpperCase(), width: w, height: h, fps: p.video.fps || null,
+      bits: p.video.bitDepth || (/10/.test(p.video.pixFmt || '') ? 10 : null), hdr: p.video.dovi ? 'Dolby Vision' : p.video.hdr ? (p.video.hdr === true ? 'HDR10' : String(p.video.hdr)) : null },
+    tracks: p.audio.map((a) => ({ lang: a.lang, codec: CODEC[a.codec] || String(a.codec || '').toUpperCase(), profile: a.profile || '', channels: a.channels, title: a.title || '', isDefault: !!a.isDefault })),
+    subtitles: p.subs.map((x) => ({ lang: x.lang, codec: CODEC[x.codec] || String(x.codec || '').toUpperCase(), forced: !!x.forced, title: x.title || '', external: !!x.external })),
   };
 }
+const CODEC = { hevc: 'HEVC', h264: 'H.264', av1: 'AV1', vp9: 'VP9', mpeg2video: 'MPEG-2', mpeg4: 'MPEG-4', eac3: 'E-AC3', ac3: 'AC3', dts: 'DTS', truehd: 'TrueHD', aac: 'AAC', flac: 'FLAC', opus: 'Opus', mp3: 'MP3', vorbis: 'Vorbis',
+  subrip: 'SRT', ass: 'ASS', ssa: 'SSA', webvtt: 'VTT', vtt: 'VTT', hdmv_pgs_subtitle: 'PGS', dvd_subtitle: 'VobSub', mov_text: 'TX3G', srt: 'SRT' };
 
 function card(i, prog) {
   return {
@@ -94,8 +103,8 @@ events.on('library', () => { chanNums = null; });
 
 // État vu / en cours / non vu, par profil (films, clips, et séries épisode par épisode)
 function statusIndex(pid) {
-  const prog = new Map(all('SELECT item_id, position, duration, watched FROM progress WHERE profile_id=?', pid).map((r) => [r.item_id, r]));
-  const shows = new Map(all(`SELECT e.show_id AS sid, COUNT(*) AS total,
+  const prog = new Map(all('SELECT item_id, position, duration, watched, updated_at FROM progress WHERE profile_id=?', pid).map((r) => [r.item_id, r]));
+  const shows = new Map(all(`SELECT e.show_id AS sid, COUNT(*) AS total, MAX(p.updated_at) AS last,
       SUM(CASE WHEN p.watched = 1 THEN 1 ELSE 0 END) AS seen,
       SUM(CASE WHEN p.watched = 0 AND p.position > 0 THEN 1 ELSE 0 END) AS part
     FROM items e LEFT JOIN progress p ON p.item_id = e.id AND p.profile_id = ?
@@ -109,10 +118,12 @@ function withStatus(c, idx) {
     c.status = total && seen >= total ? 'seen' : seen || (r && r.part) ? 'progress' : 'unseen';
     c.unseen = Math.max(0, total - seen);
     c.episodes = total;
+    c.played = r && r.last ? r.last : null;
   } else if (c.type !== 'channel') {
     const p = idx.prog.get(c.id);
     c.status = !p ? 'unseen' : p.watched ? 'seen' : p.position > 0 ? 'progress' : 'unseen';
     if (p && !c.progress) c.progress = { position: p.position, duration: p.duration, watched: !!p.watched };
+    c.played = p ? p.updated_at : null;
   }
   return c;
 }
@@ -199,9 +210,32 @@ router.post('/api/login', async (ctx) => {
   if (!verifySecret(b.password || '', getSetting('household_password'))) throw new HttpError(401, 'Mot de passe incorrect');
   resetRate(`login:${ip}`);
   const token = createToken(ctx.req.headers['user-agent'] || '');
+  logActivity('login', `Nouvel appareil connecté avec le mot de passe (${deviceLabel(ctx.req.headers['user-agent'])})`, { device: deviceId(token) });
   setCookie(ctx.res, token);
   sendJson(ctx.res, { token });
 });
+
+// Connexion avec le code à 6 chiffres affiché dans le tableau de bord (il change à chaque connexion)
+router.post('/api/login/code', async (ctx) => {
+  const b = await readBody(ctx.req);
+  const ip = ctx.req.socket.remoteAddress;
+  checkRate(`login:${ip}`);
+  if (!loginCodeActive()) throw new HttpError(401, 'Aucun code actif. Demandez à l’administrateur d’ouvrir le tableau de bord pour afficher un code.');
+  if (!useLoginCode(b.code)) throw new HttpError(401, 'Code incorrect ou expiré');
+  resetRate(`login:${ip}`);
+  const token = createToken(ctx.req.headers['user-agent'] || '');
+  logActivity('login', `Nouvel appareil connecté avec le code à 6 chiffres (${deviceLabel(ctx.req.headers['user-agent'])})`, { device: deviceId(token) });
+  setCookie(ctx.res, token);
+  sendJson(ctx.res, { token });
+});
+
+function deviceLabel(ua = '') {
+  ua = String(ua || '');
+  const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : '';
+  const tv = /SMART-TV|Tizen|Web0S|webOS|BRAVIA|AFT|Android TV|GoogleTV/i.test(ua) ? 'TV' : '';
+  const br = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : '';
+  return [tv, br, os && `sur ${os}`].filter(Boolean).join(' ') || 'appareil inconnu';
+}
 
 router.post('/api/logout', (ctx) => {
   if (ctx.auth) run('DELETE FROM tokens WHERE token = ?', ctx.auth.token);
@@ -283,8 +317,12 @@ router.get('/api/events', (ctx) => {
   res.write('retry: 5000\n\n');
   const onLib = (d) => res.write(`event: library\ndata: ${JSON.stringify(d)}\n\n`);
   events.on('library', onLib);
+  // Commandes de l'administrateur pour cet appareil (pause, arrêt, message)
+  const mine = ctx.auth.token;
+  const onCtl = (d) => { if (d.all || d.token === mine) res.write(`event: control\ndata: ${JSON.stringify({ cmd: d.cmd, text: d.text, from: d.from })}\n\n`); };
+  control.on('cmd', onCtl);
   const ping = setInterval(() => res.write(': ping\n\n'), 25000);
-  ctx.req.on('close', () => { clearInterval(ping); events.off('library', onLib); });
+  ctx.req.on('close', () => { clearInterval(ping); events.off('library', onLib); control.off('cmd', onCtl); });
 });
 
 router.get('/api/categories', (ctx) => {
@@ -408,7 +446,19 @@ router.get('/api/library', (ctx) => {
   }[type] || "i.type IN ('movie','show','clip')";
   const items = all(`SELECT i.* FROM items i WHERE ${where} AND ${age.sql} ORDER BY ${type === 'channel' ? 'i.episode_num' : 'i.sort_title'}`, ...age.args);
   const idx = statusIndex(p.id);
-  const out = items.map((i) => withStatus(card(i), idx));
+  // Résolution du premier épisode d'une série, pour le filtre « 4K / HDR »
+  const firstProbe = type === 'channel' ? new Map() : new Map(all(`SELECT show_id, probe FROM items WHERE type = 'episode' AND probe IS NOT NULL GROUP BY show_id`).map((r) => [r.show_id, r.probe]));
+  const out = items.map((i) => {
+    const c = withStatus(card(i), idx);
+    if (type !== 'channel') {
+      const m = mediaSummary(i.type === 'show' ? firstProbe.get(i.id) : i.probe);
+      if (m) { c.res = m.resolution === '4K' ? '4K' : /1080/.test(m.resolution) ? '1080p' : /720/.test(m.resolution) ? '720p' : 'SD'; c.hdr = !!m.hdr; }
+      const cr = parseJson(i.credits, null);
+      if (cr) { c.studios = [...(cr.studios || []), ...(cr.networks || [])].slice(0, 6); c.people = [...(cr.directors || []), ...(cr.cast || []).slice(0, 8)].map((x) => x.name); }
+      if (i.duration && !c.runtime) c.runtime = Math.round(i.duration / 60);
+    }
+    return c;
+  });
   if (type === 'channel') out.sort((a, b) => (a.number || 0) - (b.number || 0));
   sendJson(ctx.res, out);
 });
@@ -423,8 +473,11 @@ router.get('/api/items/:id', (ctx) => {
   out.originalTitle = item.original_title;
   out.tagline = item.tagline;
   out.imdbId = item.imdb_id;
-  // Notes jamais récupérées (ou anciennes) : on les demande tout de suite, elles seront là à la prochaine visite
-  if (!item.ratings_at || Date.now() - item.ratings_at > 10 * 86400000) scheduleRatings([item.id], true);
+  out.credits = parseJson(item.credits, null);
+  out.trailerFull = parseJson(item.trailer, null);
+  // Notes jamais récupérées (ou anciennes), ou distribution manquante : on les demande tout de suite,
+  // elles seront là à la prochaine visite
+  if (['movie', 'show'].includes(item.type) && (!item.ratings_at || Date.now() - item.ratings_at > 10 * 86400000 || (!item.credits && item.tmdb_id && tmdbKey()))) scheduleRatings([item.id], true);
   out.links = {
     senscritique: `https://www.senscritique.com/search?query=${encodeURIComponent(item.title)}`,
     imdb: item.imdb_id ? `https://www.imdb.com/fr/title/${item.imdb_id}/` : null,
@@ -433,9 +486,10 @@ router.get('/api/items/:id', (ctx) => {
   };
   out.inList = !!get('SELECT 1 FROM mylist WHERE profile_id=? AND item_id=?', p.id, item.id);
 
-  if (item.type === 'movie') {
+  if (item.type !== 'show') {
     out.media = mediaSummary(item.probe);
     out.duration = item.duration;
+    out.file = { name: path.basename(item.path || ''), size: item.size || null, container: out.media && out.media.container };
     out.progress = get('SELECT position, duration, watched FROM progress WHERE profile_id=? AND item_id=?', p.id, item.id) || null;
   } else {
     const seasons = all("SELECT * FROM items WHERE type='season' AND show_id=? ORDER BY season_num = 0, season_num", item.id);
@@ -460,17 +514,62 @@ router.get('/api/items/:id', (ctx) => {
     if (next) { const c = card(next, pm.get(next.id)); c.duration = next.duration; out.nextUp = c; }
     const firstEp = eps.find((e) => e.probe);
     out.media = firstEp ? mediaSummary(firstEp.probe) : null;
+    out.totalDuration = eps.reduce((n, e) => n + (e.duration || 0), 0);
   }
   // Titres similaires (genres communs)
   const age = ageClause(p);
   const genres = parseJson(item.genres, []);
-  if (genres.length) {
+  if (item.type === 'clip' || item.type === 'channel') {
+    // Clips : les autres clips du même dossier d'abord, puis les plus récents
+    const dir = path.dirname(item.path || '');
+    out.similar = all(`SELECT * FROM items WHERE type = ? AND id != ? ORDER BY added_at DESC LIMIT 200`, item.type, item.id)
+      .sort((a, b) => (path.dirname(b.path || '') === dir) - (path.dirname(a.path || '') === dir)).slice(0, 18).map((x) => card(x));
+  } else if (genres.length) {
     const cands = all(`SELECT i.* FROM items i WHERE i.type IN ('movie','show') AND i.id != ? AND ${age.sql}`, item.id, ...age.args);
     out.similar = cands
       .map((c) => ({ c, s: parseJson(c.genres, []).filter((g) => genres.includes(g)).length + (c.type === item.type ? 0.5 : 0) }))
       .filter((x) => x.s >= 1).sort((a, b) => b.s - a.s).slice(0, 18).map((x) => card(x.c));
   } else out.similar = [];
   sendJson(ctx.res, out);
+});
+
+// À venir : épisodes sortis ces derniers jours dans la médiathèque, et prochains épisodes annoncés (TMDB)
+router.get('/api/upcoming', (ctx) => {
+  const p = requireProfile(ctx);
+  const age = ageClause(p, 's');
+  const cat = ctx.url.searchParams.get('type') === 'anime' ? "s.category = 'anime'" : ctx.url.searchParams.get('type') === 'show' ? "COALESCE(s.category, 'show') = 'show'" : '1=1';
+  const day = (t) => new Date(t).toISOString().slice(0, 10);
+  const from = day(Date.now() - 14 * 86400000);
+  const pm = new Map(all('SELECT item_id, position, duration, watched FROM progress WHERE profile_id=?', p.id).map((r) => [r.item_id, r]));
+  const out = all(`SELECT e.*, s.title AS show_title, s.poster AS show_poster, s.backdrop AS show_backdrop, s.category AS cat FROM items e JOIN items s ON s.id = e.show_id
+      WHERE e.type = 'episode' AND e.release_date >= ? AND ${cat} AND ${age.sql} ORDER BY e.release_date DESC LIMIT 120`, from, ...age.args)
+    .map((e) => ({ date: e.release_date, id: e.id, showId: e.show_id, showTitle: e.show_title, season: e.season_num, episode: e.episode_num, title: e.title,
+      still: e.still, backdrop: e.show_backdrop, poster: e.show_poster, overview: e.overview, inLibrary: true, category: e.cat, progress: pm.get(e.id) ? { ...pm.get(e.id), watched: !!pm.get(e.id).watched } : null }));
+  const have = new Set(out.map((x) => `${x.showId}:${x.season}:${x.episode}`));
+  const stale = [];
+  for (const s of all(`SELECT s.* FROM items s WHERE s.type = 'show' AND s.credits IS NOT NULL AND ${cat} AND ${age.sql}`, ...age.args)) {
+    const cr = parseJson(s.credits, {});
+    if (cr.status === 'Returning Series' && (!s.ratings_at || Date.now() - s.ratings_at > 86400000)) stale.push(s.id);
+    const n = cr.nextEpisode;
+    if (!n || !n.date || n.date < from || have.has(`${s.id}:${n.season}:${n.episode}`)) continue;
+    out.push({ date: n.date, id: null, showId: s.id, showTitle: s.title, season: n.season, episode: n.episode, title: n.title || '', backdrop: s.backdrop, poster: s.poster, inLibrary: false, category: s.category });
+  }
+  // Prochains épisodes : on rafraîchit en arrière-plan les séries en cours (une fois par jour)
+  if (stale.length) scheduleRatings(stale.slice(0, 40));
+  out.sort((a, b) => a.date.localeCompare(b.date) || a.showTitle.localeCompare(b.showTitle));
+  sendJson(ctx.res, out);
+});
+
+// Titres de la médiathèque où apparaît une personne (distribution ou équipe)
+router.get('/api/people', (ctx) => {
+  const p = requireProfile(ctx);
+  const name = String(ctx.url.searchParams.get('name') || '').trim();
+  if (!name) return sendJson(ctx.res, []);
+  const age = ageClause(p);
+  const idx = statusIndex(p.id);
+  const needle = `%"name":${JSON.stringify(name).replace(/[%_]/g, (c) => `\\${c}`)}%`;
+  const rows = all(`SELECT i.* FROM items i WHERE i.type IN ('movie','show') AND i.credits LIKE ? ESCAPE '\\' AND ${age.sql} ORDER BY i.year DESC`, needle, ...age.args);
+  sendJson(ctx.res, rows.map((i) => withStatus(card(i), idx)));
 });
 
 router.get('/api/mylist', (ctx) => {
@@ -520,6 +619,24 @@ router.post('/api/progress', async (ctx) => {
   p.id, id, watched ? 0 : pos, dur, watched, Date.now());
   if (b.sessionId) sessions.get(b.sessionId)?.touch();
   sendJson(ctx.res, { watched: !!watched });
+});
+
+// Le lecteur signale ce qu'il joue (tableau de bord : lectures en cours)
+router.post('/api/nowplaying', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req);
+  if (b.stop) { stopHeartbeat(ctx.auth.token); return sendJson(ctx.res, { ok: true }); }
+  const item = get('SELECT i.*, s.title AS show_title, s.poster AS show_poster, s.backdrop AS show_backdrop FROM items i LEFT JOIN items s ON s.id = i.show_id WHERE i.id = ?', Number(b.itemId));
+  if (!item) throw new HttpError(404, 'Introuvable');
+  const label = item.type === 'episode' ? `${item.show_title} S${item.season_num}É${item.episode_num}` : item.title;
+  heartbeat(ctx.auth.token, {
+    itemId: item.id, label, title: item.title, showTitle: item.show_title || null, showId: item.show_id || null, type: item.type,
+    season: item.season_num, episode: item.episode_num, poster: item.show_poster || item.poster, backdrop: item.still || item.backdrop || item.show_backdrop,
+    profile: p.name, avatar: p.avatar, deviceName: deviceLabel(ctx.req.headers['user-agent']), ip: ctx.req.socket.remoteAddress,
+    position: Math.max(0, Number(b.position) || 0), duration: Math.max(0, Number(b.duration) || 0), paused: !!b.paused, live: !!b.live,
+    mode: String(b.mode || ''), quality: String(b.quality || ''), hw: b.hw ? String(b.hw) : null, sessionId: b.sessionId || null,
+  });
+  sendJson(ctx.res, { ok: true });
 });
 
 // ------------------------------------------------------------------ lecture
@@ -675,8 +792,15 @@ router.get('/api/items/:id/preview', async (ctx) => {
   sendFile(ctx.req, ctx.res, file, { cache: 'public, max-age=2592000, immutable' });
 });
 
-router.get('/img/:name', (ctx) => {
+const photoFetch = new Map();
+router.get('/img/:name', async (ctx) => {
   const name = path.basename(ctx.params.name);
+  // Photos des acteurs : récupérées chez TMDB à la première demande, puis gardées sur le serveur
+  const m = /^t_w185_([\w.]+\.(?:jpg|png))$/.exec(name);
+  if (m && !fs.existsSync(path.join(imagesDir, name))) {
+    if (!photoFetch.has(name)) photoFetch.set(name, downloadImage(`/${m[1]}`, 'w185').finally(() => setTimeout(() => photoFetch.delete(name), 60000)));
+    if (!(await photoFetch.get(name))) throw new HttpError(404, 'Photo indisponible');
+  }
   sendFile(ctx.req, ctx.res, path.join(imagesDir, name), { cache: 'public, max-age=2592000, immutable' });
 });
 
@@ -734,6 +858,99 @@ router.get('/api/admin', (ctx) => {
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
   });
+});
+
+// Tableau de bord
+const supervised = () => runtime.kind === 'docker' || !!process.env.INVOCATION_ID || !!process.env.VENUS_SUPERVISED || (!!process.env.XPC_SERVICE_NAME && process.env.XPC_SERVICE_NAME !== '0');
+function diskOf(dir) {
+  try { const st = fs.statfsSync(dir); return { total: st.blocks * st.bsize, free: st.bavail * st.bsize }; } catch { return null; }
+}
+router.get('/api/admin/dashboard', (ctx) => {
+  requireAdmin(ctx);
+  const counts = Object.fromEntries(all('SELECT type, COUNT(*) n FROM items GROUP BY type').map((r) => [r.type, r.n]));
+  const anime = get("SELECT COUNT(*) n FROM items WHERE type = 'show' AND category = 'anime'").n;
+  const tot = get("SELECT SUM(size) size, SUM(duration) dur FROM items WHERE type IN ('movie','episode','clip')");
+  // Disques : données de Venus et chaque médiathèque (un seul relevé par disque)
+  const disks = [];
+  const seen = new Set();
+  for (const [name, dir] of [['Données de Venus', config.dataDir], ['Conversion', config.transcodeDir], ...all('SELECT name, path FROM libraries').map((l) => [l.name, l.path])]) {
+    const d = dir && diskOf(dir);
+    if (!d || !d.total) continue;
+    const k = `${d.total}:${d.free}`;
+    if (seen.has(k)) { const x = disks.find((y) => y.key === k); if (x && !x.names.includes(name)) x.names.push(name); continue; }
+    seen.add(k);
+    disks.push({ key: k, names: [name], total: d.total, free: d.free });
+  }
+  const tokens = all('SELECT t.token, t.device, t.created_at, t.last_seen, p.name AS profile, p.avatar FROM tokens t LEFT JOIN profiles p ON p.id = t.profile_id ORDER BY t.last_seen DESC LIMIT 40');
+  const live = nowPlaying();
+  const hlsById = new Map([...sessions.values()].map((x) => [x.id, x.info()]));
+  sendJson(ctx.res, {
+    server: {
+      name: getSetting('server_name', 'Venus'), version: config.version, uptime: process.uptime(), node: process.version,
+      os: `${os.type()} ${os.release()}`, platform: process.platform, arch: process.arch, host: os.hostname(), runtime: runtime.kind,
+      canRestart: supervised(), hw: { type: hw.type, label: hw.label, tested: hw.tested },
+    },
+    counts: { movie: counts.movie || 0, show: (counts.show || 0) - anime, anime, episode: counts.episode || 0, clip: counts.clip || 0, channel: counts.channel || 0, season: counts.season || 0 },
+    totals: { size: tot.size || 0, hours: Math.round((tot.dur || 0) / 3600) },
+    playing: live.map((e) => ({ ...e, token: undefined, hls: e.sessionId ? hlsById.get(e.sessionId) || null : null })),
+    transcodes: [...hlsById.values()].length,
+    devices: tokens.map((t) => ({ id: deviceId(t.token), name: deviceLabel(t.device), profile: t.profile, avatar: t.avatar, created: t.created_at, lastSeen: t.last_seen, current: t.token === ctx.auth.token, playing: live.some((e) => e.token === t.token) })),
+    tasks: {
+      scan: scanState, ratings: ratingsPending(), segments: segmentsPending(),
+      unmatched: get("SELECT COUNT(*) n FROM items WHERE type IN ('movie','show') AND matched = -1").n,
+      noRatings: get("SELECT COUNT(*) n FROM items WHERE type IN ('movie','show') AND ratings_at IS NULL").n,
+    },
+    recent: all("SELECT * FROM items WHERE type IN ('movie','show','clip') ORDER BY added_at DESC LIMIT 12").map((i) => card(i)),
+    activity: recentActivity(30),
+    system: { cpus: os.cpus().length, cpuModel: (os.cpus()[0] || {}).model || '', load: os.loadavg(), memFree: os.freemem(), memTotal: os.totalmem(), rss: process.memoryUsage().rss, disks },
+    libraries: all('SELECT * FROM libraries').map((l) => ({ ...publicLibrary(l), items: get("SELECT COUNT(*) n FROM items WHERE library_id = ? AND type IN ('movie','show','clip','channel')", l.id).n })),
+    loginCode: loginCode(),
+  });
+});
+router.post('/api/admin/login-code', (ctx) => {
+  requireAdmin(ctx);
+  sendJson(ctx.res, loginCode({ renew: true }));
+});
+// Commande envoyée à un appareil : pause, reprise, arrêt de la lecture, message
+router.post('/api/admin/control', async (ctx) => {
+  const p = requireAdmin(ctx);
+  const b = await readBody(ctx.req);
+  const cmd = ['pause', 'play', 'stop', 'message'].includes(b.cmd) ? b.cmd : null;
+  if (!cmd) throw new HttpError(400, 'Commande inconnue');
+  const text = String(b.text || '').trim().slice(0, 300);
+  if (cmd === 'message' && !text) throw new HttpError(400, 'Message vide');
+  if (b.all) {
+    control.emit('cmd', { all: true, cmd, text, from: p.name });
+    logActivity('message', `${p.name} a envoyé un message à tous les appareils`);
+    return sendJson(ctx.res, { ok: true });
+  }
+  const token = tokenOfDevice(String(b.device || '')) || all('SELECT token FROM tokens').map((r) => r.token).find((t) => deviceId(t) === String(b.device || ''));
+  if (!token) throw new HttpError(404, 'Appareil introuvable');
+  if (!control.listenerCount('cmd')) throw new HttpError(409, 'Aucun appareil connecté pour le moment');
+  control.emit('cmd', { token, cmd, text, from: p.name });
+  if (cmd === 'stop') stopHeartbeat(token);
+  logActivity(cmd === 'message' ? 'message' : 'control', cmd === 'message' ? `${p.name} a envoyé un message : « ${text} »` : `${p.name} : ${cmd === 'pause' ? 'pause' : cmd === 'play' ? 'reprise' : 'arrêt'} de la lecture sur un appareil`);
+  sendJson(ctx.res, { ok: true });
+});
+// Déconnecter un appareil (il devra de nouveau saisir le mot de passe ou un code)
+router.del('/api/admin/devices/:id', (ctx) => {
+  const p = requireAdmin(ctx);
+  const t = all('SELECT token FROM tokens').map((r) => r.token).find((x) => deviceId(x) === ctx.params.id);
+  if (!t) throw new HttpError(404, 'Appareil introuvable');
+  if (t === ctx.auth.token) throw new HttpError(400, 'C’est l’appareil que vous utilisez');
+  control.emit('cmd', { token: t, cmd: 'stop', from: p.name });
+  stopHeartbeat(t);
+  run('DELETE FROM tokens WHERE token = ?', t);
+  logActivity('device', `${p.name} a déconnecté un appareil`);
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/admin/restart', (ctx) => {
+  const p = requireAdmin(ctx);
+  if (!supervised()) throw new HttpError(400, 'Venus ne tourne pas comme un service : redémarrez-le à la main');
+  logActivity('server', `${p.name} a redémarré le serveur`);
+  sendJson(ctx.res, { ok: true });
+  // Docker et systemd relancent Venus tout seuls
+  setTimeout(() => process.exit(75), 600);
 });
 
 router.post('/api/admin/ratings/refresh', (ctx) => {
