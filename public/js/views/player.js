@@ -6,7 +6,7 @@ import { focusEl } from '../nav.js';
 import { castSupported, loadCast, castContext, castMedia, remote } from '../cast.js';
 import { ambilight, ambianceOn } from '../ambiance.js';
 import { joinParty, partyPanel, showInvite, floatReaction } from '../party.js';
-import { scrollArrows } from '../components.js';
+import { scrollArrows, ratingChips, playPath } from '../components.js';
 import { numberZapper } from '../live.js';
 import { queueAround, toggleShuffle } from '../queue.js';
 
@@ -100,6 +100,8 @@ export async function render(main, { id, query }) {
   // TV en direct : liste des chaînes à droite, pour zapper sans quitter l'image
   const chListBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, 'aria-label': 'Liste des chaînes', onclick: () => toggleChannels() }, icon('list'), h('span', { class: 'lbl' }, 'Chaînes'));
   const chPanel = h('aside', { class: 'ch-panel', hidden: true, 'aria-label': 'Chaînes' });
+  // Téléphone tenu droit : l'image en haut, et en dessous le résumé et les épisodes (comme les applis mobiles)
+  const below = h('section', { class: 'p-below', 'aria-label': 'À propos' });
   const nextPanel = h('div', { class: 'p-next', hidden: true });
   const overlay = h('div', { class: 'p-error', hidden: true });
 
@@ -114,7 +116,7 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
       h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, ambBtn, castBtn, airBtn, fsBtn)),
-    nextPanel, overlay, volOsd, skipBtn, chPanel);
+    nextPanel, overlay, volOsd, skipBtn, chPanel, below);
   main.append(root);
   document.body.style.overflow = 'hidden';
   // Style des sous-titres choisi dans Réglages (texte seul par défaut)
@@ -176,6 +178,7 @@ export async function render(main, { id, query }) {
     subEl.textContent = info.subtitle;
     titleEl.title = info.showId ? 'Voir la série et tous ses épisodes' : info.type === 'channel' ? 'Toutes les chaînes' : 'Voir la fiche';
     subEl.hidden = !info.subtitle;
+    paintBelow();
     setTitle(info.title);
     badge.textContent = info.mode === 'direct' ? 'Direct' : info.mode === 'remux' ? 'Remux' : `Converti · ${info.hwLabel || 'processeur'}`;
     badge.title = info.reason;
@@ -857,6 +860,54 @@ export async function render(main, { id, query }) {
       party.send('state', { playing: !video.paused, position: position(), reason: 'start' });
       showInvite(r.code, r.title);
     } catch (e) { toast(e.message, true); }
+  }
+
+  let belowFor = null;
+  async function paintBelow() {
+    if (!info || info.live || belowFor === info.itemId) return;
+    belowFor = info.itemId;
+    below.replaceChildren();
+    let d;
+    try { d = await api(`/api/items/${info.showId || id}`); } catch { return; }
+    if (destroyed || belowFor !== info.itemId) return;
+    const parts = [];
+    let ep = null, season = null;
+    if (d.seasons) {
+      season = d.seasons.find((x) => x.episodes.some((e) => e.id === info.itemId)) || null;
+      ep = season ? season.episodes.find((e) => e.id === info.itemId) : null;
+    }
+    const meta = [d.year, d.genres && d.genres.slice(0, 2).join(', '), d.type === 'movie' && d.runtime ? `${Math.floor(d.runtime / 60) ? `${Math.floor(d.runtime / 60)} h ` : ''}${String(d.runtime % 60).padStart(2, '0')}` : null].filter(Boolean).join(' · ');
+    parts.push(h('div', { class: 'pb-head' },
+      h('div', { class: 'pb-meta' }, ep ? `Saison ${ep.season}, épisode ${ep.episode}` : meta),
+      h('button', { class: 'btn btn-ghost btn-small f', onclick: () => { const t = detailsPath(); if (t) go(t); } }, icon('info'), d.seasons ? 'La série' : 'La fiche')));
+    if (d.ratings) parts.push(ratingChips(d.ratings, d.links));
+    const text = (ep && ep.overview) || d.overview;
+    if (text) {
+      const ov = h('p', { class: 'pb-overview clamp' }, text);
+      ov.addEventListener('click', () => ov.classList.toggle('clamp'));
+      parts.push(ov);
+    }
+    if (season && season.episodes.length > 1) {
+      parts.push(h('h3', { class: 'pb-title' }, season.title || `Saison ${season.number}`, h('small', {}, ` · ${season.episodes.length} épisodes`)));
+      const list = h('div', { class: 'pb-eps' }, season.episodes.map((e) => {
+        const cur = e.id === info.itemId;
+        const pct = e.progress && e.progress.duration && !e.progress.watched ? Math.min(100, (e.progress.position / e.progress.duration) * 100) : 0;
+        const im = h('img', { src: e.still ? img(e.still) : `/api/items/${e.id}/thumb`, alt: '', loading: 'lazy' });
+        im.addEventListener('error', () => im.remove(), { once: true });
+        return h('button', { class: `pb-ep f${cur ? ' current' : ''}`, onclick: () => { if (!cur) go(playPath(e.id), { replace: true }); } },
+          h('span', { class: 'pb-shot' }, im, cur ? h('span', { class: 'pb-now' }, 'En cours') : null,
+            pct ? h('i', { class: 'pb-bar' }, h('i', { style: { width: `${pct}%` } })) : null,
+            e.progress && e.progress.watched ? h('span', { class: 'pb-seen' }, icon('check')) : null),
+          h('span', { class: 'pb-txt' }, h('b', {}, `${e.episode}. ${e.title}`), h('small', {}, e.runtime ? `${e.runtime} min` : '')));
+      }));
+      parts.push(list);
+      if (season.episodes.findIndex((e) => e.id === info.itemId) > 2) requestAnimationFrame(() => list.querySelector('.current')?.scrollIntoView({ block: 'center' }));
+    } else if (d.similar && d.similar.length) {
+      parts.push(h('h3', { class: 'pb-title' }, 'Dans le même genre'));
+      parts.push(h('div', { class: 'pb-sim' }, d.similar.slice(0, 10).map((x) => h('button', { class: 'pb-simc f', onclick: () => go(`/titre/${x.id}`) },
+        x.poster ? h('img', { src: img(x.poster), alt: '', loading: 'lazy' }) : h('span', { class: 'pb-ph' }, x.title), h('small', {}, x.title)))));
+    }
+    below.replaceChildren(...parts.filter(Boolean));
   }
 
   function detailsPath() {
