@@ -67,6 +67,8 @@ export async function render(main, { query } = {}) {
       field('Sous-titres', select([['text', 'Texte blanc seul'], ['box', 'Texte sur fond noir']], prefs.get('subStyle'), { onchange: (e) => { prefs.set('subStyle', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
       field('Taille', select([['small', 'Petite'], ['medium', 'Moyenne'], ['large', 'Grande']], prefs.get('subSize'), { onchange: (e) => { prefs.set('subSize', e.target.value); toast('Préférence enregistrée pour cet appareil'); } }))),
     prefSwitch('autoSkip', 'Passer automatiquement les génériques (opening, ending)'),
+    prefSwitch('miniPlayer', 'Mini-lecteur : la vidéo continue en petit quand on quitte le lecteur'),
+    pushRow(),
     h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
       h('button', { class: 'btn btn-small f', onclick: () => editProfile(me, true, () => window.dispatchEvent(new CustomEvent('vn:reboot'))) }, 'Modifier nom, couleur et code PIN'),
       h('button', { class: 'btn btn-small f', onclick: switchProfile }, 'Changer de profil'),
@@ -97,7 +99,7 @@ export async function render(main, { query } = {}) {
     let a;
     try { a = await api('/api/admin'); } catch (e) { grid.replaceChildren(h('p', { class: 'error-text' }, e.message)); return; }
     const first = !grid.children.length;
-    grid.replaceChildren(libraryBox(a), myBox, themeBox, menuBox, playbackBox(a), profilesBox(a), metadataBox(a), ratingsBox(a), seerrBox(a), serverBox(a), devicesBox(a));
+    grid.replaceChildren(libraryBox(a), myBox, themeBox, menuBox, playbackBox(a), profilesBox(a), metadataBox(a), ratingsBox(a), seerrBox(a), subtitlesBox(a), notifyBox(a), backupBox(a), serverBox(a), devicesBox(a));
     if (first) toMenu();
     clearTimeout(timer);
     const delay = a.scan.running || a.sessions.length ? 3000 : 15000;
@@ -298,6 +300,80 @@ export async function render(main, { query } = {}) {
     return box;
   }
 
+  function notifyBox(a) {
+    const n = a.settings.notify || {};
+    const ntfyTopic = h('input', { class: 'input', value: n.ntfyTopic || '', placeholder: `venus-${Math.random().toString(36).slice(2, 8)}`, autocomplete: 'off' });
+    const ntfyServer = h('input', { class: 'input', value: n.ntfyServer || 'https://ntfy.sh', autocomplete: 'off' });
+    const discord = h('input', { class: 'input', placeholder: n.discord ? 'Webhook enregistré (laisser vide pour conserver)' : 'https://discord.com/api/webhooks/…', autocomplete: 'off' });
+    const tgToken = h('input', { class: 'input', placeholder: n.telegramToken ? 'Jeton enregistré (laisser vide pour conserver)' : 'Jeton du bot (BotFather)', autocomplete: 'off' });
+    const tgChat = h('input', { class: 'input', value: n.telegramChat || '', placeholder: 'Identifiant de la discussion', autocomplete: 'off' });
+    const pub = h('input', { class: 'input', value: n.publicUrl || '', placeholder: 'https://venus.mondomaine.fr (facultatif)', inputmode: 'url', autocomplete: 'off' });
+    return h('section', { class: 'box', id: 'notifications' },
+      h('h2', {}, 'Notifications'),
+      h('p', {}, 'Prévenir quand un film, une série ou un épisode arrive dans Venus. Chaque personne reçoit aussi « Votre envie est arrivée » sur ses appareils (Réglages, Cet appareil).'),
+      h('label', { class: 'switch' }, h('span', {}, 'Annoncer les nouveautés'), h('input', { type: 'checkbox', class: 'f', checked: n.notifyNew !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { notifyNew: e.target.checked } }); toast('Préférence enregistrée'); } })),
+      h('h3', { class: 'box-sub' }, 'ntfy (le plus simple, marche sans HTTPS)'),
+      h('p', { class: 'muted', style: { fontSize: '.86rem', margin: '0 0 8px' } }, 'Installez l’appli gratuite ntfy sur le téléphone et abonnez-vous au même sujet.'),
+      h('div', { class: 'two-cols' }, field('Sujet', ntfyTopic), field('Serveur', ntfyServer)),
+      h('h3', { class: 'box-sub' }, 'Discord et Telegram'),
+      field('Webhook Discord', discord),
+      h('div', { class: 'two-cols' }, field('Bot Telegram', tgToken), field('Discussion', tgChat)),
+      field('Adresse publique de Venus', pub, 'Pour que les liens des notifications ouvrent Venus.'),
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+        h('button', { class: 'btn btn-small f', onclick: async () => {
+          await api('/api/admin/settings', { method: 'PUT', body: { ntfyTopic: ntfyTopic.value.trim(), ntfyServer: ntfyServer.value.trim(), telegramChat: tgChat.value.trim(), publicUrl: pub.value.trim(),
+            ...(discord.value.trim() ? { discordWebhook: discord.value.trim() } : {}), ...(tgToken.value.trim() ? { telegramToken: tgToken.value.trim() } : {}) } });
+          toast('Notifications enregistrées'); refresh();
+        } }, 'Enregistrer'),
+        h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => {
+          const r = await api('/api/admin/notify/test', { method: 'POST' });
+          toast(r.errors.length ? `Erreur : ${r.errors.join(' ; ')}` : 'Notification de test envoyée', r.errors.length ? true : { type: 'success' });
+        } }, 'Envoyer un test')));
+  }
+
+  function backupBox(a) {
+    const list = h('div', { class: 'backup-list' }, h('p', { class: 'muted' }, 'Chargement…'));
+    const paintList = async () => {
+      const r = await api('/api/admin/backups');
+      list.replaceChildren(...(r.items.length ? r.items.slice(0, 6).map((b) => h('div', { class: 'list-row' },
+        h('div', { class: 'grow' }, h('b', {}, new Date(b.at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })), h('span', {}, `${(b.size / 1048576).toFixed(1).replace('.', ',')} Mo${b.manual ? ' · manuelle' : ''}`)),
+        h('a', { class: 'btn btn-ghost btn-icon btn-mini f', href: `/api/admin/backups/${encodeURIComponent(b.name)}?token=${encodeURIComponent(auth.token || '')}`, download: b.name, title: 'Télécharger', 'aria-label': 'Télécharger' }, icon('down')),
+        h('button', { class: 'btn btn-ghost btn-small f', onclick: async () => {
+          if (!(await confirmSheet(`Revenir à la sauvegarde du ${new Date(b.at).toLocaleString('fr-FR')} ? Profils, vus et listes reviendront à cet état (l’état actuel est sauvegardé avant).`, 'Restaurer'))) return;
+          const x = await api(`/api/admin/backups/${encodeURIComponent(b.name)}/restore`, { method: 'POST' });
+          toast(x.restarting ? 'Restauration : Venus redémarre…' : 'Restauration prête : redémarrez Venus pour l’appliquer', { type: 'success', duration: 8000 });
+          if (x.restarting) setTimeout(() => location.reload(), 7000);
+        } }, 'Restaurer'))) : [h('p', { class: 'muted' }, 'Aucune sauvegarde pour l’instant.')]));
+    };
+    paintList().catch((e) => list.replaceChildren(h('p', { class: 'error-text' }, e.message)));
+    return h('section', { class: 'box', id: 'backups' },
+      h('h2', {}, 'Sauvegardes'),
+      h('p', {}, 'Profils, vus, listes, envies et réglages sont sauvegardés chaque nuit (les 10 dernières sont gardées). Vos vidéos ne sont pas concernées.'),
+      h('label', { class: 'switch' }, h('span', {}, 'Sauvegarde automatique chaque nuit'), h('input', { type: 'checkbox', class: 'f', checked: a.settings.autoBackup !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { autoBackup: e.target.checked } }); toast('Préférence enregistrée'); } })),
+      list,
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small f', onclick: async (e) => {
+        e.currentTarget.disabled = true;
+        await api('/api/admin/backups', { method: 'POST' }); toast('Sauvegarde faite', { type: 'success' }); await paintList(); e.currentTarget.disabled = false;
+      } }, 'Sauvegarder maintenant')));
+  }
+
+  function subtitlesBox(a) {
+    const key = h('input', { class: 'input', placeholder: a.settings.opensubtitlesConfigured ? 'Clé enregistrée (laisser vide pour conserver)' : 'Clé API OpenSubtitles', autocomplete: 'off' });
+    const user = h('input', { class: 'input', placeholder: 'Nom d’utilisateur (facultatif)', value: a.settings.opensubtitlesUser || '', autocomplete: 'off' });
+    const pass = h('input', { class: 'input', type: 'password', placeholder: 'Mot de passe (facultatif)', autocomplete: 'new-password' });
+    return h('section', { class: 'box', id: 'subtitles' },
+      h('h2', {}, 'Sous-titres en ligne'),
+      h('p', {}, 'Dans le lecteur, « Audio et sous-titres », puis « Chercher des sous-titres en ligne » : les sous-titres manquants sont trouvés sur OpenSubtitles, la version qui correspond à votre fichier en premier. Le fichier vidéo n’est jamais modifié.'),
+      a.settings.opensubtitlesConfigured ? h('div', { class: 'auto-pill', style: { marginBottom: '12px' } }, h('span', { class: 'dot' }), 'Activé') : null,
+      field('Clé API', key, h('span', {}, 'Gratuite sur ', h('a', { href: 'https://www.opensubtitles.com/fr/consumers', target: '_blank', rel: 'noopener', style: { textDecoration: 'underline' } }, 'opensubtitles.com/consumers'), '.')),
+      h('div', { class: 'two-cols' }, field('Compte', user), field('Mot de passe', pass)),
+      h('p', { class: 'muted', style: { fontSize: '.84rem' } }, 'Avec un compte gratuit, vous avez plus de téléchargements par jour.'),
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small f', onclick: async () => {
+        await api('/api/admin/settings', { method: 'PUT', body: { ...(key.value.trim() ? { opensubtitlesKey: key.value.trim() } : {}), opensubtitlesUser: user.value.trim(), ...(pass.value ? { opensubtitlesPass: pass.value } : {}) } });
+        pass.value = ''; toast('Sous-titres en ligne enregistrés'); refresh();
+      } }, 'Enregistrer')));
+  }
+
   function metadataBox(a) {
     const key = h('input', { class: 'input', placeholder: a.settings.tmdbConfigured ? 'Clé enregistrée (laisser vide pour conserver)' : 'Collez votre clé API ou jeton TMDB' });
     return h('section', { class: 'box', id: 'sources' },
@@ -429,6 +505,36 @@ function menuEditor(me) {
 }
 
 // Thème : une planète du système solaire (couleurs, nom, logo qui tourne)
+// Notifications sur cet appareil (même appli fermée) : Web Push, possible seulement si Venus est ouvert en HTTPS
+function pushRow() {
+  const row = h('div', { class: 'push-row' });
+  const supported = 'serviceWorker' in navigator && 'PushManager' in window && window.isSecureContext;
+  const paint = async () => {
+    if (!supported) {
+      row.replaceChildren(h('b', {}, 'Notifications sur cet appareil'), h('p', { class: 'muted' }, window.isSecureContext ? 'Ce navigateur ne gère pas les notifications. Sur iPhone, installez d’abord Venus sur l’écran d’accueil.' : 'Il faut ouvrir Venus en HTTPS (adresse sécurisée) pour les recevoir. Sinon, utilisez l’appli ntfy (Réglages, Notifications).'));
+      return;
+    }
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    row.replaceChildren(h('b', {}, 'Notifications sur cet appareil'), h('p', { class: 'muted' }, sub ? 'Activées : vous serez prévenu quand vos envies arrivent.' : 'Recevez « Votre envie est arrivée » et les nouveautés, même appli fermée.'),
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+        sub ? h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { await api('/api/push/unsubscribe', { method: 'POST', body: { endpoint: sub.endpoint } }); await sub.unsubscribe(); toast('Notifications désactivées'); paint(); } }, 'Désactiver')
+          : h('button', { class: 'btn btn-small f', onclick: async () => {
+            try {
+              const perm = await Notification.requestPermission();
+              if (perm !== 'granted') { toast('Notifications refusées par le navigateur', true); return; }
+              const { key } = await api('/api/push/key');
+              const s2 = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)) });
+              await api('/api/push/subscribe', { method: 'POST', body: { subscription: s2.toJSON() } });
+              toast('Notifications activées', { type: 'success' }); paint();
+            } catch (e) { toast(e.message, true); }
+          } }, icon('cal'), 'Activer'),
+        sub ? h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { const r = await api('/api/push/test', { method: 'POST' }); toast(r.errors.length ? r.errors.join(' ; ') : 'Test envoyé', r.errors.length ? true : { type: 'success' }); } }, 'Tester') : null));
+  };
+  paint().catch(() => {});
+  return row;
+}
+
 function themeEditor() {
   const box = h('section', { class: 'box' });
   const paint = () => {

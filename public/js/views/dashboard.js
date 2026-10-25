@@ -70,6 +70,7 @@ export async function render(main) {
         h('button', { class: 'tool f', onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: {} }); toast('Analyse des médiathèques lancée'); refresh(); } }, icon('refresh'), h('span', { class: 'lbl' }, 'Analyser les médiathèques')),
         h('button', { class: 'tool f', onclick: () => compose(null) }, icon('chat'), h('span', { class: 'lbl' }, 'Message à tous')),
         sv.canRestart ? h('button', { class: 'tool f', onclick: restart }, icon('power'), h('span', { class: 'lbl' }, 'Redémarrer')) : null,
+        h('button', { class: 'tool f', onclick: () => go('/qualite') }, icon('film'), h('span', { class: 'lbl' }, 'Qualité')),
         h('button', { class: 'tool f', onclick: () => go('/reglages') }, icon('gear'), h('span', { class: 'lbl' }, 'Réglages'))));
     const c = d.counts;
     const tiles = [

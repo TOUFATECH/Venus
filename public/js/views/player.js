@@ -1,5 +1,5 @@
 // Lecteur vidéo plein écran : lecture directe ou HLS, sous-titres, pistes, qualité, épisode suivant, Chromecast, AirPlay
-import { api, auth, deviceCaps, castCaps, preferredQuality, setPreferredQuality, prefs } from '../api.js';
+import { api, auth, deviceCaps, castCaps, preferredQuality, setPreferredQuality, prefs, clearApiCache } from '../api.js';
 import { h, icon, sheet, fmtTime, langName, toast, img, isBack } from '../ui.js';
 import { go, back, setTitle } from '../app.js';
 import { focusEl } from '../nav.js';
@@ -9,6 +9,7 @@ import { joinParty, partyPanel, showInvite, floatReaction } from '../party.js';
 import { scrollArrows, ratingChips, playPath } from '../components.js';
 import { numberZapper } from '../live.js';
 import { queueAround, toggleShuffle } from '../queue.js';
+import { startMini, closeMini } from '../mini.js';
 
 let hlsLib = null;
 function loadHls() {
@@ -44,6 +45,7 @@ function parseVtt(text) {
 }
 
 export async function render(main, { id, query }) {
+  closeMini(); // une seule vidéo à la fois : le mini-lecteur s'arrête
   const startParam = query.get('t');
   let roomCode = query.get('salle');
   const caps = deviceCaps();
@@ -81,6 +83,9 @@ export async function render(main, { id, query }) {
   const castBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Diffuser sur un Chromecast', onclick: () => startCast() }, icon('cast'));
   const airBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'AirPlay', onclick: () => video.webkitShowPlaybackTargetPicker && video.webkitShowPlaybackTargetPicker() }, icon('airplay'));
   const fsBtn = h('button', { class: 'p-icon f', 'aria-label': 'Plein écran', onclick: () => toggleFullscreen() }, icon('fs'));
+  const sleepBtn = h('button', { class: 'p-icon f p-sleep', 'aria-label': 'Minuterie de sommeil', title: 'Minuterie de sommeil', onclick: () => openSleep() }, icon('moon'), h('small', { class: 'p-sleep-left', hidden: true }));
+  const lockBtn = h('button', { class: 'p-icon f p-lockbtn', 'aria-label': 'Verrouiller l’écran tactile', title: 'Verrouiller l’écran', onclick: () => setLocked(true) }, icon('lock'));
+  const lockLayer = h('div', { class: 'p-lock', hidden: true });
   // Volume : bouton muet + curseur (mémorisés sur cet appareil)
   const muteBtn = h('button', { class: 'p-icon f', 'aria-label': 'Couper le son', onclick: () => setMuted(!video.muted) }, icon('vol'));
   const volRange = h('input', { class: 'p-volrange', type: 'range', min: '0', max: '1', step: '0.05', 'aria-label': 'Volume' });
@@ -111,12 +116,12 @@ export async function render(main, { id, query }) {
   const partyBtn = h('button', { class: 'btn btn-ghost btn-small f', title: 'Regarder ensemble, chacun sur son écran', onclick: () => startParty(), 'aria-label': 'Regarder ensemble' }, icon('people'), h('span', { class: 'lbl' }, 'Ensemble'));
   const root = h('div', { class: 'player ui-on', role: 'region', 'aria-label': 'Lecteur vidéo' },
     ambCanvas, video, reactLayer, h('div', { class: 'scrim' }), subsLayer, spinner,
-    h('div', { class: 'p-top' }, backBtn, h('div', { style: { minWidth: 0, flex: 1 } }, titleEl, subEl), badge),
+    h('div', { class: 'p-top' }, backBtn, h('div', { style: { minWidth: 0, flex: 1 } }, titleEl, subEl), badge, lockBtn),
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, ambBtn, castBtn, airBtn, fsBtn)),
-    nextPanel, overlay, volOsd, skipBtn, chPanel, below);
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, ambBtn, castBtn, airBtn, fsBtn)),
+    nextPanel, overlay, volOsd, skipBtn, chPanel, below, lockLayer);
   main.append(root);
   document.body.style.overflow = 'hidden';
   // Style des sous-titres choisi dans Réglages (texte seul par défaut)
@@ -191,7 +196,7 @@ export async function render(main, { id, query }) {
     liveTag.hidden = !live; chPrev.hidden = !live; chNext.hidden = !live;
     qualityBtn.hidden = !info.qualities.length;
     if (live) badge.textContent = info.mode === 'transcode' ? `Direct converti · ${info.hwLabel || 'processeur'}` : 'Direct';
-    tracksBtn.hidden = info.audio.length < 2 && !info.subs.length;
+    tracksBtn.hidden = !!info.live && info.audio.length < 2 && !info.subs.length;
     if (reason) toast(reason);
 
     teardownSource();
@@ -283,8 +288,21 @@ export async function render(main, { id, query }) {
     } catch { toast('Sous-titres indisponibles', true); }
   }
   let lastCue = null;
+  function osd(ic, text) {
+    volOsd.replaceChildren(icon(ic), h('b', {}, text));
+    volOsd.hidden = false;
+    clearTimeout(osdTimer); osdTimer = setTimeout(() => { volOsd.hidden = true; }, 1200);
+  }
+  let subDelay = 0;
+  try { subDelay = Number(localStorage.getItem(`vn_subdelay_${id}`)) || 0; } catch { /* */ }
+  function setSubDelay(v) {
+    subDelay = Math.round(v * 10) / 10;
+    try { if (subDelay) localStorage.setItem(`vn_subdelay_${id}`, String(subDelay)); else localStorage.removeItem(`vn_subdelay_${id}`); } catch { /* */ }
+    lastCue = null; paintSubs();
+    osd('subs', `Sous-titres ${subDelay > 0 ? '+' : ''}${String(subDelay).replace('.', ',')} s`);
+  }
   function paintSubs() {
-    const t = position();
+    const t = position() - subDelay;
     const active = cues.filter((c) => c.start <= t && c.end >= t);
     const key = active.map((c) => c.start).join(',');
     if (key === lastCue) return;
@@ -463,6 +481,7 @@ export async function render(main, { id, query }) {
     if (info && info.live && (k === 'ChannelUp' || k === 'PageUp' || code === 427 || code === 33)) { consume(); zap(-1); return; }
     if (info && info.live && (k === 'ChannelDown' || k === 'PageDown' || code === 428 || code === 34)) { consume(); zap(1); return; }
     if (k === 'f') { consume(); toggleFullscreen(); return; }
+    if ((k === 'g' || k === 'h') && cues.length) { consume(); setSubDelay(subDelay + (k === 'h' ? 0.1 : -0.1)); return; }
     if (k === 'm') { consume(); setMuted(!video.muted); return; }
     if (k === 'c' && !chatBtn.hidden) { consume(); setChat(root.classList.contains('chat-hidden')); return; }
     if (!uiOn && !document.documentElement.classList.contains('tv') && (k === 'ArrowUp' || k === 'ArrowDown')) { consume(); setVolume(video.volume + (k === 'ArrowUp' ? 0.1 : -0.1), true); return; }
@@ -499,6 +518,7 @@ export async function render(main, { id, query }) {
     if (info && info.live) { reloadAt(0, 'Reconnexion à la chaîne…'); return; }
     if (info && info.mode !== 'direct' && offset + video.currentTime < duration() - 5) return; // fin de playlist provisoire
     saveProgress(true);
+    if (sleep && sleep.mode === 'end') { goodnight(); return; }
     if (info && info.next) playNext();
     else setTimeout(() => exit(), 1200);
   });
@@ -537,7 +557,7 @@ export async function render(main, { id, query }) {
   const onHide = () => { if (document.visibilityState === 'hidden') saveProgress(); };
   document.addEventListener('visibilitychange', onHide);
   // Fermeture de l'onglet / rechargement : on libère tout de suite la conversion côté serveur
-  const onPageHide = () => { saveProgress(); if (info && info.sessionId && !casting) stopSession(info.sessionId); };
+  const onPageHide = () => { saveProgress(); if (info && info.sessionId && !casting && !handedOff) stopSession(info.sessionId); };
   window.addEventListener('pagehide', onPageHide);
 
   // ---------------------------------------------------------------- épisode suivant
@@ -600,22 +620,35 @@ export async function render(main, { id, query }) {
     if (!early && (!d || d - t > Math.max(25, d * 0.025))) return;
     nextShown = true;
     const n = info.next;
+    // Minuterie « fin de cet épisode » : pas d'enchaînement
+    if (sleep && sleep.mode === 'end') return;
     let left = 10;
-    const ring = h('i');
-    const label = h('span', {}, `Lecture dans ${left} s`);
+    const C = 2 * Math.PI * 22;
+    const arc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    arc.setAttribute('cx', '24'); arc.setAttribute('cy', '24'); arc.setAttribute('r', '22');
+    arc.setAttribute('class', 'nx-arc'); arc.style.strokeDasharray = String(C); arc.style.strokeDashoffset = '0';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 48 48'); svg.setAttribute('class', 'nx-ring-svg'); svg.append(arc);
+    const count = h('b', { class: 'nx-count' }, String(left));
+    const still = n.still ? img(n.still) : `/api/items/${n.id}/thumb`;
+    const pic = h('img', { src: still, alt: '' });
+    pic.addEventListener('error', () => pic.remove(), { once: true });
     nextPanel.replaceChildren(
-      h('div', { class: 'nx-head' }, n.queue ? 'À suivre' : `Épisode suivant, S${n.season} É${n.episode}`),
-      h('div', { class: 'nx-title' }, n.title),
-      h('div', { class: 'nx-ring' }, ring),
-      h('div', { class: 'actions' },
-        h('button', { class: 'btn btn-play btn-small f', onclick: () => playNext() }, icon('play'), label),
-        h('button', { class: 'btn btn-ghost btn-small f', onclick: () => { nextDismissed = true; clearInterval(nextTimer); nextPanel.hidden = true; } }, 'Regarder le générique')));
+      h('button', { class: 'nx-pic f', 'aria-label': `Lire maintenant : ${n.title}`, onclick: () => playNext() }, pic,
+        h('span', { class: 'nx-play' }, svg, icon('play'), count)),
+      h('div', { class: 'nx-body' },
+        h('div', { class: 'nx-head' }, n.queue ? 'À suivre' : `Épisode suivant · S${n.season} É${n.episode}`),
+        h('div', { class: 'nx-title' }, n.title),
+        n.overview ? h('p', { class: 'nx-over' }, n.overview) : null,
+        h('div', { class: 'actions' },
+          h('button', { class: 'btn btn-play btn-small f', onclick: () => playNext() }, icon('play'), 'Lire maintenant'),
+          h('button', { class: 'btn btn-ghost btn-small f', onclick: () => { nextDismissed = true; clearInterval(nextTimer); nextPanel.hidden = true; } }, 'Annuler'))));
     nextPanel.hidden = false;
-    requestAnimationFrame(() => { ring.style.width = '100%'; ring.style.transitionDuration = '10s'; });
+    requestAnimationFrame(() => { arc.style.transition = 'stroke-dashoffset 10s linear'; arc.style.strokeDashoffset = String(C); });
     focusEl(nextPanel.querySelector('.btn-play'));
     nextTimer = setInterval(() => {
       left--;
-      label.textContent = `Lecture dans ${left} s`;
+      count.textContent = String(Math.max(0, left));
       if (left <= 0) { clearInterval(nextTimer); playNext(); }
     }, 1000);
   }
@@ -643,7 +676,40 @@ export async function render(main, { id, query }) {
         else loadSubtitles();
       },
     }, icon('check'), x.label, h('small', {}, [x.forced ? 'Forcés' : '', x.title || '', x.burn ? 'Incrustés' : ''].filter(Boolean).join(', ')))));
+    const delayVal = h('b', {}, `${subDelay > 0 ? '+' : ''}${String(subDelay).replace('.', ',')} s`);
+    const step = (d) => { setSubDelay(subDelay + d); delayVal.textContent = `${subDelay > 0 ? '+' : ''}${String(subDelay).replace('.', ',')} s`; };
+    if (cues.length || subId) subCol.append(h('div', { class: 'sub-delay' }, h('span', {}, 'Décalage'),
+      h('button', { class: 'p-icon small f', 'aria-label': 'Sous-titres plus tôt', onclick: () => step(-0.5) }, '−'), delayVal,
+      h('button', { class: 'p-icon small f', 'aria-label': 'Sous-titres plus tard', onclick: () => step(0.5) }, '+'),
+      h('small', {}, 'Touches G et H : 0,1 s')));
+    subCol.append(h('button', { class: 'opt ic f', onclick: () => { s.close(); findSubtitles(); } }, icon('search'), 'Chercher des sous-titres en ligne'));
     const s = sheet('Audio et sous-titres', h('div', { class: 'sheet-cols' }, audioCol, subCol));
+  }
+
+  // Sous-titres manquants : recherche sur OpenSubtitles, le meilleur choix en premier (même version que le fichier)
+  async function findSubtitles() {
+    const list = h('div', { class: 'os-list' }, h('p', { class: 'muted' }, h('span', { class: 'mini-spin' }), ' Recherche…'));
+    const s = sheet('Sous-titres en ligne', h('div', {}, list), { wide: true });
+    let r;
+    try { r = await api(`/api/items/${info.itemId}/subtitles/search`); } catch (e) { list.replaceChildren(h('p', { class: 'error-text' }, e.message)); return; }
+    if (!r.available) {
+      list.replaceChildren(h('p', { class: 'muted' }, 'La recherche en ligne utilise OpenSubtitles : un administrateur doit ajouter la clé gratuite dans Réglages, Sous-titres en ligne.'));
+      return;
+    }
+    if (!r.items.length) { list.replaceChildren(h('p', { class: 'muted' }, 'Aucun sous-titre trouvé pour ce titre.')); return; }
+    list.replaceChildren(...r.items.map((x) => h('button', { class: 'opt os-opt f', onclick: async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.classList.add('busy');
+      try {
+        const d = await api(`/api/items/${info.itemId}/subtitles`, { method: 'POST', body: { fileId: x.fileId, lang: x.lang } });
+        const sub = { id: d.sub.id, lang: d.sub.lang, title: 'OpenSubtitles', forced: false, codec: 'subrip', burn: false, url: `/api/subs/${info.itemId}/${d.sub.id}.vtt?token=${encodeURIComponent(auth.token || '')}` };
+        info.subs = [...info.subs.filter((y) => y.id !== sub.id), sub];
+        subId = sub.id; tracksBtn.hidden = false;
+        s.close(); await loadSubtitles();
+        toast(`Sous-titres ${langName(sub.lang)} ajoutés${d.remaining != null ? ` · ${d.remaining} téléchargements restants aujourd’hui` : ''}`, { type: 'success', action: { label: 'Décaler', onClick: () => openTracks() } });
+      } catch (err) { toast(err.message, true); b.disabled = false; b.classList.remove('busy'); }
+    } }, h('span', { class: 'os-lang' }, String(x.lang || '?').toUpperCase()),
+    h('span', { class: 'os-main' }, h('b', {}, x.release || 'Sous-titre'), h('small', {}, [x.match ? 'Même version que votre fichier' : null, x.trusted ? 'Source fiable' : null, x.hearingImpaired ? 'Malentendants' : null, `${x.downloads.toLocaleString('fr-FR')} téléchargements`].filter(Boolean).join(' · '))),
+    x.match ? h('span', { class: 'os-best' }, 'Recommandé') : null)));
   }
 
   function openQuality() {
@@ -862,6 +928,96 @@ export async function render(main, { id, query }) {
     } catch (e) { toast(e.message, true); }
   }
 
+  // ---------------------------------------------------------------- minuterie de sommeil
+  // Fin de l'épisode, ou dans N minutes : le son baisse doucement les 20 dernières secondes, puis pause.
+  // Gardée pour la session : elle continue sur l'épisode suivant.
+  let sleep = null;
+  try { sleep = JSON.parse(sessionStorage.getItem('vn_sleep')); } catch { /* */ }
+  if (sleep && sleep.until && sleep.until < Date.now()) sleep = null;
+  let fadeFrom = null;
+  function setSleep(v) {
+    sleep = v;
+    try { if (v) sessionStorage.setItem('vn_sleep', JSON.stringify(v)); else sessionStorage.removeItem('vn_sleep'); } catch { /* */ }
+    if (!v && fadeFrom != null) { video.volume = fadeFrom; fadeFrom = null; }
+    paintSleep();
+  }
+  function paintSleep() {
+    const lbl = sleepBtn.querySelector('.p-sleep-left');
+    sleepBtn.classList.toggle('on', !!sleep);
+    if (!sleep) { lbl.hidden = true; sleepBtn.title = 'Minuterie de sommeil'; return; }
+    lbl.hidden = false;
+    lbl.textContent = sleep.mode === 'end' ? 'fin' : `${Math.max(1, Math.ceil((sleep.until - Date.now()) / 60000))}`;
+    sleepBtn.title = sleep.mode === 'end' ? 'Arrêt à la fin de cet épisode' : `Arrêt dans ${lbl.textContent} min`;
+  }
+  function openSleep() {
+    const opts = [[null, 'Désactivée'], ['end', info && info.type === 'movie' ? 'À la fin du film' : 'À la fin de cet épisode'], [15, '15 minutes'], [30, '30 minutes'], [45, '45 minutes'], [60, '1 heure'], [90, '1 h 30']];
+    const cur = !sleep ? null : sleep.mode === 'end' ? 'end' : 'time';
+    const s = sheet('Minuterie de sommeil', h('div', {},
+      h('p', { class: 'muted', style: { margin: '0 0 12px' } }, 'La vidéo se met en pause toute seule, le son baisse doucement juste avant.'),
+      opts.map(([v, label]) => h('button', { class: `opt f${(v === null && !cur) || (v === 'end' && cur === 'end') ? ' on' : ''}`, onclick: () => {
+        s.close();
+        setSleep(v == null ? null : v === 'end' ? { mode: 'end' } : { until: Date.now() + v * 60000 });
+        toast(v == null ? 'Minuterie désactivée' : v === 'end' ? 'Pause à la fin de cette vidéo' : `Pause dans ${label}`, { type: 'success' });
+      } }, icon('check'), label))));
+  }
+  function goodnight() {
+    video.pause();
+    if (fadeFrom != null) { video.volume = fadeFrom; fadeFrom = null; }
+    setSleep(null);
+    saveProgress();
+    const night = h('div', { class: 'p-night' }, h('div', {}, h('span', { class: 'p-night-moon' }, icon('moon')), h('h2', {}, 'Bonne nuit'),
+      h('p', {}, 'La lecture est en pause, votre progression est enregistrée.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn btn-play f', onclick: () => { night.remove(); togglePlay(); } }, icon('play'), 'Reprendre'), h('button', { class: 'btn btn-ghost f', onclick: () => exit() }, 'Quitter'))));
+    root.append(night);
+    focusEl(night.querySelector('.btn-play'));
+  }
+  const sleepTimer = setInterval(() => {
+    if (!sleep || !sleep.until) return;
+    const left = sleep.until - Date.now();
+    paintSleep();
+    if (left <= 20000 && left > 0 && !video.paused) {
+      if (fadeFrom == null) fadeFrom = video.volume;
+      video.volume = Math.max(0, fadeFrom * (left / 20000));
+    }
+    if (left <= 0) goodnight();
+  }, 1000);
+  paintSleep();
+
+  // ---------------------------------------------------------------- verrouillage de l'écran tactile
+  // Plus aucun appui ne compte, sauf un appui long sur le cadenas pour déverrouiller.
+  function setLocked(on) {
+    root.classList.toggle('locked', on);
+    lockLayer.hidden = !on;
+    if (on) {
+      hideUi();
+      const ring = h('i', { class: 'lock-ring' });
+      const btn = h('button', { class: 'lock-open', 'aria-label': 'Maintenir pour déverrouiller' }, ring, icon('lock'), h('span', {}, 'Maintenir pour déverrouiller'));
+      lockLayer.replaceChildren(btn);
+      let t = null;
+      const start = (e) => { e.preventDefault(); btn.classList.add('hold'); t = setTimeout(() => setLocked(false), 900); };
+      const stop = () => { btn.classList.remove('hold'); clearTimeout(t); };
+      btn.addEventListener('pointerdown', start);
+      btn.addEventListener('pointerup', stop); btn.addEventListener('pointerleave', stop); btn.addEventListener('pointercancel', stop);
+      // Un appui ailleurs fait juste réapparaître le cadenas un instant
+      lockLayer.onpointerdown = (e) => { if (e.target === lockLayer) { lockLayer.classList.add('show'); clearTimeout(lockLayer._t); lockLayer._t = setTimeout(() => lockLayer.classList.remove('show'), 2500); } };
+      lockLayer.classList.add('show'); lockLayer._t = setTimeout(() => lockLayer.classList.remove('show'), 2500);
+    } else { lockLayer.replaceChildren(); showUi(); toast('Écran déverrouillé'); }
+  }
+
+  // ---------------------------------------------------------------- mini-lecteur
+  // En quittant le lecteur (bouton retour), la vidéo continue dans une petite fenêtre en bas de l'écran.
+  let handedOff = false;
+  function canMini() {
+    return prefs.get('miniPlayer') !== false && info && !info.live && !casting && !party && !destroyed && info.type !== 'clip'
+      && !video.paused && !video.ended && (duration() - position() > 30);
+  }
+  function toMini() {
+    handedOff = true;
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    startMini({ video, hls, info: { ...info }, id, offset, subtitle: info.subtitle, position: () => offset + (video.currentTime || 0) });
+    hls = null;
+  }
+
   let belowFor = null;
   async function paintBelow() {
     if (!info || info.live || belowFor === info.itemId) return;
@@ -918,12 +1074,14 @@ export async function render(main, { id, query }) {
   }
 
   function exit() {
+    if (canMini()) toMini();
     back(info && info.type === 'channel' ? '/tv' : info && ['episode', 'clip'].includes(info.type) ? '/' : `/titre/${id}`);
   }
 
   function destroy() {
     destroyed = true;
     saveProgress();
+    clearApiCache(); // « Reprendre la lecture » et les vus sont à jour au retour
     clearInterval(beatTimer); clearTimeout(beatSoon); window.removeEventListener('vn:control', onControl); beat(true);
     clearInterval(saveTimer); clearInterval(subsTimer); clearInterval(nextTimer); clearTimeout(uiTimer); clearTimeout(seekTimer);
     document.removeEventListener('keydown', onKey, true);
@@ -934,8 +1092,11 @@ export async function render(main, { id, query }) {
     document.removeEventListener('visibilitychange', onHide);
     window.removeEventListener('pagehide', onPageHide);
     releaseWakeLock();
-    if (info && info.sessionId && !casting) stopSession(info.sessionId);
-    teardownSource();
+    clearInterval(sleepTimer);
+    if (!handedOff) {
+      if (info && info.sessionId && !casting) stopSession(info.sessionId);
+      teardownSource();
+    }
     document.body.style.overflow = '';
     // On quitte le plein écran seulement si on ne passe pas directement à une autre vidéo
     setTimeout(() => { if (!document.querySelector('.player') && document.fullscreenElement) document.exitFullscreen().catch(() => {}); }, 60);

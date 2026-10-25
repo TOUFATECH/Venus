@@ -177,3 +177,73 @@ together.post('/api/remote/link/:link', async (ctx) => {
 });
 // Liens de téléphones inutilisés depuis 30 jours : oubliés
 setInterval(() => { const lim = Date.now() - 30 * 86400000; for (const [k, l] of links) if (l.at < lim) links.delete(k); }, 6 * 3600000).unref();
+
+// ------------------------------------------------------------------ vote en famille (« Ce soir »)
+// L'écran propose 3 titres ; chacun vote sur son téléphone (QR code ou code à 4 lettres) ; le gagnant se lance.
+const votes = new Map(); // code -> vote
+function publicVote(v) {
+  const tally = new Map();
+  for (const itemId of v.ballots.values()) tally.set(itemId, (tally.get(itemId) || 0) + 1);
+  return {
+    code: v.code, host: v.hostName, done: v.done, winner: v.winner,
+    items: v.items.map((i) => ({ ...i, votes: tally.get(i.id) || 0, voters: [...v.ballots].filter(([, x]) => x === i.id).map(([k]) => v.names.get(k)) })),
+    voters: v.ballots.size,
+  };
+}
+function voteBroadcast(v) { const st = publicVote(v); for (const c of v.clients) c('state', st); }
+
+together.post('/api/vote', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req);
+  const ids = (Array.isArray(b.itemIds) ? b.itemIds : []).map(Number).filter(Boolean).slice(0, 4);
+  const items = ids.map((id) => get('SELECT id, type, title, year, poster, backdrop, overview, runtime, duration FROM items WHERE id = ?', id)).filter(Boolean)
+    .map((i) => ({ id: i.id, type: i.type, title: i.title, year: i.year, poster: i.poster, backdrop: i.backdrop, overview: i.overview, runtime: i.runtime || (i.duration ? Math.round(i.duration / 60) : null) }));
+  if (items.length < 2) throw new HttpError(400, 'Il faut au moins deux titres');
+  let c; do { c = code(4); } while (votes.has(c));
+  const v = { code: c, host: ctx.auth.token, hostName: p.name, items, ballots: new Map(), names: new Map(), clients: new Set(), done: false, winner: null, at: Date.now() };
+  votes.set(c, v);
+  setTimeout(() => votes.delete(c), 3 * 3600000).unref();
+  sendJson(ctx.res, publicVote(v));
+});
+together.get('/api/vote/:code', (ctx) => {
+  requireProfile(ctx);
+  const v = votes.get(String(ctx.params.code).toUpperCase());
+  if (!v) throw new HttpError(404, 'Vote terminé ou code inconnu');
+  sendJson(ctx.res, publicVote(v));
+});
+together.get('/api/vote/:code/stream', (ctx) => {
+  requireProfile(ctx);
+  const v = votes.get(String(ctx.params.code).toUpperCase());
+  if (!v) throw new HttpError(404, 'Vote terminé ou code inconnu');
+  const { send, onClose } = sse(ctx);
+  v.clients.add(send);
+  send('state', publicVote(v));
+  onClose(() => v.clients.delete(send));
+});
+together.post('/api/vote/:code', async (ctx) => {
+  const p = requireProfile(ctx);
+  const v = votes.get(String(ctx.params.code).toUpperCase());
+  if (!v) throw new HttpError(404, 'Vote terminé ou code inconnu');
+  if (v.done) throw new HttpError(409, 'Le vote est terminé');
+  const b = await readBody(ctx.req);
+  const voter = String(b.client || ctx.auth.token).slice(0, 64);
+  if (!v.items.some((i) => i.id === Number(b.itemId))) throw new HttpError(400, 'Choix inconnu');
+  v.ballots.set(voter, Number(b.itemId));
+  v.names.set(voter, String(b.name || p.name).slice(0, 30));
+  voteBroadcast(v);
+  sendJson(ctx.res, publicVote(v));
+});
+// L'hôte clôt le vote : le plus de voix gagne (égalité : tirage au sort entre les premiers)
+together.post('/api/vote/:code/close', (ctx) => {
+  requireProfile(ctx);
+  const v = votes.get(String(ctx.params.code).toUpperCase());
+  if (!v) throw new HttpError(404, 'Vote terminé ou code inconnu');
+  if (v.host !== ctx.auth.token) throw new HttpError(403, 'Seul l’écran qui a lancé le vote peut le terminer');
+  const st = publicVote(v);
+  const max = Math.max(...st.items.map((i) => i.votes));
+  const top = st.items.filter((i) => i.votes === max);
+  v.winner = top[crypto.randomInt(top.length)].id;
+  v.done = true;
+  voteBroadcast(v);
+  sendJson(ctx.res, publicVote(v));
+});

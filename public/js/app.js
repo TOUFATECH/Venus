@@ -1,5 +1,5 @@
 // Venus — démarrage, routage et coque de l'application
-import { api, auth } from './api.js';
+import { api, auth, clearApiCache } from './api.js';
 import { h, icon, avatar, toast, logoMark, brand, sheet, overlayHost } from './ui.js';
 import { initNav, focusFirst } from './nav.js';
 import { menuItems, menuPrefs, labelOf, iconOf, dayPart } from './menu.js';
@@ -25,12 +25,16 @@ const ROUTES = [
   [/^\/lecture\/(\d+)$/, () => import('./views/player.js'), (m) => ({ id: Number(m[1]) })],
   [/^\/reglages$/, () => import('./views/settings.js')],
   [/^\/tableau-de-bord$/, () => import('./views/dashboard.js')],
+  [/^\/qualite$/, () => import('./views/quality.js')],
+  [/^\/stats$/, () => import('./views/stats.js')],
+  [/^\/vote$/, () => import('./views/vote.js')],
+  [/^\/telechargements$/, () => import('./views/downloads.js')],
   [/^\/cesoir$/, () => import('./views/cesoir.js')],
   [/^\/seance$/, () => import('./views/seance.js')],
   [/^\/telecommande$/, () => import('./views/telecommande.js')],
 ];
 // Écrans plein écran, sans navigation
-const BARE = ['/lecture', '/telecommande'];
+const BARE = ['/lecture', '/telecommande', '/vote'];
 
 // Routeur : adresse (#/films…) par défaut, ou pile en mémoire quand l'adresse n'est pas modifiable (démo intégrée)
 const memory = !!window.__VN_MEMORY_ROUTER;
@@ -196,6 +200,7 @@ function listenEvents() {
   events.addEventListener('control', (e) => {
     let d; try { d = JSON.parse(e.data); } catch { return; }
     if (d.cmd === 'message') adminMessage(d);
+    if (d.cmd === 'notify') toast(`${d.title} : ${d.text}`, { type: 'success', duration: 7000, action: d.url ? { label: 'Voir', onClick: () => go(d.url) } : null });
     window.dispatchEvent(new CustomEvent('vn:control', { detail: d }));
   });
   events.onerror = () => { /* le navigateur se reconnecte tout seul */ };
@@ -204,6 +209,7 @@ window.addEventListener('vn:library', (e) => onLibrary(e.detail));
 async function onLibrary(d) {
   {
     if (!state.profile || !d || !d.added || !d.added.length) return;
+    clearApiCache();
     const names = d.added.slice(0, 3).join(', ') + (d.added.length > 3 ? ` et ${d.added.length - 3} autres` : '');
     toast(`Nouveau dans Venus : ${names}`);
     await refreshCategories();
@@ -291,9 +297,16 @@ async function mount(viewModule, params, { withNav, path }) {
   if (ticket !== mountTicket) { view && view.destroy && view.destroy(); return; }
   dropOld();
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (!reduce) main.classList.add('page-in');
-  place(main);
-  window.scrollTo(0, 0);
+  // L'affiche touchée s'agrandit jusqu'à devenir celle de la fiche (navigateurs récents)
+  const from = window.__vtFrom; window.__vtFrom = null;
+  if (from && from.isConnected && document.startViewTransition && !reduce && /^\/titre\//.test(path)) {
+    from.style.viewTransitionName = 'vt-poster';
+    document.startViewTransition(() => { from.style.viewTransitionName = ''; place(main); window.scrollTo(0, 0); });
+  } else {
+    if (!reduce) main.classList.add('page-in');
+    place(main);
+    window.scrollTo(0, 0);
+  }
   finish(view);
   if (failed) showError(failed);
 }
@@ -380,6 +393,64 @@ initNav({
 if ('serviceWorker' in navigator && location.protocol !== 'file:' && !memory) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
+// ---------------------------------------------------------------- tactile : tirer vers le bas pour actualiser
+(() => {
+  if (!document.documentElement.classList.contains('touch')) return;
+  const ind = h('div', { class: 'ptr', 'aria-hidden': 'true' }, icon('refresh'));
+  document.body.append(ind);
+  let y0 = null, dy = 0, busy = false;
+  const usable = () => state.profile && !BARE.some((b) => parseHash().path.startsWith(b)) && !document.querySelector('.sheet-wrap, .player, .mini-player.drag');
+  document.addEventListener('touchstart', (e) => { if (busy || window.scrollY > 0 || !usable() || e.touches.length > 1) { y0 = null; return; } y0 = e.touches[0].clientY; dy = 0; }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (y0 == null) return;
+    dy = e.touches[0].clientY - y0;
+    if (dy <= 0 || window.scrollY > 0) { ind.style.transform = ''; ind.classList.remove('on', 'ready'); return; }
+    const d = Math.min(110, dy * 0.5);
+    ind.classList.add('on');
+    ind.classList.toggle('ready', d >= 64);
+    ind.style.transform = `translate(-50%, ${d}px) rotate(${d * 3}deg)`;
+  }, { passive: true });
+  document.addEventListener('touchend', async () => {
+    if (y0 == null) return;
+    const go2 = Math.min(110, dy * 0.5) >= 64;
+    y0 = null;
+    if (!go2) { ind.style.transform = ''; ind.classList.remove('on', 'ready'); return; }
+    busy = true;
+    ind.classList.add('spin');
+    ind.style.transform = 'translate(-50%, 70px)';
+    clearApiCache();
+    try { await route(); } catch { /* */ }
+    setTimeout(() => { ind.classList.remove('on', 'ready', 'spin'); ind.style.transform = ''; busy = false; }, 350);
+  });
+})();
+
+// ---------------------------------------------------------------- installer Venus sur l'écran d'accueil
+(() => {
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  if (standalone || memory) return;
+  let promptEvt = null;
+  const dismissedAt = () => { try { return Number(localStorage.getItem('vn_install_dismissed')) || 0; } catch { return 0; } };
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const show = () => {
+    if (document.querySelector('.install-bar') || Date.now() - dismissedAt() < 30 * 864e5 || !state.profile) return;
+    if (!promptEvt && !isIOS) return;
+    const bar = h('div', { class: 'install-bar', role: 'dialog', 'aria-label': 'Installer Venus' },
+      h('span', { class: 'ib-ic' }, logoMark()),
+      h('div', { class: 'ib-text' }, h('b', {}, 'Installer Venus'), h('small', {}, isIOS && !promptEvt ? 'Plein écran, icône sur l’écran d’accueil' : 'Comme une vraie appli, en plein écran')),
+      h('button', { class: 'btn btn-small f', onclick: async () => {
+        if (promptEvt) { promptEvt.prompt(); const r = await promptEvt.userChoice.catch(() => null); if (r && r.outcome === 'accepted') toast('Venus est installé', { type: 'success' }); promptEvt = null; bar.remove(); return; }
+        sheet('Installer sur iPhone / iPad', h('ol', { class: 'ios-steps' },
+          h('li', {}, 'Touchez le bouton Partager ', h('b', {}, '⬆'), ' en bas de Safari.'),
+          h('li', {}, 'Choisissez ', h('b', {}, '« Sur l’écran d’accueil »'), '.'),
+          h('li', {}, 'Touchez ', h('b', {}, 'Ajouter'), ' : Venus s’ouvre ensuite en plein écran, comme une appli.')));
+      } }, 'Installer'),
+      h('button', { class: 'ib-x', 'aria-label': 'Plus tard', onclick: () => { try { localStorage.setItem('vn_install_dismissed', String(Date.now())); } catch { /* */ } bar.remove(); } }, icon('close')));
+    document.body.append(bar);
+  };
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); promptEvt = e; setTimeout(show, 15000); });
+  if (isIOS && document.documentElement.classList.contains('touch')) setTimeout(show, 25000);
+})();
+
 window.addEventListener('unhandledrejection', (e) => {
   if (e.reason && e.reason.status === 401) return;
   console.error(e.reason);

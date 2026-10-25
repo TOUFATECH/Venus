@@ -1,8 +1,8 @@
 // Composants partagés : cartes, rangées, actions de lecture
-import { h, icon, img, picture, placeholder, fmtDate, daysSince, fadeIn } from './ui.js';
+import { h, icon, img, picture, placeholder, fmtDate, daysSince, fadeIn, sheet, toast } from './ui.js';
 import { go } from './app.js';
-import { prefs, hoverMode } from './api.js';
-import { trailerPlayer } from './trailer.js';
+import { api, prefs, hoverMode, prefetch } from './api.js';
+import { trailerPlayer, trailerUrl } from './trailer.js';
 import { setQueue } from './queue.js';
 
 export function playPath(id, t) { return `/lecture/${id}${t != null ? `?t=${Math.floor(t)}` : ''}`; }
@@ -68,9 +68,9 @@ export function card(item, { poster = false, rank = null, onFocus, queue = null 
 
   let media;
   if (poster && !isClip) {
-    media = item.poster ? picture(img(item.poster), item.title) : framePoster(item);
+    media = item.poster ? picture(img(item.poster, 342), item.title) : framePoster(item);
   } else {
-    const src = img(item.backdrop || item.still);
+    const src = img(item.backdrop || item.still, 780);
     media = src ? picture(src, title) : frameImage(item.id, title);
   }
 
@@ -94,6 +94,8 @@ export function card(item, { poster = false, rank = null, onFocus, queue = null 
     onclick: (e) => {
       const onTitle = e.target.closest && e.target.closest('.cap');
       if (isClip) { if (queue) setQueue(queue(), { startId: item.id }); return go(playPath(item.id)); }
+      const toTitle = onTitle || !(resume || isEp);
+      if (toTitle) window.__vtFrom = el.querySelector('.shot');
       if (onTitle) return go(`/titre/${isEp ? item.showId : item.id}`);
       return resume || isEp ? go(playPath(item.id, item.next ? 0 : undefined)) : go(`/titre/${item.id}`);
     },
@@ -108,6 +110,14 @@ export function card(item, { poster = false, rank = null, onFocus, queue = null 
     sub || sc ? h('small', {}, sub || '', sc ? h('span', { class: 'cap-score', title: 'Note moyenne des sites' }, `★ ${sc.toFixed(1).replace('.', ',')}`) : null) : null));
   if (onFocus) el.addEventListener('focus', () => onFocus(item));
   attachPreview(el, item);
+  attachQuick(el, item);
+  // Préchargement de la fiche : au survol (souris) ou dès le début d'un appui
+  const pre = () => { if (!isClip) prefetch(`/api/items/${isEp ? item.showId : item.id}`); };
+  let preT = null;
+  el.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') preT = setTimeout(pre, 140); });
+  el.addEventListener('pointerleave', () => clearTimeout(preT));
+  el.addEventListener('touchstart', pre, { passive: true });
+  el.addEventListener('focus', () => { preT = setTimeout(pre, 250); });
   return el;
 }
 
@@ -248,4 +258,55 @@ export function ratingChips(ratings, links = {}) {
   ].filter(Boolean).map(([k, label, url]) => h('a', { class: `rating r-${k} r-link`, href: url, target: '_blank', rel: 'noopener', title: `Voir sur ${label}` }, h('span', { class: 'r-src' }, label), h('span', { class: 'r-go' }, '↗')));
   if (!chips.length && !extra.length) return null;
   return h('div', { class: 'ratings' }, chips, extra);
+}
+
+// Appui long (tactile) ou clic droit sur une affiche : menu rapide
+function attachQuick(el, item) {
+  let t = null, x0 = 0, y0 = 0, fired = false;
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); if (!fired && !document.querySelector('.quick-menu')) quickMenu(item); });
+  el.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return;
+    fired = false; x0 = e.clientX; y0 = e.clientY;
+    clearTimeout(t);
+    t = setTimeout(() => {
+      fired = true; el.classList.add('lp');
+      // En relevant le doigt, le « clic » qui suit ne doit ni ouvrir la carte ni refermer le menu
+      const eat = (ev) => { ev.preventDefault(); ev.stopImmediatePropagation(); };
+      document.addEventListener('click', eat, true);
+      const release = () => setTimeout(() => document.removeEventListener('click', eat, true), 350);
+      document.addEventListener('pointerup', release, { once: true, capture: true });
+      document.addEventListener('pointercancel', release, { once: true, capture: true });
+      setTimeout(() => el.classList.remove('lp'), 300);
+      try { navigator.vibrate && navigator.vibrate(15); } catch { /* */ }
+      quickMenu(item);
+    }, 520);
+  });
+  el.addEventListener('pointermove', (e) => { if (t && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) { clearTimeout(t); t = null; } });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, () => { clearTimeout(t); t = null; });
+  el.addEventListener('click', (e) => { if (fired) { fired = false; e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+}
+
+export function quickMenu(item) {
+  const isEp = item.type === 'episode';
+  const titleId = isEp ? item.showId : item.id;
+  const seen = item.status === 'seen' || (item.progress && item.progress.watched);
+  const opt = (ic, label, fn) => h('button', { class: 'opt f', onclick: () => { s.close(); fn(); } }, icon(ic), label);
+  const s = sheet(isEp ? `${item.showTitle || ''} · S${item.season} É${item.episode}` : item.title, h('div', { class: 'quick-menu' },
+    opt('play', item.progress && !item.progress.watched && item.progress.position > 0 ? 'Reprendre' : 'Lecture', async () => {
+      if (item.type === 'show') { const d = await api(`/api/items/${item.id}`); go(d.nextUp ? playPath(d.nextUp.id) : `/titre/${item.id}`); } else go(playPath(item.id));
+    }),
+    item.type !== 'clip' ? opt('info', 'Voir la fiche', () => go(`/titre/${titleId}`)) : null,
+    opt('plus', 'Ma liste', async () => {
+      const r = await api(`/api/items/${titleId}/mylist`, { method: 'POST' });
+      toast(r.inList ? 'Ajouté à ma liste' : 'Retiré de ma liste', { type: r.inList ? 'success' : 'info', action: { label: 'Annuler', onClick: () => api(`/api/items/${titleId}/mylist`, { method: 'POST' }).then(() => toast(r.inList ? 'Retiré de ma liste' : 'Ajouté à ma liste')) } });
+    }),
+    opt('eye', seen ? 'Marquer comme non vu' : 'Marquer comme vu', async () => {
+      await api(`/api/items/${item.id}/watched`, { method: 'POST', body: { watched: !seen } });
+      toast(seen ? `« ${item.title} » : non vu` : `« ${item.title} » : vu`, { type: 'success', action: { label: 'Annuler', onClick: () => api(`/api/items/${item.id}/watched`, { method: 'POST', body: { watched: seen } }) } });
+    }),
+    item.trailer ? opt('film', 'Bande-annonce', () => {
+      const frame = h('iframe', { class: 'trailer-frame', src: trailerUrl(item.trailer), title: `Bande-annonce de ${item.title}`, allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true });
+      sheet(`Bande-annonce : ${item.title}`, h('div', { class: 'trailer-box' }, frame), { wide: true, onClose: () => frame.remove() });
+    }) : null,
+    item.type === 'movie' || isEp ? opt('down', 'Télécharger', async () => { const m = await import('./views/downloads.js'); m.openDownload({ id: item.id, title: item.title, duration: (item.runtime || 0) * 60 }); }) : null));
 }

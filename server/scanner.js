@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { all, get, run, tx } from './db.js';
 import { probeFile, findExternalSubs } from './probe.js';
+import { downloadedSubs } from './subtitles.js';
 import { parseMovie, parseEpisode, normKey, sortTitle } from './parse.js';
 import { refreshMissing, copyLocalImage } from './metadata.js';
 import { remoteReady } from './netshare.js';
@@ -90,7 +91,8 @@ async function processFile(lib, f, existing) {
   const probeJson = JSON.stringify(probe);
 
   if (existing) {
-    run('UPDATE items SET size=?, mtime=?, duration=?, probe=? WHERE id=?', f.size, f.mtime, probe.duration, probeJson, existing.id);
+    probe.subs.push(...downloadedSubs(existing.id));
+    run('UPDATE items SET size=?, mtime=?, duration=?, probe=? WHERE id=?', f.size, f.mtime, probe.duration, JSON.stringify(probe), existing.id);
     return;
   }
   if (lib.type === 'clips') {

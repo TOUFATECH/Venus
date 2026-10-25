@@ -91,6 +91,7 @@ export function creditsOf(d, kind) {
     status: d.status || null,
     nextEpisode: d.next_episode_to_air ? { date: d.next_episode_to_air.air_date, season: d.next_episode_to_air.season_number, episode: d.next_episode_to_air.episode_number, title: d.next_episode_to_air.name } : null,
     budget: d.budget || null, revenue: d.revenue || null,
+    collection: d.belongs_to_collection ? { id: d.belongs_to_collection.id, name: d.belongs_to_collection.name } : null,
   };
 }
 

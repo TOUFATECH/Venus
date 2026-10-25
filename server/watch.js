@@ -9,6 +9,7 @@
 import { db, all, get, run, getSetting, setSetting } from './db.js';
 import { seerr, seerrOn, seerrConf, seerrRequest, mediaState, libraryIndex } from './discover.js';
 import { logActivity } from './activity.js';
+import { notify } from './notify.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS wishlist (
   profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
@@ -112,7 +113,7 @@ let running = false;
 export const watchState = { lastRun: null, requested: 0, followed: 0, error: null };
 
 export async function runWatch() {
-  if (running || !seerrOn()) return watchState;
+  if (running) return watchState;
   running = true;
   watchState.error = null;
   let requested = 0;
@@ -122,14 +123,16 @@ export async function runWatch() {
     for (const w of all('SELECT w.*, p.max_age FROM wishlist w JOIN profiles p ON p.id = w.profile_id')) {
       const itemId = lib.byTmdb.get(`${w.media_type}:${w.tmdb_id}`);
       if (itemId) {
+        const fresh = !get('SELECT 1 FROM mylist WHERE profile_id=? AND item_id=?', w.profile_id, itemId);
         run('INSERT OR IGNORE INTO mylist(profile_id, item_id, added_at) VALUES(?,?,?)', w.profile_id, itemId, Date.now());
+        if (fresh) notify({ title: 'Votre envie est arrivée', body: `« ${w.title} » est maintenant dans Venus`, url: `/titre/${itemId}`, tag: `wish-${itemId}` }, { profileId: w.profile_id }).catch(() => {});
         if (w.media_type === 'movie') run('DELETE FROM wishlist WHERE profile_id=? AND media_type=? AND tmdb_id=?', w.profile_id, w.media_type, w.tmdb_id);
         continue;
       }
-      if (autoRequest() && w.max_age == null && (!w.requested_at || w.error)) { await requestWish(w.profile_id, w.media_type, w.tmdb_id); requested++; }
+      if (seerrOn() && autoRequest() && w.max_age == null && (!w.requested_at || w.error)) { await requestWish(w.profile_id, w.media_type, w.tmdb_id); requested++; }
     }
     // 2. Séries suivies : chaque nouvelle saison annoncée est demandée
-    const mode = followMode();
+    const mode = seerrOn() ? followMode() : 'off';
     if (mode !== 'off') {
       const ids = new Map(); // tmdb -> { maxLib, profileId }
       const libShows = mode === 'all'

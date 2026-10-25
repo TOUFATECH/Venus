@@ -9,10 +9,13 @@ import { authenticate } from './auth.js';
 import { router } from './api.js';
 import { together } from './together.js';
 import { detectHardware } from './hw.js';
-import { scanAll, watchLibraries } from './scanner.js';
+import { scanAll, watchLibraries, events } from './scanner.js';
+import { libraryAdded } from './notify.js';
+import { runWatch } from './watch.js';
 import { schedulePending } from './segments.js';
 import { refreshRatings } from './ratings.js';
 import { startWatch } from './watch.js';
+import { startBackups } from './backup.js';
 import { stopAllSessions } from './stream.js';
 import { mountAll, watchMounts } from './netshare.js';
 import { runtime } from './env.js';
@@ -80,6 +83,15 @@ async function main() {
   // Notes et bandes-annonces : titres nouveaux ou notés il y a plus de 10 jours
   setTimeout(() => refreshRatings(), 120000).unref();
   startWatch();
+  // Nouveautés : notification, et les envies arrivées passent dans « Ma liste » (avec notification à la personne)
+  let watchSoon = null;
+  events.on('library', (d) => {
+    if (d && d.added && d.added.length) {
+      libraryAdded(d.added);
+      clearTimeout(watchSoon); watchSoon = setTimeout(() => runWatch().catch(() => {}), 90000);
+    }
+  });
+  startBackups();
   setInterval(() => refreshRatings(), 6 * 3600000).unref();
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)
   setTimeout(() => scanAll(), 2000);

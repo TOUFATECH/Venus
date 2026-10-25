@@ -1,5 +1,6 @@
 // Routes de l'API
 import fs from 'node:fs';
+import { execFile } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { Router, HttpError, readBody, sendJson, sendFile } from './http.js';
@@ -19,10 +20,14 @@ import { detectHardware } from './hw.js';
 import { probeLive } from './probe.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
 import { getSegments, scheduleSeason, segmentsPending } from './segments.js';
+import { searchSubs, downloadSub, osOn, resetOsLogin } from './subtitles.js';
+import { listBackups, makeBackup, scheduleRestore, backupPath } from './backup.js';
+import { prepare as prepareDownload, listJobs, getJob, cancelJob, niceName } from './downloads.js';
+import { notify, vapidPublicKey, savePushSub, removePushSub, pushCount, channels } from './notify.js';
 import { control, deviceId, logActivity, recentActivity, heartbeat, stopHeartbeat, nowPlaying, tokenOfDevice, loginCode, useLoginCode, loginCodeActive } from './activity.js';
 import { scheduleRatings, refreshRatings, omdbKey, simklId, ratingsPending } from './ratings.js';
 import { wishlistOf, inWishlist, addWish, removeWish, runWatch, watchState, autoRequest, followMode, seerrLogin, listSeerrUsers, seerrUsers, linkSeerrUser, seerrUserOf } from './watch.js';
-import { discover as discoverTitles, discoverAvailable, seerrOn, seerrStatus, seerrRequest, seerrTest, seerrConf, resolveTmdb, trailerFor } from './discover.js';
+import { searchOnline, discover as discoverTitles, discoverAvailable, seerrOn, seerrStatus, seerrRequest, seerrTest, seerrConf, resolveTmdb, trailerFor } from './discover.js';
 import { discover, listShares, mountRemote, unmountRemote, remoteOf, describe, netState, xtreamUrl } from './netshare.js';
 
 export const router = new Router();
@@ -319,8 +324,8 @@ router.get('/api/events', (ctx) => {
   const onLib = (d) => res.write(`event: library\ndata: ${JSON.stringify(d)}\n\n`);
   events.on('library', onLib);
   // Commandes de l'administrateur pour cet appareil (pause, arrêt, message)
-  const mine = ctx.auth.token;
-  const onCtl = (d) => { if (d.all || d.token === mine) res.write(`event: control\ndata: ${JSON.stringify({ cmd: d.cmd, text: d.text, from: d.from })}\n\n`); };
+  const mine = ctx.auth.token, myProfile = ctx.auth.profile && ctx.auth.profile.id;
+  const onCtl = (d) => { if (d.all || d.token === mine || (d.profileId && d.profileId === myProfile)) res.write(`event: control\ndata: ${JSON.stringify({ cmd: d.cmd, text: d.text, from: d.from, title: d.title, url: d.url })}\n\n`); };
   control.on('cmd', onCtl);
   const ping = setInterval(() => res.write(': ping\n\n'), 25000);
   ctx.req.on('close', () => { clearInterval(ping); events.off('library', onLib); control.off('cmd', onCtl); });
@@ -402,6 +407,55 @@ router.get('/api/home', (ctx) => {
 
   const mine = all(`SELECT i.* FROM mylist m JOIN items i ON i.id = m.item_id WHERE m.profile_id = ? AND ${age.sql} ORDER BY m.added_at DESC`, p.id, ...age.args);
   if (mine.length) rows.push({ id: 'mylist', title: 'Ma liste', items: mine.map((i) => C(i)) });
+
+  // Rangées personnalisées : d'après ce que ce profil regarde
+  const seenIds = new Set(); // titres (films / séries) déjà commencés ou vus
+  for (const [iid, pr] of idx.prog) { if (pr.position > 0 || pr.watched) seenIds.add(iid); }
+  for (const [sid] of idx.shows) { const r = idx.shows.get(sid); if (r && (r.seen || r.part)) seenIds.add(sid); }
+  const unseen = base.filter((i) => i.type !== 'clip' && !seenIds.has(i.id));
+  const credOf = new Map(base.map((i) => [i.id, parseJson(i.credits, null)]));
+  const peopleOf = (i) => { const c = credOf.get(i.id); return c ? [...(c.directors || []), ...(c.cast || []).slice(0, 6)].map((x) => x.name) : []; };
+  const lastSeen = all(`SELECT COALESCE(i.show_id, i.id) AS tid, MAX(pr.updated_at) AS t FROM progress pr JOIN items i ON i.id = pr.item_id
+      WHERE pr.profile_id = ? AND i.type IN ('movie','episode') GROUP BY tid ORDER BY t DESC LIMIT 3`, p.id);
+  const byId = new Map(base.map((i) => [i.id, i]));
+  for (const ls of lastSeen.slice(0, 2)) {
+    const ref = byId.get(ls.tid);
+    if (!ref) continue;
+    const g = parseJson(ref.genres, []), pp = new Set(peopleOf(ref)), col = (credOf.get(ref.id) || {}).collection;
+    const sim = unseen.filter((i) => i.id !== ref.id).map((i) => {
+      const c = credOf.get(i.id) || {};
+      const s = parseJson(i.genres, []).filter((x) => g.includes(x)).length * 2 + peopleOf(i).filter((n) => pp.has(n)).length * 3
+        + (col && c.collection && c.collection.id === col.id ? 8 : 0) + (i.type === ref.type ? 1 : 0) + (i.vote || 0) / 5;
+      return { i, s };
+    }).filter((x) => x.s >= 4).sort((a, b) => b.s - a.s).slice(0, 18);
+    if (sim.length >= 3) rows.push({ id: `because:${ref.id}`, title: `Parce que vous avez regardé ${ref.title}`, items: sim.map((x) => C(x.i)) });
+  }
+  // L'acteur ou la réalisatrice qu'on regarde le plus, s'il reste des titres à découvrir
+  const fav = new Map();
+  for (const id of seenIds) { const it = byId.get(id); if (it) for (const n of peopleOf(it)) fav.set(n, (fav.get(n) || 0) + 1); }
+  for (const [name] of [...fav].sort((a, b) => b[1] - a[1]).slice(0, 6)) {
+    const withP = base.filter((i) => i.type !== 'clip' && peopleOf(i).includes(name));
+    if (withP.length >= 3 && withP.some((i) => !seenIds.has(i.id))) {
+      rows.push({ id: `person:${name}`, title: `Avec ${name}`, person: name, items: withP.sort((a, b) => (seenIds.has(a.id) - seenIds.has(b.id)) || (b.year || 0) - (a.year || 0)).map((i) => C(i)) });
+      break;
+    }
+  }
+  // Pépites jamais vues : les mieux notées qu'on n'a pas encore commencées
+  const scoreOfItem = (i) => { const r = parseJson(i.ratings, null); return (r && r.score) || (i.vote ? i.vote * 10 : 0); };
+  const gems = unseen.filter((i) => scoreOfItem(i) >= 74).sort((a, b) => scoreOfItem(b) - scoreOfItem(a)).slice(0, 18);
+  if (gems.length >= 3) rows.push({ id: 'gems', title: 'Pépites que vous n’avez pas vues', items: gems.map((i) => C(i)) });
+  // Courts : moins d'1 h 30
+  const shorts = unseen.filter((i) => i.type === 'movie' && (i.runtime || (i.duration ? i.duration / 60 : 999)) <= 90).sort((a, b) => scoreOfItem(b) - scoreOfItem(a)).slice(0, 18);
+  if (shorts.length >= 3) rows.push({ id: 'short', title: 'Moins d’1 h 30', items: shorts.map((i) => C(i)) });
+  // Sagas : films d'une même collection, dans l'ordre de sortie (celles qu'on a commencées d'abord)
+  const sagas = new Map();
+  for (const i of base) { const c = credOf.get(i.id); if (i.type === 'movie' && c && c.collection) { if (!sagas.has(c.collection.id)) sagas.set(c.collection.id, { name: c.collection.name, list: [] }); sagas.get(c.collection.id).list.push(i); } }
+  const sagaRows = [...sagas.values()].filter((x) => x.list.length >= 2)
+    .map((x) => ({ ...x, started: x.list.some((i) => seenIds.has(i.id)), done: x.list.every((i) => seenIds.has(i.id)) }))
+    .filter((x) => !x.done).sort((a, b) => b.started - a.started || b.list.length - a.list.length).slice(0, 2);
+  for (const sg of sagaRows) {
+    rows.push({ id: `saga:${sg.name}`, title: `Saga : ${sg.name.replace(/ - (Saga|Collection)$|^Saga /i, '')}`, items: sg.list.sort((a, b) => (a.release_date || String(a.year)).localeCompare(b.release_date || String(b.year))).map((i) => C(i)) });
+  }
 
   // 5. Populaires : popularité TMDB + ce que le foyer regarde le plus
   const plays = new Map(all(`SELECT COALESCE(i.show_id, i.id) AS tid, COUNT(*) AS n FROM progress pr JOIN items i ON i.id = pr.item_id GROUP BY tid`).map((r) => [r.tid, r.n]));
@@ -517,8 +571,15 @@ router.get('/api/items/:id', (ctx) => {
     out.media = firstEp ? mediaSummary(firstEp.probe) : null;
     out.totalDuration = eps.reduce((n, e) => n + (e.duration || 0), 0);
   }
-  // Titres similaires (genres communs)
+  // Saga : les autres films de la même collection présents dans Venus
   const age = ageClause(p);
+  if (out.credits && out.credits.collection) {
+    const cid = out.credits.collection.id;
+    const list = all(`SELECT i.* FROM items i WHERE i.type = 'movie' AND i.credits LIKE ? AND ${age.sql}`, `%"collection":{"id":${cid},%`, ...age.args)
+      .sort((a, b) => (a.release_date || String(a.year)).localeCompare(b.release_date || String(b.year)));
+    if (list.length > 1) out.saga = { name: out.credits.collection.name, items: list.map((x) => card(x)) };
+  }
+  // Titres similaires (genres communs)
   const genres = parseJson(item.genres, []);
   if (item.type === 'clip' || item.type === 'channel') {
     // Clips : les autres clips du même dossier d'abord, puis les plus récents
@@ -559,6 +620,48 @@ router.get('/api/upcoming', (ctx) => {
   if (stale.length) scheduleRatings(stale.slice(0, 40));
   out.sort((a, b) => a.date.localeCompare(b.date) || a.showTitle.localeCompare(b.showTitle));
   sendJson(ctx.res, out);
+});
+
+// Statistiques personnelles : temps passé, genres, séries préférées, mois par mois, « votre année »
+router.get('/api/stats', (ctx) => {
+  const p = requireProfile(ctx);
+  const year = Number(ctx.url.searchParams.get('year')) || new Date().getFullYear();
+  const rows = all(`SELECT pr.position, pr.duration AS pdur, pr.watched, pr.updated_at, i.id, i.type, i.title, i.duration, i.runtime, i.genres, i.show_id, i.poster, i.credits, i.category,
+      s.title AS show_title, s.poster AS show_poster, s.genres AS show_genres, s.credits AS show_credits, s.category AS show_cat
+    FROM progress pr JOIN items i ON i.id = pr.item_id LEFT JOIN items s ON s.id = i.show_id WHERE pr.profile_id = ?`, p.id);
+  const secs = (r) => (r.watched ? (r.duration || r.pdur || (r.runtime || 0) * 60) : (r.position || 0));
+  const inYear = (r) => new Date(r.updated_at).getFullYear() === year;
+  const sum = (list) => list.reduce((n, r) => n + secs(r), 0);
+  const yr = rows.filter(inYear);
+  const months = Array.from({ length: 12 }, (_, m) => ({ m, hours: Math.round(sum(yr.filter((r) => new Date(r.updated_at).getMonth() === m)) / 36) / 100 }));
+  const genres = new Map(), people = new Map(), shows = new Map(), movies = [];
+  for (const r of yr) {
+    const t = secs(r);
+    for (const g of parseJson(r.type === 'episode' ? r.show_genres : r.genres, [])) genres.set(g, (genres.get(g) || 0) + t);
+    const cr = parseJson(r.type === 'episode' ? r.show_credits : r.credits, null);
+    if (cr) for (const x of [...(cr.directors || []), ...(cr.cast || []).slice(0, 5)]) people.set(x.name, (people.get(x.name) || 0) + (r.type === 'episode' ? 0.2 : 1));
+    if (r.type === 'episode') {
+      const sh = shows.get(r.show_id) || { id: r.show_id, title: r.show_title, poster: r.show_poster, eps: 0, secs: 0, anime: r.show_cat === 'anime' };
+      if (r.watched) sh.eps++;
+      sh.secs += t; shows.set(r.show_id, sh);
+    } else if (r.type === 'movie' && r.watched) movies.push({ id: r.id, title: r.title, poster: r.poster, at: r.updated_at });
+  }
+  const days = new Set(yr.map((r) => new Date(r.updated_at).toISOString().slice(0, 10)));
+  // Plus longue série de jours consécutifs avec au moins une lecture
+  let best = 0, cur = 0, prev = null;
+  for (const d of [...days].sort()) { const t = Date.parse(d); cur = prev != null && t - prev === 864e5 ? cur + 1 : 1; best = Math.max(best, cur); prev = t; }
+  const totalH = Math.round(sum(yr) / 36) / 100;
+  const topGenres = [...genres].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([g, t]) => ({ name: g, hours: Math.round(t / 36) / 100 }));
+  sendJson(ctx.res, {
+    year, years: [...new Set(rows.map((r) => new Date(r.updated_at).getFullYear()))].sort((a, b) => b - a),
+    totalHours: totalH, allTimeHours: Math.round(sum(rows) / 36) / 100,
+    movies: movies.length, episodes: yr.filter((r) => r.type === 'episode' && r.watched).length, clips: yr.filter((r) => r.type === 'clip').length,
+    days: days.size, streak: best, months, genres: topGenres,
+    topShows: [...shows.values()].filter((x) => x.eps || x.secs >= 600).sort((a, b) => b.secs - a.secs).slice(0, 6).map((x) => ({ ...x, hours: Math.round(x.secs / 36) / 100 })),
+    lastMovies: movies.sort((a, b) => b.at - a.at).slice(0, 6),
+    person: [...people].sort((a, b) => b[1] - a[1])[0]?.[0] || null,
+    bestMonth: months.reduce((a, b) => (b.hours > a.hours ? b : a), months[0]),
+  });
 });
 
 // Titres de la médiathèque où apparaît une personne (distribution ou équipe)
@@ -806,8 +909,30 @@ router.get('/img/:name', async (ctx) => {
     if (!photoFetch.has(name)) photoFetch.set(name, downloadImage(`/${m[1]}`, 'w185').finally(() => setTimeout(() => photoFetch.delete(name), 60000)));
     if (!(await photoFetch.get(name))) throw new HttpError(404, 'Photo indisponible');
   }
-  sendFile(ctx.req, ctx.res, path.join(imagesDir, name), { cache: 'public, max-age=2592000, immutable' });
+  const src = path.join(imagesDir, name);
+  // Version réduite (affiches des grilles, vignettes) : faite une fois par ffmpeg, puis gardée
+  const w = Number(ctx.url.searchParams.get('w'));
+  if ([185, 342, 500, 780].includes(w) && /\.(jpe?g|png|webp)$/i.test(name) && fs.existsSync(src)) {
+    const out = path.join(imagesDir, 'w', `${w}_${name.replace(/\.(png|webp)$/i, '.jpg')}`);
+    if (!fs.existsSync(out)) {
+      if (!resizing.has(out)) resizing.set(out, resizeImage(src, out, w).finally(() => resizing.delete(out)));
+      const ok = await resizing.get(out);
+      if (!ok) return sendFile(ctx.req, ctx.res, src, { cache: 'public, max-age=2592000, immutable' });
+    }
+    return sendFile(ctx.req, ctx.res, out, { cache: 'public, max-age=2592000, immutable' });
+  }
+  sendFile(ctx.req, ctx.res, src, { cache: 'public, max-age=2592000, immutable' });
 });
+const resizing = new Map();
+function resizeImage(src, out, w) {
+  return new Promise((resolve) => {
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', src, '-vf', `scale='min(${w},iw)':-2`, '-q:v', '4', '-y', `${out}.tmp.jpg`], { timeout: 20000 }, (err) => {
+      if (err) { try { fs.unlinkSync(`${out}.tmp.jpg`); } catch { /* */ } return resolve(false); }
+      try { fs.renameSync(`${out}.tmp.jpg`, out); resolve(true); } catch { resolve(false); }
+    });
+  });
+}
 
 // ------------------------------------------------------------------ nouveautés et demandes (Seerr)
 router.get('/api/discover', async (ctx) => {
@@ -833,6 +958,87 @@ router.post('/api/discover/request', async (ctx) => {
   const id = await resolveTmdb(item);
   if (!id) throw new HttpError(404, 'Titre introuvable sur TMDB, Seerr ne peut pas le demander');
   try { sendJson(ctx.res, { tmdbId: id, ...(await seerrRequest(item.type, id, { userId: seerrUserOf(p.id) })) }); } catch (e) { throw new HttpError(502, e.message); }
+});
+
+// ------------------------------------------------------------------ téléchargements (regarder sans réseau)
+router.get('/api/items/:id/download', (ctx) => {
+  const p = requireProfile(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item || !item.path || !visible(p, item)) throw new HttpError(404, 'Introuvable');
+  if (getSetting('allow_downloads', true) === false && !p.is_admin) throw new HttpError(403, 'Téléchargements désactivés par l’administrateur');
+  const name = `${niceName(item)}${path.extname(item.path)}`;
+  ctx.res.setHeader('Content-Disposition', `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`);
+  sendFile(ctx.req, ctx.res, item.path, { cache: 'no-store' });
+});
+router.post('/api/items/:id/download', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item || !visible(p, item)) throw new HttpError(404, 'Introuvable');
+  const targets = item.type === 'season' ? all("SELECT * FROM items WHERE type='episode' AND parent_id=? ORDER BY episode_num", item.id)
+    : item.type === 'show' ? [] : [item];
+  if (!targets.length || targets.some((t) => !t.path)) throw new HttpError(400, 'Rien à télécharger');
+  sendJson(ctx.res, targets.map((t) => prepareDownload(t, b.quality, p.id)));
+});
+router.get('/api/downloads', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, listJobs(p.id)); });
+router.get('/api/downloads/:job/file', (ctx) => {
+  requireProfile(ctx);
+  const j = getJob(ctx.params.job);
+  if (!j || j.state !== 'ready') throw new HttpError(404, 'Pas encore prêt');
+  ctx.res.setHeader('Content-Disposition', `attachment; filename="${j.name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(j.name)}`);
+  sendFile(ctx.req, ctx.res, j.file, { cache: 'no-store', type: 'video/mp4' });
+});
+router.del('/api/downloads/:job', (ctx) => { requireProfile(ctx); cancelJob(ctx.params.job); sendJson(ctx.res, { ok: true }); });
+
+// ------------------------------------------------------------------ notifications sur cet appareil (Web Push)
+router.get('/api/push/key', (ctx) => { requireProfile(ctx); sendJson(ctx.res, { key: vapidPublicKey() }); });
+router.post('/api/push/subscribe', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req);
+  try { savePushSub(p.id, b.subscription, deviceLabel(ctx.req.headers['user-agent'])); } catch (e) { throw new HttpError(400, e.message); }
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/push/unsubscribe', async (ctx) => {
+  requireProfile(ctx);
+  const b = await readBody(ctx.req);
+  removePushSub(String(b.endpoint || ''));
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/push/test', async (ctx) => {
+  const p = requireProfile(ctx);
+  const r = await notify({ title: 'Venus', body: `Les notifications fonctionnent sur cet appareil, ${p.name}.`, url: '/' }, { profileId: p.id });
+  sendJson(ctx.res, r);
+});
+router.post('/api/admin/notify/test', async (ctx) => {
+  requireAdmin(ctx);
+  const r = await notify({ title: 'Test de Venus', body: 'Si vous lisez ceci, les notifications arrivent bien.', url: '/' });
+  sendJson(ctx.res, r);
+});
+
+// ------------------------------------------------------------------ sous-titres en ligne (OpenSubtitles)
+router.get('/api/items/:id/subtitles/search', async (ctx) => {
+  const p = requireProfile(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item || !visible(p, item)) throw new HttpError(404, 'Introuvable');
+  if (!osOn()) return sendJson(ctx.res, { available: false, items: [] });
+  const langs = ctx.url.searchParams.get('lang') || [p.subtitle_lang || 'fr', 'en'].filter((v, i, a) => a.indexOf(v) === i).join(',');
+  try { sendJson(ctx.res, { available: true, items: await searchSubs(item.id, langs) }); } catch (e) { throw new HttpError(502, e.message); }
+});
+router.post('/api/items/:id/subtitles', async (ctx) => {
+  const p = requireProfile(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item || !visible(p, item)) throw new HttpError(404, 'Introuvable');
+  const b = await readBody(ctx.req);
+  try { sendJson(ctx.res, await downloadSub(item.id, b.fileId, b.lang)); } catch (e) { throw new HttpError(502, e.message); }
+});
+
+// Recherche : titres pas encore dans Venus (TMDB, ou Seerr sans clé TMDB)
+router.get('/api/search/online', async (ctx) => {
+  requireProfile(ctx);
+  const q = ctx.url.searchParams.get('q') || '';
+  if (!tmdbKey() && !seerrOn()) return sendJson(ctx.res, { available: false, items: [] });
+  try { sendJson(ctx.res, { available: true, items: (await searchOnline(q)).filter((x) => !x.inLibrary) }); }
+  catch (e) { sendJson(ctx.res, { available: true, items: [], error: e.message }); }
 });
 
 // ------------------------------------------------------------------ mes envies (favoris pas encore dans Venus)
@@ -921,7 +1127,7 @@ router.get('/api/admin', (ctx) => {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
       maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0',
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
-      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(),
+      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
   });
@@ -1011,6 +1217,87 @@ router.del('/api/admin/devices/:id', (ctx) => {
   logActivity('device', `${p.name} a déconnecté un appareil`);
   sendJson(ctx.res, { ok: true });
 });
+// Qualité de la médiathèque : résolution, codec, HDR, débit, taille ; titres à améliorer
+router.get('/api/admin/quality', (ctx) => {
+  requireAdmin(ctx);
+  const rows = all(`SELECT i.id, i.type, i.title, i.year, i.poster, i.size, i.probe, i.tmdb_id, i.show_id, i.duration FROM items i WHERE i.type IN ('movie','episode') AND i.probe IS NOT NULL`);
+  const shows = new Map(all("SELECT id, title, year, poster, tmdb_id FROM items WHERE type = 'show'").map((r) => [r.id, r]));
+  const groups = new Map();
+  for (const r of rows) {
+    const p = parseJson(r.probe, null);
+    if (!p || !p.video) continue;
+    const key = r.type === 'movie' ? `m${r.id}` : `s${r.show_id}`;
+    const h = p.video.height || 0, w = p.video.width || 0;
+    const res = w >= 3200 || h >= 1800 ? '4K' : w >= 1800 || h >= 1000 ? '1080p' : w >= 1200 || h >= 700 ? '720p' : 'SD';
+    const codec = String(p.video.codec || '').toLowerCase();
+    const g = groups.get(key) || { id: r.type === 'movie' ? r.id : r.show_id, type: r.type === 'movie' ? 'movie' : 'show', title: r.type === 'movie' ? r.title : (shows.get(r.show_id) || {}).title, year: r.type === 'movie' ? r.year : (shows.get(r.show_id) || {}).year,
+      poster: r.type === 'movie' ? r.poster : (shows.get(r.show_id) || {}).poster, tmdbId: r.type === 'movie' ? r.tmdb_id : (shows.get(r.show_id) || {}).tmdb_id, files: 0, size: 0, res: {}, codecs: {}, hdr: 0, bitrate: 0, audio51: 0, dur: 0 };
+    g.files++; g.size += r.size || 0; g.dur += r.duration || 0;
+    g.res[res] = (g.res[res] || 0) + 1; g.codecs[codec] = (g.codecs[codec] || 0) + 1;
+    if (p.video.hdr || p.video.dovi) g.hdr++;
+    if ((p.audio || []).some((a) => a.channels >= 6)) g.audio51++;
+    g.bitrate = Math.max(g.bitrate, p.bitrate || 0);
+    groups.set(key, g);
+  }
+  const order = ['SD', '720p', '1080p', '4K'];
+  const out = [...groups.values()].map((g) => {
+    const res = Object.keys(g.res).sort((a, b) => order.indexOf(a) - order.indexOf(b))[0]; // la moins bonne
+    const codec = Object.entries(g.codecs).sort((a, b) => b[1] - a[1])[0][0];
+    const reasons = [];
+    if (res === 'SD') reasons.push('Basse définition');
+    else if (res === '720p') reasons.push('720p seulement');
+    if (/mpeg4|mpeg2|msmpeg|wmv|vc1|xvid|divx|h263/.test(codec)) reasons.push(`Ancien codec (${codec.toUpperCase()})`);
+    if (res === '1080p' && g.bitrate && g.bitrate < 2.2e6 && g.type === 'movie') reasons.push('Débit faible, image compressée');
+    return { ...g, res, codec: codec.toUpperCase(), hdr: g.hdr > 0, surround: g.audio51 > 0, reasons, sizePerHour: g.dur ? g.size / (g.dur / 3600) : 0 };
+  });
+  const sum = (f) => out.reduce((n, x) => n + f(x), 0);
+  sendJson(ctx.res, {
+    items: out.sort((a, b) => b.reasons.length - a.reasons.length || order.indexOf(a.res) - order.indexOf(b.res) || String(a.title).localeCompare(String(b.title), 'fr')),
+    summary: { total: out.length, size: sum((x) => x.size), byRes: Object.fromEntries(order.map((r) => [r, out.filter((x) => x.res === r).length])), hdr: out.filter((x) => x.hdr).length, toImprove: out.filter((x) => x.reasons.length).length,
+      codecs: Object.entries(out.reduce((m, x) => { m[x.codec] = (m[x.codec] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]) },
+    seerr: seerrOn(),
+  });
+});
+// Demander une meilleure version (4K si Seerr a un serveur 4K, sinon nouvelle demande normale)
+router.post('/api/admin/quality/request', async (ctx) => {
+  const p = requireAdmin(ctx);
+  if (!seerrOn()) throw new HttpError(400, 'Reliez Seerr dans Réglages');
+  const b = await readBody(ctx.req);
+  const type = b.type === 'movie' ? 'movie' : 'tv';
+  try {
+    const r = await seerrRequest(type, Number(b.tmdbId), { userId: seerrUserOf(p.id), is4k: !!b.is4k });
+    logActivity('seerr', `${p.name} a demandé une meilleure version de « ${b.title || b.tmdbId} »${b.is4k ? ' en 4K' : ''}`);
+    sendJson(ctx.res, r);
+  } catch (e) { throw new HttpError(502, e.message); }
+});
+
+// Sauvegardes de la base
+router.get('/api/admin/backups', (ctx) => {
+  requireAdmin(ctx);
+  sendJson(ctx.res, { items: listBackups(), auto: String(getSetting('auto_backup', '1')) !== '0', canRestart: supervised() });
+});
+router.post('/api/admin/backups', (ctx) => {
+  const p = requireAdmin(ctx);
+  const b = makeBackup({ manual: true });
+  logActivity('server', `${p.name} a fait une sauvegarde de la base`);
+  sendJson(ctx.res, b);
+});
+router.get('/api/admin/backups/:name', (ctx) => {
+  requireAdmin(ctx);
+  const f = backupPath(ctx.params.name);
+  if (!/^venus-.*\.db$/.test(path.basename(f)) || !fs.existsSync(f)) throw new HttpError(404, 'Introuvable');
+  ctx.res.setHeader('Content-Disposition', `attachment; filename="${path.basename(f)}"`);
+  sendFile(ctx.req, ctx.res, f, { cache: 'no-store' });
+});
+router.post('/api/admin/backups/:name/restore', (ctx) => {
+  const p = requireAdmin(ctx);
+  try { scheduleRestore(ctx.params.name); } catch (e) { throw new HttpError(404, e.message); }
+  makeBackup({ manual: true }); // l'état actuel est gardé, au cas où
+  logActivity('server', `${p.name} restaure la sauvegarde ${ctx.params.name}`);
+  sendJson(ctx.res, { ok: true, restarting: supervised() });
+  if (supervised()) setTimeout(() => process.exit(75), 600);
+});
+
 router.post('/api/admin/restart', (ctx) => {
   const p = requireAdmin(ctx);
   if (!supervised()) throw new HttpError(400, 'Venus ne tourne pas comme un service : redémarrez-le à la main');
@@ -1042,6 +1329,14 @@ router.put('/api/admin/settings', async (ctx) => {
     }
     setSetting('omdb_key', k); ratingsChanged = true;
   }
+  for (const [k, key] of [['ntfyServer', 'ntfy_server'], ['ntfyTopic', 'ntfy_topic'], ['discordWebhook', 'discord_webhook'], ['telegramToken', 'telegram_token'], ['telegramChat', 'telegram_chat'], ['publicUrl', 'public_url']]) {
+    if (b[k] !== undefined) setSetting(key, String(b[k] || '').trim());
+  }
+  if (typeof b.notifyNew === 'boolean') setSetting('notify_new', b.notifyNew ? '1' : '0');
+  if (typeof b.autoBackup === 'boolean') setSetting('auto_backup', b.autoBackup ? '1' : '0');
+  if (b.opensubtitlesKey !== undefined) setSetting('opensubtitles_key', String(b.opensubtitlesKey || '').trim());
+  if (b.opensubtitlesUser !== undefined) { setSetting('opensubtitles_user', String(b.opensubtitlesUser || '').trim()); resetOsLogin(); }
+  if (b.opensubtitlesPass !== undefined && b.opensubtitlesPass !== '') { setSetting('opensubtitles_pass', String(b.opensubtitlesPass)); resetOsLogin(); }
   if (b.simklClientId !== undefined) { setSetting('simkl_client_id', String(b.simklClientId || '').trim()); ratingsChanged = true; }
   if (b.seerrUrl !== undefined || b.seerrKey !== undefined) {
     const conf = { url: String(b.seerrUrl ?? seerrConf().url).trim().replace(/\/+$/, ''), key: String(b.seerrKey ?? seerrConf().key).trim() };
