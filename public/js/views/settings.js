@@ -438,8 +438,8 @@ function themeEditor() {
       h('p', {}, 'Choisissez votre planète : les couleurs, le nom et le logo de l’application changent sur cet appareil.'),
       h('div', { class: 'theme-grid', role: 'radiogroup', 'aria-label': 'Planète' }, Object.entries(PLANETS).map(([id, t]) => h('button', {
         class: `theme-opt f${id === cur ? ' on' : ''}`, role: 'radio', 'aria-checked': String(id === cur),
-        onclick: () => { setPlanet(id); paint(); toast(`Bienvenue sur ${t.name}`); box.querySelector(`[data-id="${id}"]`)?.focus(); }, 'data-id': id,
-      }, markOf(id), t.name))));
+        onclick: (e) => { setPlanet(id, e.currentTarget.querySelector('.mark')); paint(); toast(`Bienvenue sur ${t.name}`); box.querySelector(`[data-id="${id}"]`)?.focus(); }, 'data-id': id,
+      }, h('span', { class: 'theme-pic' }, markOf(id), id === cur ? h('span', { class: 'moon', 'aria-hidden': 'true' }) : null), t.name))));
   };
   paint();
   return box;
