@@ -1,0 +1,7 @@
+data
+config
+transcode
+node_modules
+*.log
+.git
+docker-compose.override.yml

@@ -1,0 +1,13 @@
+{
+  "name": "venus",
+  "version": "1.0.0",
+  "description": "Venus — serveur multimédia personnel léger, interface façon Netflix / Apple TV",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server/index.js",
+    "dev": "node --watch --disable-warning=ExperimentalWarning server/index.js"
+  },
+  "engines": { "node": ">=22.13" },
+  "license": "MIT"
+}
