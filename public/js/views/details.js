@@ -33,12 +33,14 @@ export async function render(main, { id, query }) {
 
   // ---------------------------------------------------------------- bouton principal : Lecture / Reprendre / Épisode suivant
   const actions = h('div', { class: 'actions' });
-  const target = isShow ? d.nextUp : d;
+  const showDone = isShow && d.seasons.length && d.seasons.every((s) => s.episodes.every((e) => e.progress && e.progress.watched));
+  const firstEp = isShow && d.seasons.length ? (d.seasons.find((s) => s.number > 0) || d.seasons[0]).episodes[0] : null;
+  const target = isShow ? (showDone ? firstEp : d.nextUp) : d;
   const prog = target && target.progress;
   const resumable = prog && !prog.watched && prog.position > 20;
   const remaining = resumable && prog.duration ? Math.round((prog.duration - prog.position) / 60) : 0;
   let label = 'Lecture';
-  if (isShow && target) label = `${resumable ? 'Reprendre' : 'Lecture'} S${target.season} É${target.episode}`;
+  if (isShow && target) label = showDone ? 'Revoir depuis le début' : `${resumable ? 'Reprendre' : 'Lecture'} S${target.season} É${target.episode}`;
   else if (resumable) label = `Reprendre (${remaining} min restantes)`;
   if (target) {
     actions.append(h('button', { class: 'btn btn-play f', 'data-autofocus': true, onclick: () => go(playPath(target.id)) }, icon('play'), label));
@@ -51,14 +53,16 @@ export async function render(main, { id, query }) {
     const r = await api(`/api/items/${d.id}/mylist`, { method: 'POST' });
     listBtn.replaceChildren(icon(r.inList ? 'check' : 'plus'));
     listBtn.setAttribute('aria-label', r.inList ? 'Retirer de ma liste' : 'Ajouter à ma liste');
-    toast(r.inList ? (r.follows ? 'Ajouté à ma liste : chaque nouvelle saison sera demandée à Seerr' : 'Ajouté à ma liste') : 'Retiré de ma liste');
+    toast(r.inList ? (r.follows ? 'Ajouté à ma liste : chaque nouvelle saison sera demandée à Seerr' : 'Ajouté à ma liste') : 'Retiré de ma liste',
+      { type: r.inList ? 'success' : 'info', action: { label: 'Annuler', onClick: () => listBtn.click() } });
   };
   actions.append(listBtn);
   const allWatched = isShow ? d.seasons.every((s) => s.episodes.every((e) => e.progress && e.progress.watched)) : prog && prog.watched;
   actions.append(h('button', { class: `btn btn-ghost btn-icon f${allWatched ? ' is-on' : ''}`, 'aria-label': allWatched ? 'Marquer comme non vu' : 'Marquer comme vu', title: allWatched ? 'Vu : marquer comme non vu' : 'Marquer comme vu', 'aria-pressed': String(!!allWatched), onclick: async () => {
-    await api(`/api/items/${d.id}/watched`, { method: 'POST', body: { watched: !allWatched } });
-    toast(allWatched ? 'Marqué comme non vu' : 'Marqué comme vu');
-    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    const set = async (w) => { await api(`/api/items/${d.id}/watched`, { method: 'POST', body: { watched: w } }); window.dispatchEvent(new HashChangeEvent('hashchange')); };
+    await set(!allWatched);
+    const what = isShow ? (d.seasons.length > 1 ? `Les ${d.seasons.length} saisons` : 'Toute la série') : d.title;
+    toast(allWatched ? `${what} : marqué comme non vu` : `${what} : marqué comme vu`, { type: 'success', action: { label: 'Annuler', onClick: () => set(allWatched) } });
   } }, icon('eye')));
   if (state.profile.isAdmin && !isClip) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Corriger l’identification', title: 'Corriger l’identification', onclick: () => fixMatch(d) }, icon('gear')));
 
@@ -102,23 +106,80 @@ export async function render(main, { id, query }) {
 
   // ---------------------------------------------------------------- épisodes
   if (isShow && d.seasons.length) {
+    // Saisons : sélecteur avec la progression de chacune, actions par saison, « Saison suivante », vu / non vu par épisode
     const epList = h('div', { class: 'episodes' });
-    const tabs = h('div', { class: 'season-tabs', role: 'tablist' });
+    const seasonBar = h('div', { class: 'season-bar', role: 'tablist', 'aria-label': 'Saisons' });
+    const seasonHead = h('div', { class: 'season-head' });
     const wantEp = Number(query && query.get('ep')) || null;
+    const memoKey = `vn_season_${d.id}`;
     let current = null;
     let epFilter = 'all';
+    const isSeen = (e) => !!(e.progress && e.progress.watched);
+    const seasonName = (s) => s.title || (s.number === 0 ? 'Bonus' : `Saison ${s.number}`);
+    const dur = (s) => s.episodes.reduce((n, e) => n + (e.runtime ? e.runtime * 60 : e.duration || 0), 0);
+
+    const paintBar = () => {
+      seasonBar.replaceChildren(...d.seasons.map((s) => {
+        const seen = s.episodes.filter(isSeen).length, total = s.episodes.length;
+        const on = s === current;
+        const b = h('button', { class: `season-card f${on ? ' on' : ''}${seen === total && total ? ' done' : ''}`, role: 'tab', 'aria-selected': String(on), 'data-id': s.id, onclick: () => showSeason(s) },
+          h('b', {}, seasonName(s)),
+          h('span', {}, seen === total && total ? 'Vue en entier' : seen ? `${seen} / ${total} vus` : `${total} épisode${total > 1 ? 's' : ''}`),
+          h('i', { class: 'season-prog' }, h('i', { style: { width: `${total ? (seen / total) * 100 : 0}%` } })));
+        return b;
+      }));
+      requestAnimationFrame(() => seasonBar.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'center' }));
+    };
+    const paintHead = () => {
+      const s = current;
+      const seen = s.episodes.filter(isSeen).length, total = s.episodes.length, all = seen === total && total > 0;
+      const next = s.episodes.find((e) => !isSeen(e)) || s.episodes[0];
+      const mins = Math.round(dur(s) / 60);
+      seasonHead.replaceChildren(
+        h('div', { class: 'sh-info' }, h('b', {}, seasonName(s)),
+          h('span', {}, [`${total} épisode${total > 1 ? 's' : ''}`, mins ? fmtRuntime(mins) : null, seen && !all ? `${total - seen} à voir` : null].filter(Boolean).join(' · '))),
+        h('div', { class: 'sh-actions' },
+          next ? h('button', { class: 'btn btn-small f', onclick: () => go(playPath(next.id)) }, icon('play'), all ? 'Revoir la saison' : seen ? `Continuer É${next.episode}` : 'Lire la saison') : null,
+          h('button', { class: `btn btn-small btn-ghost f${all ? ' is-on' : ''}`, onclick: () => markSeason(s, !all) }, icon('eye'), all ? 'Saison vue' : 'Marquer la saison vue')));
+    };
     const showSeason = (s, focusId = null) => {
       current = s;
-      [...tabs.children].forEach((t) => { const on = t.dataset.id === String(s.id); t.classList.toggle('on', on); t.setAttribute('aria-selected', String(on)); });
-      const isSeen = (e) => e.progress && e.progress.watched;
+      try { sessionStorage.setItem(memoKey, String(s.id)); } catch { /* */ }
+      paintBar(); paintHead();
       const list = s.episodes.filter((e) => epFilter === 'all' || (epFilter === 'unseen' ? !isSeen(e) : isSeen(e)));
-      epList.replaceChildren(...list.map((e) => episodeRow(e, e.id === focusId)));
+      epList.replaceChildren(...list.map((e) => episodeRow(e, e.id === focusId, (w) => markEpisode(e, w))));
       if (!list.length) epList.replaceChildren(h('p', { class: 'grid-empty' }, epFilter === 'unseen' ? 'Tous les épisodes de cette saison sont vus.' : 'Aucun épisode vu dans cette saison.'));
+      // Fin de saison : on enchaîne sur la suivante
+      const idx = d.seasons.indexOf(s);
+      const nextS = d.seasons[idx + 1];
+      if (nextS) epList.append(h('button', { class: 'next-season f', onclick: () => { showSeason(nextS); seasonBar.scrollIntoView({ block: 'start', behavior: 'smooth' }); } },
+        h('span', {}, h('small', {}, 'Ensuite'), h('b', {}, seasonName(nextS)), h('em', {}, `${nextS.episodes.length} épisodes`)), icon('fwd')));
       if (focusId) {
         const el = epList.querySelector('.episode.is-current');
         if (el) setTimeout(() => { el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); focusEl(el); }, 350);
       }
     };
+    const setLocal = (eps, w) => { for (const e of eps) e.progress = w ? { ...(e.progress || {}), position: 0, watched: true } : undefined; };
+    async function markEpisode(e, w) {
+      const before = e.progress;
+      setLocal([e], w); showSeason(current);
+      try { await api(`/api/items/${e.id}/watched`, { method: 'POST', body: { watched: w } }); }
+      catch (err) { e.progress = before; showSeason(current); toast(err.message, true); return; }
+      toast(`É${e.episode} « ${e.title} » ${w ? 'vu' : 'non vu'}`, { type: 'success', action: { label: 'Annuler', onClick: () => markEpisode(e, !w) } });
+    }
+    async function markSeason(s, w) {
+      const before = s.episodes.map((e) => e.progress);
+      setLocal(s.episodes, w); showSeason(s);
+      try { await api(`/api/items/${s.id}/watched`, { method: 'POST', body: { watched: w } }); }
+      catch (err) { s.episodes.forEach((e, i) => { e.progress = before[i]; }); showSeason(s); toast(err.message, true); return; }
+      const nextS = d.seasons[d.seasons.indexOf(s) + 1];
+      toast(`${seasonName(s)} ${w ? 'vue en entier' : 'marquée non vue'}`, { type: 'success',
+        action: w && nextS ? { label: `${seasonName(nextS)} →`, onClick: () => showSeason(nextS) } : { label: 'Annuler', onClick: () => { s.episodes.forEach((e, i) => { e.progress = before[i]; }); markSeasonRaw(s, before); } } });
+    }
+    async function markSeasonRaw(s, before) {
+      showSeason(s);
+      for (const [i, e] of s.episodes.entries()) await api(`/api/items/${e.id}/watched`, { method: 'POST', body: { watched: !!(before[i] && before[i].watched) } }).catch(() => {});
+    }
     const epChips = h('div', { class: 'chips', role: 'group', 'aria-label': 'Filtrer les épisodes' },
       [['all', 'Tous'], ['unseen', 'Non vus'], ['seen', 'Déjà vus']].map(([fid, lbl]) => {
         const b = h('button', { class: `chip small f${fid === epFilter ? ' on' : ''}`, onclick: () => {
@@ -126,17 +187,13 @@ export async function render(main, { id, query }) {
         } }, lbl);
         return b;
       }));
-    for (const s of d.seasons) {
-      const seen = s.episodes.filter((e) => e.progress && e.progress.watched).length;
-      tabs.append(h('button', { class: 'chip f', role: 'tab', 'data-id': s.id, onclick: () => showSeason(s) },
-        s.title || (s.number === 0 ? 'Bonus' : `Saison ${s.number}`),
-        h('small', {}, seen && seen === s.episodes.length ? ' ✓' : ` ${s.episodes.length}`)));
-    }
+    let remembered = null;
+    try { remembered = d.seasons.find((s) => String(s.id) === sessionStorage.getItem(memoKey)); } catch { /* */ }
     const fromPlayer = wantEp && d.seasons.find((s) => s.episodes.some((e) => e.id === wantEp));
-    const startSeason = fromPlayer || d.seasons.find((s) => d.nextUp && s.episodes.some((e) => e.id === d.nextUp.id)) || d.seasons[0];
+    const startSeason = fromPlayer || remembered || d.seasons.find((s) => d.nextUp && s.episodes.some((e) => e.id === d.nextUp.id)) || d.seasons[0];
     content.append(h('section', { class: 'd-section', id: 'episodes' },
-      h('div', { class: 'ep-head' }, h('h2', { class: 'section-title' }, 'Épisodes'), epChips),
-      d.seasons.length > 1 ? tabs : null, epList));
+      h('div', { class: 'ep-head' }, h('h2', { class: 'section-title' }, d.seasons.length > 1 ? `${d.seasons.length} saisons` : 'Épisodes'), epChips),
+      d.seasons.length > 1 ? seasonBar : null, seasonHead, epList));
     showSeason(startSeason, fromPlayer ? wantEp : null);
   }
 
@@ -309,14 +366,16 @@ async function openPerson(p) {
   } catch (e) { list.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
 }
 
-function episodeRow(e, current = false) {
+function episodeRow(e, current = false, onToggle = null) {
   const p = e.progress;
   const pct = p && p.duration ? Math.min(100, (p.position / p.duration) * 100) : 0;
   const thumbSrc = e.still ? img(e.still) : `/api/items/${e.id}/thumb`;
   const thumb = h('img', { src: thumbSrc, alt: '', loading: 'lazy' });
   thumb.addEventListener('error', () => thumb.replaceWith(placeholder(e.title)), { once: true });
   const dur = e.runtime || (e.duration ? Math.round(e.duration / 60) : null);
-  return h('button', { class: `episode f${current ? ' is-current' : ''}`, onclick: () => go(playPath(e.id)) },
+  const seen = !!(p && p.watched);
+  const toggle = onToggle ? h('button', { class: `ep-toggle f${seen ? ' on' : ''}`, 'aria-label': seen ? `Marquer « ${e.title} » comme non vu` : `Marquer « ${e.title} » comme vu`, title: seen ? 'Vu' : 'Marquer comme vu', onclick: (ev) => { ev.stopPropagation(); onToggle(!seen); } }, icon(seen ? 'check' : 'eye')) : null;
+  const row = h('button', { class: `episode f${current ? ' is-current' : ''}${seen ? ' seen' : ''}`, onclick: () => go(playPath(e.id)) },
     h('div', { class: 'thumb' }, thumb, h('span', { class: 'ep-play' }, icon('play')),
       pct > 0 && !p.watched ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
       p && p.watched ? h('span', { class: 'check' }, icon('check')) : null),
@@ -326,6 +385,7 @@ function episodeRow(e, current = false) {
         e.released && daysSince(e.released) <= 14 && !(e.progress && e.progress.watched) ? h('span', { class: 'tag-new inline' }, 'Nouveau') : null),
       h('h3', {}, e.title),
       e.overview ? h('p', {}, e.overview) : null));
+  return toggle ? h('div', { class: 'ep-item' }, row, toggle) : row;
 }
 
 // Administration : choisir la bonne fiche TMDB quand l'identification automatique s'est trompée
