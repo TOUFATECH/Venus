@@ -19,10 +19,10 @@ async function cached(key, ttl, fn) {
 export const seerrConf = () => ({ url: String(getSetting('seerr_url', '') || '').replace(/\/+$/, ''), key: getSetting('seerr_key', '') || '' });
 export const seerrOn = () => { const c = seerrConf(); return !!(c.url && c.key); };
 
-export async function seerr(path, { method = 'GET', body, conf = seerrConf() } = {}) {
+export async function seerr(path, { method = 'GET', body, conf = seerrConf(), asUser = null } = {}) {
   if (!conf.url || !conf.key) throw new Error('Seerr n’est pas configuré');
   const res = await fetch(`${conf.url}/api/v1${path}`, {
-    method, headers: { 'X-Api-Key': conf.key, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    method, headers: { 'X-Api-Key': conf.key, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}), ...(asUser ? { 'X-API-User': String(asUser) } : {}) },
     body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(15000),
   });
   if (res.status === 401 || res.status === 403) throw new Error('Clé API Seerr refusée');
@@ -41,13 +41,13 @@ export async function seerrTest(conf) {
 }
 
 // Statut Seerr : 1 inconnu, 2 en attente, 3 en cours, 4 partiellement disponible, 5 disponible
-const STATUS = { 2: 'pending', 3: 'processing', 4: 'partial', 5: 'available', 6: 'blocked', 7: 'deleted' };
-function mediaState(info) {
+export const SEERR_STATUS = { 2: 'pending', 3: 'processing', 4: 'partial', 5: 'available', 6: 'blocked', 7: 'deleted' };
+export function mediaState(info) {
   if (!info) return { state: 'none' };
   const dl = (info.downloadStatus || []).concat(info.downloadStatus4k || []);
   const size = dl.reduce((n, x) => n + (x.size || 0), 0), left = dl.reduce((n, x) => n + (x.sizeLeft || 0), 0);
   return {
-    state: STATUS[info.status] || 'none',
+    state: SEERR_STATUS[info.status] || 'none',
     downloading: dl.length > 0,
     progress: size ? Math.round(((size - left) / size) * 100) : null,
     eta: dl.map((x) => x.estimatedCompletionTime).filter(Boolean).sort()[0] || null,
@@ -61,21 +61,26 @@ export async function seerrStatus(type, tmdbId) {
   });
 }
 
-export async function seerrRequest(type, tmdbId) {
+export async function seerrRequest(type, tmdbId, { userId = null, seasons = null } = {}) {
   let body;
   if (type === 'movie') body = { mediaType: 'movie', mediaId: Number(tmdbId) };
   else {
-    const d = await seerr(`/tv/${tmdbId}`);
-    const seasons = (d.seasons || []).map((s) => s.seasonNumber).filter((n) => n > 0);
-    body = { mediaType: 'tv', mediaId: Number(tmdbId), seasons: seasons.length ? seasons : 'all' };
+    let list = seasons;
+    if (!list) {
+      const d = await seerr(`/tv/${tmdbId}`);
+      list = (d.seasons || []).map((s) => s.seasonNumber).filter((n) => n > 0);
+    }
+    body = { mediaType: 'tv', mediaId: Number(tmdbId), seasons: list.length ? list : 'all' };
   }
+  // La demande est faite au nom de l'utilisateur Seerr relié au profil (quotas, historique)
+  if (userId) body.userId = Number(userId);
   await seerr('/request', { method: 'POST', body });
   cache.delete(`st:${type}:${tmdbId}`);
   return seerrStatus(type, tmdbId);
 }
 
 // ------------------------------------------------------------------ titres déjà dans la bibliothèque
-function libraryIndex() {
+export function libraryIndex() {
   const byTmdb = new Map(), byName = new Map();
   for (const r of all("SELECT id, type, tmdb_id, title, original_title, anilist_id FROM items WHERE type IN ('movie','show')")) {
     if (r.tmdb_id) byTmdb.set(`${r.type === 'movie' ? 'movie' : 'tv'}:${r.tmdb_id}`, r.id);

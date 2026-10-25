@@ -234,23 +234,68 @@ export async function render(main, { query } = {}) {
 
   // Seerr (Overseerr / Jellyseerr) : demander un titre depuis Nouveautés, Radarr / Sonarr le téléchargent
   function seerrBox(a) {
-    const url = h('input', { class: 'input', id: 'seerr-url', placeholder: 'http://192.168.1.20:5055', value: a.settings.seerrUrl || '', inputmode: 'url', autocomplete: 'off' });
-    const key = h('input', { class: 'input', id: 'seerr-key', placeholder: a.settings.seerrConfigured ? 'Clé enregistrée (laisser vide pour conserver)' : 'Clé API (Réglages → Général dans Seerr)', autocomplete: 'off' });
     const err = h('p', { class: 'error-text' });
-    return h('section', { class: 'box', id: 'seerr' },
-      h('h2', {}, 'Seerr : demandes de téléchargement'),
+    const box = h('section', { class: 'box', id: 'seerr' });
+    const url = h('input', { class: 'input', id: 'seerr-url', placeholder: 'http://192.168.1.20:5055', value: a.settings.seerrUrl || '', inputmode: 'url', autocomplete: 'off' });
+    // Deux façons de relier Seerr : avec son compte (la clé API est récupérée toute seule) ou en collant la clé
+    let how = 'account';
+    const method = select([['local', 'Compte Seerr (e-mail)'], ['jellyfin', 'Compte Jellyfin / Emby']], 'local');
+    const user = h('input', { class: 'input', id: 'seerr-user', autocomplete: 'username', placeholder: 'E-mail ou nom d’utilisateur' });
+    const pass = h('input', { class: 'input', id: 'seerr-pass', type: 'password', autocomplete: 'current-password', placeholder: 'Mot de passe (jamais enregistré)' });
+    const key = h('input', { class: 'input', id: 'seerr-key', placeholder: a.settings.seerrConfigured ? 'Clé enregistrée (laisser vide pour conserver)' : 'Clé API (Seerr : Réglages, Général)', autocomplete: 'off' });
+    const accountFields = h('div', {}, field('Se connecter avec', method), field('Identifiant', user), field('Mot de passe', pass));
+    const keyFields = h('div', { hidden: true }, field('Clé API', key));
+    const tabs = h('div', { class: 'seg', role: 'tablist', style: { marginBottom: '14px' } });
+    const paintTabs = () => tabs.replaceChildren(...[['account', 'Avec mon compte'], ['key', 'Avec la clé API']].map(([id, label]) => h('button', { type: 'button', class: `seg-b f${how === id ? ' on' : ''}`, onclick: () => { how = id; accountFields.hidden = id !== 'account'; keyFields.hidden = id !== 'key'; paintTabs(); } }, label)));
+    paintTabs();
+    const connect = h('button', { class: 'btn btn-small f', onclick: async () => {
+      err.textContent = ''; connect.disabled = true; connect.textContent = 'Connexion…';
+      try {
+        if (how === 'account') {
+          const r = await api('/api/admin/seerr/login', { method: 'POST', body: { url: url.value.trim(), method: method.value, user: user.value.trim(), password: pass.value } });
+          toast(`Seerr relié avec le compte « ${r.user.name} »`);
+        } else {
+          await api('/api/admin/settings', { method: 'PUT', body: { seerrUrl: url.value.trim(), ...(key.value.trim() ? { seerrKey: key.value.trim() } : {}) } });
+          toast('Seerr relié');
+        }
+        pass.value = ''; refresh();
+      } catch (e) { err.textContent = e.message; connect.disabled = false; connect.textContent = 'Relier Seerr'; }
+    } }, 'Relier Seerr');
+
+    box.append(
+      h('h2', {}, 'Seerr : téléchargements automatiques'),
       h('p', {}, a.settings.seerrConfigured
-        ? 'Seerr est relié : dans Nouveautés, le bouton « Demander » lance la recherche dans Radarr / Sonarr, et la progression du téléchargement s’affiche. Le titre arrive ensuite dans Venus tout seul.'
-        : 'Reliez Seerr (Overseerr ou Jellyseerr) pour demander un film, une série ou un animé depuis la page Nouveautés : la recherche et le téléchargement se lancent automatiquement.'),
-      a.settings.seerrConfigured ? h('div', { class: 'auto-pill', style: { marginBottom: '12px' } }, h('span', { class: 'dot' }), 'Relié') : null,
-      field('Adresse de Seerr', url), field('Clé API', key), err,
-      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
-        h('button', { class: 'btn btn-small f', onclick: async (e) => {
-          const btn = e.currentTarget; err.textContent = ''; btn.disabled = true; btn.textContent = 'Test de la connexion…';
-          try { await api('/api/admin/settings', { method: 'PUT', body: { seerrUrl: url.value.trim(), ...(key.value.trim() ? { seerrKey: key.value.trim() } : {}) } }); toast('Seerr relié'); refresh(); }
-          catch (e2) { err.textContent = e2.message; btn.disabled = false; btn.textContent = 'Tester et enregistrer'; }
-        } }, 'Tester et enregistrer'),
+        ? 'Seerr est relié. Les titres ajoutés à « Mes envies » (♡ dans Nouveautés) sont demandés tout de suite, même s’ils ne sortent que dans plusieurs mois, et les nouvelles saisons des séries suivies sont demandées dès qu’elles sont annoncées.'
+        : 'Reliez Seerr (Overseerr ou Jellyseerr) : vos envies et les nouvelles saisons de vos séries seront demandées automatiquement, et Radarr / Sonarr les téléchargeront. Le plus simple : se connecter avec un compte administrateur de Seerr, Venus récupère la clé tout seul.'),
+      a.settings.seerrConfigured ? h('div', { class: 'auto-pill', style: { marginBottom: '12px' } }, h('span', { class: 'dot' }), `Relié à ${a.settings.seerrUrl}`) : null,
+      field('Adresse de Seerr', url), tabs, accountFields, keyFields, err,
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, connect,
         a.settings.seerrConfigured ? h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { await api('/api/admin/settings', { method: 'PUT', body: { seerrUrl: '', seerrKey: '' } }); toast('Seerr retiré'); refresh(); } }, 'Retirer') : null));
+
+    if (a.settings.seerrConfigured) {
+      const auto = h('div', { class: 'seerr-auto' }, h('p', { class: 'muted' }, 'Chargement des comptes Seerr…'));
+      box.append(h('h3', { class: 'box-sub' }, 'Automatique'), auto);
+      api('/api/admin/seerr/users').then((u) => {
+        const save = async (body, msg) => { try { await api('/api/admin/seerr/users', { method: 'PUT', body }); toast(msg); } catch (e) { toast(e.message, true); } };
+        const userOpts = [['', 'Compte de la clé API (administrateur)'], ...u.users.map((x) => [String(x.id), `${x.name}${x.email && x.email !== x.name ? ` (${x.email})` : ''}`])];
+        auto.replaceChildren(
+          h('label', { class: 'switch' }, h('span', {}, 'Demander mes envies à Seerr dès qu’on les ajoute'),
+            h('input', { type: 'checkbox', class: 'f', checked: u.auto, onchange: (e) => save({ auto: e.target.checked }, 'Préférence enregistrée') })),
+          field('Nouvelles saisons demandées automatiquement', select([['mylist', 'Pour les séries de « Ma liste » et des envies'], ['all', 'Pour toutes les séries de la médiathèque'], ['off', 'Jamais']], u.follow,
+            { onchange: (e) => save({ follow: e.target.value }, 'Préférence enregistrée') })),
+          h('h3', { class: 'box-sub' }, 'Demandes au nom de chacun'),
+          h('p', { class: 'muted', style: { fontSize: '.88rem', margin: '0 0 10px' } }, 'Reliez chaque profil à son compte Seerr : ses demandes apparaissent à son nom dans Seerr (avec ses quotas), et ses envies dans sa liste de suivi Seerr.'),
+          ...u.profiles.map((p) => field(p.name, select(userOpts, String(u.links[String(p.id)] || ''), { onchange: (e) => save({ profileId: p.id, seerrUserId: e.target.value || null }, `${p.name} relié`) }))),
+          h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+            h('button', { class: 'btn btn-small btn-ghost f', onclick: async (e) => {
+              const b = e.currentTarget; b.disabled = true; b.textContent = 'Vérification…';
+              try { const r = await api('/api/admin/seerr/sync', { method: 'POST' }); toast(`${r.followed} série${r.followed > 1 ? 's' : ''} suivie${r.followed > 1 ? 's' : ''}${r.error ? ` · ${r.error}` : ''}`); } catch (e2) { toast(e2.message, true); }
+              b.disabled = false; b.textContent = 'Vérifier maintenant';
+            } }, icon('refresh'), 'Vérifier maintenant')),
+          u.watch.lastRun ? h('p', { class: 'muted', style: { fontSize: '.82rem' } }, `Dernière vérification : ${new Date(u.watch.lastRun).toLocaleString('fr-FR')} · vérifié toutes les 6 heures`) : null);
+      }).catch((e) => auto.replaceChildren(h('p', { class: 'error-text' }, e.message)));
+    }
+    return box;
   }
 
   function metadataBox(a) {

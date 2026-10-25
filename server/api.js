@@ -21,6 +21,7 @@ import { runtime, mountAdvice, gpuAdvice } from './env.js';
 import { getSegments, scheduleSeason, segmentsPending } from './segments.js';
 import { control, deviceId, logActivity, recentActivity, heartbeat, stopHeartbeat, nowPlaying, tokenOfDevice, loginCode, useLoginCode, loginCodeActive } from './activity.js';
 import { scheduleRatings, refreshRatings, omdbKey, simklId, ratingsPending } from './ratings.js';
+import { wishlistOf, inWishlist, addWish, removeWish, runWatch, watchState, autoRequest, followMode, seerrLogin, listSeerrUsers, seerrUsers, linkSeerrUser, seerrUserOf } from './watch.js';
 import { discover as discoverTitles, discoverAvailable, seerrOn, seerrStatus, seerrRequest, seerrTest, seerrConf, resolveTmdb, trailerFor } from './discover.js';
 import { discover, listShares, mountRemote, unmountRemote, remoteOf, describe, netState, xtreamUrl } from './netshare.js';
 
@@ -585,7 +586,11 @@ router.post('/api/items/:id/mylist', (ctx) => {
   const exists = get('SELECT 1 FROM mylist WHERE profile_id=? AND item_id=?', p.id, id);
   if (exists) run('DELETE FROM mylist WHERE profile_id=? AND item_id=?', p.id, id);
   else run('INSERT INTO mylist(profile_id, item_id, added_at) VALUES(?, ?, ?)', p.id, id, Date.now());
-  sendJson(ctx.res, { inList: !exists });
+  // Série ajoutée à « Ma liste » : ses nouvelles saisons seront demandées à Seerr
+  const it = get('SELECT type FROM items WHERE id = ?', id);
+  const follows = !exists && it && it.type === 'show' && seerrOn() && followMode() !== 'off';
+  if (follows) setTimeout(() => runWatch().catch(() => {}), 2000);
+  sendJson(ctx.res, { inList: !exists, follows });
 });
 
 router.post('/api/items/:id/watched', async (ctx) => {
@@ -827,7 +832,69 @@ router.post('/api/discover/request', async (ctx) => {
   const item = { type: b.type === 'movie' ? 'movie' : 'tv', tmdbId: Number(b.tmdbId) || null, anilistId: Number(b.anilistId) || null, title: b.title || '', original: b.original || '' };
   const id = await resolveTmdb(item);
   if (!id) throw new HttpError(404, 'Titre introuvable sur TMDB, Seerr ne peut pas le demander');
-  try { sendJson(ctx.res, { tmdbId: id, ...(await seerrRequest(item.type, id)) }); } catch (e) { throw new HttpError(502, e.message); }
+  try { sendJson(ctx.res, { tmdbId: id, ...(await seerrRequest(item.type, id, { userId: seerrUserOf(p.id) })) }); } catch (e) { throw new HttpError(502, e.message); }
+});
+
+// ------------------------------------------------------------------ mes envies (favoris pas encore dans Venus)
+router.get('/api/wishlist', async (ctx) => {
+  const p = requireProfile(ctx);
+  const list = wishlistOf(p.id);
+  // État Seerr de chaque titre (demandé, en téléchargement, disponible…), en parallèle et mis en cache
+  if (seerrOn()) await Promise.all(list.map(async (w) => { try { w.seerr = await seerrStatus(w.type, w.tmdbId); } catch (e) { w.seerr = { state: 'error', error: e.message }; } }));
+  sendJson(ctx.res, { seerr: seerrOn(), auto: autoRequest(), follow: followMode(), kids: p.max_age != null, items: list });
+});
+router.get('/api/wishlist/has', async (ctx) => {
+  const p = requireProfile(ctx);
+  const q = ctx.url.searchParams;
+  const item = { type: q.get('type') === 'movie' ? 'movie' : 'tv', tmdbId: Number(q.get('tmdbId')) || null, anilistId: Number(q.get('anilistId')) || null, title: q.get('title') || '', original: q.get('original') || '' };
+  const id = item.tmdbId || await resolveTmdb(item).catch(() => null);
+  sendJson(ctx.res, { tmdbId: id, inWishlist: id ? inWishlist(p.id, item.type, id) : false });
+});
+router.post('/api/wishlist', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req);
+  const item = { type: b.type === 'movie' ? 'movie' : 'tv', tmdbId: Number(b.tmdbId) || null, anilistId: Number(b.anilistId) || null, title: b.title || '', original: b.original || '' };
+  const id = item.tmdbId || await resolveTmdb(item).catch(() => null);
+  if (!id) throw new HttpError(404, 'Titre introuvable sur TMDB');
+  const r = await addWish(p, { ...b, type: item.type, tmdbId: id });
+  sendJson(ctx.res, { tmdbId: id, ...r, auto: autoRequest() && seerrOn() && p.max_age == null });
+});
+router.del('/api/wishlist/:type/:tmdbId', (ctx) => {
+  const p = requireProfile(ctx);
+  sendJson(ctx.res, removeWish(p.id, ctx.params.type, Number(ctx.params.tmdbId)));
+});
+
+// ------------------------------------------------------------------ Seerr : connexion par compte, utilisateurs, suivi
+router.post('/api/admin/seerr/login', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req);
+  let r;
+  try { r = await seerrLogin({ url: b.url, method: b.method, user: b.user, password: b.password }); } catch (e) { throw new HttpError(400, e.message); }
+  try { await seerrTest({ url: r.url, key: r.key }); } catch (e) { throw new HttpError(400, `Seerr : ${e.message}`); }
+  setSetting('seerr_url', r.url); setSetting('seerr_key', r.key);
+  logActivity('seerr', `Seerr relié avec le compte « ${r.user.name} »`);
+  runWatch().catch(() => {});
+  sendJson(ctx.res, { ok: true, user: r.user });
+});
+router.get('/api/admin/seerr/users', async (ctx) => {
+  requireAdmin(ctx);
+  if (!seerrOn()) throw new HttpError(400, 'Reliez d’abord Seerr');
+  let users;
+  try { users = await listSeerrUsers(); } catch (e) { throw new HttpError(502, e.message); }
+  sendJson(ctx.res, { users, links: seerrUsers(), profiles: all('SELECT * FROM profiles ORDER BY id').map(publicProfile), auto: autoRequest(), follow: followMode(), watch: watchState });
+});
+router.put('/api/admin/seerr/users', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req);
+  if (b.profileId) linkSeerrUser(Number(b.profileId), b.seerrUserId ? Number(b.seerrUserId) : null);
+  if (typeof b.auto === 'boolean') setSetting('seerr_auto', b.auto ? '1' : '0');
+  if (['off', 'mylist', 'all'].includes(b.follow)) setSetting('seerr_follow', b.follow);
+  sendJson(ctx.res, { ok: true, links: seerrUsers(), auto: autoRequest(), follow: followMode() });
+});
+router.post('/api/admin/seerr/sync', async (ctx) => {
+  requireAdmin(ctx);
+  if (!seerrOn()) throw new HttpError(400, 'Reliez d’abord Seerr');
+  sendJson(ctx.res, { ...(await runWatch()) });
 });
 router.get('/api/discover/trailer', async (ctx) => {
   requireProfile(ctx);
@@ -854,7 +921,7 @@ router.get('/api/admin', (ctx) => {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
       maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0',
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
-      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(),
+      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
   });

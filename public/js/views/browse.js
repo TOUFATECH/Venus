@@ -2,7 +2,7 @@
 // Barre compacte : visionnage, tri (sens croissant / décroissant), filtres, affichage (affiches, vignettes, liste), au hasard.
 // Séries et animés : onglet « À venir » (épisodes sortis ces derniers jours et prochains épisodes annoncés).
 import { api } from '../api.js';
-import { h, icon, img, fmtRuntime, fmtDate, ageBadge } from '../ui.js';
+import { h, icon, img, fmtRuntime, fmtDate, ageBadge, toast } from '../ui.js';
 import { card, playPath, RATING_SOURCES, framePoster } from '../components.js';
 import { setQueue } from '../queue.js';
 import { go } from '../app.js';
@@ -43,12 +43,15 @@ const shuffleSeed = (n) => { const a = Array.from({ length: n }, (_, i) => i); f
 
 export async function render(main, { kind, query }) {
   const upcomingTab = (kind === 'show' || kind === 'anime') && query && query.get('vue') === 'avenir';
+  const wishTab = kind === 'mylist' && query && query.get('vue') === 'envies';
   const page = h('div', { class: 'page' });
   main.append(page);
-  const tabs = kind === 'show' || kind === 'anime' ? h('div', { class: 'view-tabs', role: 'tablist' },
-    h('button', { class: `vt f${upcomingTab ? '' : ' on'}`, role: 'tab', 'aria-selected': String(!upcomingTab), onclick: () => go(PATHS[kind], { replace: true }) }, 'Bibliothèque'),
-    h('button', { class: `vt f${upcomingTab ? ' on' : ''}`, role: 'tab', 'aria-selected': String(upcomingTab), onclick: () => go(`${PATHS[kind]}?vue=avenir`, { replace: true }) }, 'À venir')) : null;
+  const tab = (on, label, path) => h('button', { class: `vt f${on ? ' on' : ''}`, role: 'tab', 'aria-selected': String(on), onclick: () => go(path, { replace: true }) }, label);
+  const tabs = kind === 'show' || kind === 'anime'
+    ? h('div', { class: 'view-tabs', role: 'tablist' }, tab(!upcomingTab, 'Bibliothèque', PATHS[kind]), tab(upcomingTab, 'À venir', `${PATHS[kind]}?vue=avenir`))
+    : kind === 'mylist' ? h('div', { class: 'view-tabs', role: 'tablist' }, tab(!wishTab, 'Dans Venus', PATHS.mylist), tab(wishTab, 'Mes envies', `${PATHS.mylist}?vue=envies`)) : null;
   if (upcomingTab) return renderUpcoming(page, kind, tabs);
+  if (wishTab) return renderWishes(page, tabs);
 
   const items = kind === 'mylist' ? await api('/api/mylist') : await api(`/api/library?type=${kind}`);
   const isClip = kind === 'clip';
@@ -199,6 +202,7 @@ export async function render(main, { kind, query }) {
 
   page.append(
     h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, TITLES[kind]), count), tabs || playAll),
+    kind === 'mylist' ? h('p', { class: 'list-hint' }, 'Les séries de votre liste sont suivies : chaque nouvelle saison annoncée est demandée à Seerr automatiquement.') : null,
     h('div', { class: 'toolbar' }, statusBox, h('div', { class: 'tools' }, sortBtn, filterBtn, viewBox, randomBtn)),
     activeBar, grid);
   paint();
@@ -294,4 +298,41 @@ function upCard(e) {
   return h('button', { class: 'up-card f', onclick: () => go(e.inLibrary ? playPath(e.id) : `/titre/${e.showId}`) }, pic,
     h('b', {}, e.showTitle),
     h('span', {}, `S${e.season} É${e.episode}${e.title ? ` · ${e.title}` : ''}`));
+}
+
+// ---------------------------------------------------------------- Mes envies (favoris pas encore dans Venus, suivis dans Seerr)
+const WISH_STATE = { none: 'Pas encore demandé', pending: 'Demandé, en attente de validation', processing: 'Demandé : téléchargé dès sa sortie', partial: 'Disponible en partie', available: 'Disponible, arrive dans Venus', blocked: 'Bloqué dans Seerr', deleted: 'Supprimé de Seerr', error: 'Seerr injoignable' };
+async function renderWishes(page, tabs) {
+  const d = await api('/api/wishlist');
+  const today = new Date().toISOString().slice(0, 10);
+  const body = h('div', { class: 'wish-grid' });
+  const intro = h('p', { class: 'list-hint' }, !d.seerr
+    ? 'Ajoutez des films, séries et animés à vos envies depuis Nouveautés (bouton ♡). Reliez Seerr dans Réglages pour qu’ils soient téléchargés automatiquement.'
+    : d.kids ? 'Vos envies sont visibles par les adultes de la maison, qui décident du téléchargement.'
+      : d.auto ? 'Chaque envie est demandée à Seerr tout de suite : le téléchargement démarre dès que le titre sort. Une fois arrivé, il passe dans « Dans Venus ».'
+        : 'Les demandes automatiques sont désactivées : un administrateur peut les activer dans Réglages, Seerr.');
+  const paint = () => {
+    if (!d.items.length) { body.replaceChildren(h('div', { class: 'grid-empty' }, h('p', {}, 'Aucune envie pour l’instant.'), h('button', { class: 'btn btn-small f', onclick: () => go('/nouveautes') }, icon('cal'), 'Voir les nouveautés'))); return; }
+    body.replaceChildren(...d.items.map((w) => {
+      const st = w.seerr || { state: w.requested ? 'processing' : 'none' };
+      const future = w.date && w.date > today;
+      const label = st.downloading && st.progress != null ? `Téléchargement ${st.progress} %` : st.state === 'processing' && !future ? 'Demandé, recherche en cours' : WISH_STATE[st.state] || 'Suivi';
+      const del = h('button', { class: 'btn btn-ghost btn-icon btn-mini f', 'aria-label': `Retirer ${w.title} de mes envies`, title: 'Retirer', onclick: async () => {
+        await api(`/api/wishlist/${w.type}/${w.tmdbId}`, { method: 'DELETE' });
+        d.items = d.items.filter((x) => x !== w); paint(); toast('Retiré de mes envies');
+      } }, icon('close'));
+      return h('article', { class: 'wish' },
+        h('div', { class: 'wish-pic' }, w.poster ? h('img', { src: w.poster, alt: '', loading: 'lazy' }) : h('span', {}, w.title),
+          future ? h('span', { class: 'wish-date' }, `Sortie le ${fmtDate(w.date)}`) : null),
+        h('div', { class: 'wish-body' },
+          h('b', {}, w.title),
+          h('span', { class: 'wish-meta' }, [w.type === 'movie' ? 'Film' : w.anime ? 'Animé' : 'Série', w.date ? w.date.slice(0, 4) : null].filter(Boolean).join(' · ')),
+          h('span', { class: `wish-state st-${st.state}` }, label),
+          st.downloading && st.progress != null ? h('div', { class: 'meter' }, h('i', { style: { width: `${st.progress}%` } })) : null,
+          w.error && st.state !== 'processing' ? h('small', { class: 'error-text' }, w.error) : null),
+        del);
+    }));
+  };
+  paint();
+  page.append(h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, 'Ma liste'), h('p', { class: 'count' }, `${d.items.length} envie${d.items.length > 1 ? 's' : ''}`)), tabs), intro, body);
 }
