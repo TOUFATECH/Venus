@@ -3,7 +3,7 @@ import { api, auth, deviceCaps } from '../api.js';
 import { h, icon, img } from '../ui.js';
 import { go } from '../app.js';
 import { playPath } from '../components.js';
-import { attachStream } from '../live.js';
+import { attachStream, numberZapper } from '../live.js';
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
@@ -32,10 +32,10 @@ export async function render(main) {
     if (session) { fetch(`/api/hls/${session}`, { method: 'DELETE', keepalive: true }).catch(() => {}); session = null; }
   }
 
-  async function showPreview(ch) {
+  async function showPreview(ch, delay = 650) {
     if (selected && selected.id === ch.id) return;
     selected = ch;
-    nameEl.textContent = ch.title;
+    nameEl.textContent = ch.number ? `${ch.number}. ${ch.title}` : ch.title;
     groupEl.textContent = ch.group || 'TV en direct';
     still.src = ch.preview || `/api/channels/${ch.id}/preview.jpg?token=${encodeURIComponent(auth.token || '')}&t=${Math.floor(Date.now() / 60000)}`;
     still.hidden = false;
@@ -58,7 +58,7 @@ export async function render(main) {
       } catch (e) {
         if (selected === ch) { status.textContent = e.message; status.hidden = false; }
       }
-    }, 650);
+    }, delay);
   }
   video.addEventListener('playing', () => { status.hidden = true; still.hidden = true; });
 
@@ -71,11 +71,11 @@ export async function render(main) {
     const logo = c.poster ? h('img', { class: 'tile-logo', src: img(c.poster), alt: '', loading: 'lazy', onerror: (e) => e.target.remove() }) : null;
     const shot = h('img', { class: 'tile-shot', alt: '', loading: 'lazy', src: c.preview || `/api/channels/${c.id}/preview.jpg?token=${encodeURIComponent(auth.token || '')}&t=${Math.floor(Date.now() / 120000)}`,
       onerror: (e) => e.target.remove() });
-    const el = h('button', { class: 'tile f', 'data-id': c.id, 'aria-label': `${c.title}, ${c.group || 'en direct'}`, onclick: () => go(playPath(c.id)) },
-      h('div', { class: 'tile-img' }, h('span', { class: 'ch-initials' }, initials(c.title)), shot, logo),
+    const el = h('button', { class: 'tile f', 'data-id': c.id, 'aria-label': `${c.number ? `${c.number}, ` : ''}${c.title}, ${c.group || 'en direct'}`, onclick: () => go(playPath(c.id)) },
+      h('div', { class: 'tile-img' }, h('span', { class: 'ch-initials' }, initials(c.title)), shot, logo, c.number ? h('span', { class: 'ch-num' }, c.number) : null),
       h('div', { class: 'tile-cap' }, h('b', {}, c.title), c.group ? h('small', {}, c.group) : null));
     el.addEventListener('focus', () => showPreview(c));
-    el.addEventListener('mouseenter', () => showPreview(c));
+    el.addEventListener('mouseenter', () => showPreview(c, 300));
     return el;
   };
 
@@ -116,5 +116,9 @@ export async function render(main) {
     grid.querySelectorAll('.tile-shot').forEach((im) => { if (im.src.startsWith('blob:') || im.src.startsWith('data:')) return; im.src = im.src.replace(/t=\d+/, `t=${Math.floor(Date.now() / 120000)}`); });
   }, 120000);
 
-  return { destroy: () => { destroyed = true; clearTimeout(switchTimer); clearInterval(refresh); stopPreview(); } };
+  // Numéro de chaîne au clavier ou à la télécommande : « 1 », « 2 » → chaîne 12
+  const zapper = numberZapper(channels, (c) => go(playPath(c.id)), document.querySelector('.tv-page'));
+  document.addEventListener('keydown', zapper.onKey);
+
+  return { destroy: () => { destroyed = true; clearTimeout(switchTimer); clearInterval(refresh); stopPreview(); zapper.stop(); document.removeEventListener('keydown', zapper.onKey); } };
 }

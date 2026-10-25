@@ -39,6 +39,8 @@ function run(c) {
     case 'back': key('Escape'); break;
     case 'home': go('/'); break;
     case 'playpause': key(' '); break;
+    case 'digit': if (/^[0-9]$/.test(String(c.digit))) key(String(c.digit)); break;
+    case 'tv': go('/tv'); break;
     case 'rew': key('MediaRewind'); break;
     case 'fwd': key('MediaFastForward'); break;
     case 'text': {

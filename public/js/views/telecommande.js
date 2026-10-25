@@ -64,6 +64,12 @@ export async function render(main, { query }) {
         h('button', { class: 'r-btn big', onclick: () => send('playpause') }, icon('play'), h('span', {}, 'Lecture / pause')),
         h('button', { class: 'r-btn', onclick: () => send('fwd') }, icon('f10'), h('span', {}, '+30 s'))),
       h('div', { class: 'remote-search' }, icon('search'), searchIn),
+      // Pavé numérique : taper le numéro d'une chaîne de TV
+      h('details', { class: 'remote-digits' }, h('summary', {}, icon('live'), 'Chaînes : pavé numérique'),
+        h('div', { class: 'digits' }, ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'tv', '0', 'ok'].map((d) => (d === 'tv'
+          ? h('button', { class: 'digit alt', 'aria-label': 'Ouvrir la TV en direct', onclick: () => send('tv') }, 'TV')
+          : d === 'ok' ? h('button', { class: 'digit alt', 'aria-label': 'Valider le numéro', onclick: () => send('ok') }, 'OK')
+            : h('button', { class: 'digit', 'aria-label': `Chiffre ${d}`, onclick: () => send('digit', { digit: d }) }, d))))),
       launch);
 
     // Lancer directement sur la TV ce que l'on regardait

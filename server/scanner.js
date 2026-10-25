@@ -212,7 +212,7 @@ export function parseM3u(text) {
     if (line.startsWith('#EXTINF')) {
       const attr = (k) => { const m = new RegExp(`${k}="([^"]*)"`, 'i').exec(line); return m ? m[1].trim() : null; };
       const comma = line.lastIndexOf(',');
-      cur = { name: (comma >= 0 ? line.slice(comma + 1) : '').trim() || attr('tvg-name') || 'Chaîne', logo: attr('tvg-logo'), group: attr('group-title'), id: attr('tvg-id') };
+      cur = { name: (comma >= 0 ? line.slice(comma + 1) : '').trim() || attr('tvg-name') || 'Chaîne', logo: attr('tvg-logo'), group: attr('group-title'), id: attr('tvg-id'), chno: parseInt(attr('tvg-chno') || attr('channel-number') || attr('tvg-num') || '', 10) || null };
     } else if (line.startsWith('#EXTGRP:') && cur) {
       cur.group = cur.group || line.slice(8).trim();
     } else if (!line.startsWith('#')) {
@@ -237,11 +237,12 @@ async function scanIptv(lib) {
     channels.forEach((c, i) => {
       seen.add(c.url);
       const k = known.get(c.url);
-      if (k) run('UPDATE items SET title=?, poster=?, grp=?, episode_num=? WHERE id=?', c.name, c.logo, c.group, i + 1, k.id);
-      else run(`INSERT INTO items(library_id, type, category, title, sort_title, poster, grp, stream_url, episode_num, added_at, matched)
-                VALUES(?, 'channel', 'channel', ?, ?, ?, ?, ?, ?, ?, 1)`, lib.id, c.name, sortTitle(c.name), c.logo, c.group, c.url, i + 1, Date.now());
+      if (k) run('UPDATE items SET title=?, poster=?, grp=?, episode_num=?, channel_num=? WHERE id=?', c.name, c.logo, c.group, i + 1, c.chno, k.id);
+      else run(`INSERT INTO items(library_id, type, category, title, sort_title, poster, grp, stream_url, episode_num, channel_num, added_at, matched)
+                VALUES(?, 'channel', 'channel', ?, ?, ?, ?, ?, ?, ?, ?, 1)`, lib.id, c.name, sortTitle(c.name), c.logo, c.group, c.url, i + 1, c.chno, Date.now());
     });
     for (const [url, r] of known) if (!seen.has(url)) run('DELETE FROM items WHERE id=?', r.id);
   });
   console.log(`[iptv] ${lib.name} : ${channels.length} chaînes`);
+  events.emit('library', { added: [] });
 }

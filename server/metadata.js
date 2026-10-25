@@ -10,10 +10,10 @@ const IMG = 'https://image.tmdb.org/t/p';
 const imagesDir = path.join(config.dataDir, 'images');
 
 export function tmdbKey() { return getSetting('tmdb_key') || config.tmdbKey || ''; }
-const lang = () => getSetting('metadata_lang', 'fr-FR');
+export const lang = () => getSetting('metadata_lang', 'fr-FR');
 const region = () => (lang().split('-')[1] || 'FR').toUpperCase();
 
-async function tmdb(endpoint, params = {}) {
+export async function tmdb(endpoint, params = {}) {
   const key = tmdbKey();
   if (!key) throw new Error('Clé TMDB manquante');
   const url = new URL(API + endpoint);

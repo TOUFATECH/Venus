@@ -33,3 +33,34 @@ export async function attachStream(video, url, { live = false, onError } = {}) {
   video.play().catch(() => {});
   return () => { hls.destroy(); video.removeAttribute('src'); video.load(); };
 }
+
+// Saisie d'un numéro de chaîne (clavier, télécommande TV ou téléphone) : les chiffres s'affichent,
+// puis on change de chaîne 1,3 s après le dernier chiffre (ou tout de suite avec OK / Entrée).
+export function numberZapper(channels, onPick, host = document.body) {
+  let buf = '', timer = null, osd = null;
+  const stop = () => { clearTimeout(timer); buf = ''; if (osd) { osd.remove(); osd = null; } };
+  const commit = () => {
+    const n = Number(buf);
+    const ch = channels.find((c) => c.number === n);
+    if (osd) osd.querySelector('small').textContent = ch ? ch.title : 'Aucune chaîne à ce numéro';
+    const pick = ch;
+    setTimeout(stop, ch ? 400 : 1200);
+    buf = '';
+    if (pick) onPick(pick);
+  };
+  const onKey = (e) => {
+    if (/INPUT|TEXTAREA|SELECT/.test((e.target && e.target.tagName) || '') || document.querySelector('.sheet-wrap')) return;
+    const d = /^[0-9]$/.test(e.key) ? e.key : e.keyCode >= 96 && e.keyCode <= 105 ? String(e.keyCode - 96) : null;
+    if (d == null) { if (buf && (e.key === 'Enter' || e.keyCode === 13)) { e.preventDefault(); e.stopPropagation(); clearTimeout(timer); commit(); } return; }
+    e.preventDefault(); e.stopPropagation();
+    if (buf.length >= 4) buf = '';
+    buf += d;
+    const ch = channels.find((c) => c.number === Number(buf));
+    if (!osd) { osd = document.createElement('div'); osd.className = 'ch-osd'; osd.innerHTML = '<b></b><small></small>'; (document.fullscreenElement && document.fullscreenElement !== document.documentElement ? document.fullscreenElement : host || document.body).append(osd); }
+    osd.querySelector('b').textContent = buf;
+    osd.querySelector('small').textContent = ch ? ch.title : '';
+    clearTimeout(timer);
+    timer = setTimeout(commit, 1300);
+  };
+  return { onKey, stop };
+}

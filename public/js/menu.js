@@ -15,6 +15,7 @@ export const NAV_ITEMS = [
   { id: 'movies', href: '/films', label: 'Films', icon: 'film', cat: 'movie' },
   { id: 'shows', href: '/series', label: 'Séries', icon: 'tv', cat: 'show' },
   { id: 'anime', href: '/animes', label: 'Animés', icon: 'spark', cat: 'anime' },
+  { id: 'new', href: '/nouveautes', label: 'Nouveautés', icon: 'cal', hint: 'Films, séries et animés qui sortent' },
   { id: 'clips', href: '/clips', label: 'Clips', icon: 'note', cat: 'clip' },
   { id: 'tv', href: '/tv', label: 'TV', icon: 'live', cat: 'channel' },
   { id: 'mylist', href: '/liste', label: 'Ma liste', icon: 'list' },

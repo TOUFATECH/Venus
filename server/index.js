@@ -11,6 +11,7 @@ import { together } from './together.js';
 import { detectHardware } from './hw.js';
 import { scanAll, watchLibraries } from './scanner.js';
 import { schedulePending } from './segments.js';
+import { refreshRatings } from './ratings.js';
 import { stopAllSessions } from './stream.js';
 import { mountAll, watchMounts } from './netshare.js';
 import { runtime } from './env.js';
@@ -75,6 +76,9 @@ async function main() {
   // Génériques des séries et animés : analyse en arrière-plan des nouveaux épisodes
   setTimeout(() => schedulePending(), 90000).unref();
   setInterval(() => schedulePending(), 30 * 60000).unref();
+  // Notes et bandes-annonces : titres nouveaux ou notés il y a plus de 10 jours
+  setTimeout(() => refreshRatings(), 120000).unref();
+  setInterval(() => refreshRatings(), 6 * 3600000).unref();
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)
   setTimeout(() => scanAll(), 2000);
   // Les partages réseau ne signalent pas les nouveaux fichiers : vérification toutes les 10 minutes

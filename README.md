@@ -13,6 +13,15 @@ Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec un
 - **Chromecast** et **AirPlay**, contrôles sur l'écran verrouillé du téléphone, application installable (PWA).
 - **Affiches et résumés en français** via TMDB (gratuit), ou vos propres `poster.jpg` / `fanart.jpg`.
 
+## Notes, nouveautés, Seerr, thèmes
+
+- **Notes des sites** sur chaque fiche, et tri par note : TMDB, IMDb, Rotten Tomatoes, Metacritic (clé gratuite [OMDb](https://www.omdbapi.com/apikey.aspx)), AniList et MyAnimeList (sans clé), Simkl (identifiant gratuit). SensCritique n'a pas d'API publique : un lien vers sa page est proposé. Clés à coller dans **Réglages → Notes des sites**.
+- **Nouveautés** : films au cinéma et à venir, séries de la semaine, animés de la saison (TMDB et AniList), avec une grande affiche qui suit le titre survolé et sa bande-annonce.
+- **Seerr** (Overseerr / Jellyseerr) : **Réglages → Seerr**, adresse et clé API. Le bouton « Demander » des Nouveautés envoie la demande ; Radarr / Sonarr lancent la recherche et le téléchargement, Venus affiche la progression puis le titre arrive tout seul.
+- **Bandes-annonces** au survol des affiches et dans le carrousel d'accueil (son activable), réglables dans **Réglages → Lecture sur cet appareil**.
+- **TV en direct** : numéros de chaîne (ceux de la liste M3U, `tvg-chno`, sinon dans l'ordre), saisie d'un numéro au clavier, à la télécommande ou au pavé numérique du téléphone, liste des chaînes à droite pendant la lecture (touche L).
+- **Thèmes planètes** : Mercure, Vénus, Terre, Mars, Jupiter, Saturne, Uranus, Neptune, Pluton. Couleurs, nom et logo animé changent (**Réglages → Thème**).
+
 ## Ce que Netflix ne fait pas
 
 - **Mode Ambiance** : la lumière du film déborde autour de l'image, comme une TV Ambilight, et toute l'interface prend la couleur du titre que vous survolez. Bouton dans le lecteur, ou touche A.
