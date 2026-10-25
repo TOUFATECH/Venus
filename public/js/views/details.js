@@ -51,7 +51,7 @@ export async function render(main, { id, query }) {
     const r = await api(`/api/items/${d.id}/mylist`, { method: 'POST' });
     listBtn.replaceChildren(icon(r.inList ? 'check' : 'plus'));
     listBtn.setAttribute('aria-label', r.inList ? 'Retirer de ma liste' : 'Ajouter à ma liste');
-    toast(r.inList ? 'Ajouté à ma liste' : 'Retiré de ma liste');
+    toast(r.inList ? (r.follows ? 'Ajouté à ma liste : chaque nouvelle saison sera demandée à Seerr' : 'Ajouté à ma liste') : 'Retiré de ma liste');
   };
   actions.append(listBtn);
   const allWatched = isShow ? d.seasons.every((s) => s.episodes.every((e) => e.progress && e.progress.watched)) : prog && prog.watched;

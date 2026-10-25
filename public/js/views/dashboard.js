@@ -27,7 +27,7 @@ const fmtUptime = (s) => {
   return d ? `${d} j ${hh} h` : hh ? `${hh} h ${mm} min` : `${mm} min`;
 };
 const meter = (pct, cls = '') => h('div', { class: `meter ${cls}${pct > 90 ? ' hot' : pct > 75 ? ' warm' : ''}` }, h('i', { style: { width: `${Math.max(0, Math.min(100, pct))}%` } }));
-const ACT_ICON = { play: 'play', stop: 'stop', login: 'key', message: 'chat', control: 'pause', device: 'exit', server: 'power', scan: 'refresh' };
+const ACT_ICON = { play: 'play', stop: 'stop', login: 'key', message: 'chat', control: 'pause', device: 'exit', server: 'power', scan: 'refresh', seerr: 'down' };
 
 export async function render(main) {
   if (!state.profile.isAdmin) { main.append(h('div', { class: 'empty' }, h('h2', {}, 'Réservé à l’administrateur'))); return; }

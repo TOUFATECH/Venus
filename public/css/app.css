@@ -1500,3 +1500,20 @@ button.kpi:hover, button.kpi:focus-visible { border-color: rgba(236,234,228,.35)
   .party-panel .pp-form { padding: 4px; }
   .party-panel .pp-form .input { min-height: 36px; font-size: .85rem; }
 }
+.wish-btn.is-on { color: #ff7a8a; border-color: rgba(255,122,138,.5); background: rgba(255,122,138,.12); }
+.wish-btn.is-on svg path { fill: currentColor; }
+
+/* Ma liste : mes envies */
+.list-hint { margin: -14px 0 20px; color: var(--haze); font-size: .9rem; max-width: 70ch; line-height: 1.5; }
+.wish-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 12px; }
+.wish { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px; border-radius: 12px; background: var(--deep); border: 1px solid var(--edge); }
+.wish-pic { position: relative; width: 84px; aspect-ratio: 2 / 3; border-radius: 7px; overflow: hidden; background: var(--raise); display: grid; place-items: center; font-size: .72rem; text-align: center; padding: 0; }
+.wish-pic img { width: 100%; height: 100%; object-fit: cover; }
+.wish-date { position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 4px; background: rgba(244,207,156,.92); color: var(--night); font-size: .62rem; font-weight: 800; text-align: center; }
+.wish-body { min-width: 0; display: grid; gap: 4px; }
+.wish-body b { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wish-meta { color: var(--dim); font-size: .8rem; }
+.wish-state { justify-self: start; padding: 3px 9px; border-radius: 999px; font-size: .76rem; font-weight: 700; background: rgba(236,234,228,.08); color: var(--haze); }
+.wish-state.st-processing, .wish-state.st-pending { background: rgba(244,207,156,.14); color: var(--sulfur); }
+.wish-state.st-available, .wish-state.st-partial { background: rgba(111,211,155,.14); color: #6fd39b; }
+.wish-state.st-error, .wish-state.st-blocked { background: rgba(255,122,107,.14); color: var(--alarm); }

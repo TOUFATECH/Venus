@@ -19,6 +19,41 @@ export async function render(main, { query }) {
   if (!KINDS.some(([k]) => k === kind)) kind = 'movie';
   const data = await api(`/api/discover?kind=${kind}`);
   const statusCache = new Map();
+  const wishCache = new Map();
+  // Bouton « Mes envies » : favori d'un titre pas encore dans Venus, demandé à Seerr automatiquement
+  const wishButton = (x) => {
+    const btn = h('button', { class: 'btn btn-ghost btn-icon f wish-btn', disabled: true, 'aria-label': 'Ajouter à mes envies' }, icon('heart'));
+    const paint = (on) => {
+      btn.disabled = false;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-pressed', String(on));
+      btn.setAttribute('aria-label', on ? 'Retirer de mes envies' : 'Ajouter à mes envies');
+      btn.title = on ? 'Dans mes envies' : 'Ajouter à mes envies : demandé à Seerr dès maintenant, téléchargé dès sa sortie';
+    };
+    const known = wishCache.get(x.key);
+    if (known) paint(known.on);
+    else api(`/api/wishlist/has?type=${x.type}&tmdbId=${x.tmdbId || ''}&anilistId=${x.anilistId || ''}&title=${encodeURIComponent(x.title)}&original=${encodeURIComponent(x.original || '')}`)
+      .then((r) => { wishCache.set(x.key, { on: r.inWishlist, tmdbId: r.tmdbId }); paint(r.inWishlist); }).catch(() => paint(false));
+    btn.onclick = async () => {
+      const k = wishCache.get(x.key) || {};
+      btn.disabled = true;
+      try {
+        if (k.on) {
+          await api(`/api/wishlist/${x.type === 'movie' ? 'movie' : 'tv'}/${k.tmdbId}`, { method: 'DELETE' });
+          wishCache.set(x.key, { ...k, on: false }); paint(false); toast('Retiré de mes envies');
+        } else {
+          const r = await api('/api/wishlist', { method: 'POST', body: { type: x.type, tmdbId: x.tmdbId, anilistId: x.anilistId, title: x.title, original: x.original, poster: x.poster, backdrop: x.backdrop, date: x.date, overview: x.overview, anime: !!x.anime } });
+          wishCache.set(x.key, { on: true, tmdbId: r.tmdbId }); paint(true);
+          const future = x.date && x.date > new Date().toISOString().slice(0, 10);
+          if (r.request && r.request.state !== 'error') { statusCache.set(x.key, r.request); if (current === x) paintActions(x); }
+          toast(r.auto ? (future ? `« ${x.title} » est dans vos envies : demandé à Seerr, il sera téléchargé dès sa sortie` : `« ${x.title} » est dans vos envies et demandé à Seerr`)
+            : `« ${x.title} » est dans vos envies`);
+          if (r.request && r.request.state === 'error') toast(`Seerr : ${r.request.error}`, true);
+        }
+      } catch (e) { toast(e.message, true); paint(!!k.on); }
+    };
+    return btn;
+  };
   let current = null, trailer = null, trailerTimer = null, soundOn = false, hoverTimer = null, destroyed = false;
 
   // ------------------------------------------------------------ grande affiche
@@ -80,10 +115,12 @@ export async function render(main, { query }) {
     }
     if (!data.available.seerr) {
       if (state.profile.isAdmin) actions.append(h('button', { class: 'btn btn-ghost f', onclick: () => go('/reglages?section=seerr') }, icon('gear'), 'Relier Seerr pour demander ce titre'));
+      actions.append(wishButton(x));
       return;
     }
     const st = h('span', { class: 'sp-state' }, h('span', { class: 'mini-spin' }), 'Vérification…');
-    actions.append(st);
+    const wish = wishButton(x);
+    actions.append(st, wish);
     const key = x.key;
     let s = statusCache.get(key);
     if (!s) {
@@ -95,7 +132,7 @@ export async function render(main, { query }) {
     actions.replaceChildren();
     if (s.state === 'none' || s.state === 'unknown' || s.state === 'deleted') {
       if (s.state === 'unknown') { actions.append(h('span', { class: 'sp-state' }, 'Introuvable sur TMDB : Seerr ne peut pas le demander')); return; }
-      if (state.profile.maxAge != null) { actions.append(h('span', { class: 'sp-state' }, 'Demandez à un adulte de l’ajouter')); return; }
+      if (state.profile.maxAge != null) { actions.append(h('span', { class: 'sp-state' }, 'Ajoutez-le à vos envies : un adulte décidera'), wish); return; }
       const btn = h('button', { class: 'btn btn-play f', onclick: async () => {
         btn.disabled = true; btn.textContent = 'Demande envoyée…';
         try {
@@ -105,12 +142,12 @@ export async function render(main, { query }) {
           if (current === x) paintActions(x);
         } catch (e) { toast(e.message, true); btn.disabled = false; btn.replaceChildren(icon('add'), 'Demander'); }
       } }, icon('add'), 'Demander');
-      actions.append(btn);
+      actions.append(btn, wish);
       return;
     }
-    if (s.state === 'error') { actions.append(h('span', { class: 'sp-state warn' }, `Seerr : ${s.error || 'injoignable'}`)); return; }
+    if (s.state === 'error') { actions.append(h('span', { class: 'sp-state warn' }, `Seerr : ${s.error || 'injoignable'}`), wish); return; }
     const label = s.downloading && s.progress != null ? `Téléchargement ${s.progress} %` : STATE_LABEL[s.state] || 'Demandé';
-    actions.append(...[h('span', { class: `sp-state st-${s.state}` }, icon(s.downloading ? 'down' : 'check'), label),
+    actions.append(...[h('span', { class: `sp-state st-${s.state}` }, icon(s.downloading ? 'down' : 'check'), label), wish,
       s.downloading && s.progress != null ? h('div', { class: 'sp-progress' }, h('i', { style: { width: `${s.progress}%` } })) : null].filter(Boolean));
   }
 
