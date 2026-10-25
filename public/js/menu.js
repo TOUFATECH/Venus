@@ -23,9 +23,10 @@ export const NAV_ITEMS = [
   { id: 'seance', href: '/seance', label: 'Séance', icon: 'people', hint: 'Regarder ensemble, chacun sur son écran' },
   { id: 'remote', action: 'remote', label: 'Télécommande', icon: 'remote', hint: 'Piloter Venus avec votre téléphone' },
   { id: 'add', href: '/ajouter', label: 'Ajouter', icon: 'add', admin: true, hint: 'Envoyer des vidéos sur le serveur' },
+  { id: 'dashboard', href: '/tableau-de-bord', label: 'Tableau de bord', icon: 'gauge', admin: true, hint: 'Lectures en cours, appareils, code de connexion' },
 ];
 // Menu court par défaut : Aujourd'hui, Accueil, Films, Séries, Animés, Nouveautés, Recherche ; le reste dans « Plus »
-const DEFAULT_HIDDEN = ['clips', 'tv', 'mylist', 'seance', 'remote', 'add'];
+const DEFAULT_HIDDEN = ['clips', 'tv', 'mylist', 'seance', 'remote', 'add', 'dashboard'];
 const labelOf = (it) => (typeof it.label === 'function' ? it.label() : it.label);
 const iconOf = (it) => (typeof it.icon === 'function' ? it.icon() : it.icon);
 export { labelOf, iconOf };
@@ -36,7 +37,12 @@ export function menuPrefs(pid) {
   try { saved = JSON.parse(localStorage.getItem(key(pid))); } catch { /* */ }
   const ids = NAV_ITEMS.map((i) => i.id);
   const order = [...((saved && saved.order) || []).filter((id) => ids.includes(id)), ...ids.filter((id) => !(saved && saved.order || []).includes(id))];
-  return { order, hidden: saved && Array.isArray(saved.hidden) ? saved.hidden.filter((id) => ids.includes(id)) : DEFAULT_HIDDEN };
+  // Éléments apparus depuis le dernier réglage : rangés dans « Plus » s'ils le sont par défaut
+  const known = (saved && saved.order) || [];
+  const hidden = saved && Array.isArray(saved.hidden)
+    ? [...saved.hidden.filter((id) => ids.includes(id)), ...DEFAULT_HIDDEN.filter((id) => !known.includes(id))]
+    : DEFAULT_HIDDEN;
+  return { order, hidden };
 }
 export function saveMenuPrefs(pid, prefs) {
   try { localStorage.setItem(key(pid), JSON.stringify(prefs)); } catch { /* */ }

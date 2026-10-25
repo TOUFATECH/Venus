@@ -67,6 +67,7 @@ export function startPairing() {
   pairing.close = openStream(`/api/remote/screen${saved ? `?code=${saved}` : ''}`, {
     paired: (d) => {
       pairing.code = d.code;
+      if (d.joined) toast('Téléphone relié : il pilote maintenant cet écran');
       try { localStorage.setItem('vn_remote_code', d.code); } catch { /* */ }
       codeListeners.forEach((fn) => fn(d.code));
     },
@@ -90,7 +91,7 @@ export function showPairing() {
         h('div', { class: 'invite-code' },
           h('small', {}, 'Ou dans Venus sur le téléphone, menu Télécommande, saisissez'),
           h('b', { class: 'big-code' }, `${code.slice(0, 3)} ${code.slice(3)}`),
-          h('small', { class: 'muted' }, 'Le code reste le même pour cet écran.'))));
+          h('small', { class: 'muted' }, 'Nouveau code après chaque téléphone relié.'))));
   };
   if (pairing.code) paint(pairing.code);
   else { body.append(h('p', {}, 'Préparation du code…')); codeListeners.push(paint); }

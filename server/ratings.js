@@ -64,6 +64,36 @@ async function findAnime(item) {
   return null;
 }
 
+// ------------------------------------------------------------------ distribution, équipe, studios
+// Photos : chemins TMDB, téléchargés à la demande par /img (nom « t_w185_… »)
+const photo = (p) => (p ? `t_w185_${p.replace(/^\//, '').replace(/[^\w.]/g, '')}` : null);
+const uniq = (a) => [...new Map(a.filter((x) => x && x.name).map((x) => [x.name, x])).values()];
+export function creditsOf(d, kind) {
+  const c = (kind === 'tv' ? d.aggregate_credits : d.credits) || d.credits || {};
+  const cast = (c.cast || []).slice(0, 30).map((p) => ({
+    name: p.name, role: p.character || (p.roles || []).map((r) => r.character).filter(Boolean).slice(0, 2).join(', ') || '',
+    photo: photo(p.profile_path), eps: p.total_episode_count || undefined,
+  }));
+  const crew = c.crew || [];
+  const jobs = (p) => p.job ? [p.job] : (p.jobs || []).map((j) => j.job);
+  const by = (re) => uniq(crew.filter((p) => jobs(p).some((j) => re.test(j)))).slice(0, 6).map((p) => ({ name: p.name, photo: photo(p.profile_path) }));
+  const kw = (d.keywords && (d.keywords.keywords || d.keywords.results)) || [];
+  return {
+    cast,
+    directors: by(/^Director$/),
+    writers: by(/^(Screenplay|Writer|Story|Novel|Original Story|Author|Original Concept)$/),
+    creators: (d.created_by || []).map((p) => ({ name: p.name, photo: photo(p.profile_path) })),
+    composers: by(/^(Original Music Composer|Music)$/).slice(0, 2),
+    studios: (d.production_companies || []).map((x) => x.name).slice(0, 6),
+    networks: (d.networks || []).map((x) => x.name).slice(0, 4),
+    countries: (d.production_countries || []).map((x) => x.iso_3166_1),
+    tags: kw.map((k) => k.name).slice(0, 12),
+    status: d.status || null,
+    nextEpisode: d.next_episode_to_air ? { date: d.next_episode_to_air.air_date, season: d.next_episode_to_air.season_number, episode: d.next_episode_to_air.episode_number, title: d.next_episode_to_air.name } : null,
+    budget: d.budget || null, revenue: d.revenue || null,
+  };
+}
+
 // ------------------------------------------------------------------ collecte pour un titre
 const isAnime = (item, d) => item.category === 'anime' || !!(d && d.original_language === 'ja' && (d.genres || []).some((g) => g.id === 16));
 
@@ -71,13 +101,14 @@ export async function enrich(item) {
   const r = {};
   let trailer = parseJson(item.trailer, null);
   let imdb = item.imdb_id || null, anilistId = item.anilist_id || null, malId = item.mal_id || null;
-  let ok = false, d = null;
+  let ok = false, d = null, credits = null;
   const kind = item.type === 'movie' ? 'movie' : 'tv';
 
   if (tmdbKey() && item.tmdb_id) {
     try {
-      d = await tmdb(`/${kind}/${item.tmdb_id}`, { language: lang(), append_to_response: 'videos,external_ids', include_video_language: `${lang().split('-')[0]},en,null` });
+      d = await tmdb(`/${kind}/${item.tmdb_id}`, { language: lang(), append_to_response: `videos,external_ids,keywords,${kind === 'tv' ? 'aggregate_credits' : 'credits'}`, include_video_language: `${lang().split('-')[0]},en,null` });
       ok = true;
+      credits = creditsOf(d, kind);
       if (d.vote_count > 0) r.tmdb = { v: Math.round(d.vote_average * 10) / 10, max: 10, votes: d.vote_count, url: `https://www.themoviedb.org/${kind}/${item.tmdb_id}` };
       imdb = d.imdb_id || (d.external_ids && d.external_ids.imdb_id) || imdb;
       trailer = pickTrailer(d.videos && d.videos.results) || trailer;
@@ -146,14 +177,16 @@ export async function enrich(item) {
   const vals = Object.values(r).map((x) => (x.v / x.max) * 100).filter((x) => x > 0);
   r.score = vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
 
-  run('UPDATE items SET ratings=?, ratings_at=?, imdb_id=?, anilist_id=?, mal_id=?, trailer=? WHERE id=?',
-    JSON.stringify(r), ok || Object.keys(r).filter((k) => k !== 'score').length > 1 ? Date.now() : null, imdb, anilistId, malId, trailer ? JSON.stringify(trailer) : null, item.id);
+  run('UPDATE items SET ratings=?, ratings_at=?, imdb_id=?, anilist_id=?, mal_id=?, trailer=?, credits=COALESCE(?, credits) WHERE id=?',
+    JSON.stringify(r), ok || Object.keys(r).filter((k) => k !== 'score').length > 1 ? Date.now() : null, imdb, anilistId, malId, trailer ? JSON.stringify(trailer) : null,
+    credits ? JSON.stringify(credits) : null, item.id);
   return r;
 }
 
 // ------------------------------------------------------------------ file d'attente
 const queue = [];
 let busy = false;
+export const ratingsPending = () => queue.length + (busy ? 1 : 0);
 export function scheduleRatings(ids, urgent = false) {
   for (const id of ids) if (!queue.includes(id)) (urgent ? queue.unshift(id) : queue.push(id));
   pump();

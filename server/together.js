@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import { Router, HttpError, readBody, sendJson } from './http.js';
 import { get } from './db.js';
-import { requireProfile } from './auth.js';
+import { requireProfile, checkRate, resetRate } from './auth.js';
 
 export const together = new Router();
 
@@ -108,31 +108,66 @@ together.post('/api/rooms/:code/action', async (ctx) => {
 });
 
 // ------------------------------------------------------------------ télécommande
-const remotes = new Map(); // code -> { screen: send(), name, last }
+// L'écran affiche un code à 6 chiffres. Un téléphone qui le saisit (ou scanne le QR code) reçoit un lien
+// personnel vers cet écran, et le code de l'écran change aussitôt : chaque code ne sert qu'une fois.
+const remotes = new Map(); // code -> écran
+const screens = new Map(); // appareil de l'écran (jeton) -> écran
+const links = new Map();   // lien du téléphone -> { owner, at }
+const newCode = () => { let c; do { c = String(crypto.randomInt(100000, 1000000)); } while (remotes.has(c)); return c; };
 
 together.get('/api/remote/screen', (ctx) => {
   const p = requireProfile(ctx);
   let c = String(ctx.url.searchParams.get('code') || '');
-  if (!/^\d{6}$/.test(c) || (remotes.has(c) && remotes.get(c).owner !== ctx.auth.token)) {
-    do { c = String(crypto.randomInt(100000, 999999)); } while (remotes.has(c));
-  }
+  if (!/^\d{6}$/.test(c) || (remotes.has(c) && remotes.get(c).owner !== ctx.auth.token)) c = newCode();
   const { send, onClose } = sse(ctx);
-  const entry = { send, owner: ctx.auth.token, name: p.name, phones: 0, at: Date.now() };
+  const old = screens.get(ctx.auth.token);
+  if (old && old.code !== c && remotes.get(old.code) === old) remotes.delete(old.code);
+  const entry = { send, owner: ctx.auth.token, name: p.name, code: c, at: Date.now() };
   remotes.set(c, entry);
-  send('paired', { code: c });
-  onClose(() => { if (remotes.get(c) === entry) remotes.delete(c); });
+  screens.set(ctx.auth.token, entry);
+  send('paired', { code: c, phones: [...links.values()].filter((l) => l.owner === entry.owner).length });
+  onClose(() => {
+    if (remotes.get(entry.code) === entry) remotes.delete(entry.code);
+    if (screens.get(entry.owner) === entry) screens.delete(entry.owner);
+  });
 });
 
-together.get('/api/remote/:code', (ctx) => {
+// Le téléphone saisit le code : il reçoit son lien, l'écran reçoit un nouveau code
+together.post('/api/remote/pair', async (ctx) => {
   requireProfile(ctx);
-  const r = remotes.get(String(ctx.params.code));
-  if (!r) throw new HttpError(404, 'Écran introuvable. Vérifiez le code affiché sur la TV.');
+  checkRate(`remote:${ctx.req.socket.remoteAddress}`);
+  const b = await readBody(ctx.req);
+  const code = String(b.code || '').replace(/\D/g, '');
+  const scr = remotes.get(code);
+  if (!scr) throw new HttpError(404, 'Code inconnu ou déjà utilisé. Le code change après chaque connexion : regardez celui affiché sur la TV.');
+  resetRate(`remote:${ctx.req.socket.remoteAddress}`);
+  const link = crypto.randomBytes(18).toString('base64url');
+  links.set(link, { owner: scr.owner, at: Date.now() });
+  remotes.delete(code);
+  scr.code = newCode();
+  remotes.set(scr.code, scr);
+  scr.send('paired', { code: scr.code, joined: true, phones: [...links.values()].filter((l) => l.owner === scr.owner).length });
+  sendJson(ctx.res, { link, screen: scr.name });
+});
+
+const screenOf = (link) => {
+  const l = links.get(String(link));
+  if (!l) return null;
+  l.at = Date.now();
+  return screens.get(l.owner) || null;
+};
+together.get('/api/remote/link/:link', (ctx) => {
+  requireProfile(ctx);
+  if (!links.has(ctx.params.link)) throw new HttpError(404, 'Lien expiré : saisissez le code affiché sur la TV.');
+  const r = screenOf(ctx.params.link);
+  if (!r) throw new HttpError(404, 'Écran introuvable. Ouvrez Venus sur la TV.');
   sendJson(ctx.res, { ok: true, screen: r.name });
 });
 
-together.post('/api/remote/:code', async (ctx) => {
+together.post('/api/remote/link/:link', async (ctx) => {
   requireProfile(ctx);
-  const r = remotes.get(String(ctx.params.code));
+  if (!links.has(ctx.params.link)) throw new HttpError(404, 'Lien expiré : saisissez le code affiché sur la TV.');
+  const r = screenOf(ctx.params.link);
   if (!r) throw new HttpError(404, 'Écran déconnecté');
   const b = await readBody(ctx.req);
   const ALLOWED = ['up', 'down', 'left', 'right', 'ok', 'back', 'home', 'playpause', 'rew', 'fwd', 'text', 'open', 'play', 'hello', 'digit', 'tv'];
@@ -140,3 +175,5 @@ together.post('/api/remote/:code', async (ctx) => {
   r.send('cmd', { cmd: b.cmd, text: typeof b.text === 'string' ? b.text.slice(0, 120) : undefined, id: Number(b.id) || undefined, digit: /^[0-9]$/.test(String(b.digit)) ? String(b.digit) : undefined });
   sendJson(ctx.res, { ok: true });
 });
+// Liens de téléphones inutilisés depuis 30 jours : oubliés
+setInterval(() => { const lim = Date.now() - 30 * 86400000; for (const [k, l] of links) if (l.at < lim) links.delete(k); }, 6 * 3600000).unref();
