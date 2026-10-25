@@ -115,6 +115,9 @@ export async function render(main, { id, query }) {
     nextPanel, overlay, volOsd, skipBtn, chPanel);
   main.append(root);
   document.body.style.overflow = 'hidden';
+  // Style des sous-titres choisi dans Réglages (texte seul par défaut)
+  root.classList.toggle('sub-box', prefs.get('subStyle') === 'box');
+  root.classList.add(`sub-${prefs.get('subSize') || 'medium'}`);
   // Plein écran dès le lancement (réglable dans Réglages). Demandé tout de suite, pendant que le clic
   // sur « Lecture » compte encore comme une action de l'utilisateur.
   if (prefs.get('fullscreenOnPlay') && document.documentElement.requestFullscreen && !document.fullscreenElement) enterFullscreen();

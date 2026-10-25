@@ -339,7 +339,15 @@ html:not(.touch) .card:hover .shot { transform: scale(1.03); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .p-subs { position: absolute; left: 6%; right: 6%; bottom: 9%; text-align: center; pointer-events: none; transition: bottom .3s var(--ease); }
 .player.ui-on .p-subs { bottom: 24%; }
-.p-subs span { display: inline; padding: 0.08em 0.32em; background: rgba(0,0,0,.6); border-radius: 3px; font: 600 clamp(1.1rem, 2.6vw, 2.1rem)/1.45 var(--sans); color: #fff; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+/* Sous-titres : texte blanc seul, avec un contour sombre pour rester lisible sur toutes les images */
+.p-subs { --sub-size: clamp(1.15rem, 2.7vw, 2.2rem); }
+.p-subs span { display: inline; font: 650 var(--sub-size)/1.4 var(--sans); color: #fff; letter-spacing: .01em;
+  text-shadow: 0 0 2px #000, 0 0 3px #000, 1px 1px 2px #000, -1px -1px 2px #000, 1px -1px 2px #000, -1px 1px 2px #000, 0 2px 6px rgba(0,0,0,.85);
+  paint-order: stroke fill; -webkit-text-stroke: .045em rgba(0,0,0,.85); }
+.player.sub-small .p-subs { --sub-size: clamp(.95rem, 2.1vw, 1.7rem); }
+.player.sub-large .p-subs { --sub-size: clamp(1.4rem, 3.4vw, 2.9rem); }
+/* Option « avec fond » pour ceux qui préfèrent l'ancien style */
+.player.sub-box .p-subs span { padding: .08em .32em; background: rgba(0,0,0,.6); border-radius: 3px; text-shadow: none; -webkit-text-stroke: 0; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .p-next { position: absolute; right: max(var(--gutter), env(safe-area-inset-right, 0px)); bottom: 150px; width: min(380px, 80vw); background: rgba(21,26,34,.96); border: 1px solid var(--edge); border-radius: 10px; padding: 16px; display: grid; gap: 10px; }
 .p-next .nx-head { color: var(--haze); font-weight: 650; font-size: 0.85rem; }
 .p-next .nx-title { font-weight: 800; font-stretch: var(--wide); font-size: 1.1rem; line-height: 1.2; }
