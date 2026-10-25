@@ -6,6 +6,8 @@ const TYPES = [
   ['movies', 'Films'], ['shows', 'Séries'], ['anime', 'Animés'], ['clips', 'Clips'], ['iptv', 'TV en direct (IPTV)'],
 ];
 const NAMES = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct' };
+// Chemins Windows (C:\\Films) ou Linux / macOS (/media/films)
+const joinPath = (base, name) => (base.includes('\\') ? `${base.replace(/\\$/, '')}\\${name}` : `${base.replace(/\/$/, '')}/${name}`);
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', { for: input.id }, label), input, hint ? h('small', {}, hint) : null);
 
 export function openSourceWizard(preset = 'movies', onDone) {
@@ -49,7 +51,7 @@ export function openSourceWizard(preset = 'movies', onDone) {
 
   // ------------------------------------------------------------ dossier local
   function local() {
-    const pathIn = h('input', { class: 'input', id: 'src-path', value: '/media' });
+    const pathIn = h('input', { class: 'input', id: 'src-path', value: '' });
     const list = h('div', { class: 'folder-list' });
     const nameIn = h('input', { class: 'input', id: 'src-name', value: NAMES[type] });
     const err = h('p', { class: 'error-text' });
@@ -60,14 +62,16 @@ export function openSourceWizard(preset = 'movies', onDone) {
         pathIn.value = r.path;
         list.replaceChildren(...[
           r.path !== '/' ? h('button', { type: 'button', class: 'f', onclick: () => browse(r.parent) }, icon('back'), 'Dossier parent') : null,
-          ...r.dirs.map((d) => h('button', { type: 'button', class: 'f', onclick: () => browse(`${r.path.replace(/\/$/, '')}/${d}`) }, icon('folder'), d))].filter(Boolean));
+          ...r.dirs.map((d) => h('button', { type: 'button', class: 'f', onclick: () => browse(r.absolute ? d : joinPath(r.path, d)) }, icon('folder'), d))].filter(Boolean));
+        pathIn.placeholder = r.path === '/' && r.absolute ? 'Choisissez un lecteur' : '';
+        if (r.path === '/' && r.absolute) pathIn.value = '';
       } catch (e) { if (p !== '/') browse('/'); else err.textContent = e.message; }
     };
     body.replaceChildren(typeBar(), backLink(start),
       h('form', { onsubmit: (e) => { e.preventDefault(); finish({ name: nameIn.value, path: pathIn.value }, btn, err); } },
         field('Dossier', pathIn, 'Touchez un dossier pour y entrer. Le chemin affiché est celui qui sera ajouté.'), list,
         field('Nom affiché', nameIn), err, h('div', { class: 'form-actions' }, btn)));
-    browse('/media');
+    browse('start');
   }
 
   // ------------------------------------------------------------ partage réseau : 1. l'appareil
@@ -89,7 +93,17 @@ export function openSourceWizard(preset = 'movies', onDone) {
         h('button', { type: 'button', class: 'row-link f', onclick: () => scan(true) }, 'Actualiser'));
       } catch (e) { list.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
     };
-    body.replaceChildren(typeBar(), backLink(start),
+    const notice = h('div');
+    api('/api/admin/network/capability').then((c) => {
+      if (!c.advice) return;
+      const a = c.advice;
+      notice.replaceChildren(h('div', { class: 'advice', role: 'note' },
+        h('div', { class: 'advice-head' }, icon('info'), h('b', {}, a.title)), h('p', {}, a.text),
+        a.command ? h('div', { class: 'advice-cmd' }, h('code', {}, a.command)) : null,
+        h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+          h('button', { type: 'button', class: 'btn btn-small f', onclick: local }, icon('folder'), 'Choisir un dossier déjà monté'))));
+    }).catch(() => {});
+    body.replaceChildren(typeBar(), backLink(start), notice,
       h('h3', { class: 'wiz-q' }, 'Choisissez l’appareil qui contient vos vidéos'), list,
       h('details', { class: 'wiz-manual' }, h('summary', {}, 'Saisir l’adresse à la main'),
         h('form', { onsubmit: (e) => { e.preventDefault(); if (hostIn.value.trim()) login({ host: hostIn.value.trim(), proto: protoSel.value }); } },

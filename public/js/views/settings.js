@@ -6,7 +6,7 @@ import { openSourceWizard } from './source-wizard.js';
 
 const AGES = [['', 'Aucune limite'], ['3', '3 ans et +'], ['7', '7 ans et +'], ['10', '10 ans et +'], ['12', '12 ans et +'], ['16', '16 ans et +']];
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
-const HW = [['auto', 'Automatique (recommandé)'], ['nvenc', 'NVIDIA (NVENC)'], ['vaapi', 'Intel / AMD (VA-API)'], ['qsv', 'Intel Quick Sync'], ['v4l2m2m', 'Raspberry Pi'], ['none', 'Processeur uniquement']];
+const HW = [['auto', 'Automatique (recommandé)'], ['nvenc', 'NVIDIA (NVENC)'], ['vaapi', 'Intel / AMD (VA-API)'], ['qsv', 'Intel Quick Sync'], ['amf', 'AMD (Windows)'], ['videotoolbox', 'Apple (Mac)'], ['v4l2m2m', 'Raspberry Pi'], ['none', 'Processeur uniquement']];
 
 const select = (opts, value, attrs = {}) => h('select', { class: 'input', ...attrs }, opts.map(([v, l]) => h('option', { value: v, selected: String(value ?? '') === v }, l)));
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('small', {}, hint) : null);
@@ -18,6 +18,20 @@ const SOURCE_TYPES = [
   ['clips', 'Clips', 'Clips musicaux ou vidéos courtes. Nom conseillé : « Artiste - Titre ».'],
   ['iptv', 'TV en direct (IPTV)', 'Collez l’adresse M3U fournie par votre abonnement IPTV, ou le chemin d’un fichier .m3u sur le serveur.'],
 ];
+// Conseil affiché quand le serveur ne peut pas faire quelque chose seul (GPU, partages réseau)
+function adviceBox(adv) {
+  if (!adv) return null;
+  const copy = async (e) => {
+    try { await navigator.clipboard.writeText(adv.command); toast('Commande copiée'); }
+    catch { const r = document.createRange(); r.selectNodeContents(e.currentTarget.previousSibling); getSelection().removeAllRanges(); getSelection().addRange(r); toast('Sélectionnée : copiez-la avec Ctrl+C'); }
+  };
+  return h('div', { class: 'advice', role: 'note' },
+    h('div', { class: 'advice-head' }, icon('info'), h('b', {}, adv.title)),
+    h('p', {}, adv.text),
+    adv.command ? h('div', { class: 'advice-cmd' }, h('code', {}, adv.command),
+      h('button', { class: 'btn btn-small f', type: 'button', 'aria-label': 'Copier la commande', onclick: copy }, icon('copy'), 'Copier')) : null,
+    adv.command && adv.command.includes('<ID-du-conteneur>') ? h('small', {}, 'À lancer sur l’hôte Proxmox, dans le dossier Venus (ou via la commande curl du README). Remplacez <ID-du-conteneur> par le numéro du conteneur, par exemple 7700.') : null);
+}
 const fmtBytes = (b) => `${(b / 1073741824).toFixed(1).replace('.', ',')} Go`;
 
 export async function render(main) {
@@ -101,6 +115,7 @@ export async function render(main) {
         h('div', {}, h('h2', {}, 'Bibliothèques'),
           h('p', {}, 'Indiquez où se trouvent vos films, séries, animés et clips : un dossier de ce serveur ou un partage réseau (NAS, PC Windows). Venus les surveille et chaque nouveau fichier apparaît tout seul.')),
         h('div', { class: 'auto-pill' }, h('span', { class: 'dot' }), 'Détection automatique active')),
+      a.runtime && a.runtime.mount ? adviceBox(a.runtime.mount) : null,
       s.running ? h('div', { class: 'scan-line' }, h('p', {}, `${s.phase}… ${s.total ? `${s.done}/${s.total}` : ''}`),
         h('div', { class: 'progress-line' }, h('i', { style: { width: `${pct}%` } }))) : null,
       s.error ? h('p', { class: 'error-text' }, s.error) : null,
@@ -125,6 +140,7 @@ export async function render(main) {
         h('dt', {}, 'HDR → SDR'), h('dd', {}, a.hw.tonemap ? 'Disponible' : 'Non disponible'),
         h('dt', {}, 'Processeur'), h('dd', {}, `${a.system.cpus} cœurs, charge ${a.system.load.toFixed(1)}`),
         h('dt', {}, 'Mémoire libre'), h('dd', {}, `${fmtBytes(a.system.memFree)} / ${fmtBytes(a.system.memTotal)}`)),
+      a.runtime ? adviceBox(a.runtime.gpu) : null,
       a.hw.tested.length ? h('p', { style: { fontSize: '.85rem' } }, `Testé : ${a.hw.tested.map((t) => `${t.label} ${t.ok ? '✓' : '✗'}`).join(', ')}`) : null,
       field('Accélération matérielle', hwSel),
       field('Lectures simultanées maximum', maxS),

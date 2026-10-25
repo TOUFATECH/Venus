@@ -8,7 +8,7 @@ import { refreshMissing, copyLocalImage } from './metadata.js';
 import { remoteReady } from './netshare.js';
 
 const VIDEO_EXT = new Set(['.mkv', '.mp4', '.m4v', '.avi', '.mov', '.webm', '.ts', '.m2ts', '.mts', '.wmv', '.flv', '.mpg', '.mpeg', '.vob', '.ogv', '.3gp']);
-const SKIP_DIR = /^(\.|@eaDir$|#recycle$|\$RECYCLE|lost\+found$|extras?$|featurettes?$|behind the scenes$|deleted scenes$|trailers?$|samples?$|bonus$)/i;
+const SKIP_DIR = /^(\.|@eaDir$|#recycle$|\$RECYCLE|System Volume Information$|lost\+found$|extras?$|featurettes?$|behind the scenes$|deleted scenes$|trailers?$|samples?$|bonus$)/i;
 
 import { EventEmitter } from 'node:events';
 export const events = new EventEmitter();

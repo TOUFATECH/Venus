@@ -4,3 +4,4 @@ transcode/
 node_modules/
 docker-compose.override.yml
 media/
+.env

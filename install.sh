@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# Installation de Venus en une commande : détecte la carte graphique, demande vos dossiers, démarre tout.
-# Usage : ./install.sh                      (questions interactives)
-#         ./install.sh /chemin/Films /chemin/Series
+# Installation de Venus en une commande, sur Linux ou Mac.
+#
+#   ./install.sh              choisit la meilleure méthode pour cette machine
+#   ./install.sh --docker     force Docker        (Linux : détecte la carte graphique ; Mac : Docker Desktop)
+#   ./install.sh --native     force sans Docker   (service systemd sur Linux, démarrage auto sur Mac)
+#   ./install.sh --docker /chemin/Films /chemin/Series
+#
+# Windows : voir scripts/install-windows.ps1 (ou Docker Desktop avec docker-compose.desktop.yml)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -9,10 +14,42 @@ bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 
-bold "Installation de Venus"
+MODE=""
+case "${1:-}" in --docker) MODE=docker; shift ;; --native) MODE=native; shift ;; esac
+OS="$(uname -s)"
+ask() { local v=""; if ( : < /dev/tty ) 2>/dev/null; then read -rp "  $1" v < /dev/tty || true; fi; printf '%s' "${v:-${2:-}}"; }
+
+if [ -z "$MODE" ]; then
+  if [ "$OS" = Darwin ]; then
+    # Sur Mac, l'installation directe profite de la puce Apple (VideoToolbox) ; Docker Desktop non
+    bold "Installation de Venus sur Mac"
+    echo "  1) Directement sur le Mac (recommandé : conversion vidéo par la puce Apple)"
+    echo "  2) Avec Docker Desktop"
+    [ "$(ask 'Votre choix [1] : ' 1)" = 2 ] && MODE=docker || MODE=native
+  elif command -v docker >/dev/null 2>&1; then
+    MODE=docker
+  else
+    bold "Installation de Venus"
+    echo "  Docker n'est pas installé sur cette machine."
+    echo "  1) Installer Venus directement (recommandé dans un conteneur Proxmox LXC ou une petite machine)"
+    echo "  2) Installer Docker d'abord, puis Venus dans Docker"
+    if [ "$(ask 'Votre choix [1] : ' 1)" = 2 ]; then
+      curl -fsSL https://get.docker.com | sh
+      MODE=docker
+    else MODE=native; fi
+  fi
+fi
+
+if [ "$MODE" = native ]; then
+  if [ "$OS" = Darwin ]; then exec bash scripts/install-macos.sh "$@"; fi
+  if [ "$(id -u)" = 0 ]; then exec bash scripts/install-native.sh "$@"; fi
+  exec sudo bash scripts/install-native.sh "$@"
+fi
+
+bold "Installation de Venus avec Docker"
 
 if ! command -v docker >/dev/null 2>&1; then
-  warn "Docker n'est pas installé. Installez-le : https://docs.docker.com/engine/install/"
+  warn "Docker n'est pas installé. Installez-le : https://docs.docker.com/engine/install/ (Mac / Windows : Docker Desktop)"
   exit 1
 fi
 if docker compose version >/dev/null 2>&1; then DC="docker compose"
@@ -20,11 +57,36 @@ elif command -v docker-compose >/dev/null 2>&1; then DC="docker-compose"
 else warn "Docker Compose est introuvable."; exit 1; fi
 ok "Docker trouvé"
 
+# ----- Mac : Docker Desktop (pas de réseau de l'hôte ni de carte graphique dans le conteneur)
+if [ "$OS" = Darwin ]; then
+  if [ ! -f .env ]; then
+    MOVIES="$(ask "Dossier de vos FILMS  [$HOME/Movies] : " "$HOME/Movies")"
+    SHOWS="$(ask 'Dossier de vos SÉRIES (Entrée pour passer) : ')"
+    SUBNET="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo 192.168.1.1)"
+    {
+      echo "VENUS_MOVIES=${MOVIES}"
+      echo "VENUS_SHOWS=${SHOWS:-./media/series}"
+      echo "VENUS_ANIME=./media/animes"
+      echo "VENUS_CLIPS=./media/clips"
+      echo "VENUS_PORT=8096"
+      echo "LAN_SUBNET=${SUBNET%.*}"
+    } > .env
+    ok "Réglages écrits dans .env"
+  fi
+  mkdir -p media/films media/series media/animes media/clips config
+  bold "Construction et démarrage (première fois : 2 à 5 minutes)…"
+  $DC -f docker-compose.desktop.yml up -d --build
+  echo
+  bold "C'est prêt : http://localhost:8096"
+  echo "  Mise à jour : git pull && $DC -f docker-compose.desktop.yml up -d --build"
+  exit 0
+fi
+
 MOVIES="${1:-}"; SHOWS="${2:-}"; ANIME="${3:-}"; CLIPS="${4:-}"
-if [ -z "$MOVIES" ]; then read -rp "  Dossier de vos FILMS  (Entrée si tout est sur un NAS) : " MOVIES || true; fi
-if [ -z "$SHOWS" ];  then read -rp "  Dossier de vos SÉRIES (Entrée si tout est sur un NAS) : " SHOWS || true; fi
-if [ -z "$ANIME" ] && [ -t 0 ]; then read -rp "  Dossier de vos ANIMÉS (Entrée pour passer) : " ANIME || true; fi
-if [ -z "$CLIPS" ] && [ -t 0 ]; then read -rp "  Dossier de vos CLIPS  (Entrée pour passer) : " CLIPS || true; fi
+if [ -z "$MOVIES" ]; then MOVIES="$(ask 'Dossier de vos FILMS  (Entrée si tout est sur un NAS) : ')"; fi
+if [ -z "$SHOWS" ];  then SHOWS="$(ask 'Dossier de vos SÉRIES (Entrée si tout est sur un NAS) : ')"; fi
+if [ -z "$ANIME" ];  then ANIME="$(ask 'Dossier de vos ANIMÉS (Entrée pour passer) : ')"; fi
+if [ -z "$CLIPS" ];  then CLIPS="$(ask 'Dossier de vos CLIPS  (Entrée pour passer) : ')"; fi
 # Tout est sur un NAS ? Des dossiers locaux vides suffisent (les partages s'ajoutent ensuite dans Réglages)
 [ -z "$MOVIES" ] && MOVIES="$PWD/media/films"
 [ -z "$SHOWS" ] && SHOWS="$PWD/media/series"
@@ -88,3 +150,4 @@ bold "C'est prêt !"
 echo "  Ouvrez  http://${IP}:8096  sur votre téléphone, ordinateur ou TV."
 echo "  Sur téléphone : menu du navigateur → « Ajouter à l'écran d'accueil »."
 echo "  Vidéos sur un NAS ou un PC : Réglages → Bibliothèques → Ajouter un emplacement → Partage réseau."
+echo "  Mise à jour : git pull && ./install.sh --docker"

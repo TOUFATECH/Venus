@@ -12,6 +12,7 @@ import { detectHardware } from './hw.js';
 import { scanAll, watchLibraries } from './scanner.js';
 import { stopAllSessions } from './stream.js';
 import { mountAll, watchMounts } from './netshare.js';
+import { runtime } from './env.js';
 import { getSetting, all } from './db.js';
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
@@ -57,6 +58,8 @@ function lanAddresses() {
 }
 
 async function main() {
+  const where = { docker: 'Docker', lxc: `conteneur LXC ${runtime.unprivileged ? 'non privilégié' : 'privilégié'}`, machine: 'machine' }[runtime.kind];
+  console.log(`[système] Venus tourne dans : ${where}${runtime.canMount ? '' : ' (montage réseau non autorisé)'}`);
   await detectHardware();
   server.listen(config.port, config.host, () => {
     console.log(`\n  ✨ Venus ${config.version} est prêt`);
