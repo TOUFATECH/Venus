@@ -1,0 +1,23 @@
+# Venus — le plus simple : lancez ./install.sh, il remplit tout seul les chemins et le GPU.
+# Sinon, adaptez les deux chemins "Films" et "Séries" ci-dessous puis : docker compose up -d --build
+services:
+  venus:
+    build: .
+    image: venus:latest
+    container_name: venus
+    restart: unless-stopped
+    ports:
+      - "8096:8096"
+    environment:
+      - TZ=Europe/Paris
+      # - TMDB_API_KEY=votre_cle      # facultatif : peut aussi se saisir dans l'interface
+      # - HWACCEL=auto                # auto | nvenc | vaapi | qsv | v4l2m2m | none
+    volumes:
+      - ./config:/config                       # base de données, affiches, réglages
+      - ./transcode:/transcode                 # fichiers temporaires de conversion
+      - /chemin/vers/Films:/media/films     # <- vos films
+      - /chemin/vers/Series:/media/series   # <- vos séries
+    # La carte graphique est ajoutée automatiquement par install.sh (fichier docker-compose.override.yml).
+    # À la main :
+    #   Intel / AMD :   devices: ["/dev/dri:/dev/dri"]
+    #   NVIDIA      :   voir docker-compose.override.example.yml

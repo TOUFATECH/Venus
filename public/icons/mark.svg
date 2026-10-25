@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="vn-bands" gradientUnits="userSpaceOnUse" x1="22" y1="4" x2="36" y2="60">
+      <stop offset="0" stop-color="#fce9cb"/>
+      <stop offset=".15" stop-color="#f0c08b"/>
+      <stop offset=".29" stop-color="#fde5c3"/>
+      <stop offset=".44" stop-color="#e79f7b"/>
+      <stop offset=".57" stop-color="#f7d2a3"/>
+      <stop offset=".71" stop-color="#d88469"/>
+      <stop offset=".85" stop-color="#efbb88"/>
+      <stop offset="1" stop-color="#b9634f"/>
+    </linearGradient>
+    <radialGradient id="vn-night" gradientUnits="userSpaceOnUse" cx="66" cy="28" r="46">
+      <stop offset="0" stop-color="#0d1016" stop-opacity=".97"/>
+      <stop offset=".52" stop-color="#0d1016" stop-opacity=".9"/>
+      <stop offset=".74" stop-color="#0d1016" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#0d1016" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="vn-light" gradientUnits="userSpaceOnUse" cx="19" cy="22" r="22">
+      <stop offset="0" stop-color="#fffaf0" stop-opacity=".55"/>
+      <stop offset="1" stop-color="#fffaf0" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="vn-disc"><circle cx="30" cy="34" r="24"/></clipPath>
+  </defs>
+  <g clip-path="url(#vn-disc)">
+    <rect x="0" y="0" width="64" height="64" fill="url(#vn-bands)"/>
+    <path d="M2 25c9-4 17 3 26-1s18-3 28 2" stroke="#fff4e2" stroke-opacity=".5" stroke-width="2" fill="none"/>
+    <path d="M2 41c8 3 16-4 25 0s19 4 30-2" stroke="#fff4e2" stroke-opacity=".35" stroke-width="1.5" fill="none"/>
+    <rect x="0" y="0" width="64" height="64" fill="url(#vn-light)"/>
+    <rect x="0" y="0" width="64" height="64" fill="url(#vn-night)"/>
+  </g>
+  <path d="M53 4.5l1.3 4.2 4.2 1.3-4.2 1.3-1.3 4.2-1.3-4.2-4.2-1.3 4.2-1.3z" fill="#fff1d6"/>
+</svg>
