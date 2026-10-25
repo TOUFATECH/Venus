@@ -125,13 +125,67 @@ export function avatar(profile, cls = '') {
   return el;
 }
 
-export function toast(msg, err = false) {
+// Notification : une seule à la fois. Une nouvelle remplace la précédente (avec un petit rebond),
+// avec une icône selon le type, une barre de temps, un bouton d'action (ex. « Annuler »),
+// et on peut la fermer d'un geste (glisser) ou d'un appui.
+// toast('Texte'), toast('Erreur', true), toast('Texte', { type: 'success'|'info'|'error', action: { label, onClick }, duration })
+let toastEl = null, toastTimer = null, toastLeft = 0, toastStart = 0;
+const TOAST_ICON = { success: 'check', error: 'info', info: 'info' };
+function toastType(msg) {
+  const m = String(msg);
+  if (/erreur|impossible|refus|introuvable|injoignable|échec|invalide|trop de/i.test(m)) return 'error';
+  if (/^(ajouté|marqué|enregistr|bienvenue|relié|copié|code copié|nouveau code|message envoyé|lecture arrêtée|téléphone relié|préférence|seerr relié|fiche mise à jour|appareil déconnecté)|vue? en entier|est dans vos envies|demandé à seerr| vu$/i.test(m)) return 'success';
+  return 'info';
+}
+function dismissToast() {
+  clearTimeout(toastTimer);
+  const el = toastEl;
+  if (!el) return;
+  toastEl = null;
+  el.classList.add('leave');
+  setTimeout(() => el.remove(), 260);
+}
+export function toast(msg, opt = false) {
+  const o = opt && typeof opt === 'object' ? opt : { type: opt ? 'error' : null };
+  const type = o.type || toastType(msg);
+  const duration = o.duration || (o.action ? 6000 : type === 'error' ? 5200 : 3400);
   const host = overlayHost();
-  let wrap = host.querySelector(':scope > .toasts');
-  if (!wrap) { wrap = h('div', { class: 'toasts', role: 'status' }); host.append(wrap); }
-  const t = h('div', { class: `toast${err ? ' err' : ''}` }, msg);
-  wrap.append(t);
-  setTimeout(() => t.remove(), 3500);
+  let el = toastEl;
+  const fresh = !el || !el.isConnected || el.parentNode !== host;
+  if (fresh) {
+    if (el) el.remove();
+    el = h('div', { class: 'toast', role: type === 'error' ? 'alert' : 'status', 'aria-live': type === 'error' ? 'assertive' : 'polite' });
+    // Glisser pour fermer (tactile et souris)
+    let x0 = null, dx = 0;
+    el.addEventListener('pointerdown', (e) => { if (e.target.closest('button')) return; x0 = e.clientX; dx = 0; el.setPointerCapture(e.pointerId); el.classList.add('drag'); clearTimeout(toastTimer); });
+    el.addEventListener('pointermove', (e) => { if (x0 == null) return; dx = e.clientX - x0; el.style.transform = `translateX(calc(-50% + ${dx}px))`; el.style.opacity = String(Math.max(0.2, 1 - Math.abs(dx) / 220)); });
+    const end = () => {
+      if (x0 == null) return;
+      x0 = null; el.classList.remove('drag');
+      if (Math.abs(dx) > 70 || Math.abs(dx) < 4) { el.style.transform = ''; el.style.opacity = ''; dismissToast(); return; }
+      el.style.transform = ''; el.style.opacity = '';
+      toastTimer = setTimeout(dismissToast, 1800);
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    host.append(el);
+    toastEl = el;
+  }
+  const bar = h('i', { class: 'toast-time' });
+  bar.style.animationDuration = `${duration}ms`;
+  el.className = `toast t-${type}${fresh ? ' enter' : ' swap'}`;
+  el.replaceChildren(...[
+    h('span', { class: 'toast-ic' }, icon(TOAST_ICON[type] || 'info')),
+    h('span', { class: 'toast-msg' }, msg),
+    o.action ? h('button', { class: 'toast-act', type: 'button', onclick: () => { dismissToast(); o.action.onClick(); } }, o.action.label) : null,
+    bar].filter(Boolean));
+  if (!fresh) { void el.offsetWidth; }
+  clearTimeout(toastTimer);
+  toastStart = Date.now(); toastLeft = duration;
+  toastTimer = setTimeout(dismissToast, duration);
+  // Survol : la notification reste le temps de la lire
+  el.onpointerenter = (e) => { if (e.pointerType !== 'mouse') return; clearTimeout(toastTimer); toastLeft -= Date.now() - toastStart; el.classList.add('hold'); };
+  el.onpointerleave = (e) => { if (e.pointerType !== 'mouse') return; el.classList.remove('hold'); toastStart = Date.now(); toastTimer = setTimeout(dismissToast, Math.max(1200, toastLeft)); };
 }
 
 // Feuille modale (menus) — se ferme avec Retour / Échap / clic à l'extérieur
