@@ -25,12 +25,13 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends "${FFMPEG_PKG}" \
       || apt-get install -y --no-install-recommends jellyfin-ffmpeg6 \
       || apt-get install -y --no-install-recommends ffmpeg; \
+    apt-get install -y --no-install-recommends cifs-utils nfs-common smbclient; \
     if [ "${TARGETARCH:-amd64}" = "amd64" ]; then \
       apt-get install -y --no-install-recommends mesa-va-drivers intel-media-va-driver vainfo || true; \
     fi; \
     apt-get purge -y gnupg; apt-get autoremove -y; \
     rm -rf /var/lib/apt/lists/*; \
-    mkdir -p /config /transcode /media/films /media/series
+    mkdir -p /config /transcode /media/films /media/series /mnt/venus
 
 WORKDIR /app
 COPY package.json ./

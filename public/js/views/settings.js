@@ -2,6 +2,7 @@
 import { api, auth, preferredQuality, setPreferredQuality } from '../api.js';
 import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet } from '../ui.js';
 import { state, switchProfile, go } from '../app.js';
+import { openSourceWizard } from './source-wizard.js';
 
 const AGES = [['', 'Aucune limite'], ['3', '3 ans et +'], ['7', '7 ans et +'], ['10', '10 ans et +'], ['12', '12 ans et +'], ['16', '16 ans et +']];
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
@@ -77,20 +78,28 @@ export async function render(main) {
         h('div', { class: 'lib-head' }, icon(LIB_ICON[type]), h('b', {}, label),
           libs.length && n ? h('small', {}, `${n} ${word}${n > 1 ? 's' : ''}`) : null),
         libs.length ? libs.map((l) => h('div', { class: 'list-row' },
-          h('span', { class: `dot${l.exists ? '' : ' off'}`, title: l.exists ? 'Dossier accessible' : 'Dossier introuvable' }),
-          h('div', { class: 'grow' }, h('span', {}, l.path),
-            !l.exists ? h('small', { class: 'warn' }, 'Dossier introuvable') : type !== 'iptv' && !l.writable ? h('small', { class: 'muted' }, 'Lecture seule : envoi depuis l’application impossible') : null),
+          h('span', { class: `dot${l.exists ? '' : ' off'}`, title: l.exists ? 'Accessible' : 'Inaccessible' }),
+          h('div', { class: 'grow' },
+            l.network ? h('span', { class: 'net-line' }, icon('wifi'), l.network.address) : h('span', {}, l.path),
+            l.network && l.network.error ? h('small', { class: 'warn' }, l.network.error)
+              : !l.exists ? h('small', { class: 'warn' }, l.network ? 'Partage injoignable' : 'Dossier introuvable')
+                : type !== 'iptv' && !l.writable ? h('small', { class: 'muted' }, l.network ? 'Lecture seule' : 'Lecture seule : envoi depuis l’application impossible') : null),
+          l.network && !l.exists ? h('button', { class: 'btn btn-small f', onclick: async (e) => {
+            e.target.disabled = true;
+            try { await api(`/api/admin/libraries/${l.id}/reconnect`, { method: 'POST' }); toast('Partage reconnecté'); } catch (e2) { toast(e2.message, true); }
+            refresh();
+          } }, 'Reconnecter') : null,
           h('button', { class: 'btn btn-small btn-danger f', 'aria-label': `Retirer ${l.path}`, onclick: async () => {
             if (!(await confirmSheet(`Retirer « ${l.path} » de Venus ? Vos fichiers ne sont pas supprimés.`, 'Retirer'))) return;
             await api(`/api/admin/libraries/${l.id}`, { method: 'DELETE' }); refresh();
           } }, 'Retirer'))) : h('p', { class: 'lib-hint' }, hint),
-        h('button', { class: 'btn btn-small f', onclick: () => addLibrary(type) }, icon('plus'), type === 'iptv' ? 'Ajouter une liste M3U' : 'Ajouter un dossier'));
+        h('button', { class: 'btn btn-small f', onclick: () => addLibrary(type) }, icon('plus'), type === 'iptv' ? 'Ajouter une liste IPTV' : 'Ajouter un emplacement'));
     };
     const last = (s.lastAdded || []).slice(0, 6);
     return h('section', { class: 'box libs-box' },
       h('div', { class: 'libs-top' },
         h('div', {}, h('h2', {}, 'Bibliothèques'),
-          h('p', {}, 'Ajoutez ici vos dossiers de films, séries, animés et clips. Venus les surveille : chaque fichier copié dedans apparaît tout seul dans l’application, sans rien faire.')),
+          h('p', {}, 'Indiquez où se trouvent vos films, séries, animés et clips : un dossier de ce serveur ou un partage réseau (NAS, PC Windows). Venus les surveille et chaque nouveau fichier apparaît tout seul.')),
         h('div', { class: 'auto-pill' }, h('span', { class: 'dot' }), 'Détection automatique active')),
       s.running ? h('div', { class: 'scan-line' }, h('p', {}, `${s.phase}… ${s.total ? `${s.done}/${s.total}` : ''}`),
         h('div', { class: 'progress-line' }, h('i', { style: { width: `${pct}%` } }))) : null,
@@ -102,7 +111,7 @@ export async function render(main) {
         h('button', { class: 'btn btn-small btn-play f', onclick: () => go('/ajouter') }, icon('upload'), 'Envoyer des vidéos'),
         h('button', { class: 'btn btn-small f', disabled: s.running, onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: {} }); toast('Recherche des nouveautés lancée'); refresh(); } }, 'Rechercher les nouveautés'),
         h('button', { class: 'btn btn-small btn-ghost f', disabled: s.running, onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: { force: true } }); toast('Analyse complète lancée'); refresh(); } }, 'Tout réanalyser')),
-      s.lastScan ? h('p', { class: 'lib-foot' }, `Dernière vérification : ${new Date(s.lastScan).toLocaleString('fr-FR')}. Les partages réseau sans détection sont revérifiés toutes les ${a.settings.scanInterval} minutes.`) : null);
+      s.lastScan ? h('p', { class: 'lib-foot' }, `Dernière vérification : ${new Date(s.lastScan).toLocaleString('fr-FR')}. Les dossiers du serveur sont surveillés en continu, les partages réseau vérifiés toutes les 10 minutes.`) : null);
   }
 
   function playbackBox(a) {
@@ -184,43 +193,7 @@ export async function render(main) {
   }
 
   // ----------------------------------------------------------- dialogue : ajouter une bibliothèque
-  function addLibrary(preset = 'movies') {
-    let type = preset;
-    const nameIn = h('input', { class: 'input', id: 'src-name', value: 'Films' });
-    const pathIn = h('input', { class: 'input', id: 'src-path', value: '/media' });
-    const list = h('div', { class: 'folder-list' });
-    const hint = h('small', {});
-    const pathField = field('Dossier', pathIn, hint);
-    const browse = async (p) => {
-      try {
-        const r = await api(`/api/admin/fs?path=${encodeURIComponent(p)}`);
-        pathIn.value = r.path;
-        list.replaceChildren(...[
-          r.path !== '/' ? h('button', { type: 'button', class: 'f', onclick: () => browse(r.parent) }, icon('back'), 'Dossier parent') : null,
-          ...r.dirs.map((d) => h('button', { type: 'button', class: 'f', onclick: () => browse(`${r.path.replace(/\/$/, '')}/${d}`) }, icon('folder'), d))].filter(Boolean));
-      } catch (e) { toast(e.message, true); }
-    };
-    const applyType = () => {
-      const def = SOURCE_TYPES.find(([t]) => t === type);
-      nameIn.value = def[1];
-      const iptv = type === 'iptv';
-      pathField.querySelector('label').textContent = iptv ? 'Adresse de la liste M3U' : 'Dossier';
-      hint.textContent = def[2];
-      list.hidden = iptv;
-      if (iptv) { pathIn.value = ''; pathIn.placeholder = 'http://mon-fournisseur/liste.m3u'; pathIn.focus(); }
-      else if (!pathIn.value || /^https?:/.test(pathIn.value)) browse('/media').catch(() => browse('/'));
-    };
-    const typeSel = select(SOURCE_TYPES.map(([t, l]) => [t, l]), type, { id: 'src-type', onchange: (e) => { type = e.target.value; applyType(); } });
-    const err = h('p', { class: 'error-text' });
-    const s = sheet('Ajouter une source', h('form', { onsubmit: async (e) => {
-      e.preventDefault();
-      try { await api('/api/admin/libraries', { method: 'POST', body: { type, name: nameIn.value, path: pathIn.value } }); s.close(); toast('Source ajoutée, analyse en cours'); refresh(); }
-      catch (e2) { err.textContent = e2.message; }
-    } }, field('Type de contenu', typeSel), field('Nom affiché', nameIn), pathField, list, err,
-    h('div', { class: 'form-actions' }, h('button', { class: 'btn btn-play f', type: 'submit' }, 'Ajouter la source'))));
-    applyType();
-    void s;
-  }
+  function addLibrary(preset = 'movies') { openSourceWizard(preset, refresh); }
 
   refresh();
   return { destroy: () => clearTimeout(timer) };

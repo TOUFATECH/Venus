@@ -17,6 +17,7 @@ import {
 } from './stream.js';
 import { detectHardware } from './hw.js';
 import { probeLive } from './probe.js';
+import { discover, listShares, mountRemote, unmountRemote, remoteOf, describe, netState, xtreamUrl } from './netshare.js';
 
 export const router = new Router();
 const imagesDir = path.join(config.dataDir, 'images');
@@ -624,7 +625,7 @@ router.get('/api/admin', (ctx) => {
     hw: { type: hw.type, label: hw.label, tested: hw.tested, tonemap: hw.filters.has('zscale') || hw.filters.has('tonemap_vaapi') || hw.filters.has('tonemap_cuda') },
     sessions: [...sessions.values()].map((s) => s.info()),
     scan: scanState,
-    libraries: all('SELECT * FROM libraries').map((l) => ({ ...l, exists: l.type === 'iptv' && /^https?:/i.test(l.path) ? true : fs.existsSync(l.path), ...diskInfo(l) })),
+    libraries: all('SELECT * FROM libraries').map(publicLibrary),
     counts,
     unmatched: all("SELECT id, type, title, year FROM items WHERE type IN ('movie','show') AND matched = -1 ORDER BY title LIMIT 200"),
     profiles: all('SELECT * FROM profiles ORDER BY id').map(publicProfile),
@@ -706,14 +707,82 @@ router.post('/api/admin/upload', async (ctx) => {
   sendJson(ctx.res, { ok: true, file: path.relative(root, target) });
 });
 
+// Ne jamais renvoyer de mot de passe à l'interface
+const maskUrl = (u) => String(u).replace(/(password=)[^&]*/i, '$1••••').replace(/\/\/([^:/@]+):[^@/]+@/, '//$1:••••@');
+function publicLibrary(l) {
+  const r = remoteOf(l);
+  const st = netState.get(l.id);
+  const exists = l.type === 'iptv' && /^https?:/i.test(l.path) ? true : fs.existsSync(l.path) && (!r || !st || st.ok);
+  return {
+    id: l.id, name: l.name, type: l.type, path: l.type === 'iptv' ? maskUrl(l.path) : l.path, exists, ...diskInfo(l),
+    network: r ? { proto: r.proto, address: describe(r), user: r.user || null, writable: !!r.writable, ok: st ? st.ok : null, error: st ? st.error : null } : null,
+  };
+}
+
+// ------------------------------------------------------------------ partages réseau
+router.get('/api/admin/network/discover', async (ctx) => {
+  requireAdmin(ctx);
+  sendJson(ctx.res, await discover({ force: ctx.url.searchParams.get('force') === '1' }));
+});
+
+router.post('/api/admin/network/shares', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req);
+  if (!b.host) throw new HttpError(400, 'Indiquez l’adresse de l’appareil');
+  try { sendJson(ctx.res, await listShares({ proto: b.proto === 'nfs' ? 'nfs' : 'smb', host: b.host, user: b.user, pass: b.pass })); }
+  catch (e) { throw new HttpError(422, e.message); }
+});
+
+const NAMES = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct' };
+
 router.post('/api/admin/libraries', async (ctx) => {
   requireAdmin(ctx);
   const b = await readBody(ctx.req);
-  const NAMES = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct' };
   if (!NAMES[b.type]) throw new HttpError(400, 'Type de source invalide');
+  const name = String(b.name || NAMES[b.type]).slice(0, 60);
+
+  // Partage réseau (SMB / NFS) : Venus le monte lui-même
+  if (b.remote && b.type !== 'iptv') {
+    const r = b.remote;
+    const remote = {
+      proto: r.proto === 'nfs' ? 'nfs' : 'smb',
+      host: String(r.host || '').trim().replace(/^(smb|nfs|cifs):\/\//i, '').replace(/^\\\\/, '').replace(/[\\/].*$/, ''),
+      share: String(r.share || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, ''),
+      sub: String(r.sub || '').trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '').replace(/\.\.+/g, ''),
+      user: r.user ? String(r.user).trim() : '', pass: r.pass ? String(r.pass) : '', domain: r.domain ? String(r.domain).trim() : '',
+      writable: !!r.writable,
+    };
+    if (!remote.host || !remote.share) throw new HttpError(400, 'Choisissez un appareil et un partage');
+    if (remote.proto === 'nfs' && !remote.share.startsWith('/')) remote.share = `/${remote.share}`;
+    const dup = all('SELECT * FROM libraries WHERE remote IS NOT NULL').find((l) => { const x = remoteOf(l); return x && x.host === remote.host && x.share === remote.share && (x.sub || '') === remote.sub && l.type === b.type; });
+    if (dup) throw new HttpError(409, 'Ce partage est déjà ajouté pour ce type de contenu');
+    const placeholder = `pending:${Date.now()}:${Math.random()}`;
+    const id = Number(run('INSERT INTO libraries(name, type, path, remote) VALUES(?, ?, ?, ?)', name, b.type, placeholder, JSON.stringify(remote)).lastInsertRowid);
+    const res = await mountRemote(id, remote);
+    if (!res.ok) {
+      run('DELETE FROM libraries WHERE id = ?', id);
+      await unmountRemote(id);
+      throw new HttpError(422, res.error);
+    }
+    const full = path.join(res.path, remote.sub);
+    if (!fs.existsSync(full)) {
+      run('DELETE FROM libraries WHERE id = ?', id);
+      await unmountRemote(id);
+      throw new HttpError(400, `Le dossier « ${remote.sub} » n’existe pas dans ce partage`);
+    }
+    run('UPDATE libraries SET path = ?, remote = ? WHERE id = ?', full, JSON.stringify(remote), id);
+    netState.set(id, { ok: true, error: null, at: Date.now() });
+    scanAll();
+    return sendJson(ctx.res, { ok: true, path: full });
+  }
+
   let p = String(b.path || '').trim();
   if (b.type === 'iptv') {
-    if (!/^https?:\/\//i.test(p)) {
+    if (b.xtream) {
+      const { server, user, pass } = b.xtream;
+      if (!server || !user || !pass) throw new HttpError(400, 'Indiquez le serveur, l’identifiant et le mot de passe fournis par votre abonnement');
+      p = xtreamUrl({ server, user, pass });
+    } else if (!/^https?:\/\//i.test(p)) {
       p = path.resolve(p);
       if (!fs.existsSync(p) || !fs.statSync(p).isFile()) throw new HttpError(400, 'Indiquez l’adresse de la liste M3U (http…) ou le chemin d’un fichier .m3u');
     }
@@ -722,15 +791,29 @@ router.post('/api/admin/libraries', async (ctx) => {
     if (!fs.existsSync(p) || !fs.statSync(p).isDirectory()) throw new HttpError(400, 'Dossier introuvable');
   }
   if (get('SELECT 1 FROM libraries WHERE path = ?', p)) throw new HttpError(409, 'Cette source existe déjà');
-  run('INSERT INTO libraries(name, type, path) VALUES(?, ?, ?)', b.name || NAMES[b.type], b.type, p);
+  run('INSERT INTO libraries(name, type, path) VALUES(?, ?, ?)', name, b.type, p);
   watchLibraries();
   scanAll();
   sendJson(ctx.res, { ok: true });
 });
 
-router.del('/api/admin/libraries/:id', (ctx) => {
+router.post('/api/admin/libraries/:id/reconnect', async (ctx) => {
   requireAdmin(ctx);
+  const lib = get('SELECT * FROM libraries WHERE id = ?', Number(ctx.params.id));
+  const r = remoteOf(lib);
+  if (!r) throw new HttpError(400, 'Ce n’est pas une source réseau');
+  const res = await mountRemote(lib.id, r);
+  netState.set(lib.id, { ok: res.ok, error: res.error || null, at: Date.now() });
+  if (!res.ok) throw new HttpError(422, res.error);
+  scanAll();
+  sendJson(ctx.res, { ok: true });
+});
+
+router.del('/api/admin/libraries/:id', async (ctx) => {
+  requireAdmin(ctx);
+  const lib = get('SELECT * FROM libraries WHERE id = ?', Number(ctx.params.id));
   run('DELETE FROM libraries WHERE id = ?', Number(ctx.params.id));
+  if (lib && lib.remote) { await unmountRemote(lib.id); netState.delete(lib.id); }
   watchLibraries();
   sendJson(ctx.res, { ok: true });
 });

@@ -1,22 +1,32 @@
-# Venus — le plus simple : lancez ./install.sh, il remplit tout seul les chemins et le GPU.
-# Sinon, adaptez les deux chemins "Films" et "Séries" ci-dessous puis : docker compose up -d --build
+# Venus : le plus simple est de lancer ./install.sh, qui remplit tout seul les chemins et la carte graphique.
+# Sinon, adaptez les chemins « Films » et « Séries » ci-dessous puis : docker compose up -d --build
 services:
   venus:
     build: .
     image: venus:latest
     container_name: venus
     restart: unless-stopped
-    ports:
-      - "8096:8096"
+    # Réseau de l'hôte : Venus voit les appareils de la maison (NAS, PC) et les Chromecast.
+    # L'application est servie sur le port 8096 de la machine.
+    network_mode: host
+    # Autorise Venus à monter vous-même vos partages réseau (Réglages > Bibliothèques > Partage réseau)
+    cap_add:
+      - SYS_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - apparmor:unconfined
     environment:
       - TZ=Europe/Paris
+      - PORT=8096
       # - TMDB_API_KEY=votre_cle      # facultatif : peut aussi se saisir dans l'interface
       # - HWACCEL=auto                # auto | nvenc | vaapi | qsv | v4l2m2m | none
     volumes:
       - ./config:/config                       # base de données, affiches, réglages
       - ./transcode:/transcode                 # fichiers temporaires de conversion
-      - /chemin/vers/Films:/media/films     # <- vos films
-      - /chemin/vers/Series:/media/series   # <- vos séries
+      # Vos dossiers de vidéos sont ajoutés par install.sh (docker-compose.override.yml).
+      # Installation à la main : décommentez et adaptez ces lignes.
+      # - /chemin/vers/Films:/media/films
+      # - /chemin/vers/Series:/media/series
     # La carte graphique est ajoutée automatiquement par install.sh (fichier docker-compose.override.yml).
     # À la main :
     #   Intel / AMD :   devices: ["/dev/dri:/dev/dri"]

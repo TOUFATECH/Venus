@@ -176,8 +176,12 @@ export async function render(main, { id, query }) {
     }
     loadSubtitles();
     setupMediaSession();
-    const p = video.play();
-    if (p && p.catch) p.catch(() => { spinner.hidden = true; showUi(true); });
+    // En séance, si l'hôte a mis en pause, le rechargement ne doit pas relancer la lecture
+    if (desiredPaused) { spinner.hidden = true; showUi(true); }
+    else {
+      const p = video.play();
+      if (p && p.catch) p.catch(() => { spinner.hidden = true; showUi(true); });
+    }
     paintTimeline(info.startAt || 0);
   }
 
@@ -251,8 +255,8 @@ export async function render(main, { id, query }) {
   }
 
   // ---------------------------------------------------------------- contrôles
-  let userActAt = 0;
-  const markUser = () => { userActAt = Date.now(); };
+  let userActAt = 0, desiredPaused = false;
+  const markUser = () => { userActAt = Date.now(); desiredPaused = false; };
   function togglePlay() {
     markUser();
     if (casting) return casting.toggle();
@@ -564,6 +568,7 @@ export async function render(main, { id, query }) {
   }
   function applyRemote(st, quiet) {
     applyingRemote = true;
+    desiredPaused = !st.playing;
     if (Math.abs(position() - st.position) > 1.5) seekTo(st.position, { immediate: true, remote: true });
     if (st.playing && video.paused) video.play().catch(() => showUi(true));
     if (!st.playing && !video.paused) video.pause();

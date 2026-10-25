@@ -21,10 +21,13 @@ else warn "Docker Compose est introuvable."; exit 1; fi
 ok "Docker trouvé"
 
 MOVIES="${1:-}"; SHOWS="${2:-}"; ANIME="${3:-}"; CLIPS="${4:-}"
-if [ -z "$MOVIES" ]; then read -rp "  Dossier de vos FILMS   : " MOVIES; fi
-if [ -z "$SHOWS" ];  then read -rp "  Dossier de vos SÉRIES  : " SHOWS; fi
-if [ -z "$ANIME" ] && [ -t 0 ]; then read -rp "  Dossier de vos ANIMÉS (Entrée pour passer) : " ANIME; fi
-if [ -z "$CLIPS" ] && [ -t 0 ]; then read -rp "  Dossier de vos CLIPS  (Entrée pour passer) : " CLIPS; fi
+if [ -z "$MOVIES" ]; then read -rp "  Dossier de vos FILMS  (Entrée si tout est sur un NAS) : " MOVIES || true; fi
+if [ -z "$SHOWS" ];  then read -rp "  Dossier de vos SÉRIES (Entrée si tout est sur un NAS) : " SHOWS || true; fi
+if [ -z "$ANIME" ] && [ -t 0 ]; then read -rp "  Dossier de vos ANIMÉS (Entrée pour passer) : " ANIME || true; fi
+if [ -z "$CLIPS" ] && [ -t 0 ]; then read -rp "  Dossier de vos CLIPS  (Entrée pour passer) : " CLIPS || true; fi
+# Tout est sur un NAS ? Des dossiers locaux vides suffisent (les partages s'ajoutent ensuite dans Réglages)
+[ -z "$MOVIES" ] && MOVIES="$PWD/media/films"
+[ -z "$SHOWS" ] && SHOWS="$PWD/media/series"
 for d in "$MOVIES" "$SHOWS"; do
   if [ ! -d "$d" ]; then warn "Dossier introuvable : $d (il sera créé vide)"; mkdir -p "$d"; fi
 done
@@ -73,8 +76,6 @@ services:
       - "${SHOWS}:/media/series"${EXTRA_VOLUMES}
 ${GPU_BLOCK}
 EOF
-# Les chemins d'exemple du fichier principal sont remplacés par ceux de l'override
-sed -i.bak '/\/chemin\/vers\//d' docker-compose.yml && rm -f docker-compose.yml.bak
 ok "Configuration écrite"
 
 bold "Construction et démarrage (première fois : 2 à 5 minutes)…"
@@ -86,3 +87,4 @@ echo
 bold "C'est prêt !"
 echo "  Ouvrez  http://${IP}:8096  sur votre téléphone, ordinateur ou TV."
 echo "  Sur téléphone : menu du navigateur → « Ajouter à l'écran d'accueil »."
+echo "  Vidéos sur un NAS ou un PC : Réglages → Bibliothèques → Ajouter un emplacement → Partage réseau."

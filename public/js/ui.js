@@ -18,6 +18,8 @@ export function h(tag, attrs = {}, ...children) {
 }
 
 const P = {
+  wifi: '<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.3a9.5 9.5 0 0 1 13 0M8.6 15.5a5 5 0 0 1 6.8 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/>',
+  server: '<rect x="3.5" y="4" width="17" height="7" rx="1.8" stroke="currentColor" stroke-width="2" fill="none"/><rect x="3.5" y="13" width="17" height="7" rx="1.8" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="7.5" cy="7.5" r="1.1" fill="currentColor"/><circle cx="7.5" cy="16.5" r="1.1" fill="currentColor"/>',
   people: '<circle cx="9" cy="8.5" r="3.2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="16.5" cy="9.5" r="2.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M15.5 14.2c2.6-.3 4.5 1.3 5 4.3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>',
   glow: '<rect x="6" y="7.5" width="12" height="9" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M3 5l2 1.5M21 5l-2 1.5M3 19l2-1.5M21 19l-2-1.5M12 3v2M12 19v2M2 12h2M20 12h2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   chat: '<path d="M4 5.5h16v10H9l-5 4z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/>',
