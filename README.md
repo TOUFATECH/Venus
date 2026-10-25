@@ -19,15 +19,39 @@ Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec un
 - **Séance à plusieurs** : regardez le même film au même moment, chacun chez soi. Pause, avance et retour sont partagés, avec réactions qui s'envolent sur l'image et discussion. Bouton « Ensemble » dans le lecteur, puis partagez le code de 4 lettres ou le QR code.
 - **Votre téléphone devient la télécommande** : menu Télécommande sur la TV, scannez le QR code. Croix directionnelle, lecture, recherche au clavier du téléphone, et « Reprendre sur la TV » en un geste.
 
-## Installation (Docker)
+## Installation sur votre serveur
+
+Sur votre serveur Linux (NAS, mini-PC, VPS) avec Docker installé :
 
 ```bash
+git clone https://github.com/TOUFATECH/Venus.git
+cd Venus
 ./install.sh
 ```
 
-Le script vous demande le dossier de vos films et celui de vos séries, détecte votre carte graphique, puis démarre Venus. Ouvrez ensuite `http://IP-DU-SERVEUR:8096` et laissez-vous guider : prénom, mot de passe du foyer, c'est tout.
+Le script vous demande le dossier de vos films et celui de vos séries (vous pouvez laisser vide si tout est sur un NAS), détecte votre carte graphique, puis démarre Venus. Ouvrez ensuite `http://IP-DU-SERVEUR:8096` et laissez-vous guider : prénom, mot de passe du foyer, c'est tout.
 
-À la main : modifiez les deux chemins dans `docker-compose.yml`, ajoutez votre GPU si besoin (voir `docker-compose.override.example.yml`), puis `docker compose up -d --build`.
+Mettre à jour plus tard :
+
+```bash
+cd Venus && git pull && docker compose up -d --build
+```
+
+À la main : modifiez les chemins dans `docker-compose.yml`, ajoutez votre GPU si besoin (voir `docker-compose.override.example.yml`), puis `docker compose up -d --build`.
+
+## Vidéos sur le réseau (NAS, PC Windows)
+
+Inutile de copier vos vidéos sur le serveur : **Réglages → Bibliothèques → Ajouter un emplacement → Partage réseau**.
+
+1. Venus cherche les appareils qui partagent des fichiers sur votre réseau (SMB et NFS). Si le vôtre n'apparaît pas, saisissez son adresse (`192.168.1.20`, `nas.local`).
+2. Entrez l'identifiant et le mot de passe du partage (ou laissez vide pour un accès invité) et choisissez le partage.
+3. Indiquez si besoin le sous-dossier (`Films/HD`), et c'est tout.
+
+Venus monte le partage lui-même, le remonte automatiquement après une coupure ou un redémarrage, et vérifie les nouveautés toutes les 10 minutes. Si un partage devient injoignable, la bibliothèque est conservée telle quelle (rien n'est effacé) et un bouton « Reconnecter » apparaît.
+
+Pour cela, le conteneur a besoin des lignes `cap_add: SYS_ADMIN` et `network_mode: host` déjà présentes dans le `docker-compose.yml` fourni. Les mots de passe des partages sont stockés dans `config/net/`, lisibles uniquement par Venus.
+
+**IPTV** : même menu, type « TV en direct », puis « Identifiants Xtream » (serveur, identifiant, mot de passe de votre abonnement) ou « Adresse M3U ».
 
 ### Sans Docker
 

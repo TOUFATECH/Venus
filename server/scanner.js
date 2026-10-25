@@ -5,6 +5,7 @@ import { all, get, run, tx } from './db.js';
 import { probeFile, findExternalSubs } from './probe.js';
 import { parseMovie, parseEpisode, normKey, sortTitle } from './parse.js';
 import { refreshMissing, copyLocalImage } from './metadata.js';
+import { remoteReady } from './netshare.js';
 
 const VIDEO_EXT = new Set(['.mkv', '.mp4', '.m4v', '.avi', '.mov', '.webm', '.ts', '.m2ts', '.mts', '.wmv', '.flv', '.mpg', '.mpeg', '.vob', '.ogv', '.3gp']);
 const SKIP_DIR = /^(\.|@eaDir$|#recycle$|\$RECYCLE|lost\+found$|extras?$|featurettes?$|behind the scenes$|deleted scenes$|trailers?$|samples?$|bonus$)/i;
@@ -140,11 +141,13 @@ export async function scanAll({ force = false } = {}) {
     for (const lib of libs) {
       if (lib.type === 'iptv') { scanState.phase = `Chaînes : ${lib.name}`; await scanIptv(lib).catch((e) => console.warn(`[iptv] ${lib.name} : ${e.message}`)); continue; }
       if (!fs.existsSync(lib.path)) { console.warn(`[scan] dossier introuvable : ${lib.path}`); continue; }
+      if (lib.remote && !remoteReady(lib)) { console.warn(`[scan] partage réseau indisponible : ${lib.name}, on garde la bibliothèque telle quelle`); continue; }
       const files = walk(lib.path);
       const known = new Map(all("SELECT id, path, size, mtime FROM items WHERE library_id=? AND path IS NOT NULL", lib.id).map((r) => [r.path, r]));
       const seen = new Set(files.map((f) => f.path));
 
-      // Suppressions
+      // Suppressions — sauf si le dossier est soudain vide (disque débranché, partage coupé) : on ne vide pas la bibliothèque
+      if (!files.length && known.size > 0) { console.warn(`[scan] ${lib.path} est vide : disque ou partage déconnecté ? Rien n’est supprimé.`); continue; }
       const removed = [...known.values()].filter((r) => !seen.has(r.path));
       if (removed.length) tx(() => removed.forEach((r) => run('DELETE FROM items WHERE id=?', r.id)));
 
@@ -186,7 +189,7 @@ const watchers = [];
 let debounce;
 export function watchLibraries() {
   watchers.splice(0).forEach((w) => w.close());
-  for (const lib of all("SELECT * FROM libraries WHERE type != 'iptv'")) {
+  for (const lib of all("SELECT * FROM libraries WHERE type != 'iptv' AND remote IS NULL")) {
     try {
       const w = fs.watch(lib.path, { recursive: true }, (_e, name) => {
         if (name && !VIDEO_EXT.has(path.extname(String(name)).toLowerCase()) && path.extname(String(name))) return;

@@ -102,11 +102,12 @@ const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.nam
 for (const [col, def] of [['category', 'TEXT'], ['release_date', 'TEXT'], ['popularity', 'REAL'], ['stream_url', 'TEXT'], ['grp', 'TEXT']]) {
   if (!cols('items').includes(col)) db.exec(`ALTER TABLE items ADD COLUMN ${col} ${def}`);
 }
+if (!cols('libraries').includes('remote')) db.exec('ALTER TABLE libraries ADD COLUMN remote TEXT');
 const libSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'libraries'").get();
 if (libSql && /CHECK/.test(libSql.sql)) {
   db.exec(`PRAGMA foreign_keys = OFF; BEGIN;
-    CREATE TABLE libraries_new (id INTEGER PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, path TEXT NOT NULL UNIQUE);
-    INSERT INTO libraries_new SELECT id, name, type, path FROM libraries;
+    CREATE TABLE libraries_new (id INTEGER PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, path TEXT NOT NULL UNIQUE, remote TEXT);
+    INSERT INTO libraries_new SELECT id, name, type, path, remote FROM libraries;
     DROP TABLE libraries; ALTER TABLE libraries_new RENAME TO libraries;
     COMMIT; PRAGMA foreign_keys = ON;`);
 }

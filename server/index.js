@@ -11,7 +11,8 @@ import { together } from './together.js';
 import { detectHardware } from './hw.js';
 import { scanAll, watchLibraries } from './scanner.js';
 import { stopAllSessions } from './stream.js';
-import { getSetting } from './db.js';
+import { mountAll, watchMounts } from './netshare.js';
+import { getSetting, all } from './db.js';
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -63,9 +64,14 @@ async function main() {
     for (const ip of lanAddresses()) console.log(`     http://${ip}:${config.port}`);
     console.log('');
   });
+  // Partages réseau (NAS, PC) : montés avant la première analyse
+  await mountAll().catch((e) => console.warn('[réseau]', e.message));
+  watchMounts(() => scanAll());
   watchLibraries();
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)
   setTimeout(() => scanAll(), 2000);
+  // Les partages réseau ne signalent pas les nouveaux fichiers : vérification toutes les 10 minutes
+  setInterval(() => { if (all("SELECT 1 FROM libraries WHERE remote IS NOT NULL LIMIT 1").length) scanAll(); }, 10 * 60000).unref();
   const tick = () => { scanAll(); setTimeout(tick, Number(getSetting('scan_interval', 60)) * 60000).unref(); };
   setTimeout(tick, Number(getSetting('scan_interval', 60)) * 60000).unref();
 }

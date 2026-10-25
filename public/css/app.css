@@ -700,3 +700,38 @@ body { position: relative; z-index: 0; }
 .phone-screen .remote-page { min-height: 0; padding: 14px; gap: 16px; }
 .phone-screen .dpad { width: 220px; }
 .phone-close { position: absolute; z-index: 2; top: -12px; left: -12px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--paper); color: var(--night); font-size: 1.2rem; font-weight: 800; cursor: pointer; }
+
+/* ------------------------------------------------ Assistant « Ajouter une source » */
+.wizard { display: grid; gap: 14px; }
+.wiz-types { margin-bottom: 4px; }
+.wiz-q { font-weight: 850; font-stretch: var(--wide); font-size: 1.3rem; line-height: 1.15; margin: 4px 0 0; }
+.wiz-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 10px; }
+.wiz-choice { display: grid; gap: 6px; align-content: start; text-align: left; padding: 18px; border-radius: 10px; border: 1px solid var(--edge); background: var(--night); cursor: pointer; transition: border-color .2s, transform .2s var(--ease); }
+.wiz-choice svg { width: 28px; height: 28px; color: var(--sulfur); }
+.wiz-choice b { font-weight: 800; font-stretch: 112%; font-size: 1.05rem; }
+.wiz-choice small { color: var(--haze); }
+.wiz-choice:hover, .wiz-choice:focus-visible, .wiz-choice.is-focus { border-color: var(--sulfur); transform: translateY(-2px); outline: none; }
+.wiz-back { justify-self: start; margin: -4px 0 -6px -10px; }
+.net-hosts, .net-shares { display: grid; gap: 6px; }
+.net-host, .net-share { display: grid; grid-template-columns: 26px 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--edge); background: var(--night); text-align: left; cursor: pointer; }
+.net-share { grid-template-columns: 22px 1fr; }
+.net-host svg, .net-share svg { width: 22px; height: 22px; color: var(--sulfur); }
+.net-host b, .net-share b { display: block; font-weight: 700; }
+.net-host small, .net-share small { color: var(--haze); font-size: .82rem; }
+.net-host:hover, .net-share:hover, .net-host:focus-visible, .net-share:focus-visible { border-color: var(--sulfur); outline: none; }
+.net-tags { display: flex; gap: 4px; }
+.net-tags span { padding: 2px 6px; border-radius: 4px; background: var(--raise); font-size: .72rem; font-weight: 750; color: var(--haze); }
+.net-searching { display: flex; align-items: center; gap: 10px; color: var(--haze); margin: 6px 0; }
+.mini-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(236,234,228,.2); border-top-color: var(--sulfur); animation: spin .8s linear infinite; flex: none; }
+.wiz-manual summary { cursor: pointer; color: var(--haze); font-weight: 650; padding: 6px 0; }
+.wiz-manual[open] summary { margin-bottom: 8px; }
+.two-cols.wide { grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); }
+.wiz-inline { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; border-top: 1px solid var(--edge); padding-top: 14px; }
+.wiz-inline .field { margin: 0; }
+@media (max-width: 520px) { .wiz-inline { grid-template-columns: 1fr; } }
+.net-summary { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 8px; background: var(--night); border: 1px solid var(--edge); }
+.net-summary svg { width: 24px; height: 24px; color: var(--sulfur); flex: none; }
+.net-summary b { display: block; word-break: break-all; }
+.net-summary small { color: var(--haze); }
+.net-line { display: inline-flex; align-items: center; gap: 6px; word-break: break-all; }
+.net-line svg { width: 16px; height: 16px; color: var(--sulfur); flex: none; }
