@@ -18,6 +18,7 @@ import {
 import { detectHardware } from './hw.js';
 import { probeLive } from './probe.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
+import { getSegments, scheduleSeason } from './segments.js';
 import { discover, listShares, mountRemote, unmountRemote, remoteOf, describe, netState, xtreamUrl } from './netshare.js';
 
 export const router = new Router();
@@ -109,6 +110,12 @@ function nextEpisode(ep) {
   return get(`SELECT * FROM items WHERE type='episode' AND show_id=? AND
       (season_num > ? OR (season_num = ? AND episode_num > ?)) AND season_num > 0
       ORDER BY season_num, episode_num LIMIT 1`, ep.show_id, ep.season_num, ep.season_num, ep.episode_num);
+}
+
+function prevEpisode(ep) {
+  return get(`SELECT * FROM items WHERE type='episode' AND show_id=? AND
+      (season_num < ? OR (season_num = ? AND episode_num < ?)) AND season_num > 0
+      ORDER BY season_num DESC, episode_num DESC LIMIT 1`, ep.show_id, ep.season_num, ep.season_num, ep.episode_num);
 }
 
 function seededShuffle(arr, seed) {
@@ -531,6 +538,8 @@ router.post('/api/play/:id', async (ctx) => {
   }
 
   const next = item.type === 'episode' ? nextEpisode(item) : null;
+  const prev = item.type === 'episode' ? prevEpisode(item) : null;
+  if (item.type === 'episode') scheduleSeason(item.parent_id, true); // génériques prêts pour la suite
   sendJson(ctx.res, {
     itemId: item.id, type: item.type, mode: decision.mode, reason: decision.reason, url, sessionId, offset,
     hwLabel: decision.mode === 'transcode' ? hw.label : null,
@@ -547,6 +556,8 @@ router.post('/api/play/:id', async (ctx) => {
     qualities: Object.entries(QUALITIES).map(([id, q]) => ({ id, label: q.label })),
     video: probe.video ? { width: probe.video.width, height: probe.video.height, codec: probe.video.codec, hdr: probe.video.hdr } : null,
     next: next ? { id: next.id, title: next.title, season: next.season_num, episode: next.episode_num, still: next.still, overview: next.overview } : null,
+    prev: prev ? { id: prev.id, title: prev.title, season: prev.season_num, episode: prev.episode_num } : null,
+    segments: item.type === 'episode' ? getSegments(item) : { intro: null, credits: null },
   });
 });
 
@@ -610,7 +621,7 @@ function playableOf(item) {
   if (!item) return null;
   if (item.path && item.type !== 'channel') return item;
   if (item.type === 'show' || item.type === 'season') {
-    const col = item.type === 'show' ? 'show_id' : 'season_id';
+    const col = item.type === 'show' ? 'show_id' : 'parent_id';
     return get(`SELECT * FROM items WHERE type='episode' AND ${col} = ? AND path IS NOT NULL ORDER BY season_num = 0, season_num, episode_num LIMIT 1`, item.id) || null;
   }
   return null;
@@ -653,7 +664,7 @@ router.get('/api/admin', (ctx) => {
     devices: all('SELECT t.device, t.last_seen, p.name AS profile FROM tokens t LEFT JOIN profiles p ON p.id = t.profile_id ORDER BY t.last_seen DESC LIMIT 30'),
     settings: {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
-      maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60),
+      maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0',
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
@@ -670,6 +681,7 @@ router.put('/api/admin/settings', async (ctx) => {
   }
   if (b.serverName) setSetting('server_name', String(b.serverName).slice(0, 40));
   if (b.maxSessions) setSetting('max_sessions', Math.max(1, Math.min(20, Number(b.maxSessions))));
+  if (typeof b.detectSegments === 'boolean') setSetting('detect_segments', b.detectSegments ? '1' : '0');
   if (b.scanInterval) setSetting('scan_interval', Math.max(5, Number(b.scanInterval)));
   if (b.kidsAllowUnrated !== undefined) setSetting('kids_allow_unrated', !!b.kidsAllowUnrated);
   if (b.metadataLang) setSetting('metadata_lang', b.metadataLang);

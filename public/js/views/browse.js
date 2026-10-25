@@ -1,7 +1,9 @@
 // Films, Séries, Animés, Clips, Ma liste : grille avec filtres (vu / non vu / en cours), tris et genres
 import { api } from '../api.js';
-import { h } from '../ui.js';
-import { card } from '../components.js';
+import { h, icon } from '../ui.js';
+import { card, playPath } from '../components.js';
+import { setQueue } from '../queue.js';
+import { go } from '../app.js';
 
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés', clip: 'Clips', mylist: 'Ma liste' };
 const rel = (i) => i.released || (i.year ? `${i.year}-01-01` : '');
@@ -27,13 +29,20 @@ export async function render(main, { kind }) {
   const isClip = kind === 'clip';
 
   const grid = h('div', { class: `grid${isClip ? ' grid-wide' : ''}` });
+  let shown = [];
+  // Clips : tout lire dans l'ordre affiché, ou au hasard
+  const playAll = isClip ? h('div', { class: 'actions play-all' },
+    h('button', { class: 'btn btn-play f', onclick: () => { const q = setQueue(shown, { title: 'Clips' }); if (q) go(playPath(q.id)); } }, icon('play'), 'Tout lire'),
+    h('button', { class: 'btn btn-ghost f', onclick: () => { const q = setQueue(shown, { shuffle: true, title: 'Clips' }); if (q) go(playPath(q.id)); } }, icon('shuffle'), 'Lecture aléatoire')) : null;
   const count = h('p', { class: 'count', 'aria-live': 'polite' });
   const genres = [...new Set(items.flatMap((i) => i.genres || []))].sort((a, b) => a.localeCompare(b, 'fr'));
 
   const paint = () => {
     let list = items.filter((i) => (f.status === 'all' || i.status === f.status) && (!f.genre || (i.genres || []).includes(f.genre)));
     if (f.sort) list.sort(SORTS.find((s) => s[0] === f.sort)[2]);
-    grid.replaceChildren(...list.map((i) => card(i, { poster: !isClip })));
+    shown = list;
+    grid.replaceChildren(...list.map((i) => card(i, { poster: !isClip, queue: isClip ? () => shown : null })));
+    if (playAll) playAll.hidden = list.length < 1;
     const word = isClip ? 'clip' : 'titre';
     count.textContent = `${list.length} ${word}${list.length > 1 ? 's' : ''}`;
     if (!list.length) {
@@ -60,7 +69,7 @@ export async function render(main, { kind }) {
   h('option', { value: '' }, 'Tous les genres'), genres.map((g) => h('option', { value: g, selected: g === f.genre }, g))) : null;
 
   main.append(h('div', { class: 'page' },
-    h('div', { class: 'page-head' }, h('h1', {}, TITLES[kind]), count),
+    h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, TITLES[kind]), count), playAll),
     h('div', { class: 'filters' }, statusChips, h('div', { class: 'chips' }, sortSel, genreSel)),
     grid));
   paint();

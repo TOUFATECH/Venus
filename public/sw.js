@@ -1,5 +1,5 @@
 // Service worker : l'interface s'ouvre instantanément (cache), les données restent toujours fraîches.
-const VERSION = 'venus-v2';
+const VERSION = 'venus-v3';
 const SHELL = ['/', '/index.html', '/css/app.css', '/js/app.js', '/js/api.js', '/js/ui.js', '/js/nav.js', '/js/components.js',
   '/js/views/home.js', '/js/views/details.js', '/js/views/player.js', '/js/views/profiles.js', '/fonts/archivo.woff2', '/icons/favicon.svg'];
 

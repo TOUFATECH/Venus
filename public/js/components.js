@@ -1,7 +1,8 @@
 // Composants partagés : cartes, rangées, actions de lecture
-import { h, icon, img, picture, placeholder, fmtDate, daysSince } from './ui.js';
+import { h, icon, img, picture, placeholder, fmtDate, daysSince, fadeIn } from './ui.js';
 import { go } from './app.js';
 import { prefs } from './api.js';
+import { setQueue } from './queue.js';
 
 export function playPath(id, t) { return `/lecture/${id}${t != null ? `?t=${Math.floor(t)}` : ''}`; }
 
@@ -23,7 +24,7 @@ export function channelCard(item) {
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
 
 // Carte paysage (rangées) ou affiche (grilles). Le titre est écrit sous l'image, lisible de loin.
-export function card(item, { poster = false, rank = null, onFocus } = {}) {
+export function card(item, { poster = false, rank = null, onFocus, queue = null } = {}) {
   if (item.type === 'channel') return channelCard(item);
   const isEp = item.type === 'episode';
   const isClip = item.type === 'clip';
@@ -54,7 +55,13 @@ export function card(item, { poster = false, rank = null, onFocus } = {}) {
   const el = h('button', {
     class: `card f${poster && !isClip ? ' poster' : ''}`,
     'aria-label': [title, sub, seen ? 'déjà vu' : null].filter(Boolean).join(', '),
-    onclick: () => (resume || isEp || isClip ? go(playPath(item.id, item.next ? 0 : undefined)) : go(`/titre/${item.id}`)),
+    // Le nom ouvre la fiche (film, série, animé) ; l'image lance la lecture quand c'est le plus utile
+    onclick: (e) => {
+      const onTitle = e.target.closest && e.target.closest('.cap');
+      if (isClip) { if (queue) setQueue(queue(), { startId: item.id }); return go(playPath(item.id)); }
+      if (onTitle) return go(`/titre/${isEp ? item.showId : item.id}`);
+      return resume || isEp ? go(playPath(item.id, item.next ? 0 : undefined)) : go(`/titre/${item.id}`);
+    },
   },
   h('div', { class: 'shot' },
     media,
@@ -62,16 +69,17 @@ export function card(item, { poster = false, rank = null, onFocus } = {}) {
     isNew && !seen ? h('span', { class: 'tag-new' }, isEp ? 'Nouvel épisode' : 'Nouveau') : null,
     pct > 0 && !(p && p.watched) ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
     seen ? h('span', { class: 'check', title: 'Déjà vu' }, icon('check')) : null),
-  h('div', { class: 'cap' }, h('b', {}, title), sub ? h('small', {}, sub) : null));
+  h('div', { class: 'cap' }, h('b', { title: isClip ? title : `Voir la fiche de ${title}` }, title), sub ? h('small', {}, sub) : null));
   if (onFocus) el.addEventListener('focus', () => onFocus(item));
   attachPreview(el, item);
   return el;
 }
 
 // Image tirée de la vidéo quand il n'y a pas d'affiche (pas de clé TMDB, titre inconnu…)
-export function frameImage(id, title) {
-  const el = h('img', { src: `/api/items/${id}/thumb`, alt: '', loading: 'lazy', decoding: 'async' });
+export function frameImage(id, title, { fade = true } = {}) {
+  const el = h('img', { src: `/api/items/${id}/thumb`, alt: '', loading: fade ? 'lazy' : 'eager', decoding: 'async', class: fade ? 'fade' : '' });
   el.addEventListener('error', () => el.replaceWith(placeholder(title)), { once: true });
+  if (fade) fadeIn(el);
   return el;
 }
 export function framePoster(item) {
@@ -128,8 +136,14 @@ export function scrollArrows(scroller) {
 
 export function row(r, opts = {}) {
   const ranked = r.id === 'top';
-  const scroller = h('div', { class: 'row-scroll' }, r.items.map((it, i) => card(it, { rank: ranked && i < 10 ? i + 1 : null, onFocus: opts.onFocus })));
+  const clips = r.items.filter((it) => it.type === 'clip');
+  const queue = clips.length ? () => clips : null;
+  const scroller = h('div', { class: 'row-scroll' }, r.items.map((it, i) => card(it, { rank: ranked && i < 10 ? i + 1 : null, onFocus: opts.onFocus, queue })));
   const tools = [];
+  if (clips.length > 1 && clips.length === r.items.length) {
+    tools.push(h('button', { class: 'row-link f', onclick: () => { const f = setQueue(clips, { title: r.title }); go(playPath(f.id)); } }, icon('play'), 'Tout lire'));
+    tools.push(h('button', { class: 'row-link f', onclick: () => { const f = setQueue(clips, { shuffle: true, title: r.title }); go(playPath(f.id)); } }, icon('shuffle'), 'Aléatoire'));
+  }
   if (r.shuffle) {
     tools.push(h('button', { class: 'row-link f', onclick: () => {
       const kids = [...scroller.children].sort(() => Math.random() - 0.5);
