@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 
 export class HttpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -113,10 +114,35 @@ export function sendFile(req, res, filePath, { cache = 'no-cache', type } = {}) 
   res.on('close', () => stream.destroy());
 }
 
+// Numéro de version de l'interface (empreinte des fichiers). Les fichiers sont servis sous /b/<version>/… :
+// après une mise à jour, le navigateur charge forcément les nouveaux fichiers, jamais un mélange avec
+// d'anciens fichiers gardés en cache (cause des erreurs « doesn't provide an export named »).
+let build = { at: 0, id: null };
+export function buildId(root) {
+  if (build.id && Date.now() - build.at < 5000) return build.id;
+  const h = crypto.createHash('sha1');
+  const walk = (dir) => {
+    let list = [];
+    try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of list.sort((a, b) => a.name.localeCompare(b.name))) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else { const st = fs.statSync(p); h.update(`${path.relative(root, p)}:${st.size}:${Math.floor(st.mtimeMs)};`); }
+    }
+  };
+  walk(root);
+  build = { at: Date.now(), id: h.digest('hex').slice(0, 10) };
+  return build.id;
+}
+
 // Fichiers statiques de l'interface, compressés en mémoire (brotli/gzip) une seule fois
 const staticCache = new Map();
 export function serveStatic(req, res, root, pathname) {
   let rel = decodeURIComponent(pathname);
+  // /b/<version>/js/app.js → /js/app.js ; immuable si c'est la version en cours
+  let versioned = false;
+  const vb = /^\/b\/([a-f0-9]{6,40})(\/.*)$/.exec(rel);
+  if (vb) { rel = vb[2]; versioned = vb[1] === buildId(root); }
   if (rel.endsWith('/')) rel += 'index.html';
   const full = path.join(root, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
   if (!full.startsWith(root)) return false;
@@ -128,19 +154,26 @@ export function serveStatic(req, res, root, pathname) {
   // Code de l'interface : toujours revalidé (réponse 304 instantanée si inchangé), pour qu'une mise à jour
   // ne mélange jamais anciens et nouveaux fichiers. Polices et icônes : cache d'une heure.
   const fresh = /\.(html|js|mjs|css|webmanifest|json)$/.test(full);
-  const cacheCtl = fresh ? 'no-cache' : 'public, max-age=3600, stale-while-revalidate=86400';
+  const isIndex = path.basename(full) === 'index.html';
+  const cacheCtl = versioned && !isIndex ? 'public, max-age=31536000, immutable' : fresh ? 'no-cache' : 'public, max-age=3600, stale-while-revalidate=86400';
   if (!compressible) { sendFile(req, res, full, { cache: cacheCtl }); return true; }
 
-  let entry = staticCache.get(full);
+  const cacheKey = isIndex ? `${full}#${buildId(root)}` : full;
+  let entry = staticCache.get(cacheKey);
   if (!entry || entry.mtime !== stat.mtimeMs) {
-    const raw = fs.readFileSync(full);
+    let raw = fs.readFileSync(full);
+    // La page d'accueil pointe vers les fichiers de la version en cours
+    if (isIndex) {
+      const id = buildId(root);
+      raw = Buffer.from(raw.toString('utf8').replace(/(href|src)="\/(js|css|fonts)\//g, `$1="/b/${id}/$2/`));
+    }
     entry = {
       mtime: stat.mtimeMs, raw,
       br: zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 9 } }),
       gz: zlib.gzipSync(raw, { level: 9 }),
-      etag: `"${stat.size.toString(36)}-${Math.floor(stat.mtimeMs).toString(36)}"`,
+      etag: `"${raw.length.toString(36)}-${Math.floor(stat.mtimeMs).toString(36)}${isIndex ? `-${buildId(root)}` : ''}"`,
     };
-    staticCache.set(full, entry);
+    staticCache.set(cacheKey, entry);
   }
   const headers = { 'Content-Type': type, 'Cache-Control': cacheCtl, ETag: entry.etag, Vary: 'Accept-Encoding' };
   if (req.headers['if-none-match'] === entry.etag) { res.writeHead(304, headers); res.end(); return true; }

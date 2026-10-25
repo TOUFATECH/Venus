@@ -1,7 +1,7 @@
 // Service worker : l'interface s'ouvre instantanément (cache), les données restent toujours fraîches.
-const VERSION = 'venus-v3';
-const SHELL = ['/', '/index.html', '/css/app.css', '/js/app.js', '/js/api.js', '/js/ui.js', '/js/nav.js', '/js/components.js',
-  '/js/views/home.js', '/js/views/details.js', '/js/views/player.js', '/js/views/profiles.js', '/fonts/archivo.woff2', '/icons/favicon.svg'];
+const VERSION = 'venus-v4';
+// Les fichiers de l'interface sont servis sous /b/<version>/ : chaque mise à jour a ses propres adresses
+const SHELL = ['/', '/icons/favicon.svg'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
