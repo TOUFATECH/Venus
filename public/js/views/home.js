@@ -4,6 +4,7 @@ import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime } from '../ui.
 import { row, playPath, metaLine, frameImage } from '../components.js';
 import { go, state, currentPath } from '../app.js';
 import { tintFrom } from '../ambiance.js';
+import { todayIcon, todayQuestion } from '../menu.js';
 
 export async function render(main) {
   const data = await api('/api/home');
@@ -25,7 +26,7 @@ export async function render(main) {
     const key = item.backdrop ? item.backdrop : `th:${item.id}`;
     let layer = layers.get(key);
     if (!layer) {
-      layer = item.backdrop ? picture(img(item.backdrop), item.title, { lazy: false }) : frameImage(item.id, item.title);
+      layer = item.backdrop ? picture(img(item.backdrop), item.title, { lazy: false }) : frameImage(item.id, item.title, { fade: false });
       layers.set(key, layer);
       bg.append(layer);
     }
@@ -54,7 +55,7 @@ export async function render(main) {
       item.overview ? h('p', { class: 'hero-overview' }, item.overview) : null,
       h('div', { class: 'actions' }, playBtn,
         h('button', { class: 'btn btn-ghost f', onclick: () => go(`/titre/${item.id}`) }, icon('info'), 'Plus d’infos'),
-        h('button', { class: 'btn btn-ghost btn-tonight f', onclick: () => go('/cesoir') }, icon('moon'), 'Que regarder ce soir ?')),
+        h('button', { class: 'btn btn-ghost btn-tonight f', onclick: () => go('/cesoir') }, icon(todayIcon()), todayQuestion())),
     ].filter(Boolean));
     body.classList.remove('swap'); void body.offsetWidth; body.classList.add('swap');
     if (hadFocus) playBtn.focus({ preventScroll: true }); // la télécommande ne perd pas sa place

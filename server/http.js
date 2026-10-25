@@ -125,8 +125,10 @@ export function serveStatic(req, res, root, pathname) {
 
   const type = mimeOf(full);
   const compressible = /text|javascript|json|svg|manifest/.test(type);
-  const isHtml = full.endsWith('.html') || full.endsWith('sw.js');
-  const cacheCtl = isHtml ? 'no-cache' : 'public, max-age=3600, stale-while-revalidate=86400';
+  // Code de l'interface : toujours revalidé (réponse 304 instantanée si inchangé), pour qu'une mise à jour
+  // ne mélange jamais anciens et nouveaux fichiers. Polices et icônes : cache d'une heure.
+  const fresh = /\.(html|js|mjs|css|webmanifest|json)$/.test(full);
+  const cacheCtl = fresh ? 'no-cache' : 'public, max-age=3600, stale-while-revalidate=86400';
   if (!compressible) { sendFile(req, res, full, { cache: cacheCtl }); return true; }
 
   let entry = staticCache.get(full);

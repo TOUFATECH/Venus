@@ -1,5 +1,7 @@
 // « Que regarder ce soir ? » : trois questions, trois idées argumentées
 import { api } from '../api.js';
+import { dayPart, todayIcon } from '../menu.js';
+const greeting = () => { const hr = new Date().getHours(); return hr >= 18 || hr < 4 ? 'Bonsoir' : 'Bonjour'; };
 import { h, icon, img, picture, placeholder, fmtRuntime } from '../ui.js';
 import { go, state } from '../app.js';
 import { playItem } from './home.js';
@@ -16,7 +18,7 @@ const MOODS = [
 const TIMES = [
   ['30', 'Moins de 45 min', 'Un épisode, un clip', 45],
   ['90', 'Environ 1 h 30', 'Un film court ou deux épisodes', 110],
-  ['120', 'Toute la soirée', 'Un grand film, une série', 999],
+  ['120', dayPart() === 'soir' ? 'Toute la soirée' : 'Tout le temps qu’il faut', 'Un grand film, une série', 999],
 ];
 const WHO = [
   ['seul', 'Seul', 'Rien que pour moi'],
@@ -81,7 +83,7 @@ export async function render(main) {
   const shown = new Set();
 
   const steps = [
-    ['mood', 'Quelle envie ce soir ?', MOODS],
+    ['mood', dayPart() === 'soir' ? 'Quelle envie ce soir ?' : 'Quelle envie aujourd’hui ?', MOODS],
     ['time', 'Combien de temps devant vous ?', TIMES],
     ['who', 'Avec qui ?', WHO],
   ];
@@ -94,7 +96,7 @@ export async function render(main) {
       onclick: () => { answers[key] = id; if (n < steps.length - 1) ask(n + 1); else results(); },
     }, h('b', {}, label), h('small', {}, sub))));
     wrap.replaceChildren(...[
-      h('div', { class: 'tonight-head' }, icon('moon'), h('span', {}, `Bonsoir ${state.profile.name}`)),
+      h('div', { class: 'tonight-head' }, icon(todayIcon()), h('span', {}, `${greeting()} ${state.profile.name}`)),
       dots, h('h1', { class: 'tonight-q' }, question), grid,
       n > 0 ? h('button', { class: 'row-link f', onclick: () => ask(n - 1) }, icon('back'), 'Question précédente') : null].filter(Boolean));
     requestAnimationFrame(() => grid.firstChild.focus({ preventScroll: true }));
@@ -109,7 +111,7 @@ export async function render(main) {
     const mood = MOODS.find((m) => m[0] === answers.mood);
     wrap.replaceChildren(...[
       h('div', { class: 'tonight-head' }, icon('moon'), h('span', {}, `${mood[1]}, ${TIMES.find((t) => t[0] === answers.time)[1].toLowerCase()}, ${WHO.find((w) => w[0] === answers.who)[1].toLowerCase()}`)),
-      h('h1', { class: 'tonight-q' }, picks.length ? 'Voici nos idées pour ce soir' : 'Rien ne correspond… pour l’instant'),
+      h('h1', { class: 'tonight-q' }, picks.length ? `Voici nos idées pour ${dayPart() === 'soir' ? 'ce soir' : 'aujourd’hui'}` : 'Rien ne correspond… pour l’instant'),
       picks.length ? h('div', { class: 'picks' }, picks.map((p, i) => pickCard(p, i))) :
         h('p', { class: 'grid-empty' }, 'Essayez une autre envie ou plus de temps : votre bibliothèque n’a rien qui colle à ces trois critères.'),
       h('div', { class: 'actions tonight-actions' },

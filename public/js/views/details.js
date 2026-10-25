@@ -12,7 +12,7 @@ export async function render(main, { id }) {
   tintFrom(img(d.backdrop || d.poster));
   document.title = `${d.title} — Venus`;
 
-  const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : frameImage(d.id, d.title));
+  const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : frameImage(d.id, d.title, { fade: false }));
   const posterEl = h('div', { class: 'details-poster' }, d.poster ? picture(img(d.poster), d.title, { lazy: false }) : framePoster(d));
 
   // Bouton principal : Lecture / Reprendre / Épisode suivant

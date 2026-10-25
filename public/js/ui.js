@@ -42,6 +42,10 @@ const P = {
   plus: '<path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   info: '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 11v6M12 7.5v.1" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',
+  prev: '<path d="M18 5.5v13a1 1 0 0 1-1.5.86L7 13.5V18.5H5v-13h2v5l9.5-5.86A1 1 0 0 1 18 5.5z" fill="currentColor"/>',
+  sun: '<circle cx="12" cy="12" r="4.2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  skip: '<path d="M5 6.2v11.6a.8.8 0 0 0 1.2.7l8.6-5.8a.8.8 0 0 0 0-1.4L6.2 5.5A.8.8 0 0 0 5 6.2z" fill="currentColor"/><rect x="16.5" y="5.5" width="2.5" height="13" rx="1" fill="currentColor"/>',
+  grip: '<circle cx="9" cy="7" r="1.5" fill="currentColor"/><circle cx="15" cy="7" r="1.5" fill="currentColor"/><circle cx="9" cy="12" r="1.5" fill="currentColor"/><circle cx="15" cy="12" r="1.5" fill="currentColor"/><circle cx="9" cy="17" r="1.5" fill="currentColor"/><circle cx="15" cy="17" r="1.5" fill="currentColor"/>',
   fwd: '<path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   vol: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
   vollow: '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
@@ -88,10 +92,17 @@ export function placeholder(title, cls = 'ph') {
 }
 
 // Image avec repli élégant si absente ou en erreur
+// Fondu à l'arrivée de l'image (immédiat si elle est déjà en cache)
+export function fadeIn(el) {
+  const ok = () => el.classList.add('ok');
+  if (el.complete && el.naturalWidth) ok(); else el.addEventListener('load', ok, { once: true });
+  requestAnimationFrame(() => { if (el.complete && el.naturalWidth) ok(); });
+}
 export function picture(src, title, { cls = '', lazy = true } = {}) {
   if (!src) return placeholder(title);
-  const el = h('img', { src, alt: '', class: cls, loading: lazy ? 'lazy' : 'eager', decoding: 'async' });
+  const el = h('img', { src, alt: '', class: lazy ? `${cls} fade`.trim() : cls, loading: lazy ? 'lazy' : 'eager', decoding: 'async' });
   el.addEventListener('error', () => el.replaceWith(placeholder(title)), { once: true });
+  if (lazy) fadeIn(el);
   return el;
 }
 

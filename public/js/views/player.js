@@ -7,6 +7,7 @@ import { castSupported, loadCast, castContext, castMedia, remote } from '../cast
 import { ambilight, ambianceOn } from '../ambiance.js';
 import { joinParty, partyPanel, showInvite, floatReaction } from '../party.js';
 import { scrollArrows } from '../components.js';
+import { queueAround, toggleShuffle } from '../queue.js';
 
 let hlsLib = null;
 function loadHls() {
@@ -86,6 +87,13 @@ export async function render(main, { id, query }) {
   const volOsd = h('div', { class: 'p-osd', hidden: true });
   const epsBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, onclick: () => openEpisodes(), 'aria-label': 'Épisodes' }, icon('eps'), h('span', { class: 'lbl' }, 'Épisodes'));
   const chatBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Afficher ou masquer la discussion', 'aria-pressed': 'true', onclick: () => setChat(root.classList.contains('chat-hidden')) }, icon('chat'), h('span', { class: 'p-unread', hidden: true }));
+  const prevBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Précédent', title: 'Précédent (Maj+P)', onclick: () => playPrev() }, icon('prev'));
+  const shuffleBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Lecture aléatoire', 'aria-pressed': 'false', onclick: () => {
+    const on = toggleShuffle(id); shuffleBtn.classList.toggle('on', !!on); shuffleBtn.setAttribute('aria-pressed', String(!!on));
+    applyQueue(); toast(on ? 'Lecture aléatoire' : 'Lecture dans l’ordre');
+  } }, icon('shuffle'));
+  // « Passer l'intro » / « Passer le générique » : visible même quand les commandes sont cachées
+  const skipBtn = h('button', { class: 'p-skip f', hidden: true, onclick: () => doSkip() }, icon('skip'), h('span', {}, 'Passer l’intro'));
   const nextPanel = h('div', { class: 'p-next', hidden: true });
   const overlay = h('div', { class: 'p-error', hidden: true });
 
@@ -99,8 +107,8 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), partyBtn, chatBtn, epsBtn, nextBtn, ambBtn, castBtn, airBtn, fsBtn)),
-    nextPanel, overlay, volOsd);
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, ambBtn, castBtn, airBtn, fsBtn)),
+    nextPanel, overlay, volOsd, skipBtn);
   main.append(root);
   document.body.style.overflow = 'hidden';
   // Plein écran dès le lancement (réglable dans Réglages). Demandé tout de suite, pendant que le clic
@@ -161,8 +169,9 @@ export async function render(main, { id, query }) {
     badge.textContent = info.mode === 'direct' ? 'Direct' : info.mode === 'remux' ? 'Remux' : `Converti · ${info.hwLabel || 'processeur'}`;
     badge.title = info.reason;
     qualityBtn.textContent = (info.qualities.find((q) => q.id === quality) || { label: 'Auto' }).label;
-    nextBtn.hidden = !info.next;
+    applyQueue();
     epsBtn.hidden = !info.showId;
+    skipState = { intro: false, credits: false };
     const live = !!info.live;
     root.classList.toggle('is-live', live);
     liveTag.hidden = !live; chPrev.hidden = !live; chNext.hidden = !live;
@@ -434,7 +443,9 @@ export async function render(main, { id, query }) {
     }
     if (k === 'MediaFastForward' || code === 417) { consume(); seekBy(30); showUi(); return; }
     if (k === 'MediaRewind' || code === 412) { consume(); seekBy(-30); showUi(); return; }
-    if (k === 'MediaTrackNext' && info && info.next) { consume(); playNext(); return; }
+    if ((k === 'MediaTrackNext' || (k === 'N' && e.shiftKey)) && info && info.next) { consume(); playNext(); return; }
+    if ((k === 'MediaTrackPrevious' || (k === 'P' && e.shiftKey)) && info && info.prev) { consume(); playPrev(); return; }
+    if (k === 's' && skipKind) { consume(); doSkip(); return; }
     if (info && info.live && (k === 'ChannelUp' || k === 'PageUp' || code === 427 || code === 33)) { consume(); zap(-1); return; }
     if (info && info.live && (k === 'ChannelDown' || k === 'PageDown' || code === 428 || code === 34)) { consume(); zap(1); return; }
     if (k === 'f') { consume(); toggleFullscreen(); return; }
@@ -466,6 +477,7 @@ export async function render(main, { id, query }) {
   video.addEventListener('timeupdate', () => {
     if (!dragging && pendingSeek == null) paintTimeline();
     maybeShowNext();
+    checkSegments(position());
   });
   video.addEventListener('ended', () => {
     if (info && info.live) { reloadAt(0, 'Reconnexion à la chaîne…'); return; }
@@ -495,17 +507,70 @@ export async function render(main, { id, query }) {
   window.addEventListener('pagehide', onPageHide);
 
   // ---------------------------------------------------------------- épisode suivant
-  function maybeShowNext() {
+  // File de lecture (clips) ou épisodes : précédent / suivant
+  function applyQueue() {
+    if (!info) return;
+    const q = queueAround(id);
+    if (q) {
+      info.next = q.next ? { id: q.next.id, title: q.next.title, artist: q.next.artist, queue: true } : null;
+      info.prev = q.prev ? { id: q.prev.id, title: q.prev.title, queue: true } : null;
+      subEl.textContent = [info.subtitle, `${q.title} · ${q.index + 1}/${q.total}`].filter(Boolean).join(' · ');
+      shuffleBtn.hidden = false;
+      shuffleBtn.classList.toggle('on', q.shuffle); shuffleBtn.setAttribute('aria-pressed', String(q.shuffle));
+    } else shuffleBtn.hidden = true;
+    nextBtn.hidden = !info.next;
+    nextBtn.querySelector('.lbl').textContent = info.type === 'episode' ? 'Épisode suivant' : 'Suivant';
+    prevBtn.hidden = !info.prev;
+    prevBtn.setAttribute('aria-label', info.type === 'episode' ? 'Épisode précédent' : 'Précédent');
+  }
+  function playPrev() {
+    if (!info || !info.prev) return;
+    // Comme partout : si on est déjà avancé, « précédent » revient d'abord au début
+    if (info.type !== 'episode' && position() > 8) { seekTo(0, { immediate: true }); return; }
+    saveProgress();
+    if (party) party.send('item', { itemId: info.prev.id });
+    go(`/lecture/${info.prev.id}?t=0${roomCode ? `&salle=${roomCode}` : ''}`, { replace: true });
+  }
+
+  // Génériques : bouton pour les passer, ou saut automatique (Réglages)
+  let skipState = { intro: false, credits: false }, skipKind = null;
+  function checkSegments(t) {
+    const seg = info && info.segments;
+    if (!seg || casting) { skipBtn.hidden = true; return; }
+    let kind = null;
+    if (seg.intro && t >= seg.intro.start && t < seg.intro.end - 1.5) kind = 'intro';
+    else if (seg.credits && t >= seg.credits.start && t < seg.credits.end - 1.5) kind = 'credits';
+    if (kind === 'credits' && info.next) { kind = null; maybeShowNext(true); } // le générique de fin enchaîne sur l'épisode suivant
+    if (kind && prefs.get('autoSkip') && !skipState[kind] && !party) { skipState[kind] = true; doSkip(kind); toast(kind === 'intro' ? 'Générique de début passé' : 'Générique de fin passé'); return; }
+    if (kind !== skipKind) {
+      skipKind = kind;
+      skipBtn.hidden = !kind;
+      if (kind) {
+        skipBtn.querySelector('span').textContent = kind === 'intro' ? 'Passer l’intro' : 'Passer le générique';
+        if (document.documentElement.classList.contains('keys') && !root.classList.contains('ui-on')) focusEl(skipBtn, { scroll: false });
+      }
+    }
+  }
+  function doSkip(kind = skipKind) {
+    const seg = info && info.segments && info.segments[kind];
+    if (!seg) return;
+    markUser();
+    seekTo(seg.end, { immediate: true });
+    skipBtn.hidden = true; skipKind = null;
+  }
+
+  function maybeShowNext(early = false) {
     if (!info || !info.next || nextShown || nextDismissed || casting) return;
+    if (info.type === 'clip') return; // les clips s'enchaînent à la fin, sans compte à rebours
     const d = duration(), t = position();
-    if (!d || d - t > Math.max(25, d * 0.025)) return;
+    if (!early && (!d || d - t > Math.max(25, d * 0.025))) return;
     nextShown = true;
     const n = info.next;
     let left = 10;
     const ring = h('i');
     const label = h('span', {}, `Lecture dans ${left} s`);
     nextPanel.replaceChildren(
-      h('div', { class: 'nx-head' }, `Épisode suivant, S${n.season} É${n.episode}`),
+      h('div', { class: 'nx-head' }, n.queue ? 'À suivre' : `Épisode suivant, S${n.season} É${n.episode}`),
       h('div', { class: 'nx-title' }, n.title),
       h('div', { class: 'nx-ring' }, ring),
       h('div', { class: 'actions' },
@@ -667,6 +732,8 @@ export async function render(main, { id, query }) {
       onInvite: () => showInvite(code, title),
       onLeave: () => leaveParty(),
       onHide: () => setChat(false),
+      soundOn: () => prefs.get('chatSound'),
+      onSound: (on) => { prefs.set('chatSound', on); if (on) ping(true); toast(on ? 'Son de la discussion activé' : 'Son de la discussion coupé'); },
     });
     root.append(panel.el);
     root.classList.add('in-party');
@@ -677,8 +744,8 @@ export async function render(main, { id, query }) {
       room: (r) => applyRemote(r.state, true),
       members: (m) => panel.setMembers(m),
       state: (st) => applyRemote(st),
-      chat: (c) => { panel.message(c); if (root.classList.contains('chat-hidden')) bumpUnread(); },
-      react: (r) => { floatReaction(reactLayer, r.emoji, r.name); panel.react(r.emoji, r.name); },
+      chat: (c) => { panel.message(c); if (c.from !== party.clientId) { ping(); if (root.classList.contains('chat-hidden')) bumpUnread(); } },
+      react: (r) => { if (r.from !== party.clientId) { floatReaction(reactLayer, r.emoji, r.name); ping(); } panel.react(r.emoji, r.name); },
       notice: (n) => panel.notice(n.text),
       item: (i) => go(`/lecture/${i.itemId}?t=0&salle=${code}`, { replace: true }),
     });
@@ -686,6 +753,21 @@ export async function render(main, { id, query }) {
     syncTimer = setInterval(() => {
       if (party && party.isHost() && !video.paused) party.send('state', { playing: true, position: position(), reason: 'sync' });
     }, 10000);
+  }
+  // Petit son discret à chaque message ou réaction des autres (désactivable dans la discussion)
+  let audioCtx = null;
+  function ping(force = false) {
+    if (!force && !prefs.get('chatSound')) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const t = audioCtx.currentTime;
+      [[880, 0], [1320, 0.07]].forEach(([f, d]) => {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.type = 'sine'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.0001, t + d); g.gain.exponentialRampToValueAtTime(0.06, t + d + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + d + 0.18);
+        o.connect(g).connect(audioCtx.destination); o.start(t + d); o.stop(t + d + 0.2);
+      });
+    } catch { /* pas de son disponible */ }
   }
   let unread = 0;
   function bumpUnread() {

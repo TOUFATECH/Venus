@@ -40,15 +40,27 @@ export function joinParty(code, handlers) {
 }
 
 // Panneau latéral : participants, réactions, discussion
-export function partyPanel(code, { onReact, onChat, onInvite, onLeave, onHide }) {
+export function partyPanel(code, { onReact, onChat, onInvite, onLeave, onHide, soundOn, onSound }) {
   const membersEl = h('div', { class: 'pp-members' });
   const log = h('div', { class: 'pp-log', 'aria-live': 'polite' });
   const input = h('input', { class: 'input', id: 'pp-text', placeholder: 'Écrire un message', maxlength: 280, autocomplete: 'off' });
+  // Son des messages : activé ou coupé d'un clic
+  const soundBtn = h('button', { class: 'p-icon small f', type: 'button' });
+  const paintSound = () => {
+    const on = soundOn ? soundOn() : true;
+    soundBtn.replaceChildren(icon(on ? 'vol' : 'mute'));
+    soundBtn.setAttribute('aria-label', on ? 'Couper le son de la discussion' : 'Activer le son de la discussion');
+    soundBtn.title = on ? 'Son des messages : activé' : 'Son des messages : coupé';
+    soundBtn.classList.toggle('off', !on);
+  };
+  soundBtn.onclick = () => { const on = !(soundOn ? soundOn() : true); onSound && onSound(on); paintSound(); };
+  paintSound();
   const panel = h('aside', { class: 'party-panel', 'aria-label': 'Séance à plusieurs' },
     h('div', { class: 'pp-head' },
       h('div', {}, h('b', {}, 'Séance'), h('span', { class: 'pp-code' }, code)),
       h('div', { class: 'pp-tools' },
         h('button', { class: 'p-icon small f', 'aria-label': 'Inviter', onclick: onInvite }, icon('people')),
+        soundBtn,
         h('button', { class: 'p-icon small f', 'aria-label': 'Masquer la discussion', title: 'Masquer (touche C)', onclick: () => onHide && onHide() }, icon('close')),
         h('button', { class: 'btn btn-ghost btn-small f', onclick: onLeave }, 'Quitter'))),
     membersEl,

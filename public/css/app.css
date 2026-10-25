@@ -901,3 +901,77 @@ html.touch .p-volrange { display: none; }
   .p-controls .spacer { flex: 1 0 0; min-width: 0; }
   .p-badge { display: none; }
 }
+
+/* =====================================================================
+   Navigation personnalisable, fluidité, lecture en file, génériques
+   ===================================================================== */
+.tabbar .tab-more { display: grid; justify-items: center; gap: 2px; padding: 4px 0; font-size: 0.68rem; color: var(--dim); font-weight: 650; border: 0; background: none; cursor: pointer; }
+.tabbar .tab-more svg { width: 24px; height: 24px; }
+.more-list .opt small { margin-left: auto; color: var(--dim); font-weight: 500; font-size: .8rem; }
+.more-list .more-edit { margin-top: 8px; border-top: 1px solid var(--edge); border-radius: 0; color: var(--haze); }
+
+/* Titres cliquables sous les cartes : ouvrent la fiche */
+html:not(.touch) .card .cap b { transition: color .15s; }
+html:not(.touch) .card:not(.channel) .cap:hover b { color: var(--sulfur); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+
+/* Clips : tout lire */
+.head-left { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.play-all { margin-left: auto; }
+
+/* Menu dans Réglages */
+.menu-edit { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 2px; }
+.menu-edit li { display: grid; grid-template-columns: 30px 1fr auto auto auto; align-items: center; gap: 6px; padding: 4px 6px; border-radius: var(--r); transition: background .2s, opacity .2s; }
+.menu-edit li:hover { background: rgba(236,234,228,.04); }
+.menu-edit li.off { opacity: .5; }
+.menu-edit li b { font-weight: 650; font-size: .93rem; }
+.menu-edit li b small { color: var(--dim); font-weight: 500; }
+.menu-edit .me-ic svg { width: 20px; height: 20px; color: var(--sulfur); display: block; }
+.menu-edit .p-icon.small { width: 34px; height: 34px; background: transparent; }
+.menu-edit .p-icon.small:disabled { opacity: .25; cursor: default; }
+html:not(.touch) .menu-edit .p-icon.small:not(:disabled):hover { background: rgba(236,234,228,.1); }
+.switch.mini { min-height: 0; }
+.menu-box { scroll-margin-top: 24px; }
+
+/* Transitions de pages : le contenu arrive en fondu, le menu ne bouge pas */
+main.page-in { animation: pagein .38s var(--ease) both; }
+@keyframes pagein { from { opacity: 0; transform: translateY(12px); } }
+main.page-in .card, main.page-in .ep-tile { animation: cardin .5s var(--ease) both; }
+main.page-in .row:nth-child(2) .card { animation-delay: .04s; }
+main.page-in .row:nth-child(3) .card { animation-delay: .08s; }
+main.page-in .row:nth-child(n+4) .card { animation-delay: .12s; }
+@keyframes cardin { from { opacity: 0; transform: translateY(8px) scale(.985); } }
+.route-bar { transition: opacity .3s; }
+
+/* Squelettes de chargement */
+.sk { display: block; border-radius: var(--r); background: linear-gradient(100deg, var(--deep) 0%, var(--raise) 40%, var(--deep) 80%); background-size: 220% 100%; animation: shimmer 1.3s linear infinite; }
+@keyframes shimmer { from { background-position: 120% 0; } to { background-position: -100% 0; } }
+.sk-page { animation: pagein .25s ease both; }
+.sk-hero { min-height: min(70vh, 640px); display: flex; align-items: flex-end; padding: 0 var(--gutter) 48px; background: linear-gradient(to top, var(--night), var(--deep)); }
+.sk-hero > div { display: grid; gap: 14px; width: min(760px, 100%); }
+.sk-actions { display: flex; gap: 10px; margin-top: 8px; }
+.sk-rows { display: grid; gap: 14px; padding: 18px var(--gutter); }
+.sk-row { display: flex; gap: clamp(12px, 1.2vw, 20px); overflow: hidden; margin-bottom: 18px; }
+.sk-row .sk { flex: none; width: var(--card-w); aspect-ratio: 16 / 9; }
+.sk-chips { display: flex; gap: 8px; margin: 22px 0; }
+.sk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--poster-w), 1fr)); gap: 20px; }
+.sk-grid .sk { aspect-ratio: 2 / 3; }
+.sk-details { display: grid; grid-template-columns: clamp(150px, 16vw, 250px) 1fr; gap: 40px; align-items: end; padding-top: 12vh; }
+.sk-details > div { display: grid; gap: 14px; }
+.sk-poster { aspect-ratio: 2 / 3; border-radius: 10px; }
+.page > .sk { margin-bottom: 14px; }
+@media (max-width: 700px) { .sk-details { grid-template-columns: 1fr; } .sk-poster { width: 132px; } }
+
+/* Images des cartes : apparition en fondu une fois chargées */
+img.fade { opacity: 0; transition: opacity .45s ease; }
+img.fade.ok { opacity: 1; }
+
+/* Passer l'intro / le générique */
+.p-skip { position: absolute; z-index: 8; right: max(var(--gutter), env(safe-area-inset-right, 0px)); bottom: 64px; display: inline-flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 22px; border-radius: var(--r);
+  border: 1px solid rgba(236,234,228,.5); background: rgba(13,16,22,.62); backdrop-filter: blur(12px); color: var(--paper); font-weight: 750; font-size: 1rem; cursor: pointer; animation: skipin .35s var(--ease); transition: bottom .3s var(--ease), background .2s; }
+.p-skip svg { width: 20px; height: 20px; }
+.p-skip:hover, .p-skip.f:focus-visible, .p-skip.is-focus { background: var(--paper); color: var(--night); outline: none; }
+.player.ui-on .p-skip { bottom: 150px; }
+@keyframes skipin { from { opacity: 0; transform: translateX(16px); } }
+html:not(.touch) .player.in-party:not(.chat-hidden) .p-skip { right: 400px; }
+.party-panel .p-icon.small.off { color: var(--dim); }
+@media (prefers-reduced-motion: reduce) { main.page-in, main.page-in .card, .sk { animation: none !important; } }

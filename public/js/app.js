@@ -2,6 +2,7 @@
 import { api, auth } from './api.js';
 import { h, icon, avatar, toast, logoMark, brand, sheet } from './ui.js';
 import { initNav, focusFirst } from './nav.js';
+import { menuItems, menuPrefs, labelOf, iconOf, dayPart } from './menu.js';
 
 export const state = { status: null, profile: null, categories: null };
 const app = document.getElementById('app');
@@ -52,15 +53,11 @@ function parseHash() {
 }
 
 function navLink(href, label, ic, path) {
-  const active = href === '/' ? path === '/' : path.startsWith(href);
+  const active = isActive(href, path);
   return h('a', { href: '#' + href, class: `f${active ? ' active' : ''}`, 'aria-current': active ? 'page' : null }, ic ? icon(ic) : null, h('span', {}, label));
 }
+const isActive = (href, path) => (href === '/' ? path === '/' : path.startsWith(href));
 
-// Sources affichées dans la navigation, selon ce que contient le serveur
-const SOURCES = [
-  ['/films', 'Films', 'film', 'movie'], ['/series', 'Séries', 'tv', 'show'], ['/animes', 'Animés', 'spark', 'anime'],
-  ['/clips', 'Clips', 'note', 'clip'], ['/tv', 'TV', 'live', 'channel'],
-];
 function hasCat(cat) {
   const c = state.categories;
   if (!c || !Object.keys(c).length) return cat === 'movie' || cat === 'show';
@@ -70,21 +67,28 @@ export async function refreshCategories() {
   try { state.categories = await api('/api/categories'); } catch { /* garde l'ancienne liste */ }
 }
 
+const itemLink = (it, path) => (it.action === 'remote'
+  ? h('button', { class: 'rail-item f', onclick: openRemote }, icon(iconOf(it)), h('span', {}, labelOf(it)))
+  : navLink(it.href, labelOf(it), iconOf(it), path));
+
+function openMore(items) {
+  const s = sheet('Plus', h('div', { class: 'more-list' }, items.map((it) => h('button', { class: 'opt f', onclick: () => {
+    s.close();
+    if (it.action === 'remote') openRemote(); else go(it.href);
+  } }, icon(iconOf(it)), labelOf(it), it.hint ? h('small', {}, it.hint) : null)),
+  h('button', { class: 'opt f more-edit', onclick: () => { s.close(); go('/reglages?section=menu'); } }, icon('gear'), 'Personnaliser le menu')));
+}
+
 // Rail à gauche (ordinateur, TV) + barre du haut et onglets en bas (mobile)
 function shell(path) {
   const p = state.profile;
-  const sources = SOURCES.filter(([, , , cat]) => hasCat(cat));
+  const { shown, more } = menuItems(p, hasCat);
+  const moreBtn = (cls) => h('button', { class: cls, 'aria-label': 'Plus', 'data-more': '1', onclick: () => openMore(more) }, icon('more'), h('span', {}, 'Plus'));
   const rail = h('nav', { class: 'rail', 'aria-label': 'Navigation principale' },
     h('a', { href: '#/', class: 'home-link f', 'aria-label': 'Venus, accueil' }, logoMark()),
-    navLink('/', 'Accueil', 'home', path),
-    navLink('/cesoir', 'Ce soir', 'moon', path),
-    sources.map(([href, label, ic]) => navLink(href, label, ic, path)),
-    navLink('/liste', 'Ma liste', 'list', path),
-    navLink('/recherche', 'Recherche', 'search', path),
+    shown.map((it) => itemLink(it, path)),
+    more.length ? moreBtn('rail-item f') : null,
     h('div', { class: 'spacer' }),
-    navLink('/seance', 'Séance', 'people', path),
-    h('button', { class: 'rail-item f', onclick: openRemote }, icon('remote'), h('span', {}, 'Télécommande')),
-    p.isAdmin ? navLink('/ajouter', 'Ajouter', 'add', path) : null,
     navLink('/reglages', 'Réglages', 'gear', path),
     h('button', { class: 'rail-item f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'), h('span', {}, p.name)));
   const top = h('header', { class: 'mobile-top' },
@@ -92,23 +96,59 @@ function shell(path) {
     h('div', { style: { display: 'flex', gap: '4px' } },
       h('a', { href: '#/reglages', class: 'icon-btn f', 'aria-label': 'Réglages' }, icon('gear')),
       h('button', { class: 'icon-btn f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'))));
-  // Mobile : 4 onglets + « Plus » pour les autres sources
-  const mainTabs = [['/cesoir', 'Ce soir', 'moon'], ...sources.slice(0, 1)];
-  const extra = [...sources.slice(1), ['/liste', 'Ma liste', 'list'], ['/seance', 'Séance à plusieurs', 'people'], ['/telecommande', 'Télécommande', 'remote'],
-    ...(p.isAdmin ? [['/ajouter', 'Ajouter des vidéos', 'add']] : []), ['/reglages', 'Réglages', 'gear']];
-  const moreActive = extra.some(([href]) => path.startsWith(href));
-  const tabs = h('nav', { class: 'tabbar' },
-    navLink('/', 'Accueil', 'home', path),
-    mainTabs.map(([href, label, ic]) => navLink(href, label, ic, path)),
-    navLink('/recherche', 'Recherche', 'search', path),
-    h('a', { href: '#', class: `f${moreActive ? ' active' : ''}`, onclick: (e) => {
-      e.preventDefault();
-      const s = sheet('Plus', h('div', { class: 'more-list' }, extra.map(([href, label, ic]) => h('button', { class: 'opt f', onclick: () => { s.close(); go(href); } }, icon(ic), label))));
-    } }, icon('more'), h('span', {}, 'Plus')));
+  // Mobile : les 4 premiers éléments du menu, le reste dans « Plus »
+  const tabItems = shown.filter((it) => !it.action).slice(0, 4);
+  const extra = [...shown.filter((it) => !tabItems.includes(it)), ...more];
+  const tabs = h('nav', { class: 'tabbar' }, tabItems.map((it) => itemLink(it, path)), extra.length ? moreBtn('f tab-more') : null);
   const onScroll = () => top.classList.toggle('solid', scrollY > 40);
   addEventListener('scroll', onScroll, { passive: true });
   onScroll();
-  return { before: [rail, top], after: [tabs], cleanup: () => removeEventListener('scroll', onScroll) };
+  return { rail, top, tabs, cleanup: () => removeEventListener('scroll', onScroll) };
+}
+
+// La coque (menu) reste en place d'une page à l'autre : seul le contenu change, sans clignotement
+let chrome = null;
+const shellSig = () => JSON.stringify([state.profile.id, state.profile.isAdmin, state.profile.name, state.profile.avatar, state.categories, menuPrefs(state.profile.id), dayPart()]);
+function ensureShell(path) {
+  const sig = shellSig();
+  if (!chrome || chrome.sig !== sig || !app.contains(chrome.rail)) {
+    if (chrome) chrome.cleanup();
+    chrome = { sig, ...shell(path) };
+  }
+  for (const a of [...chrome.rail.querySelectorAll('a[href^="#/"]'), ...chrome.tabs.querySelectorAll('a[href^="#/"]')]) {
+    const on = isActive(a.getAttribute('href').slice(1), path) && !a.classList.contains('home-link');
+    a.classList.toggle('active', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  }
+  return chrome;
+}
+function dropShell() { if (chrome) { chrome.cleanup(); chrome = null; } }
+window.addEventListener('vn:menu', () => {
+  if (!chrome || !state.profile) return;
+  const { path } = parseHash();
+  const old = chrome;
+  chrome = null;
+  const fresh = ensureShell(path);
+  old.rail.replaceWith(fresh.rail); old.top.replaceWith(fresh.top); old.tabs.replaceWith(fresh.tabs);
+  old.cleanup();
+});
+
+// Squelette affiché pendant le chargement d'une page (au-delà de quelques dixièmes de seconde)
+function skeleton(path) {
+  const bar = (w, hgt = 14) => h('i', { class: 'sk', style: { width: w, height: `${hgt}px` } });
+  const cards = (n, cls) => h('div', { class: `sk-row ${cls}` }, Array.from({ length: n }, () => h('i', { class: 'sk' })));
+  let body;
+  if (path === '/') {
+    body = [h('div', { class: 'sk-hero' }, h('div', {}, bar('46%', 54), bar('28%'), bar('52%'), bar('40%'), h('div', { class: 'sk-actions' }, bar('150px', 48), bar('150px', 48)))),
+      h('div', { class: 'sk-rows' }, bar('180px', 18), cards(6, 'land'), bar('220px', 18), cards(6, 'land'))];
+  } else if (/^\/(films|series|animes|liste)$/.test(path)) {
+    body = [h('div', { class: 'page' }, bar('220px', 48), h('div', { class: 'sk-chips' }, bar('80px', 38), bar('90px', 38), bar('90px', 38)), h('div', { class: 'sk-grid' }, Array.from({ length: 14 }, () => h('i', { class: 'sk' }))))];
+  } else if (/^\/titre\//.test(path)) {
+    body = [h('div', { class: 'page sk-details' }, h('i', { class: 'sk sk-poster' }), h('div', {}, bar('60%', 56), bar('30%'), bar('80%'), bar('70%'), h('div', { class: 'sk-actions' }, bar('170px', 48), bar('48px', 48))))];
+  } else {
+    body = [h('div', { class: 'page' }, bar('260px', 48), bar('70%'), bar('60%'), cards(5, 'land'))];
+  }
+  return h('main', { class: 'with-nav sk-page', 'aria-busy': 'true', 'aria-label': 'Chargement' }, body);
 }
 
 // Écran de chargement : présent dans index.html, retiré une fois le premier écran prêt
@@ -162,26 +202,17 @@ export async function switchProfile() {
   showGate('profiles');
 }
 
-function swap(fn) {
-  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (document.startViewTransition && !reduce && !document.hidden) return document.startViewTransition(fn).updateCallbackDone;
-  return fn();
-}
-
 async function mount(viewModule, params, { withNav, path }) {
-  const bare = !withNav;
   const ticket = ++mountTicket;
   // Barre de chargement fine en haut de l'écran pendant la préparation de la page suivante
   const bar = document.querySelector('.route-bar') || document.body.appendChild(h('div', { class: 'route-bar', 'aria-hidden': 'true' }));
   bar.classList.add('on');
   const mod = await viewModule;
   const main = h('main', { class: withNav ? 'with-nav' : '' });
-  const chrome = withNav ? shell(path) : null;
-  const nodes = [...(chrome ? chrome.before : []), main, ...(chrome ? chrome.after : [])];
   const finish = (view) => {
     bar.classList.remove('on');
     hideBoot();
-    current = { destroy: () => { view && view.destroy && view.destroy(); chrome && chrome.cleanup(); } };
+    current = { destroy: () => { view && view.destroy && view.destroy(); } };
     if (document.documentElement.classList.contains('keys') || document.documentElement.classList.contains('tv')) requestAnimationFrame(() => focusFirst());
   };
   const showError = (e) => {
@@ -191,19 +222,34 @@ async function mount(viewModule, params, { withNav, path }) {
   };
   const dropOld = () => { if (current) { try { current.destroy && current.destroy(); } catch { /* */ } current = null; } };
 
-  if (bare) {
-    // Lecteur et télécommande : affichage immédiat
-    dropOld();
-    app.replaceChildren(...nodes);
+  if (!withNav) {
+    // Lecteur et télécommande : affichage immédiat, sans menu
+    dropOld(); dropShell();
+    app.replaceChildren(main);
     try { finish(await mod.render(main, params)); } catch (e) { finish(null); showError(e); }
     return;
   }
-  // Autres pages : préparées hors écran, puis transition fluide
+  const sh = ensureShell(path);
+  const place = (el) => {
+    const cur = app.querySelector(':scope > main');
+    if (cur && app.contains(sh.rail)) cur.replaceWith(el);
+    else app.replaceChildren(sh.rail, sh.top, el, sh.tabs);
+  };
+  // Si la page tarde, on montre tout de suite sa silhouette plutôt que de laisser l'ancienne figée
+  const skTimer = setTimeout(() => {
+    if (ticket !== mountTicket) return;
+    dropOld();
+    place(skeleton(path)); window.scrollTo(0, 0);
+  }, 140);
   let view = null, failed = null;
   try { view = await mod.render(main, params); } catch (e) { failed = e; }
-  if (ticket !== mountTicket) { view && view.destroy && view.destroy(); chrome && chrome.cleanup(); return; }
+  clearTimeout(skTimer);
+  if (ticket !== mountTicket) { view && view.destroy && view.destroy(); return; }
   dropOld();
-  await swap(() => { app.replaceChildren(...nodes); window.scrollTo(0, 0); });
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce) main.classList.add('page-in');
+  place(main);
+  window.scrollTo(0, 0);
   finish(view);
   if (failed) showError(failed);
 }
@@ -234,6 +280,7 @@ async function route() {
 
 async function showGate(kind) {
   if (current) { try { current.destroy && current.destroy(); } catch { /* */ } current = null; }
+  dropShell();
   app.replaceChildren();
   const main = h('main');
   app.append(main);

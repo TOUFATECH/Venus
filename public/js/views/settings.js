@@ -3,6 +3,7 @@ import { api, auth, preferredQuality, setPreferredQuality, prefs } from '../api.
 import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet } from '../ui.js';
 import { state, switchProfile, go } from '../app.js';
 import { openSourceWizard } from './source-wizard.js';
+import { NAV_ITEMS, menuPrefs, saveMenuPrefs, resetMenuPrefs, labelOf, iconOf } from '../menu.js';
 
 const AGES = [['', 'Aucune limite'], ['3', '3 ans et +'], ['7', '7 ans et +'], ['10', '10 ans et +'], ['12', '12 ans et +'], ['16', '16 ans et +']];
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
@@ -36,7 +37,7 @@ const prefSwitch = (key, label) => h('label', { class: 'switch' }, h('span', {},
   h('input', { type: 'checkbox', class: 'f', checked: !!prefs.get(key), onchange: (e) => { prefs.set(key, e.target.checked); toast('Préférence enregistrée pour cet appareil'); } }));
 const fmtBytes = (b) => `${(b / 1073741824).toFixed(1).replace('.', ',')} Go`;
 
-export async function render(main) {
+export async function render(main, { query } = {}) {
   const me = state.profile;
   const page = h('div', { class: 'page admin' });
   main.append(page);
@@ -54,6 +55,7 @@ export async function render(main) {
     prefSwitch('fullscreenOnPlay', 'Plein écran au lancement d’une vidéo'),
     prefSwitch('hoverPreview', 'Aperçu vidéo au survol d’une affiche'),
     prefSwitch('hoverSound', 'Aperçu avec le son'),
+    prefSwitch('autoSkip', 'Passer automatiquement les génériques (opening, ending)'),
     h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
       h('button', { class: 'btn btn-small f', onclick: () => editProfile(me, true, () => window.dispatchEvent(new CustomEvent('vn:reboot'))) }, 'Modifier nom, couleur et code PIN'),
       h('button', { class: 'btn btn-small f', onclick: switchProfile }, 'Changer de profil'),
@@ -65,8 +67,10 @@ export async function render(main) {
     toast('Préférence enregistrée');
   }
 
+  const menuBox = menuEditor(me);
   page.append(h('div', { class: 'page-head' }, h('h1', {}, 'Réglages')));
-  if (!me.isAdmin) { page.append(h('div', { class: 'admin-grid' }, myBox)); return; }
+  const toMenu = () => { if (query && query.get('section') === 'menu') requestAnimationFrame(() => menuBox.scrollIntoView({ block: 'start' })); };
+  if (!me.isAdmin) { page.append(h('div', { class: 'admin-grid' }, menuBox, myBox)); toMenu(); return; }
 
   // ----------------------------------------------------------- administration
   const grid = h('div', { class: 'admin-grid' });
@@ -75,7 +79,9 @@ export async function render(main) {
   async function refresh() {
     let a;
     try { a = await api('/api/admin'); } catch (e) { grid.replaceChildren(h('p', { class: 'error-text' }, e.message)); return; }
-    grid.replaceChildren(libraryBox(a), myBox, playbackBox(a), profilesBox(a), metadataBox(a), serverBox(a), devicesBox(a));
+    const first = !grid.children.length;
+    grid.replaceChildren(libraryBox(a), myBox, menuBox, playbackBox(a), profilesBox(a), metadataBox(a), serverBox(a), devicesBox(a));
+    if (first) toMenu();
     clearTimeout(timer);
     const delay = a.scan.running || a.sessions.length ? 3000 : 15000;
     const tick = () => {
@@ -150,6 +156,8 @@ export async function render(main) {
       a.hw.tested.length ? h('p', { style: { fontSize: '.85rem' } }, `Testé : ${a.hw.tested.map((t) => `${t.label} ${t.ok ? '✓' : '✗'}`).join(', ')}`) : null,
       field('Accélération matérielle', hwSel),
       field('Lectures simultanées maximum', maxS),
+      h('label', { class: 'switch' }, h('span', {}, 'Repérer les génériques des séries et animés (analyse audio en arrière-plan)'),
+        h('input', { type: 'checkbox', class: 'f', checked: a.settings.detectSegments !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { detectSegments: e.target.checked } }); toast('Réglage enregistré'); } })),
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small f', onclick: async (e) => {
         e.target.disabled = true; e.target.textContent = 'Test du matériel…';
         try { await api('/api/admin/settings', { method: 'PUT', body: { hwaccel: hwSel.value, maxSessions: Number(maxS.value) } }); toast('Réglages enregistrés'); }
@@ -273,4 +281,34 @@ function deviceName(ua = '') {
   if (/Windows/i.test(ua)) return 'PC Windows';
   if (/Linux/i.test(ua)) return 'Linux';
   return 'Appareil';
+}
+
+// Menu de navigation : afficher, masquer et réordonner (propre à ce profil, sur cet appareil)
+function menuEditor(me) {
+  const box = h('section', { class: 'box menu-box', id: 'menu' });
+  const paint = (focusId, focusDir) => {
+    const p = menuPrefs(me.id);
+    const byId = new Map(NAV_ITEMS.map((i) => [i.id, i]));
+    const items = p.order.map((id) => byId.get(id)).filter((it) => it && (!it.admin || me.isAdmin));
+    const move = (id, d) => {
+      const order = [...p.order]; const i = order.indexOf(id); const j = i + d;
+      if (j < 0 || j >= order.length) return;
+      [order[i], order[j]] = [order[j], order[i]];
+      saveMenuPrefs(me.id, { ...p, order }); paint(id, d);
+    };
+    const toggle = (id, on) => saveMenuPrefs(me.id, { ...p, hidden: on ? p.hidden.filter((x) => x !== id) : [...p.hidden, id] });
+    box.replaceChildren(
+      h('h2', {}, 'Menu'),
+      h('p', {}, 'Choisissez ce qui apparaît dans le menu et dans quel ordre. Le reste est rangé dans « Plus ». Réglages et profil restent toujours en bas.'),
+      h('ol', { class: 'menu-edit' }, items.map((it, i) => h('li', { class: p.hidden.includes(it.id) ? 'off' : '' },
+        h('span', { class: 'me-ic' }, icon(iconOf(it))), h('b', {}, it.id === 'today' ? 'Aujourd’hui / Ce soir' : labelOf(it)),
+        h('button', { class: 'p-icon small f', 'data-id': it.id, 'data-dir': '-1', 'aria-label': `Monter ${labelOf(it)}`, disabled: i === 0, onclick: () => move(it.id, -1) }, icon('up')),
+        h('button', { class: 'p-icon small f', 'data-id': it.id, 'data-dir': '1', 'aria-label': `Descendre ${labelOf(it)}`, disabled: i === items.length - 1, onclick: () => move(it.id, 1) }, icon('down')),
+        h('label', { class: 'switch mini', title: 'Afficher dans le menu' }, h('input', { type: 'checkbox', class: 'f', 'aria-label': `Afficher ${labelOf(it)} dans le menu`, checked: !p.hidden.includes(it.id), onchange: (e) => { toggle(it.id, e.target.checked); paint(); } }))))),
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+        h('button', { class: 'btn btn-small btn-ghost f', onclick: () => { resetMenuPrefs(me.id); paint(); toast('Menu d’origine rétabli'); } }, 'Rétablir le menu d’origine')));
+    if (focusId) { const b = box.querySelector(`[data-id="${focusId}"][data-dir="${focusDir}"]`); (b && !b.disabled ? b : box.querySelector(`[data-id="${focusId}"]`))?.focus(); }
+  };
+  paint();
+  return box;
 }

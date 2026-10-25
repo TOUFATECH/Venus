@@ -94,10 +94,10 @@ together.post('/api/rooms/:code/action', async (ctx) => {
     broadcast(r, 'state', { playing: r.state.playing, position: r.state.position, by: p.name, reason: b.reason || null }, from);
   } else if (b.type === 'chat') {
     const text = String(b.text || '').trim().slice(0, 280);
-    if (text) broadcast(r, 'chat', { name: p.name, avatar: p.avatar, text, at: Date.now() });
+    if (text) broadcast(r, 'chat', { name: p.name, avatar: p.avatar, text, at: Date.now(), from: b.client });
   } else if (b.type === 'react') {
     const emoji = String(b.emoji || '').slice(0, 8);
-    if (emoji) broadcast(r, 'react', { name: p.name, emoji });
+    if (emoji) broadcast(r, 'react', { name: p.name, emoji, from: b.client });
   } else if (b.type === 'item') {
     // L'hôte passe à l'épisode suivant : tout le monde suit
     r.itemId = Number(b.itemId) || r.itemId;
