@@ -68,7 +68,7 @@ export async function render(main, { id, query }) {
   const badge = h('span', { class: 'p-badge' });
   // Pastille du mode de lecture : verte = direct, orange = conversion (carte graphique ou processeur),
   // rouge = vidéo d'origine de faible qualité. Un clic ouvre le détail (fenêtre Qualité).
-  const modeDot = h('button', { class: 'p-mode f', type: 'button', onclick: () => (info && info.qualities.length ? openQuality() : toast(modeDot.title)) }, h('i'));
+  const modeDot = h('button', { class: 'p-mode f', type: 'button', onclick: () => (info && info.qualities.length ? openQuality() : toast(modeDot.title)) }, h('i'), h('span', { class: 'p-mode-q' }));
   const backBtn = h('button', { class: 'p-icon f', 'aria-label': 'Retour', onclick: () => exit() }, icon('back'));
   const playBtn = h('button', { class: 'p-icon big f', 'aria-label': 'Lecture / pause', 'data-autofocus': true, onclick: () => togglePlay() }, icon('play'));
   const rwBtn = h('button', { class: 'p-icon f', 'aria-label': 'Reculer de 10 secondes', onclick: () => seekBy(-10) }, icon('r10'));
@@ -127,7 +127,7 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, qualityBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, ambBtn, castBtn, airBtn, fsBtn)),
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, ambBtn, castBtn, airBtn, fsBtn)),
     nextPanel, overlay, volOsd, skipBtn, chPanel, below, lockLayer);
   main.append(root);
   document.body.style.overflow = 'hidden';
@@ -249,7 +249,9 @@ export async function render(main, { id, query }) {
     const what = info.mode === 'direct' ? 'Lecture directe, sans conversion' : info.mode === 'remux' ? 'Lecture directe (conteneur adapté, image intacte)'
       : `Conversion par ${info.hwLabel && !/processeur|cpu|logiciel/i.test(info.hwLabel) ? `la carte graphique (${info.hwLabel})` : 'le processeur'}`;
     modeDot.className = `p-mode f ${level}`;
-    modeDot.title = low ? `Vidéo d’origine de faible qualité (${v.height}p) · ${what}` : what;
+    modeDot.title = `${low ? `Vidéo d’origine de faible qualité (${v.height}p) · ${what}` : what}${info.qualities.length ? ' · Toucher pour changer la qualité' : ''}`;
+    // Qualité choisie à la main : rappelée à côté de la pastille (rien en automatique)
+    modeDot.querySelector('.p-mode-q').textContent = quality && quality !== 'auto' ? (info.qualities.find((q) => q.id === quality) || {}).label || '' : '';
     modeDot.setAttribute('aria-label', modeDot.title);
   }
 
@@ -744,8 +746,8 @@ export async function render(main, { id, query }) {
 
   function openQuality() {
     const s = sheet('Qualité', h('div', {},
-      h('p', { style: { color: 'var(--mist)', margin: '0 0 12px' } }, 'Auto choisit la meilleure qualité possible. Baissez-la si la vidéo saccade ou pour économiser vos données.'),
-      h('p', { class: 'p-mode-line' }, h('span', { class: `p-mode ${modeDot.classList.contains('bad') ? 'bad' : modeDot.classList.contains('conv') ? 'conv' : 'ok'}` }, h('i')), h('span', {}, modeDot.title, info.mode === 'transcode' && badge.title ? h('small', {}, ` · ${badge.title}`) : null)),
+      h('p', { style: { color: 'var(--mist)', margin: '0 0 12px' } }, 'Auto choisit la meilleure qualité possible. Baissez-la si la vidéo saccade ou pour économiser vos données. La pastille en haut à droite ouvre cette fenêtre.'),
+      h('p', { class: 'p-mode-line' }, h('span', { class: `p-mode ${modeDot.classList.contains('bad') ? 'bad' : modeDot.classList.contains('conv') ? 'conv' : 'ok'}` }, h('i')), h('span', {}, modeDot.title.replace(' · Toucher pour changer la qualité', ''), info.mode === 'transcode' && badge.title ? h('small', {}, ` · ${badge.title}`) : null)),
       info.qualities.map((q) => h('button', {
         class: `opt f${q.id === quality ? ' on' : ''}`,
         onclick: () => { s.close(); if (q.id !== quality) { quality = q.id; setPreferredQuality(q.id); load(position(), { reason: `Qualité : ${q.label}` }); } },
