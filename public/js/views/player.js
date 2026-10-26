@@ -1,7 +1,7 @@
 // Lecteur vidéo plein écran : lecture directe ou HLS, sous-titres, pistes, qualité, épisode suivant, Chromecast, AirPlay
 import { api, auth, deviceCaps, castCaps, preferredQuality, setPreferredQuality, prefs, clearApiCache } from '../api.js';
 import { h, icon, sheet, fmtTime, langName, toast, img, isBack } from '../ui.js';
-import { go, back, setTitle } from '../app.js';
+import { showSlug, go, back, setTitle } from '../app.js';
 import { focusEl } from '../nav.js';
 import { castSupported, loadCast, castContext, castMedia, remote } from '../cast.js';
 import { ambilight, ambianceOn } from '../ambiance.js';
@@ -191,7 +191,8 @@ export async function render(main, { id, query }) {
     titleEl.title = info.showId ? 'Voir la série et tous ses épisodes' : info.type === 'channel' ? 'Toutes les chaînes' : 'Voir la fiche';
     subEl.hidden = !info.subtitle;
     paintBelow();
-    setTitle(info.title);
+    setTitle(info.subtitle && info.type === 'episode' ? `${info.title} · ${info.subtitle}` : info.title);
+    showSlug('lecture', info.slug, ['salle']);
     badge.textContent = info.mode === 'direct' ? 'Direct' : info.mode === 'remux' ? 'Remux' : `Converti · ${info.hwLabel || 'processeur'}`;
     badge.title = info.reason;
     qualityBtn.textContent = (info.qualities.find((q) => q.id === quality) || { label: 'Auto' }).label;
@@ -861,8 +862,8 @@ export async function render(main, { id, query }) {
     if (!ambOn) return;
     const W = root.clientWidth, H = root.clientHeight;
     const ar = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9;
-    let w = W * 0.86, hh = w / ar;
-    if (hh > H * 0.86) { hh = H * 0.86; w = hh * ar; }
+    let w = W * 0.74, hh = w / ar;
+    if (hh > H * 0.76) { hh = H * 0.76; w = hh * ar; }
     root.style.setProperty('--amb-w', `${Math.round(w)}px`);
     root.style.setProperty('--amb-h', `${Math.round(hh)}px`);
   }

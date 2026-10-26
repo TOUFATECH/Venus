@@ -2013,7 +2013,7 @@ html:not(.touch) .card:not(.channel) .cap:hover b { text-decoration: underline; 
 /* Ambiance : pas de cadre. La vidéo a la forme exacte de l'image et ses bords se fondent dans la lumière */
 @media (orientation: landscape), (min-width: 821px) {
   .player.amb-on video, .player.amb-on.in-party:not(.chat-hidden) video {
-    inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: var(--amb-w, 84%); height: var(--amb-h, 86%);
+    inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: var(--amb-w, 74%); height: var(--amb-h, 76%);
     object-fit: cover; background: transparent; border-radius: 0; box-shadow: none;
     -webkit-mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 8%, #000 92%, transparent 100%);
     -webkit-mask-composite: source-in;

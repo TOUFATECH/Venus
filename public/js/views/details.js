@@ -4,7 +4,7 @@ import { api, prefs, detailsTrailers } from '../api.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince, hueOf } from '../ui.js';
 import { row, card, playPath, metaLine, frameImage, framePoster, ratingChips, scrollArrows } from '../components.js';
 import { trailerUrl, trailerPlayer } from '../trailer.js';
-import { go, state, setTitle } from '../app.js';
+import { go, state, setTitle, showSlug } from '../app.js';
 import { focusEl } from '../nav.js';
 import { tintFrom } from '../ambiance.js';
 
@@ -25,6 +25,7 @@ export async function render(main, { id, query }) {
   const cr = d.credits || {};
   tintFrom(img(d.backdrop || d.poster));
   setTitle(d.title);
+  showSlug('titre', d.slug, ['ep']);
   const cleanups = [];
 
   const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : frameImage(d.id, d.title, { fade: false }));
