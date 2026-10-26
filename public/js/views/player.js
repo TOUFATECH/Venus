@@ -601,6 +601,7 @@ export async function render(main, { id, query }) {
     } else shuffleBtn.hidden = true;
     nextBtn.hidden = !info.next;
     nextBtn.querySelector('.lbl').textContent = info.type === 'episode' ? 'Épisode suivant' : 'Suivant';
+    nextBtn.setAttribute('aria-label', info.type === 'episode' ? 'Épisode suivant' : 'Suivant');
     prevBtn.hidden = !info.prev;
     prevBtn.setAttribute('aria-label', info.type === 'episode' ? 'Épisode précédent' : 'Précédent');
     prevBtn.querySelector('.lbl').textContent = info.type === 'episode' ? 'Épisode précédent' : 'Précédent';
