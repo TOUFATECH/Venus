@@ -588,7 +588,7 @@ body { position: relative; z-index: 0; }
 .rail a[href="#/cesoir"] svg { color: var(--sulfur); }
 
 /* ------------------------------------------------ Mode Ambiance */
-.amb-canvas { position: absolute; inset: -12%; width: 124%; height: 124%; filter: blur(70px) saturate(1.7) brightness(1.15); opacity: 0; transition: opacity .8s; pointer-events: none; }
+.amb-canvas { position: absolute; inset: -12%; width: 124%; height: 124%; filter: blur(60px) saturate(1.6) brightness(1.05); opacity: 0; transition: opacity .8s; pointer-events: none; }
 .player.amb-on .amb-canvas { opacity: .95; }
 .player.amb-on video { inset: 7% 8%; width: 84%; height: 86%; border-radius: 10px; box-shadow: 0 30px 120px rgba(0,0,0,.6); transition: inset .6s var(--ease), width .6s var(--ease), height .6s var(--ease); }
 .player video { transition: inset .6s var(--ease), width .6s var(--ease), height .6s var(--ease); }
@@ -2015,9 +2015,9 @@ html:not(.touch) .card:not(.channel) .cap:hover b { text-decoration: underline; 
   .player.amb-on video, .player.amb-on.in-party:not(.chat-hidden) video {
     inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: var(--amb-w, 74%); height: var(--amb-h, 76%);
     object-fit: cover; background: transparent; border-radius: 0; box-shadow: none;
-    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 8%, #000 92%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 2.5%, #000 97.5%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 3.5%, #000 96.5%, transparent 100%);
     -webkit-mask-composite: source-in;
-    mask-image: linear-gradient(to right, transparent 0, #000 6%, #000 94%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 8%, #000 92%, transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 2.5%, #000 97.5%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 3.5%, #000 96.5%, transparent 100%);
     mask-composite: intersect;
   }
   .player.amb-on .amb-canvas { opacity: 1; }
@@ -2052,3 +2052,46 @@ html:not(.touch) .p-controls .p-icon:hover, html:not(.touch) .p-controls .btn:ho
 .p-controls .p-vol { gap: 0; }
 .p-controls .p-volrange { margin-left: 0; transition: width .25s var(--ease), opacity .25s, margin .25s; }
 .p-controls .p-vol:hover .p-volrange, .p-controls .p-volrange:focus-visible, .p-controls .p-vol:focus-within .p-volrange { margin: 0 6px 0 10px; }
+
+/* Séance : gestion des participants par l'hôte (retirer, bloquer, débloquer) */
+.pp-member { position: relative; }
+.pp-manage { border: 0; background: none; padding: 2px 8px 2px 2px; border-radius: 999px; cursor: pointer; font: inherit; color: inherit; }
+html:not(.touch) .pp-manage:hover, .pp-manage.f:focus-visible { background: rgb(255 255 255 / .12); outline: none; }
+.pp-host { color: var(--sulfur); font-size: .7rem; }
+.pp-blocked { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 10px; background: rgb(var(--night-rgb) / .28); backdrop-filter: blur(6px); }
+.pp-bl-title { display: inline-flex; align-items: center; gap: 4px; color: #ff8a8c; font-weight: 700; font-size: .75rem; }
+.pp-bl-title svg { width: 12px; height: 12px; }
+.pp-bl { display: inline-flex; align-items: baseline; gap: 2px; padding: 3px 9px; border-radius: 999px; border: 1px solid rgb(255 77 79 / .45); background: rgb(255 77 79 / .14); color: var(--paper); font: inherit; font-size: .78rem; }
+.pp-bl b { text-decoration: line-through; text-decoration-color: rgb(255 255 255 / .5); }
+.pp-bl small { color: var(--haze); text-decoration: none; }
+button.pp-bl { cursor: pointer; }
+html:not(.touch) button.pp-bl:hover { background: rgb(255 77 79 / .28); }
+.player:not(.ui-on) .party-panel .pp-blocked { opacity: 0; pointer-events: none; transition: opacity .35s; }
+.pp-notice.mod { display: inline-flex; align-items: center; gap: 6px; color: #ffb3b4; background: rgb(255 77 79 / .16); }
+.pp-notice.mod svg { width: 12px; height: 12px; flex: none; }
+.pp-manage-sheet { display: grid; gap: 6px; }
+.pp-who { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.pp-who .avatar { width: 44px; height: 44px; }
+.pp-who small { display: block; color: var(--haze); }
+.pp-manage-sheet .opt b { display: block; }
+.pp-manage-sheet .opt small { display: block; margin: 2px 0 0; color: var(--haze); font-weight: 500; }
+.pp-manage-sheet .opt.danger, .pp-manage-sheet .opt.danger svg { color: #ff6b6d; }
+.pp-block-for { display: grid; gap: 8px; padding: 10px 12px; }
+.pp-block-for > span { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; }
+.pp-block-for > span svg { width: 20px; height: 20px; color: var(--haze); }
+.pp-block-for .chips { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 30px; }
+
+/* Aperçu au survol : bouton « Mini-lecteur » (la vidéo continue pendant qu'on navigue) */
+.pv-mini { position: absolute; z-index: 4; top: 8px; right: 8px; width: 34px; height: 34px; display: grid; place-items: center; border-radius: 8px; background: rgb(var(--night-rgb) / .62); backdrop-filter: blur(6px); color: var(--paper); cursor: pointer; opacity: 0; transform: scale(.9); transition: opacity .2s, transform .2s, background .2s; }
+.card.previewing .pv-mini { opacity: 1; transform: none; }
+.pv-mini:hover { background: var(--sulfur); color: var(--night); }
+.pv-mini svg { width: 18px; height: 18px; }
+
+/* Suppression d'une vidéo (administrateur) */
+.btn-danger-solid { background: #d93a3d; color: #fff; }
+.btn-danger-solid:hover, .btn-danger-solid.f:focus-visible { background: #f04a4d; }
+html:not(.touch) .btn-del:hover { background: rgb(255 77 79 / .22); color: #ff8a8c; }
+.del-sheet p { margin: 0 0 14px; color: var(--mist); line-height: 1.5; }
+.del-sheet p b { color: var(--paper); }
+.del-warn { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; background: rgb(255 77 79 / .12); color: #ffb3b4 !important; font-size: .9rem; }
+.del-warn svg { width: 16px; height: 16px; flex: none; margin-top: 2px; }

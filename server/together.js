@@ -25,10 +25,16 @@ function roomPosition(r) {
   const s = r.state;
   return s.playing ? s.position + (Date.now() - s.at) / 1000 : s.position;
 }
+// Modération : bloqués (pour un temps ou définitivement), par profil
+function blockedList(r) {
+  const now = Date.now();
+  for (const [pid, b] of r.blocked) if (b.until && b.until <= now) r.blocked.delete(pid);
+  return [...r.blocked.values()].map((b) => ({ pid: b.pid, name: b.name, avatar: b.avatar, until: b.until || null, by: b.by }));
+}
 function publicRoom(r) {
   return {
-    code: r.code, itemId: r.itemId, title: r.title, host: r.host,
-    members: [...r.members.values()].map((m) => ({ id: m.id, name: m.name, avatar: m.avatar, host: m.id === r.hostClient })),
+    code: r.code, itemId: r.itemId, title: r.title, host: r.host, ownerPid: r.ownerPid, blocked: blockedList(r),
+    members: [...r.members.values()].map((m) => ({ id: m.id, pid: m.pid, name: m.name, avatar: m.avatar, host: m.id === r.hostClient })),
     state: { playing: r.state.playing, position: roomPosition(r), by: r.state.by },
   };
 }
@@ -40,6 +46,14 @@ setInterval(() => {
   for (const [c, r] of rooms) if (!r.members.size && Date.now() - r.emptySince > 10 * 60000) rooms.delete(c);
 }, 60000).unref();
 
+const hhmm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+function checkBlocked(r, p) {
+  blockedList(r);
+  const b = r.blocked.get(p.id);
+  if (!b) return;
+  throw new HttpError(403, b.until ? `${b.by} vous a bloqué de cette séance jusqu’à ${hhmm(b.until)}` : `${b.by} vous a bloqué de cette séance`);
+}
+
 together.post('/api/rooms', async (ctx) => {
   const p = requireProfile(ctx);
   const b = await readBody(ctx.req);
@@ -48,16 +62,17 @@ together.post('/api/rooms', async (ctx) => {
   let c; do { c = code(4); } while (rooms.has(c));
   const title = item.show_title ? `${item.show_title}, S${item.season_num} É${item.episode_num}` : item.title;
   rooms.set(c, {
-    code: c, itemId: item.id, title, host: p.name, hostClient: null, members: new Map(), emptySince: Date.now(),
+    code: c, itemId: item.id, title, host: p.name, ownerPid: p.id, hostClient: null, members: new Map(), blocked: new Map(), removed: new Set(), kicked: new Map(), emptySince: Date.now(),
     state: { playing: false, position: Number(b.position) || 0, at: Date.now(), by: p.name },
   });
   sendJson(ctx.res, { code: c, title });
 });
 
 together.get('/api/rooms/:code', (ctx) => {
-  requireProfile(ctx);
+  const p = requireProfile(ctx);
   const r = rooms.get(String(ctx.params.code).toUpperCase());
   if (!r) throw new HttpError(404, 'Aucune séance avec ce code. Vérifiez les 4 lettres.');
+  checkBlocked(r, p);
   sendJson(ctx.res, publicRoom(r));
 });
 
@@ -65,9 +80,13 @@ together.get('/api/rooms/:code/events', (ctx) => {
   const p = requireProfile(ctx);
   const r = rooms.get(String(ctx.params.code).toUpperCase());
   if (!r) throw new HttpError(404, 'Séance terminée');
+  checkBlocked(r, p);
+  const kicked = r.kicked.get(p.id);
+  if (kicked && Date.now() - kicked < 20000) throw new HttpError(403, 'Vous avez été retiré de la séance');
   const id = String(ctx.url.searchParams.get('client') || code(6)).slice(0, 20);
+  r.removed.delete(id);
   const { send, onClose } = sse(ctx);
-  const member = { id, name: p.name, avatar: p.avatar, send };
+  const member = { id, pid: p.id, name: p.name, avatar: p.avatar, send, end: () => { try { ctx.res.end(); } catch { /* */ } } };
   r.members.set(id, member);
   if (!r.hostClient) r.hostClient = id;
   send('room', publicRoom(r));
@@ -79,8 +98,55 @@ together.get('/api/rooms/:code/events', (ctx) => {
     if (r.hostClient === id) r.hostClient = r.members.keys().next().value || null;
     if (!r.members.size) r.emptySince = Date.now();
     broadcast(r, 'members', publicRoom(r).members);
-    broadcast(r, 'notice', { text: `${p.name} est parti` });
+    if (!member.removed) broadcast(r, 'notice', { text: `${p.name} est parti` });
   });
+});
+
+// L'hôte de la séance (ou un administrateur de Venus) peut retirer quelqu'un, le bloquer pour un temps
+// ou définitivement, et le débloquer. Tout le monde voit qui a été retiré ou bloqué.
+together.post('/api/rooms/:code/moderate', async (ctx) => {
+  const p = requireProfile(ctx);
+  const r = rooms.get(String(ctx.params.code).toUpperCase());
+  if (!r) throw new HttpError(404, 'Séance terminée');
+  const b = await readBody(ctx.req);
+  const canModerate = String(b.client || '') === r.hostClient || p.id === r.ownerPid || !!p.is_admin;
+  if (!canModerate) throw new HttpError(403, 'Seul l’hôte de la séance peut faire ça');
+  const action = String(b.action || '');
+  if (action === 'unblock') {
+    const bl = r.blocked.get(Number(b.pid));
+    if (!bl) throw new HttpError(404, 'Cette personne n’est plus bloquée');
+    r.blocked.delete(bl.pid);
+    broadcast(r, 'blocked', blockedList(r));
+    broadcast(r, 'notice', { text: `${p.name} a débloqué ${bl.name}`, kind: 'mod' });
+    return sendJson(ctx.res, { ok: true, blocked: blockedList(r) });
+  }
+  const target = r.members.get(String(b.target || ''));
+  if (!target) throw new HttpError(404, 'Cette personne a déjà quitté la séance');
+  if (target.pid === p.id) throw new HttpError(400, 'Vous ne pouvez pas vous retirer vous-même : touchez « Quitter »');
+  if (target.pid === r.ownerPid && p.id !== r.ownerPid && !p.is_admin) throw new HttpError(403, 'On ne peut pas retirer la personne qui a créé la séance');
+  let text, until = null;
+  if (action === 'kick') { text = `${p.name} a retiré ${target.name} de la séance`; r.kicked.set(target.pid, Date.now()); }
+  else if (action === 'block') {
+    const minutes = Math.max(0, Math.min(24 * 60, Number(b.minutes) || 0));
+    until = minutes ? Date.now() + minutes * 60000 : null;
+    r.blocked.set(target.pid, { pid: target.pid, name: target.name, avatar: target.avatar, until, by: p.name });
+    text = minutes ? `${p.name} a bloqué ${target.name} pendant ${minutes >= 60 ? `${minutes / 60} h` : `${minutes} min`}` : `${p.name} a bloqué ${target.name} définitivement`;
+  } else throw new HttpError(400, 'Action inconnue');
+  // Tous les écrans de cette personne quittent la séance
+  for (const m of [...r.members.values()]) {
+    if (m.pid !== target.pid || m.pid === p.id) continue;
+    m.removed = true;
+    r.removed.add(m.id);
+    m.send('removed', { by: p.name, kind: action, until });
+    r.members.delete(m.id);
+    if (r.hostClient === m.id) r.hostClient = r.members.keys().next().value || null;
+    setTimeout(() => m.end(), 300);
+  }
+  if (!r.members.size) r.emptySince = Date.now();
+  broadcast(r, 'members', publicRoom(r).members);
+  broadcast(r, 'blocked', blockedList(r));
+  broadcast(r, 'notice', { text, kind: 'mod' });
+  sendJson(ctx.res, { ok: true });
 });
 
 together.post('/api/rooms/:code/action', async (ctx) => {
@@ -89,6 +155,8 @@ together.post('/api/rooms/:code/action', async (ctx) => {
   if (!r) throw new HttpError(404, 'Séance terminée');
   const b = await readBody(ctx.req);
   const from = String(b.client || '');
+  checkBlocked(r, p);
+  if (r.removed.has(from)) throw new HttpError(403, 'Vous ne faites plus partie de cette séance');
   if (b.type === 'state') {
     r.state = { playing: !!b.playing, position: Math.max(0, Number(b.position) || 0), at: Date.now(), by: p.name };
     broadcast(r, 'state', { playing: r.state.playing, position: r.state.position, by: p.name, reason: b.reason || null }, from);

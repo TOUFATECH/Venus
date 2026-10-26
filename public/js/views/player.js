@@ -916,12 +916,15 @@ export async function render(main, { id, query }) {
     party = joinParty(code, {
       room: (r) => applyRemote(r.state, true),
       members: (m) => panel.setMembers(m),
+      blocked: (b) => panel.setBlocked(b),
+      removed: (x) => onRemoved(x),
       state: (st) => applyRemote(st),
       chat: (c) => { panel.message(c); if (c.from !== party.clientId) { ping(); if (root.classList.contains('chat-hidden')) bumpUnread(); } },
       react: (r) => { if (r.from !== party.clientId) { floatReaction(reactLayer, r.emoji, r.name); ping(); } panel.react(r.emoji, r.name); },
-      notice: (n) => panel.notice(n.text),
+      notice: (n) => panel.notice(n.text, n.kind),
       item: (i) => go(`/lecture/${i.itemId}?t=0&salle=${code}`, { replace: true }),
     });
+    panel.setModeration({ me: party.clientId, can: () => party.canModerate(), act: (action, data) => party.moderate(action, data) });
     // L'hôte rappelle régulièrement la position : les écrans qui dérivent se recalent
     syncTimer = setInterval(() => {
       if (party && party.isHost() && !video.paused) party.send('state', { playing: true, position: position(), reason: 'sync' });
@@ -956,7 +959,20 @@ export async function render(main, { id, query }) {
     if (on) { unread = 0; chatBtn.querySelector('.p-unread').hidden = true; }
     if (remember) prefs.set('chatOverlay', on);
   }
-  function leaveParty() {
+  // Retiré ou bloqué par l'hôte : on quitte la séance, la vidéo se met en pause
+  function onRemoved(x) {
+    party = null;
+    leaveParty(true);
+    video.pause();
+    const until = x.until ? new Date(x.until).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : null;
+    const msg = x.kind === 'kick' ? `${x.by} vous a retiré de la séance.` : until ? `${x.by} vous a bloqué de la séance jusqu’à ${until}.` : `${x.by} vous a bloqué de la séance.`;
+    const s = sheet('Vous ne faites plus partie de la séance', h('div', {},
+      h('p', {}, msg, ' Vous pouvez continuer à regarder seul.'),
+      h('div', { class: 'form-actions' },
+        h('button', { class: 'btn btn-ghost f', onclick: () => { s.close(); exit(); } }, 'Quitter la vidéo'),
+        h('button', { class: 'btn btn-play f', onclick: () => { s.close(); video.play().catch(() => {}); } }, icon('play'), 'Continuer seul'))));
+  }
+  function leaveParty(quiet = false) {
     if (party) party.close();
     party = null; clearInterval(syncTimer);
     if (panel) panel.el.remove();
@@ -964,7 +980,7 @@ export async function render(main, { id, query }) {
     chatBtn.hidden = true;
     partyBtn.hidden = !!(info && info.live);
     roomCode = null;
-    toast('Vous avez quitté la séance');
+    if (!quiet) toast('Vous avez quitté la séance');
   }
   async function startParty() {
     try {

@@ -126,7 +126,7 @@ export function openStream(path, handlers) {
 }
 
 // Préférences de cet appareil (aperçu au survol, plein écran au lancement, volume)
-const PREF_DEFAULTS = { hoverPreview: true, hoverSound: false, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true, chatSound: true, autoSkip: false, hoverMode: null, heroTrailer: null, detailsTrailer: null, detailsSound: false, subStyle: 'text', subSize: 'medium', miniPlayer: true, notifyBrowser: true };
+const PREF_DEFAULTS = { hoverPreview: true, hoverSound: true, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true, chatSound: true, autoSkip: false, hoverMode: null, heroTrailer: null, detailsTrailer: null, detailsSound: false, subStyle: 'text', subSize: 'medium', miniPlayer: true, notifyBrowser: true };
 export const prefs = {
   get(k) {
     try { const v = localStorage.getItem(`vn_pref_${k}`); return v == null ? PREF_DEFAULTS[k] : JSON.parse(v); } catch { return PREF_DEFAULTS[k]; }

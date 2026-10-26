@@ -1232,6 +1232,69 @@ router.post('/api/admin/control', async (ctx) => {
   sendJson(ctx.res, { ok: true });
 });
 // Déconnecter un appareil (il devra de nouveau saisir le mot de passe ou un code)
+// Supprimer une vidéo (administrateur) : le fichier et ses sous-titres / images à côté sont effacés du disque,
+// puis retirés de Venus. Film, clip, épisode, saison entière ou série entière.
+const SIDE_EXT = /\.(srt|ass|ssa|vtt|sub|idx|sup|nfo|jpe?g|png|webp|txt)$/i;
+function filesOfItem(it) {
+  if (it.type === 'show') return all("SELECT * FROM items WHERE show_id = ? AND type = 'episode' AND path IS NOT NULL", it.id);
+  if (it.type === 'season') return all("SELECT * FROM items WHERE parent_id = ? AND type = 'episode' AND path IS NOT NULL", it.id);
+  return it.path ? [it] : [];
+}
+function removeFileWithSides(file, libRoot) {
+  let freed = 0;
+  const dir = path.dirname(file);
+  const base = path.basename(file, path.extname(file));
+  try { freed += fs.statSync(file).size; } catch { /* déjà absent */ }
+  fs.rmSync(file, { force: true });
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (f.startsWith(`${base}.`) || f.startsWith(`${base}-`)) {
+        if (SIDE_EXT.test(f)) { const fp = path.join(dir, f); try { freed += fs.statSync(fp).size; } catch { /* */ } fs.rmSync(fp, { force: true }); }
+      }
+    }
+  } catch { /* */ }
+  // Dossiers devenus vides (ou ne contenant plus que des images / .nfo) : supprimés, jamais la racine de la bibliothèque
+  let d = dir;
+  const root = path.resolve(libRoot || '/');
+  while (d.startsWith(root + path.sep) && d !== root) {
+    let rest;
+    try { rest = fs.readdirSync(d); } catch { break; }
+    if (rest.some((f) => !SIDE_EXT.test(f) || fs.statSync(path.join(d, f)).isDirectory())) break;
+    fs.rmSync(d, { recursive: true, force: true });
+    d = path.dirname(d);
+  }
+  return freed;
+}
+router.post('/api/admin/items/:id/delete', async (ctx) => {
+  const p = requireAdmin(ctx);
+  const it = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!it) throw new HttpError(404, 'Vidéo introuvable');
+  if (it.type === 'channel') throw new HttpError(400, 'Les chaînes se retirent avec leur liste M3U (Réglages, Bibliothèques)');
+  const files = filesOfItem(it);
+  let freed = 0, deleted = 0;
+  const errors = [];
+  for (const f of files) {
+    const lib = get('SELECT * FROM libraries WHERE id = ?', f.library_id);
+    try {
+      freed += removeFileWithSides(f.path, lib && lib.path);
+      run('DELETE FROM items WHERE id = ?', f.id);
+      deleted++;
+    } catch (e) {
+      errors.push(/EROFS|EACCES|EPERM/.test(e.code || '') ? `${path.basename(f.path)} : dossier en lecture seule (partage réseau ou droits insuffisants)` : `${path.basename(f.path)} : ${e.message}`);
+    }
+  }
+  // Saisons et séries devenues vides
+  run("DELETE FROM items WHERE type='season' AND NOT EXISTS (SELECT 1 FROM items e WHERE e.parent_id = items.id)");
+  run("DELETE FROM items WHERE type='show' AND NOT EXISTS (SELECT 1 FROM items s WHERE s.parent_id = items.id)");
+  if (!files.length && it.type !== 'show' && it.type !== 'season') { run('DELETE FROM items WHERE id = ?', it.id); deleted++; }
+  if (deleted) {
+    logActivity('delete', `${p.name} a supprimé ${it.type === 'show' ? `la série « ${it.title} »` : it.type === 'season' ? `une saison (${deleted} épisodes)` : `« ${it.title} »`}`);
+    events.emit('library', { added: [] });
+  }
+  if (!deleted && errors.length) throw new HttpError(403, errors[0]);
+  sendJson(ctx.res, { deleted, freed, errors, gone: !get('SELECT 1 FROM items WHERE id = ?', it.id) });
+});
+
 router.del('/api/admin/devices/:id', (ctx) => {
   const p = requireAdmin(ctx);
   const t = all('SELECT token FROM tokens').map((r) => r.token).find((x) => deviceId(x) === ctx.params.id);
