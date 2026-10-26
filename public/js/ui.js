@@ -1,5 +1,17 @@
 // Petits outils d'interface (sans framework)
 import { planetMarkup, brandName } from './themes.js';
+// Garde-fou : un élément absent (null / undefined / false) passé à append() s'affichait en toutes lettres
+// (« null »). On l'ignore partout dans l'appli.
+for (const proto of [Element.prototype, DocumentFragment.prototype]) {
+  for (const name of ['append', 'prepend', 'replaceChildren']) {
+    const orig = proto[name];
+    if (!orig || orig.__vnSafe) continue;
+    const safe = function (...nodes) { return orig.apply(this, nodes.filter((n) => n != null && n !== false)); };
+    safe.__vnSafe = true;
+    proto[name] = safe;
+  }
+}
+
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
