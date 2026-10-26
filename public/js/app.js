@@ -21,8 +21,8 @@ const ROUTES = [
   [/^\/nouveautes$/, () => import('./views/nouveautes.js')],
   [/^\/ajouter$/, () => import('./views/add.js')],
   [/^\/recherche$/, () => import('./views/search.js')],
-  [/^\/titre\/(\d+)$/, () => import('./views/details.js'), (m) => ({ id: Number(m[1]) })],
-  [/^\/lecture\/(\d+)$/, () => import('./views/player.js'), (m) => ({ id: Number(m[1]) })],
+  [/^\/titre\/([^/]+)$/, () => import('./views/details.js'), (m) => idOrSlug(m[1])],
+  [/^\/lecture\/([^/]+)$/, () => import('./views/player.js'), (m) => idOrSlug(m[1])],
   [/^\/reglages$/, () => import('./views/settings.js')],
   [/^\/tableau-de-bord$/, () => import('./views/dashboard.js')],
   [/^\/qualite$/, () => import('./views/quality.js')],
@@ -33,6 +33,30 @@ const ROUTES = [
   [/^\/seance$/, () => import('./views/seance.js')],
   [/^\/telecommande$/, () => import('./views/telecommande.js')],
 ];
+// Adresses lisibles : #/lecture/Breaking.Bad.S01E02, #/titre/Inception.2010 (le numéro marche aussi)
+function idOrSlug(raw) {
+  let v = raw; try { v = decodeURIComponent(raw); } catch { /* */ }
+  return /^\d+$/.test(v) ? { id: Number(v) } : { slug: v };
+}
+const slugIds = new Map();
+async function resolveParams(params) {
+  if (params.id || !params.slug) return params;
+  let id = slugIds.get(params.slug.toLowerCase());
+  if (!id) { id = (await api(`/api/resolve?slug=${encodeURIComponent(params.slug)}`)).id; slugIds.set(params.slug.toLowerCase(), id); }
+  return { ...params, id };
+}
+// Remplace le numéro par le nom dans la barre d'adresse, sans recharger la page
+export function showSlug(kind, slug, keep = []) {
+  if (memory || !slug) return;
+  const { path, query } = parseHash();
+  if (!path.startsWith(`/${kind}/`)) return;
+  const q = new URLSearchParams();
+  for (const k of keep) if (query.get(k) != null) q.set(k, query.get(k));
+  const qs = q.toString();
+  const enc = slug.split('').map((c) => (/[\p{L}\p{N}.~-]/u.test(c) ? c : encodeURIComponent(c))).join('');
+  const target = `#/${kind}/${enc}${qs ? `?${qs}` : ''}`;
+  if (location.hash !== target) history.replaceState(history.state, '', target);
+}
 // Écrans plein écran, sans navigation
 const BARE = ['/lecture', '/telecommande', '/vote'];
 
@@ -328,7 +352,11 @@ async function route() {
   for (const [re, loader, extra] of ROUTES) {
     const m = re.exec(path);
     if (!m) continue;
-    const params = { ...(typeof extra === 'function' ? extra(m) : extra || {}), query };
+    let params = { ...(typeof extra === 'function' ? extra(m) : extra || {}), query };
+    if (params.slug) {
+      try { params = await resolveParams(params); }
+      catch (e) { toast(e.message, true); go('/', { replace: true }); return; }
+    }
     const isPlayer = BARE.some((b) => path.startsWith(b));
     return mount(loader(), params, { withNav: !isPlayer, path });
   }
