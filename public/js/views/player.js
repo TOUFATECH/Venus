@@ -232,6 +232,14 @@ export async function render(main, { id, query }) {
     if (desiredPaused) { spinner.hidden = true; showUi(true); }
     else {
       const p = video.play();
+      // Filet de sécurité : si la lecture n'a toujours pas démarré après 6 s (navigateur qui bloque la lecture
+      // automatique sans le dire, flux lent…), on relance et on montre le gros bouton Lecture
+      const myLoad = info;
+      setTimeout(() => {
+        if (destroyed || info !== myLoad || desiredPaused || !video.paused) return;
+        video.play().catch(() => {});
+        spinner.hidden = true; quietStart = false; showUi(true);
+      }, 6000);
       // Lecture interrompue par le chargement (changement de vidéo) : on relance ; refus du navigateur : on montre le bouton
       if (p && p.catch) p.catch((err) => {
         if (err && err.name === 'AbortError' && !destroyed) { setTimeout(() => { if (!destroyed && video.paused && !desiredPaused) video.play().catch(() => { spinner.hidden = true; quietStart = false; showUi(true); }); }, 250); return; }

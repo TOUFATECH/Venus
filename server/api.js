@@ -804,8 +804,10 @@ router.post('/api/play/:id', async (ctx) => {
   const sub = subId ? probe.subs.find((s) => s.id === subId) : null;
   const burnIndex = sub && !sub.text && !sub.external ? sub.index : null;
 
-  const decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? '480p' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
+  const decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? 'auto' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
   decision.burnIndex = b.preview ? null : burnIndex;
+  // Aperçu (affiche d'accueil) : lecture directe quand c'est possible ; sinon petite conversion légère
+  if (b.preview && decision.mode === 'transcode') Object.assign(decision, { limitHeight: 480, limitBitrate: 1.2e6 });
   const progress = get('SELECT * FROM progress WHERE profile_id=? AND item_id=?', p.id, item.id);
   const resumeAt = progress && !progress.watched && progress.position > 20 ? Math.max(0, progress.position - 3) : 0;
   const start = b.start === 'resume' || b.start == null ? resumeAt : Math.max(0, Number(b.start) || 0);
