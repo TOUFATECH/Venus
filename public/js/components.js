@@ -1,7 +1,7 @@
 // Composants partagés : cartes, rangées, actions de lecture
 import { h, icon, img, picture, placeholder, fmtDate, daysSince, fadeIn, sheet, toast } from './ui.js';
 import { go } from './app.js';
-import { api, prefs, hoverMode, prefetch } from './api.js';
+import { api, auth, prefs, hoverMode, prefetch } from './api.js';
 import { trailerPlayer, trailerUrl } from './trailer.js';
 import { setQueue } from './queue.js';
 
@@ -96,7 +96,8 @@ export function card(item, { poster = false, rank = null, onFocus, queue = null 
       if (isClip) { if (queue) setQueue(queue(), { startId: item.id }); return go(playPath(item.id)); }
       const toTitle = onTitle || !(resume || isEp);
       if (toTitle) window.__vtFrom = el.querySelector('.shot');
-      if (onTitle) return go(`/titre/${isEp ? item.showId : item.id}`);
+      // Nom d'un épisode : la fiche de la série s'ouvre sur cet épisode, dans sa saison
+      if (onTitle) return go(isEp ? `/titre/${item.showId}?ep=${item.id}` : `/titre/${item.id}`);
       return resume || isEp ? go(playPath(item.id, item.next ? 0 : undefined)) : go(`/titre/${item.id}`);
     },
   },
@@ -106,7 +107,7 @@ export function card(item, { poster = false, rank = null, onFocus, queue = null 
     isNew && !seen ? h('span', { class: 'tag-new' }, isEp ? 'Nouvel épisode' : 'Nouveau') : null,
     pct > 0 && !(p && p.watched) ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
     seen ? h('span', { class: 'check', title: 'Déjà vu' }, icon('check')) : null),
-  h('div', { class: 'cap' }, h('b', { title: isClip ? title : `Voir la fiche de ${title}` }, title),
+  h('div', { class: 'cap' }, h('b', { title: isClip ? title : isEp ? `Voir S${item.season}:É${item.episode} - ${item.title} dans sa saison` : `Voir la fiche de ${title}` }, title),
     sub || sc ? h('small', {}, sub || '', sc ? h('span', { class: 'cap-score', title: 'Note moyenne des sites' }, `★ ${sc.toFixed(1).replace('.', ',')}`) : null) : null));
   if (onFocus) el.addEventListener('focus', () => onFocus(item));
   attachPreview(el, item);
@@ -154,9 +155,17 @@ function attachPreview(el, item) {
       if (livePreview !== state) return;
       const v = h('video', { class: 'pv', muted: true, loop: true, playsinline: true, preload: 'auto', 'aria-hidden': 'true' });
       v.muted = !prefs.get('hoverSound');
-      v.src = window.__VN_PREVIEW ? window.__VN_PREVIEW(item.id) : `/api/items/${item.id}/preview`;
+      const extractUrl = window.__VN_PREVIEW ? window.__VN_PREVIEW(item.id) : `/api/items/${item.id}/preview`;
+      // Clips : la vidéo elle-même se lance tout de suite (un peu après le début) ; l'extrait préparé par
+      // le serveur ne sert que si le navigateur ne sait pas lire le fichier
+      const direct = item.type === 'clip' && !window.__VN_PREVIEW;
+      v.src = direct ? `/api/stream/${item.id}/file?token=${encodeURIComponent(auth.token || '')}` : extractUrl;
+      if (direct) v.addEventListener('loadedmetadata', () => { if (v.duration > 60) v.currentTime = Math.min(30, v.duration * 0.2); }, { once: true });
       v.addEventListener('playing', () => { if (livePreview === state) el.classList.add('previewing'); });
-      v.addEventListener('error', () => v.remove(), { once: true });
+      v.addEventListener('error', () => {
+        if (direct && v.src.includes('/file')) { v.src = extractUrl; v.play().catch(() => {}); return; }
+        v.remove();
+      });
       state.video = v;
       el.querySelector('.shot').append(v);
       v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
@@ -175,7 +184,7 @@ function attachPreview(el, item) {
       el.querySelector('.shot').append(t.el);
       // YouTube injoignable ou vidéo bloquée : extrait de la vidéo à la place
       setTimeout(() => { if (livePreview === state && state.trailer === t && !t.el.classList.contains('on')) { t.destroy(); state.trailer = null; extract(); } }, 5000);
-    }, useTrailer ? 800 : 650);
+    }, useTrailer ? 800 : item.type === 'clip' ? 300 : 650);
   });
   el.addEventListener('mouseleave', () => { if (livePreview && livePreview.el === el) stopPreview(); });
   el.addEventListener('click', stopPreview);
@@ -295,7 +304,7 @@ export function quickMenu(item) {
     opt('play', item.progress && !item.progress.watched && item.progress.position > 0 ? 'Reprendre' : 'Lecture', async () => {
       if (item.type === 'show') { const d = await api(`/api/items/${item.id}`); go(d.nextUp ? playPath(d.nextUp.id) : `/titre/${item.id}`); } else go(playPath(item.id));
     }),
-    item.type !== 'clip' ? opt('info', 'Voir la fiche', () => go(`/titre/${titleId}`)) : null,
+    item.type !== 'clip' ? opt('info', isEp ? 'Voir l’épisode dans sa saison' : 'Voir la fiche', () => go(isEp ? `/titre/${titleId}?ep=${item.id}` : `/titre/${titleId}`)) : null,
     opt('plus', 'Ma liste', async () => {
       const r = await api(`/api/items/${titleId}/mylist`, { method: 'POST' });
       toast(r.inList ? 'Ajouté à ma liste' : 'Retiré de ma liste', { type: r.inList ? 'success' : 'info', action: { label: 'Annuler', onClick: () => api(`/api/items/${titleId}/mylist`, { method: 'POST' }).then(() => toast(r.inList ? 'Retiré de ma liste' : 'Ajouté à ma liste')) } });

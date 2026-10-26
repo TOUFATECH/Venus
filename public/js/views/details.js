@@ -196,6 +196,30 @@ export async function render(main, { id, query }) {
     try { remembered = d.seasons.find((s) => String(s.id) === sessionStorage.getItem(memoKey)); } catch { /* */ }
     const fromPlayer = wantEp && d.seasons.find((s) => s.episodes.some((e) => e.id === wantEp));
     const startSeason = fromPlayer || remembered || d.seasons.find((s) => d.nextUp && s.episodes.some((e) => e.id === d.nextUp.id)) || d.seasons[0];
+    // « À suivre » (comme Jellyfin) : l'image lance l'épisode, son nom mène à l'épisode dans sa saison
+    const nu = d.nextUp && !showDone ? d.nextUp : null;
+    if (nu) {
+      const nuSeason = d.seasons.find((s) => s.episodes.some((e) => e.id === nu.id));
+      const p = nu.progress;
+      const pct = p && p.duration && !p.watched ? Math.min(100, (p.position / p.duration) * 100) : 0;
+      const shot = h('img', { src: nu.still ? img(nu.still, 780) : `/api/items/${nu.id}/thumb`, alt: '', loading: 'lazy' });
+      shot.addEventListener('error', () => shot.replaceWith(placeholder(nu.title)), { once: true });
+      const label = `S${nu.season}:É${nu.episode} - ${nu.title}`;
+      const toEpisode = () => {
+        if (!nuSeason) return;
+        if (epFilter !== 'all') { epFilter = 'all'; [...epChips.children].forEach((c, i) => c.classList.toggle('on', i === 0)); }
+        showSeason(nuSeason, nu.id);
+      };
+      content.append(h('section', { class: 'd-section next-up' },
+        h('h2', { class: 'section-title' }, pct ? 'Reprendre' : 'À suivre'),
+        h('div', { class: 'nu-card' },
+          h('button', { class: 'nu-shot f', 'aria-label': `Lire ${label}`, onclick: () => go(playPath(nu.id)) }, shot, h('span', { class: 'ep-play' }, icon('play')),
+            pct ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null),
+          h('div', { class: 'nu-text' },
+            h('a', { class: 'nu-link f', href: `#/titre/${d.id}?ep=${nu.id}`, title: label, onclick: (e) => { e.preventDefault(); toEpisode(); } }, label),
+            h('small', {}, [nuSeason ? (nuSeason.title || `Saison ${nuSeason.number}`) : null, nu.runtime ? `${nu.runtime} min` : null, pct && p.duration ? `${Math.max(1, Math.round((p.duration - p.position) / 60))} min restantes` : null].filter(Boolean).join(' · ')),
+            nu.overview ? h('p', {}, nu.overview) : null))));
+    }
     content.append(h('section', { class: 'd-section', id: 'episodes' },
       h('div', { class: 'ep-head' }, h('h2', { class: 'section-title' }, d.seasons.length > 1 ? `${d.seasons.length} saisons` : 'Épisodes'), epChips),
       d.seasons.length > 1 ? seasonBar : null, seasonHead, epList));
@@ -389,7 +413,7 @@ function episodeRow(e, current = false, onToggle = null) {
       p && p.watched ? h('span', { class: 'check' }, icon('check')) : null),
     h('div', {},
       h('div', { class: 'ep-meta' }, `Épisode ${e.episode}${e.episodeEnd ? `–${e.episodeEnd}` : ''}${dur ? `, ${dur} min` : ''}${e.released && e.released.length === 10 ? `, ${fmtDate(e.released)}` : ''}`,
-        current ? h('span', { class: 'tag-new inline now' }, 'Vous en étiez là') : null,
+        current ? h('span', { class: 'tag-new inline now' }, p && !p.watched && p.position > 0 ? 'Vous en étiez là' : 'Cet épisode') : null,
         e.released && daysSince(e.released) <= 14 && !(e.progress && e.progress.watched) ? h('span', { class: 'tag-new inline' }, 'Nouveau') : null),
       h('h3', {}, e.title),
       e.overview ? h('p', {}, e.overview) : null));

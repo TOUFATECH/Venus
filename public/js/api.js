@@ -37,7 +37,8 @@ const copy = (d) => { try { return structuredClone(d); } catch { return JSON.par
 export function clearApiCache() { cache.clear(); }
 export async function api(path, opts = {}) {
   const method = opts.method || 'GET';
-  if (method !== 'GET') { cache.clear(); return raw(path, opts); }
+  // Les aperçus (lecture muette sur l'accueil) ne changent rien : le cache reste valable
+  if (method !== 'GET') { if (!(opts.body && opts.body.preview)) cache.clear(); return raw(path, opts); }
   if (!CACHEABLE.test(path) || opts.signal) return raw(path, opts);
   const now = Date.now();
   const c = cache.get(path);

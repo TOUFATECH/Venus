@@ -77,16 +77,23 @@ export function partyPanel(code, { onReact, onChat, onInvite, onLeave, onHide, s
       membersEl.replaceChildren(...list.map((m) => h('span', { class: 'pp-member', title: m.host ? `${m.name} (hôte)` : m.name }, avatar(m, 'sm'), h('small', {}, m.name))));
     },
     message(c) {
-      log.append(h('div', { class: 'pp-msg' }, h('b', {}, c.name), ' ', c.text));
+      const m = h('div', { class: 'pp-msg' }, h('b', {}, c.name), ' ', c.text);
+      log.append(m);
+      // Pendant le film, les anciens messages s'effacent (ils reviennent quand on bouge la souris)
+      setTimeout(() => m.classList.add('old'), 12000);
       while (log.children.length > 60) log.firstChild.remove();
       log.scrollTop = log.scrollHeight;
     },
     react(emoji, name) {
-      log.append(h('div', { class: 'pp-msg pp-react' }, name ? h('b', {}, name) : null, ' ', h('span', {}, emoji)));
+      const m = h('div', { class: 'pp-msg pp-react' }, name ? h('b', {}, name) : null, ' ', h('span', {}, emoji));
+      log.append(m);
+      setTimeout(() => m.classList.add('old'), 8000);
       log.scrollTop = log.scrollHeight;
     },
     notice(text) {
-      log.append(h('div', { class: 'pp-notice' }, text));
+      const m = h('div', { class: 'pp-notice' }, text);
+      log.append(m);
+      setTimeout(() => m.classList.add('old'), 8000);
       log.scrollTop = log.scrollHeight;
     },
   };
