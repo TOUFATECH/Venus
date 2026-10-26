@@ -827,8 +827,24 @@ export async function render(main, { id, query }) {
 
   // ---------------------------------------------------------------- Mode Ambiance
   let ambOn = false, stopAmb = null;
+  // Ambiance : la fenêtre de la vidéo prend exactement la forme de l'image (pas de bandes noires),
+  // et ses bords se fondent dans la lumière qui déborde autour
+  function fitAmb() {
+    if (!ambOn) return;
+    const W = root.clientWidth, H = root.clientHeight;
+    const ar = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9;
+    let w = W * 0.86, hh = w / ar;
+    if (hh > H * 0.86) { hh = H * 0.86; w = hh * ar; }
+    root.style.setProperty('--amb-w', `${Math.round(w)}px`);
+    root.style.setProperty('--amb-h', `${Math.round(hh)}px`);
+  }
+  const ambRo = new ResizeObserver(() => fitAmb());
+  ambRo.observe(root);
+  video.addEventListener('loadedmetadata', fitAmb);
+  video.addEventListener('resize', fitAmb);
   function setAmbiance(on) {
     ambOn = on; ambianceOn.set(on);
+    fitAmb();
     root.classList.toggle('amb-on', on);
     ambBtn.setAttribute('aria-pressed', String(on));
     ambBtn.classList.toggle('on', on);
@@ -1089,6 +1105,7 @@ export async function render(main, { id, query }) {
     document.removeEventListener('keydown', onKey, true);
     if (zapper) { zapper.stop(); document.removeEventListener('keydown', zapper.onKey, true); }
     if (stopAmb) stopAmb();
+    ambRo.disconnect();
     if (party) party.close();
     clearInterval(syncTimer);
     document.removeEventListener('visibilitychange', onHide);
