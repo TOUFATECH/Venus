@@ -27,6 +27,9 @@ function loadHls() {
 
 const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
 const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// Fin d'un lecteur : si un autre démarre juste après (épisode ou clip suivant, chaîne suivante…),
+// il s'ouvre sans afficher les commandes
+let chainedAt = 0;
 const COMPAT_CAPS = { containers: [], video: ['h264'], audio: ['aac'], hdr: false, hevcHls: false };
 
 // ------------------------------------------------------------------ sous-titres WebVTT
@@ -114,7 +117,8 @@ export async function render(main, { id, query }) {
   const reactLayer = h('div', { class: 'react-layer', 'aria-hidden': 'true' });
   const ambBtn = h('button', { class: 'p-icon f', 'aria-label': 'Mode Ambiance', 'aria-pressed': 'false', title: 'Ambiance : la lumière du film déborde autour de l’image', onclick: () => setAmbiance(!ambOn) }, icon('glow'));
   const partyBtn = h('button', { class: 'btn btn-ghost btn-small f', title: 'Regarder ensemble, chacun sur son écran', onclick: () => startParty(), 'aria-label': 'Regarder ensemble' }, icon('people'), h('span', { class: 'lbl' }, 'Ensemble'));
-  const root = h('div', { class: 'player ui-on', role: 'region', 'aria-label': 'Lecteur vidéo' },
+  let quietStart = Date.now() - chainedAt < 3000;
+  const root = h('div', { class: quietStart ? 'player' : 'player ui-on', role: 'region', 'aria-label': 'Lecteur vidéo' },
     ambCanvas, video, reactLayer, h('div', { class: 'scrim' }), subsLayer, spinner,
     h('div', { class: 'p-top' }, backBtn, h('div', { style: { minWidth: 0, flex: 1 } }, titleEl, subEl), badge, lockBtn),
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
@@ -223,7 +227,11 @@ export async function render(main, { id, query }) {
     if (desiredPaused) { spinner.hidden = true; showUi(true); }
     else {
       const p = video.play();
-      if (p && p.catch) p.catch(() => { spinner.hidden = true; showUi(true); });
+      // Lecture interrompue par le chargement (changement de vidéo) : on relance ; refus du navigateur : on montre le bouton
+      if (p && p.catch) p.catch((err) => {
+        if (err && err.name === 'AbortError' && !destroyed) { setTimeout(() => { if (!destroyed && video.paused && !desiredPaused) video.play().catch(() => { spinner.hidden = true; quietStart = false; showUi(true); }); }, 250); return; }
+        spinner.hidden = true; quietStart = false; showUi(true);
+      });
     }
     paintTimeline(info.startAt || 0);
   }
@@ -445,7 +453,10 @@ export async function render(main, { id, query }) {
   track.addEventListener('pointerup', (e) => { if (!dragging) return; dragging = false; seekTo(timeAt(e.clientX), { immediate: true }); showUi(); });
 
   // Souris et tactile
-  root.addEventListener('mousemove', () => showUi());
+  // Seul un vrai mouvement de la souris affiche les commandes (le navigateur envoie aussi des « mouvements »
+  // sans déplacement quand l'image change sous le pointeur)
+  root.addEventListener('mousemove', (e) => { if (!e.movementX && !e.movementY) return; quietStart = false; showUi(); });
+  root.addEventListener('pointerdown', () => { quietStart = false; }, true);
   let lastTap = 0, tapTimer = null;
   video.addEventListener('click', (e) => {
     const now = Date.now();
@@ -469,7 +480,7 @@ export async function render(main, { id, query }) {
     const k = e.key, code = e.keyCode;
     const uiOn = root.classList.contains('ui-on');
     const active = document.activeElement;
-    const consume = () => { e.preventDefault(); e.stopPropagation(); };
+    const consume = () => { e.preventDefault(); e.stopPropagation(); quietStart = false; };
     if (k === ' ' || k === 'MediaPlayPause' || code === 179 || code === 415 || code === 19 || k === 'k') {
       consume(); togglePlay(); showUi(); return;
     }
@@ -504,9 +515,9 @@ export async function render(main, { id, query }) {
 
   // ---------------------------------------------------------------- évènements vidéo
   video.addEventListener('waiting', () => { spinner.hidden = false; });
-  video.addEventListener('playing', () => { spinner.hidden = true; mediaRecover = 0; showUi(); requestWakeLock(); });
+  video.addEventListener('playing', () => { spinner.hidden = true; mediaRecover = 0; if (!quietStart) showUi(); requestWakeLock(); });
   video.addEventListener('canplay', () => { spinner.hidden = true; });
-  video.addEventListener('play', () => { playBtn.replaceChildren(icon('pause')); showUi(); shareState('play'); });
+  video.addEventListener('play', () => { playBtn.replaceChildren(icon('pause')); if (!quietStart) showUi(); shareState('play'); });
   video.addEventListener('seeked', () => shareState('seek'));
   video.addEventListener('pause', () => { playBtn.replaceChildren(icon('play')); showUi(true); saveProgress(); releaseWakeLock(); shareState('pause'); });
   video.addEventListener('timeupdate', () => {
@@ -1098,6 +1109,7 @@ export async function render(main, { id, query }) {
 
   function destroy() {
     destroyed = true;
+    if (!handedOff) chainedAt = Date.now();
     saveProgress();
     clearApiCache(); // « Reprendre la lecture » et les vus sont à jour au retour
     clearInterval(beatTimer); clearTimeout(beatSoon); window.removeEventListener('vn:control', onControl); beat(true);
