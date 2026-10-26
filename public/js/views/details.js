@@ -2,7 +2,7 @@
 // Bande-annonce en fond (son et vidéo désactivables), distribution et équipe, fiche technique, épisodes.
 import { api, prefs, detailsTrailers } from '../api.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince, hueOf } from '../ui.js';
-import { row, card, playPath, metaLine, frameImage, framePoster, ratingChips, scrollArrows } from '../components.js';
+import { row, card, playPath, metaLine, frameImage, framePoster, ratingChips, scrollArrows, deleteVideo } from '../components.js';
 import { trailerUrl, trailerPlayer } from '../trailer.js';
 import { go, state, setTitle, showSlug } from '../app.js';
 import { focusEl } from '../nav.js';
@@ -70,6 +70,15 @@ export async function render(main, { id, query }) {
     m.openDownload({ id: d.id, title: d.title, size: d.file && d.file.size, duration: d.duration || (d.runtime ? d.runtime * 60 : 0) });
   } }, icon('down')));
   if (state.profile.isAdmin && !isClip) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Corriger l’identification', title: 'Corriger l’identification', onclick: () => fixMatch(d) }, icon('gear')));
+  if (state.profile.isAdmin) {
+    const nEps = isShow ? d.seasons.reduce((n, s) => n + s.episodes.length, 0) : 0;
+    const size = !isShow && d.file && d.file.size ? d.file.size : 0;
+    actions.append(h('button', { class: 'btn btn-ghost btn-icon btn-del f', 'aria-label': isShow ? 'Supprimer la série' : 'Supprimer la vidéo', title: isShow ? 'Supprimer la série (fichiers effacés)' : 'Supprimer la vidéo (fichier effacé)', onclick: () => deleteVideo({
+      id: d.id, what: isShow ? `la série « ${d.title} »` : `« ${d.title} »`,
+      detail: isShow ? `Les ${nEps} épisode${nEps > 1 ? 's' : ''} de toutes les saisons seront supprimés.` : size ? `Place libérée : ${size >= 1e9 ? `${(size / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(size / 1e6)} Mo`}.` : '',
+      onDone: () => go(libOf(d), { replace: true }),
+    }) }, icon('trash')));
+  }
 
   // ---------------------------------------------------------------- ligne d'infos : année, âge, durée, heure de fin
   const nbEps = isShow ? d.seasons.reduce((n, s) => n + s.episodes.length, 0) : 0;
@@ -146,7 +155,11 @@ export async function render(main, { id, query }) {
         h('div', { class: 'sh-actions' },
           next ? h('button', { class: 'btn btn-small f', onclick: () => go(playPath(next.id)) }, icon('play'), all ? 'Revoir la saison' : seen ? `Continuer É${next.episode}` : 'Lire la saison') : null,
           h('button', { class: `btn btn-small btn-ghost f${all ? ' is-on' : ''}`, onclick: () => markSeason(s, !all) }, icon('eye'), all ? 'Saison vue' : 'Marquer la saison vue'),
-          h('button', { class: 'btn btn-small btn-ghost btn-icon f', 'aria-label': 'Télécharger la saison', title: 'Télécharger la saison', onclick: async () => { const m = await import('./downloads.js'); m.openDownload({ id: s.id, title: seasonName(s), season: true }); } }, icon('down'))));
+          h('button', { class: 'btn btn-small btn-ghost btn-icon f', 'aria-label': 'Télécharger la saison', title: 'Télécharger la saison', onclick: async () => { const m = await import('./downloads.js'); m.openDownload({ id: s.id, title: seasonName(s), season: true }); } }, icon('down')),
+          state.profile.isAdmin ? h('button', { class: 'btn btn-small btn-ghost btn-icon btn-del f', 'aria-label': `Supprimer ${seasonName(s)}`, title: `Supprimer ${seasonName(s)} (fichiers effacés)`, onclick: () => deleteVideo({
+            id: s.id, what: `${seasonName(s).toLowerCase().startsWith('saison') ? 'la ' : ''}${seasonName(s)}`, detail: `Les ${total} épisode${total > 1 ? 's' : ''} de cette saison seront supprimés.`,
+            onDone: (r) => (r.gone && d.seasons.length === 1 ? go(libOf(d), { replace: true }) : window.dispatchEvent(new HashChangeEvent('hashchange'))),
+          }) }, icon('trash')) : null));
     };
     const showSeason = (s, focusId = null) => {
       current = s;

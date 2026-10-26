@@ -1,9 +1,10 @@
 // Composants partagés : cartes, rangées, actions de lecture
 import { h, icon, img, picture, placeholder, fmtDate, daysSince, fadeIn, sheet, toast } from './ui.js';
-import { go } from './app.js';
+import { go, state } from './app.js';
 import { api, auth, prefs, hoverMode, prefetch } from './api.js';
 import { trailerPlayer, trailerUrl } from './trailer.js';
 import { setQueue } from './queue.js';
+import { startMini, miniActive } from './mini.js';
 
 export function playPath(id, t) { return `/lecture/${id}${t != null ? `?t=${Math.floor(t)}` : ''}`; }
 
@@ -141,7 +142,27 @@ function stopPreview() {
   if (livePreview.video) { livePreview.video.pause(); livePreview.video.removeAttribute('src'); livePreview.video.load(); livePreview.video.remove(); }
   if (livePreview.trailer) livePreview.trailer.destroy();
   livePreview.el.classList.remove('previewing');
+  livePreview.el.querySelector('.pv-mini')?.remove();
   livePreview = null;
+}
+// L'aperçu devient le mini-lecteur : il continue en bas de l'écran, quelle que soit la page,
+// jusqu'à ce qu'on le ferme ou qu'on lance une autre vidéo
+function toMiniFromPreview(state, item) {
+  const v = state.video;
+  if (!v) return;
+  clearTimeout(state.timer);
+  state.video = null;
+  state.el.classList.remove('previewing');
+  state.el.querySelector('.pv-mini')?.remove();
+  if (livePreview === state) livePreview = null;
+  v.classList.remove('pv');
+  v.loop = false;
+  v.muted = false;
+  const isEp = item.type === 'episode';
+  startMini({ video: v, hls: null, id: item.id, offset: 0,
+    info: { itemId: item.id, title: isEp ? item.showTitle || item.title : item.title, duration: v.duration || 0, sessionId: null },
+    subtitle: isEp ? `S${item.season} É${item.episode}` : item.originalTitle || '', position: () => v.currentTime || 0 });
+  v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
 }
 function attachPreview(el, item) {
   if (item.type === 'channel') return;
@@ -154,14 +175,24 @@ function attachPreview(el, item) {
     const extract = () => {
       if (livePreview !== state) return;
       const v = h('video', { class: 'pv', muted: true, loop: true, playsinline: true, preload: 'auto', 'aria-hidden': 'true' });
-      v.muted = !prefs.get('hoverSound');
+      v.muted = !prefs.get('hoverSound') || miniActive();
+      // Pas d'incrustation du navigateur sur l'aperçu (elle s'arrêterait en changeant de page) :
+      // le bouton « Mini-lecteur » de la carte fait la même chose et continue partout dans Venus
+      v.disablePictureInPicture = true; v.setAttribute('disablepictureinpicture', '');
       const extractUrl = window.__VN_PREVIEW ? window.__VN_PREVIEW(item.id) : `/api/items/${item.id}/preview`;
       // Clips : la vidéo elle-même se lance tout de suite (un peu après le début) ; l'extrait préparé par
       // le serveur ne sert que si le navigateur ne sait pas lire le fichier
       const direct = item.type === 'clip' && !window.__VN_PREVIEW;
       v.src = direct ? `/api/stream/${item.id}/file?token=${encodeURIComponent(auth.token || '')}` : extractUrl;
       if (direct) v.addEventListener('loadedmetadata', () => { if (v.duration > 60) v.currentTime = Math.min(30, v.duration * 0.2); }, { once: true });
-      v.addEventListener('playing', () => { if (livePreview === state) el.classList.add('previewing'); });
+      v.addEventListener('playing', () => {
+        if (livePreview !== state) return;
+        el.classList.add('previewing');
+        if (!el.querySelector('.pv-mini')) {
+          el.querySelector('.shot').append(h('span', { class: 'pv-mini', role: 'button', tabindex: '-1', title: 'Continuer dans le mini-lecteur (la vidéo continue pendant que vous naviguez)', 'aria-label': 'Continuer dans le mini-lecteur',
+            onclick: (e) => { e.preventDefault(); e.stopPropagation(); toMiniFromPreview(state, item); } }, icon('pip')));
+        }
+      });
       v.addEventListener('error', () => {
         if (direct && v.src.includes('/file')) { v.src = extractUrl; v.play().catch(() => {}); return; }
         v.remove();
@@ -317,5 +348,29 @@ export function quickMenu(item) {
       const frame = h('iframe', { class: 'trailer-frame', src: trailerUrl(item.trailer), title: `Bande-annonce de ${item.title}`, allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true });
       sheet(`Bande-annonce : ${item.title}`, h('div', { class: 'trailer-box' }, frame), { wide: true, onClose: () => frame.remove() });
     }) : null,
-    item.type === 'movie' || isEp ? opt('down', 'Télécharger', async () => { const m = await import('./views/downloads.js'); m.openDownload({ id: item.id, title: item.title, duration: (item.runtime || 0) * 60 }); }) : null));
+    item.type === 'movie' || isEp ? opt('down', 'Télécharger', async () => { const m = await import('./views/downloads.js'); m.openDownload({ id: item.id, title: item.title, duration: (item.runtime || 0) * 60 }); }) : null,
+    state.profile && state.profile.isAdmin && item.type !== 'channel' ? opt('trash', item.type === 'show' ? 'Supprimer la série' : 'Supprimer la vidéo', () => deleteVideo({ id: item.id, what: isEp ? `l’épisode S${item.season} É${item.episode}` : item.type === 'show' ? `la série « ${item.title} »` : `« ${item.title} »`, onDone: () => window.dispatchEvent(new HashChangeEvent('hashchange')) })) : null));
+}
+
+// Administration : supprimer une vidéo (fichier effacé du disque). Confirmation obligatoire, « Annuler » par défaut.
+const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
+export function deleteVideo({ id, what, detail = '', onDone }) {
+  return new Promise((resolve) => {
+    let busy = false;
+    const go1 = h('button', { class: 'btn btn-danger-solid f', type: 'button', onclick: async () => {
+      if (busy) return; busy = true; go1.disabled = true; go1.replaceChildren(h('span', { class: 'mini-spin' }), 'Suppression…');
+      try {
+        const r = await api(`/api/admin/items/${id}/delete`, { method: 'POST' });
+        s.close();
+        toast(`${what} supprimé${r.freed ? ` · ${fmtGo(r.freed)} libérés` : ''}${r.errors.length ? ` (${r.errors.length} fichier${r.errors.length > 1 ? 's' : ''} n’a pas pu être effacé)` : ''}`, { type: r.errors.length ? 'info' : 'success', duration: 6000 });
+        if (onDone) onDone(r);
+        resolve(r);
+      } catch (e) { busy = false; go1.disabled = false; go1.replaceChildren(icon('trash'), 'Supprimer définitivement'); toast(e.message, true); }
+    } }, icon('trash'), 'Supprimer définitivement');
+    const cancel = h('button', { class: 'btn f', type: 'button', 'data-autofocus': true, onclick: () => { s.close(); resolve(null); } }, 'Annuler');
+    const s = sheet(`Supprimer ${what} ?`, h('div', { class: 'del-sheet' },
+      h('p', {}, h('b', {}, 'Le fichier vidéo sera effacé du disque'), ', avec ses sous-titres et images à côté. ', detail),
+      h('p', { class: 'del-warn' }, icon('lock'), 'C’est définitif : pas de corbeille. Les vus et « Ma liste » de ce titre disparaissent aussi.'),
+      h('div', { class: 'form-actions' }, cancel, go1)), { onClose: () => resolve(null) });
+  });
 }
