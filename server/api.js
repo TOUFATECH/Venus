@@ -376,6 +376,18 @@ router.get('/api/home', (ctx) => {
     }
   }
   if (cont.length) rows.push({ id: 'continue', title: 'Reprendre la lecture', items: cont });
+  // Tête d'affiche : ce qu'on regardait en dernier (épisode, film ou chaîne de TV)
+  let heroResume = null;
+  if (cont.length) {
+    const c = cont[0];
+    const pr = prog.find((x) => x.item_id === c.id || (c.type === 'episode' && x.show_id === c.showId));
+    heroResume = { item: { ...c, heroResume: true }, at: pr ? pr.updated_at : 0 };
+  }
+  try {
+    const lc = getSetting(`last_channel:${p.id}`, null);
+    const ch = lc && get('SELECT * FROM items WHERE id = ? AND type = ?', lc.id, 'channel');
+    if (ch && visible(p, ch) && (!heroResume || lc.at > heroResume.at) && Date.now() - lc.at < 30 * 864e5) heroResume = { item: { ...card(ch), heroResume: true, live: true }, at: lc.at };
+  } catch { /* */ }
 
   // 2. Nouveaux épisodes : sortis ces 60 derniers jours (date TMDB), sinon ajoutés ces 30 derniers jours
   const since = new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10);
@@ -486,7 +498,11 @@ router.get('/api/home', (ctx) => {
   }
 
   const heroPool = base.filter((i) => i.backdrop && i.type !== 'clip');
-  const hero = seededShuffle(heroPool.length ? heroPool : base.filter((i) => i.type !== 'clip'), day + 7).slice(0, 6).map((i) => C(i));
+  let hero = seededShuffle(heroPool.length ? heroPool : base.filter((i) => i.type !== 'clip'), day + 7).slice(0, 6).map((i) => C(i));
+  if (heroResume) {
+    const r = heroResume.item;
+    hero = [r, ...hero.filter((x) => x.id !== r.id && x.id !== r.showId)].slice(0, 6);
+  }
   sendJson(ctx.res, { hero, rows, empty: base.length === 0 && !channels.length, scanning: scanState.running });
 });
 
@@ -779,8 +795,8 @@ router.post('/api/play/:id', async (ctx) => {
   const sub = subId ? probe.subs.find((s) => s.id === subId) : null;
   const burnIndex = sub && !sub.text && !sub.external ? sub.index : null;
 
-  const decision = decide(probe, { caps: b.caps, audioOrder, quality: b.quality || 'auto', burnSub: burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
-  decision.burnIndex = burnIndex;
+  const decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? '480p' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
+  decision.burnIndex = b.preview ? null : burnIndex;
   const progress = get('SELECT * FROM progress WHERE profile_id=? AND item_id=?', p.id, item.id);
   const resumeAt = progress && !progress.watched && progress.position > 20 ? Math.max(0, progress.position - 3) : 0;
   const start = b.start === 'resume' || b.start == null ? resumeAt : Math.max(0, Number(b.start) || 0);
@@ -833,6 +849,7 @@ async function playChannel(ctx, p, item, b) {
   }
   // Aperçu dans la page TV : petite image, faible débit si une conversion est nécessaire
   if (b.preview && !decision.copyVideo) Object.assign(decision, { limitHeight: 480, limitBitrate: 1.2e6 });
+  else if (!b.preview) setSetting(`last_channel:${p.id}`, { id: item.id, at: Date.now() });
   void caps;
   if (b.replace) sessions.get(b.replace)?.stop();
   const s = startSession({ item, probe: probe || { video: null, audio: [], subs: [], bitrate: 0 }, decision, start: 0, profileId: p.id, quality: 'auto', live: true });

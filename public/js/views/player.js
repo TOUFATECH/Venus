@@ -95,7 +95,7 @@ export async function render(main, { id, query }) {
   const volOsd = h('div', { class: 'p-osd', hidden: true });
   const epsBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, onclick: () => openEpisodes(), 'aria-label': 'Épisodes' }, icon('eps'), h('span', { class: 'lbl' }, 'Épisodes'));
   const chatBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Afficher ou masquer la discussion', 'aria-pressed': 'true', onclick: () => setChat(root.classList.contains('chat-hidden')) }, icon('chat'), h('span', { class: 'p-unread', hidden: true }));
-  const prevBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Précédent', title: 'Précédent (Maj+P)', onclick: () => playPrev() }, icon('prev'));
+  const prevBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, 'aria-label': 'Épisode précédent', title: 'Précédent (Maj+P)', onclick: () => playPrev() }, icon('prev'), h('span', { class: 'lbl' }, 'Épisode précédent'));
   const shuffleBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Lecture aléatoire', 'aria-pressed': 'false', onclick: () => {
     const on = toggleShuffle(id); shuffleBtn.classList.toggle('on', !!on); shuffleBtn.setAttribute('aria-pressed', String(!!on));
     applyQueue(); toast(on ? 'Lecture aléatoire' : 'Lecture dans l’ordre');
@@ -576,6 +576,7 @@ export async function render(main, { id, query }) {
     nextBtn.querySelector('.lbl').textContent = info.type === 'episode' ? 'Épisode suivant' : 'Suivant';
     prevBtn.hidden = !info.prev;
     prevBtn.setAttribute('aria-label', info.type === 'episode' ? 'Épisode précédent' : 'Précédent');
+    prevBtn.querySelector('.lbl').textContent = info.type === 'episode' ? 'Épisode précédent' : 'Précédent';
   }
   function playPrev() {
     if (!info || !info.prev) return;
@@ -715,6 +716,7 @@ export async function render(main, { id, query }) {
   function openQuality() {
     const s = sheet('Qualité', h('div', {},
       h('p', { style: { color: 'var(--mist)', margin: '0 0 12px' } }, 'Auto choisit la meilleure qualité possible. Baissez-la si la vidéo saccade ou pour économiser vos données.'),
+      badge.textContent ? h('p', { class: 'muted', style: { fontSize: '.84rem', margin: '0 0 12px' } }, `Lecture : ${badge.textContent}${badge.title ? ` (${badge.title})` : ''}`) : null,
       info.qualities.map((q) => h('button', {
         class: `opt f${q.id === quality ? ' on' : ''}`,
         onclick: () => { s.close(); if (q.id !== quality) { quality = q.id; setPreferredQuality(q.id); load(position(), { reason: `Qualité : ${q.label}` }); } },
