@@ -2022,3 +2022,15 @@ html:not(.touch) .card:not(.channel) .cap:hover b { text-decoration: underline; 
   }
   .player.amb-on .amb-canvas { opacity: 1; }
 }
+
+/* Pastille du mode de lecture (en haut à droite du lecteur) */
+.p-mode { flex: none; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.p-mode i { width: 12px; height: 12px; border-radius: 50%; background: #3ddc84; box-shadow: 0 0 0 3px rgb(61 220 132 / .22), 0 0 12px rgb(61 220 132 / .7); }
+.p-mode.conv i { background: #ff9f2e; box-shadow: 0 0 0 3px rgb(255 159 46 / .22), 0 0 12px rgb(255 159 46 / .7); }
+.p-mode.bad i { background: #ff4d4f; box-shadow: 0 0 0 3px rgb(255 77 79 / .22), 0 0 12px rgb(255 77 79 / .7); }
+.p-mode.f:hover i, .p-mode.f:focus-visible i { transform: scale(1.2); }
+.p-mode i { transition: transform .2s var(--ease); }
+.p-mode-line { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: .88rem; color: var(--mist); }
+.p-mode-line .p-mode { width: 20px; height: 20px; cursor: default; }
+.p-mode-line .p-mode i { width: 10px; height: 10px; }
+.p-mode-line small { color: var(--dim); }
