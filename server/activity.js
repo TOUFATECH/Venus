@@ -7,7 +7,8 @@ import { EventEmitter } from 'node:events';
 export const control = new EventEmitter();
 control.setMaxListeners(0);
 
-export const deviceId = (token) => crypto.createHash('sha256').update(String(token)).digest('hex').slice(0, 16);
+// Identifiant d'appareil : début de l'empreinte du jeton (le même que l'on parte du jeton ou de son empreinte en base)
+export const deviceId = (token) => (String(token).startsWith('h1:') ? String(token).slice(3, 19) : crypto.createHash('sha256').update(String(token)).digest('hex').slice(0, 16));
 
 // ------------------------------------------------------------------ journal
 const log = [];

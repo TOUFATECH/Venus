@@ -71,6 +71,7 @@ export async function render(main) {
         h('button', { class: 'tool f', onclick: () => compose(null) }, icon('chat'), h('span', { class: 'lbl' }, 'Message à tous')),
         sv.canRestart ? h('button', { class: 'tool f', onclick: restart }, icon('power'), h('span', { class: 'lbl' }, 'Redémarrer')) : null,
         h('button', { class: 'tool f', onclick: () => go('/qualite') }, icon('film'), h('span', { class: 'lbl' }, 'Qualité')),
+        h('button', { class: 'tool f', onclick: () => go('/securite') }, icon('lock'), h('span', { class: 'lbl' }, 'Sécurité')),
         h('button', { class: 'tool f', onclick: () => go('/reglages') }, icon('gear'), h('span', { class: 'lbl' }, 'Réglages'))));
     const c = d.counts;
     const tiles = [

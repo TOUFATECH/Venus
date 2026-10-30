@@ -224,6 +224,8 @@ cinema.mondomaine.fr {
 }
 ```
 
+Sans Caddy, Venus sert aussi HTTPS lui-même sur le port **8920** (`https://192.168.1.x:8920`) avec un certificat auto-signé créé au premier démarrage : le navigateur affiche un avertissement la première fois. Pour un vrai certificat, donnez `TLS_CERT` et `TLS_KEY`. Par défaut, les connexions venant d'Internet en `http://` sont redirigées vers HTTPS ; le réseau local reste accessible en `http://`.
+
 Hors de chez vous, baissez la qualité dans le lecteur (720p ou 480p) si votre connexion montante est limitée.
 
 ## Variables d'environnement
@@ -238,6 +240,16 @@ Hors de chez vous, baissez la qualité dans le lecteur (720p ou 480p) si votre c
 | `HWACCEL` | `auto` | Forcer `nvenc`, `vaapi`, `qsv`, `amf` (Windows), `videotoolbox` (Mac), `v4l2m2m` ou `none` |
 | `LAN_SUBNET` | — | Réseau à explorer pour trouver les NAS (ex. `192.168.1`), utile avec Docker Desktop |
 | `FFMPEG_PATH` / `FFPROBE_PATH` | auto | Chemins de ffmpeg |
+| `HTTPS_PORT` | `8920` | Port HTTPS intégré (`HTTPS=0` pour le couper) |
+| `TLS_CERT` / `TLS_KEY` | — | Certificat et clé (sinon auto-signé dans `/config/tls`) |
+| `FORCE_HTTPS` | `remote` | `off`, `remote` (HTTPS obligatoire hors du réseau local) ou `all` |
+| `TRUST_PROXY` | — | `1` si un proxy (Caddy, Nginx) sur une autre machine du réseau transmet l'adresse du visiteur |
+| `VENUS_SECRET` | — | Clé de chiffrement des clés d'API (sinon `/config/secret.key`) |
+| `VENUS_DISABLE_2FA` | — | `1` : coupe la double authentification par e-mail (secours) |
+
+## Sécurité
+
+Tableau de bord → **Sécurité** : note de l'audit (refait chaque semaine), double authentification par e-mail, HTTPS, adresses bloquées, appareils connectés et journal. Détails, réglages et marche à suivre en cas de problème : [SECURITY.md](SECURITY.md). Vérification automatique : `npm run security`.
 
 ## Architecture
 

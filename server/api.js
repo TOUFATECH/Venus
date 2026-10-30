@@ -6,10 +6,14 @@ import os from 'node:os';
 import { Router, HttpError, readBody, sendJson, sendFile } from './http.js';
 import { all, get, run, tx, getSetting, setSetting } from './db.js';
 import { slugFor, resolveSlug } from './slugs.js';
+import { V, validate, passwordProblem, logSecurity, securityLog, listBans, unbanIp, banIp, attemptStats, isSecure, safeJoin, safeFileName, httpsMode } from './security.js';
+import { twofaOn, startChallenge, verifyChallenge, resendChallenge, twofaEmail, twofaStats, maskEmail } from './twofa.js';
+import { sendMail, smtpConf, smtpOn } from './smtp.js';
+import { lastAudit, runSecurityAudit } from './audit.js';
 import { config } from './config.js';
 import {
   hashSecret, verifySecret, createToken, requireDevice, requireProfile, requireAdmin,
-  isSetup, checkRate, resetRate, publicProfile,
+  isSetup, checkRate, failRate, resetRate, publicProfile, needsRehash, tokenKey, revokeToken, revokeOtherTokens, setTokenProfile, sessionCookie,
 } from './auth.js';
 import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scanner.js';
 import { pipeline } from 'node:stream/promises';
@@ -169,12 +173,13 @@ function seededShuffle(arr, seed) {
   return a;
 }
 
-function setCookie(res, token) {
-  res.setHeader('Set-Cookie', `vn_token=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${365 * 24 * 3600}`);
+function setCookie(ctx, token) {
+  ctx.res.setHeader('Set-Cookie', sessionCookie(token, isSecure(ctx.req)));
 }
 
 // ------------------------------------------------------------------ installation & connexion
 router.get('/api/status', (ctx) => {
+  if (ctx.auth && ctx.auth.via === 'header') setCookie(ctx, ctx.auth.token);
   sendJson(ctx.res, {
     setup: isSetup(), name: getSetting('server_name', 'Venus'), version: config.version,
     authenticated: !!ctx.auth, profile: publicProfile(ctx.auth?.profile),
@@ -183,9 +188,14 @@ router.get('/api/status', (ctx) => {
 
 router.post('/api/setup', async (ctx) => {
   if (isSetup()) throw new HttpError(409, 'Déjà configuré');
-  const b = await readBody(ctx.req);
-  if (!b.password || String(b.password).length < 4) throw new HttpError(400, 'Mot de passe trop court (4 caractères minimum)');
-  if (!b.name) throw new HttpError(400, 'Nom du profil requis');
+  const b = validate(await readBody(ctx.req), {
+    password: V.str({ max: 200, trim: false, label: 'Mot de passe' }), name: V.str({ min: 1, max: 30, label: 'Nom du profil' }),
+    serverName: V.str({ max: 40 }), avatar: V.int({ min: 0, max: 50 }), pin: V.pin(), tmdbKey: V.str({ max: 300 }),
+    moviesPath: V.str({ max: 1000 }), showsPath: V.str({ max: 1000 }),
+  }, { required: ['password', 'name'] });
+  const weak = passwordProblem(b.password);
+  if (weak) throw new HttpError(400, weak);
+  if (!b.pin) throw new HttpError(400, 'Code PIN de l’administrateur obligatoire (4 à 8 chiffres)');
   if (b.tmdbKey && !(await testKey(b.tmdbKey).catch(() => false))) throw new HttpError(400, 'Clé TMDB invalide');
   const token = tx(() => {
     setSetting('household_password', hashSecret(b.password));
@@ -201,39 +211,60 @@ router.post('/api/setup', async (ctx) => {
       if (fs.existsSync(p)) run('INSERT OR IGNORE INTO libraries(name, type, path) VALUES(?, ?, ?)', name, type, path.resolve(p));
     }
     const t = createToken(ctx.req.headers['user-agent'] || '');
-    run('UPDATE tokens SET profile_id = ? WHERE token = ?', Number(r.lastInsertRowid), t);
+    setTokenProfile(t, Number(r.lastInsertRowid));
     return t;
   });
-  setCookie(ctx.res, token);
+  logSecurity('installation', ctx.ip, 'Venus installé, profil administrateur créé', 'info');
+  setCookie(ctx, token);
   watchLibraries();
   scanAll();
   sendJson(ctx.res, { token });
 });
 
-router.post('/api/login', async (ctx) => {
-  const b = await readBody(ctx.req);
-  const ip = ctx.req.socket.remoteAddress;
-  checkRate(`login:${ip}`);
-  if (!verifySecret(b.password || '', getSetting('household_password'))) throw new HttpError(401, 'Mot de passe incorrect');
-  resetRate(`login:${ip}`);
+function issueToken(ctx, how) {
   const token = createToken(ctx.req.headers['user-agent'] || '');
-  logActivity('login', `Nouvel appareil connecté avec le mot de passe (${deviceLabel(ctx.req.headers['user-agent'])})`, { device: deviceId(token) });
-  setCookie(ctx.res, token);
-  sendJson(ctx.res, { token });
+  logActivity('login', `Nouvel appareil connecté ${how} (${deviceLabel(ctx.req.headers['user-agent'])})`, { device: deviceId(token) });
+  logSecurity('connexion', ctx.ip, `Nouvel appareil connecté ${how} (${deviceLabel(ctx.req.headers['user-agent'])})`, 'info');
+  setCookie(ctx, token);
+  return token;
+}
+router.post('/api/login', async (ctx) => {
+  const b = validate(await readBody(ctx.req, 4096), { password: V.str({ max: 200, trim: false, label: 'Mot de passe' }) }, { required: ['password'] });
+  checkRate('login', ctx.ip);
+  const stored = getSetting('household_password');
+  if (!verifySecret(b.password, stored)) { failRate('login', ctx.ip, 'Mot de passe du foyer incorrect'); throw new HttpError(401, 'Mot de passe incorrect'); }
+  resetRate('login', ctx.ip);
+  if (needsRehash(stored)) setSetting('household_password', hashSecret(b.password));
+  // Retenu pour l'audit de sécurité (le mot de passe lui-même n'est jamais gardé en clair)
+  const weak = !!passwordProblem(b.password);
+  if (weak !== !!getSetting('password_weak', false)) setSetting('password_weak', weak);
+  // Double authentification : code envoyé par e-mail avant d'ouvrir la session
+  if (twofaOn()) {
+    const c = await startChallenge(ctx.ip, deviceLabel(ctx.req.headers['user-agent']));
+    return sendJson(ctx.res, { twofa: true, ...c }, 202);
+  }
+  sendJson(ctx.res, { token: issueToken(ctx, 'avec le mot de passe') });
+});
+router.post('/api/login/verify', async (ctx) => {
+  const b = validate(await readBody(ctx.req, 4096), { challenge: V.str({ max: 64 }), code: V.str({ max: 6, pattern: /^\d{6}$/, label: 'Code' }) }, { required: ['challenge', 'code'] });
+  checkRate('2fa', ctx.ip);
+  try { verifyChallenge(b.challenge, b.code, ctx.ip); } catch (e) { if (e.status === 401) failRate('2fa', ctx.ip, `Code e-mail faux : ${e.message.toLowerCase()}`); throw e; }
+  resetRate('2fa', ctx.ip);
+  sendJson(ctx.res, { token: issueToken(ctx, 'avec le mot de passe et le code reçu par e-mail') });
+});
+router.post('/api/login/resend', async (ctx) => {
+  const b = validate(await readBody(ctx.req, 4096), { challenge: V.str({ max: 64 }) }, { required: ['challenge'] });
+  sendJson(ctx.res, await resendChallenge(b.challenge, ctx.ip), 202);
 });
 
 // Connexion avec le code à 6 chiffres affiché dans le tableau de bord (il change à chaque connexion)
 router.post('/api/login/code', async (ctx) => {
-  const b = await readBody(ctx.req);
-  const ip = ctx.req.socket.remoteAddress;
-  checkRate(`login:${ip}`);
+  const b = validate(await readBody(ctx.req, 4096), { code: V.str({ max: 12, label: 'Code' }) }, { required: ['code'] });
+  checkRate('code', ctx.ip);
   if (!loginCodeActive()) throw new HttpError(401, 'Aucun code actif. Demandez à l’administrateur d’ouvrir le tableau de bord pour afficher un code.');
-  if (!useLoginCode(b.code)) throw new HttpError(401, 'Code incorrect ou expiré');
-  resetRate(`login:${ip}`);
-  const token = createToken(ctx.req.headers['user-agent'] || '');
-  logActivity('login', `Nouvel appareil connecté avec le code à 6 chiffres (${deviceLabel(ctx.req.headers['user-agent'])})`, { device: deviceId(token) });
-  setCookie(ctx.res, token);
-  sendJson(ctx.res, { token });
+  if (!useLoginCode(b.code)) { failRate('code', ctx.ip, 'Code de connexion à 6 chiffres incorrect'); throw new HttpError(401, 'Code incorrect ou expiré'); }
+  resetRate('code', ctx.ip);
+  sendJson(ctx.res, { token: issueToken(ctx, 'avec le code à 6 chiffres') });
 });
 
 function deviceLabel(ua = '') {
@@ -245,8 +276,8 @@ function deviceLabel(ua = '') {
 }
 
 router.post('/api/logout', (ctx) => {
-  if (ctx.auth) run('DELETE FROM tokens WHERE token = ?', ctx.auth.token);
-  ctx.res.setHeader('Set-Cookie', 'vn_token=; Path=/; Max-Age=0');
+  if (ctx.auth) revokeToken(ctx.auth.token);
+  ctx.res.setHeader('Set-Cookie', 'vn_token=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
   sendJson(ctx.res, { ok: true });
 });
 
@@ -258,33 +289,35 @@ router.get('/api/profiles', (ctx) => {
 
 router.post('/api/profiles/:id/select', async (ctx) => {
   const auth = requireDevice(ctx);
-  const b = await readBody(ctx.req);
+  const b = validate(await readBody(ctx.req, 4096), { pin: V.str({ max: 8, label: 'Code PIN' }) });
   const p = get('SELECT * FROM profiles WHERE id = ?', Number(ctx.params.id));
   if (!p) throw new HttpError(404, 'Profil introuvable');
   if (p.pin_hash) {
-    checkRate(`pin:${auth.token}`);
-    if (!verifySecret(b.pin || '', p.pin_hash)) throw new HttpError(403, 'Code PIN incorrect');
-    resetRate(`pin:${auth.token}`);
+    checkRate(`pin:${p.id}`, ctx.ip);
+    if (!verifySecret(b.pin || '', p.pin_hash)) { failRate(`pin:${p.id}`, ctx.ip, `Code PIN faux pour le profil « ${p.name} »`); throw new HttpError(403, 'Code PIN incorrect'); }
+    resetRate(`pin:${p.id}`, ctx.ip);
+    if (needsRehash(p.pin_hash)) run('UPDATE profiles SET pin_hash = ? WHERE id = ?', hashSecret(b.pin), p.id);
   }
-  run('UPDATE tokens SET profile_id = ? WHERE token = ?', p.id, auth.token);
+  setTokenProfile(auth.token, p.id);
   sendJson(ctx.res, publicProfile(p));
 });
 
 router.post('/api/profiles/leave', (ctx) => {
   const auth = requireDevice(ctx);
-  run('UPDATE tokens SET profile_id = NULL WHERE token = ?', auth.token);
+  setTokenProfile(auth.token, null);
   sendJson(ctx.res, { ok: true });
 });
 
 router.get('/api/me', (ctx) => sendJson(ctx.res, publicProfile(requireProfile(ctx))));
 
 router.post('/api/profiles', async (ctx) => {
-  requireAdmin(ctx);
-  const b = await readBody(ctx.req);
-  if (!b.name) throw new HttpError(400, 'Nom requis');
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 8192), { name: V.str({ min: 1, max: 30, label: 'Nom' }), avatar: V.int({ min: 0, max: 50 }), pin: V.pin(), isAdmin: V.bool(), maxAge: V.nullable(V.int({ min: 0, max: 21, label: 'Âge maximum' })) }, { required: ['name'] });
+  // Un nouvel administrateur doit être protégé par un code PIN
+  if (b.isAdmin && !b.pin) throw new HttpError(400, 'Un profil administrateur doit avoir un code PIN');
   const r = run('INSERT INTO profiles(name, avatar, pin_hash, is_admin, max_age, created_at) VALUES(?, ?, ?, ?, ?, ?)',
-    String(b.name).slice(0, 30), Number(b.avatar) || 0, b.pin ? hashSecret(b.pin) : null, b.isAdmin ? 1 : 0,
-    b.maxAge == null || b.maxAge === '' ? null : Number(b.maxAge), Date.now());
+    b.name, b.avatar || 0, b.pin ? hashSecret(b.pin) : null, b.isAdmin ? 1 : 0, b.maxAge ?? null, Date.now());
+  logSecurity('profil', ctx.ip, `${me.name} a créé le profil « ${b.name} »${b.isAdmin ? ' (administrateur)' : ''}`, 'info');
   sendJson(ctx.res, publicProfile(get('SELECT * FROM profiles WHERE id = ?', Number(r.lastInsertRowid))));
 });
 
@@ -292,17 +325,33 @@ router.put('/api/profiles/:id', async (ctx) => {
   const me = requireProfile(ctx);
   const id = Number(ctx.params.id);
   if (!me.is_admin && me.id !== id) throw new HttpError(403, 'Interdit');
-  const b = await readBody(ctx.req);
+  const b = validate(await readBody(ctx.req, 8192), {
+    name: V.str({ min: 1, max: 30, label: 'Nom' }), avatar: V.int({ min: 0, max: 50 }), pin: V.nullable(V.pin()),
+    subtitleLang: V.str({ max: 8, pattern: /^[a-z]{2,3}(-[a-z]{2,4})?$|^none$/i }), audioLang: V.str({ max: 8, pattern: /^[a-z]{2,3}(-[a-z]{2,4})?$/i }),
+    maxAge: V.nullable(V.int({ min: 0, max: 21 })), isAdmin: V.bool(),
+  });
   const p = get('SELECT * FROM profiles WHERE id = ?', id);
   if (!p) throw new HttpError(404, 'Profil introuvable');
-  if (b.name != null) run('UPDATE profiles SET name = ? WHERE id = ?', String(b.name).slice(0, 30), id);
-  if (b.avatar != null) run('UPDATE profiles SET avatar = ? WHERE id = ?', Number(b.avatar), id);
-  if (b.pin !== undefined) run('UPDATE profiles SET pin_hash = ? WHERE id = ?', b.pin ? hashSecret(b.pin) : null, id);
+  if (b.name != null) run('UPDATE profiles SET name = ? WHERE id = ?', b.name, id);
+  if (b.avatar != null) run('UPDATE profiles SET avatar = ? WHERE id = ?', b.avatar, id);
+  if (b.pin !== undefined) {
+    // Un administrateur garde toujours un code PIN
+    if (!b.pin && p.is_admin && all('SELECT 1 FROM profiles WHERE is_admin = 1').length) throw new HttpError(400, 'Un profil administrateur doit garder un code PIN');
+    run('UPDATE profiles SET pin_hash = ? WHERE id = ?', b.pin ? hashSecret(b.pin) : null, id);
+    logSecurity('pin', ctx.ip, `Code PIN du profil « ${p.name} » ${b.pin ? 'modifié' : 'retiré'} par ${me.name}`, 'info');
+  }
   if (b.subtitleLang != null) run('UPDATE profiles SET subtitle_lang = ? WHERE id = ?', b.subtitleLang, id);
   if (b.audioLang != null) run('UPDATE profiles SET audio_lang = ? WHERE id = ?', b.audioLang, id);
   if (me.is_admin) {
-    if (b.maxAge !== undefined) run('UPDATE profiles SET max_age = ? WHERE id = ?', b.maxAge == null || b.maxAge === '' ? null : Number(b.maxAge), id);
-    if (b.isAdmin !== undefined && id !== me.id) run('UPDATE profiles SET is_admin = ? WHERE id = ?', b.isAdmin ? 1 : 0, id);
+    if (b.maxAge !== undefined) run('UPDATE profiles SET max_age = ? WHERE id = ?', b.maxAge, id);
+    if (b.isAdmin !== undefined && id !== me.id) {
+      if (b.isAdmin && !p.pin_hash && !b.pin) throw new HttpError(400, 'Donnez d’abord un code PIN à ce profil : un administrateur doit en avoir un');
+      run('UPDATE profiles SET is_admin = ? WHERE id = ?', b.isAdmin ? 1 : 0, id);
+      logSecurity('droits', ctx.ip, `${me.name} a ${b.isAdmin ? 'donné' : 'retiré'} les droits d’administrateur ${b.isAdmin ? 'à' : 'au profil'} « ${p.name} »`, 'warn');
+    }
+  } else if (b.maxAge !== undefined || b.isAdmin !== undefined) {
+    logSecurity('droits', ctx.ip, `« ${me.name} » a tenté de changer ses propres droits`, 'warn');
+    throw new HttpError(403, 'Réservé à l’administrateur');
   }
   sendJson(ctx.res, publicProfile(get('SELECT * FROM profiles WHERE id = ?', id)));
 });
@@ -311,7 +360,9 @@ router.del('/api/profiles/:id', (ctx) => {
   const me = requireAdmin(ctx);
   const id = Number(ctx.params.id);
   if (id === me.id) throw new HttpError(400, 'Impossible de supprimer votre propre profil');
+  const gone = get('SELECT name FROM profiles WHERE id = ?', id);
   run('DELETE FROM profiles WHERE id = ?', id);
+  if (gone) logSecurity('profil', ctx.ip, `${me.name} a supprimé le profil « ${gone.name} »`, 'info');
   sendJson(ctx.res, { ok: true });
 });
 
@@ -326,7 +377,7 @@ router.get('/api/events', (ctx) => {
   events.on('library', onLib);
   // Commandes de l'administrateur pour cet appareil (pause, arrêt, message)
   const mine = ctx.auth.token, myProfile = ctx.auth.profile && ctx.auth.profile.id;
-  const onCtl = (d) => { if (d.all || d.token === mine || (d.profileId && d.profileId === myProfile)) res.write(`event: control\ndata: ${JSON.stringify({ cmd: d.cmd, text: d.text, from: d.from, title: d.title, url: d.url })}\n\n`); };
+  const onCtl = (d) => { if (d.all || (d.token && deviceId(d.token) === deviceId(mine)) || (d.profileId && d.profileId === myProfile)) res.write(`event: control\ndata: ${JSON.stringify({ cmd: d.cmd, text: d.text, from: d.from, title: d.title, url: d.url })}\n\n`); };
   control.on('cmd', onCtl);
   const ping = setInterval(() => res.write(': ping\n\n'), 25000);
   ctx.req.on('close', () => { clearInterval(ping); events.off('library', onLib); control.off('cmd', onCtl); });
@@ -732,7 +783,7 @@ router.post('/api/items/:id/watched', async (ctx) => {
 
 router.post('/api/progress', async (ctx) => {
   const p = requireProfile(ctx);
-  const b = await readBody(ctx.req);
+  const b = validate(await readBody(ctx.req, 8192), { itemId: V.int({ min: 1 }), position: V.num({ min: 0, max: 1e6 }), duration: V.num({ min: 0, max: 1e6 }), sessionId: V.str({ max: 64 }), watched: V.bool() }, { required: ['itemId'] });
   const id = Number(b.itemId);
   const pos = Math.max(0, Number(b.position) || 0);
   const dur = Math.max(0, Number(b.duration) || 0);
@@ -757,7 +808,7 @@ router.post('/api/nowplaying', async (ctx) => {
   heartbeat(ctx.auth.token, {
     itemId: item.id, label, title: item.title, showTitle: item.show_title || null, showId: item.show_id || null, type: item.type,
     season: item.season_num, episode: item.episode_num, poster: item.show_poster || item.poster, backdrop: item.still || item.backdrop || item.show_backdrop,
-    profile: p.name, avatar: p.avatar, deviceName: deviceLabel(ctx.req.headers['user-agent']), ip: ctx.req.socket.remoteAddress,
+    profile: p.name, avatar: p.avatar, deviceName: deviceLabel(ctx.req.headers['user-agent']), ip: ctx.ip,
     position: Math.max(0, Number(b.position) || 0), duration: Math.max(0, Number(b.duration) || 0), paused: !!b.paused, live: !!b.live,
     mode: String(b.mode || ''), quality: String(b.quality || ''), hw: b.hw ? String(b.hw) : null, sessionId: b.sessionId || null,
   });
@@ -914,6 +965,7 @@ function playableOf(item) {
 }
 
 router.get('/api/items/:id/thumb', async (ctx) => {
+  requireDevice(ctx); // images et aperçus réservés aux appareils connectés (cookie de session)
   const item = playableOf(get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)));
   if (!item) throw new HttpError(404, 'Introuvable');
   const file = await thumbnail(item, item.duration);
@@ -922,6 +974,7 @@ router.get('/api/items/:id/thumb', async (ctx) => {
 
 // Aperçu muet joué au survol d'une affiche
 router.get('/api/items/:id/preview', async (ctx) => {
+  requireDevice(ctx); // images et aperçus réservés aux appareils connectés (cookie de session)
   const item = playableOf(get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)));
   if (!item) throw new HttpError(404, 'Introuvable');
   const file = await previewClip(item);
@@ -930,6 +983,7 @@ router.get('/api/items/:id/preview', async (ctx) => {
 
 const photoFetch = new Map();
 router.get('/img/:name', async (ctx) => {
+  requireDevice(ctx); // images et aperçus réservés aux appareils connectés (cookie de session)
   const name = path.basename(ctx.params.name);
   // Photos des acteurs : récupérées chez TMDB à la première demande, puis gardées sur le serveur
   const m = /^t_w185_([\w.]+\.(?:jpg|png))$/.exec(name);
@@ -1010,19 +1064,26 @@ router.post('/api/items/:id/download', async (ctx) => {
 });
 router.get('/api/downloads', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, listJobs(p.id)); });
 router.get('/api/downloads/:job/file', (ctx) => {
-  requireProfile(ctx);
+  const p = requireProfile(ctx);
   const j = getJob(ctx.params.job);
-  if (!j || j.state !== 'ready') throw new HttpError(404, 'Pas encore prêt');
+  if (!j || j.state !== 'ready' || (j.profileId !== p.id && !p.is_admin)) throw new HttpError(404, 'Pas encore prêt');
   ctx.res.setHeader('Content-Disposition', `attachment; filename="${j.name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(j.name)}`);
   sendFile(ctx.req, ctx.res, j.file, { cache: 'no-store', type: 'video/mp4' });
 });
-router.del('/api/downloads/:job', (ctx) => { requireProfile(ctx); cancelJob(ctx.params.job); sendJson(ctx.res, { ok: true }); });
+router.del('/api/downloads/:job', (ctx) => {
+  const p = requireProfile(ctx);
+  const j = getJob(ctx.params.job);
+  if (j && j.profileId !== p.id && !p.is_admin) throw new HttpError(403, 'Ce téléchargement appartient à un autre profil');
+  cancelJob(ctx.params.job); sendJson(ctx.res, { ok: true });
+});
 
 // ------------------------------------------------------------------ notifications sur cet appareil (Web Push)
 router.get('/api/push/key', (ctx) => { requireProfile(ctx); sendJson(ctx.res, { key: vapidPublicKey() }); });
 router.post('/api/push/subscribe', async (ctx) => {
   const p = requireProfile(ctx);
-  const b = await readBody(ctx.req);
+  const b = await readBody(ctx.req, 8192);
+  const sub = b.subscription;
+  if (!sub || typeof sub !== 'object' || !sub.keys || typeof sub.endpoint !== 'string' || !/^https:\/\//.test(sub.endpoint) || sub.endpoint.length > 1000) throw new HttpError(400, 'Abonnement aux notifications invalide');
   try { savePushSub(p.id, b.subscription, deviceLabel(ctx.req.headers['user-agent'])); } catch (e) { throw new HttpError(400, e.message); }
   sendJson(ctx.res, { ok: true });
 });
@@ -1086,7 +1147,10 @@ router.get('/api/wishlist/has', async (ctx) => {
 });
 router.post('/api/wishlist', async (ctx) => {
   const p = requireProfile(ctx);
-  const b = await readBody(ctx.req);
+  const b = validate(await readBody(ctx.req, 32768), {
+    type: V.oneOf(['movie', 'tv', 'show']), tmdbId: V.int({ min: 1, max: 1e9 }), anilistId: V.int({ min: 1, max: 1e9 }), title: V.str({ max: 300 }), original: V.str({ max: 300 }),
+    poster: V.str({ max: 1000 }), backdrop: V.str({ max: 1000 }), date: V.str({ max: 20 }), overview: V.str({ max: 5000 }), anime: V.bool(),
+  });
   const item = { type: b.type === 'movie' ? 'movie' : 'tv', tmdbId: Number(b.tmdbId) || null, anilistId: Number(b.anilistId) || null, title: b.title || '', original: b.original || '' };
   const id = item.tmdbId || await resolveTmdb(item).catch(() => null);
   if (!id) throw new HttpError(404, 'Titre introuvable sur TMDB');
@@ -1297,6 +1361,61 @@ router.post('/api/admin/items/:id/delete', async (ctx) => {
   sendJson(ctx.res, { deleted, freed, errors, gone: !get('SELECT 1 FROM items WHERE id = ?', it.id) });
 });
 
+// ------------------------------------------------------------------ sécurité (administrateur)
+router.get('/api/admin/security', (ctx) => {
+  requireAdmin(ctx);
+  const sc = smtpConf();
+  const devices = all('SELECT t.token, t.device, t.created_at, t.last_seen, p.name AS profile FROM tokens t LEFT JOIN profiles p ON p.id = t.profile_id ORDER BY t.last_seen DESC LIMIT 100')
+    .map((t) => ({ id: deviceId(t.token), name: deviceLabel(t.device), profile: t.profile, created: t.created_at, lastSeen: t.last_seen, current: t.token === ctx.auth.key }));
+  sendJson(ctx.res, {
+    log: securityLog(Number(ctx.url.searchParams.get('limit')) || 200),
+    bans: listBans(), attempts: attemptStats(), devices,
+    twofa: { mode: getSetting('twofa_mode', 'off'), active: twofaOn(), email: twofaEmail(), verified: !!getSetting('smtp_verified', false), disabledByEnv: process.env.VENUS_DISABLE_2FA === '1', ...twofaStats() },
+    smtp: { host: sc.host, port: sc.port, secure: sc.secure, user: sc.user, from: sc.from, passSet: !!sc.pass },
+    https: { mode: httpsMode(), secure: isSecure(ctx.req), port: Number(process.env.HTTPS_PORT || getSetting('https_port', 8920)) || null },
+    adminsWithoutPin: all('SELECT name FROM profiles WHERE is_admin = 1 AND pin_hash IS NULL').map((x) => x.name),
+    audit: lastAudit(),
+  });
+});
+router.post('/api/admin/security/unban', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 4096), { ip: V.str({ max: 60, pattern: /^[\da-f.:]+$/i, label: 'Adresse IP' }) }, { required: ['ip'] });
+  unbanIp(b.ip);
+  logSecurity('deblocage', ctx.ip, `${me.name} a débloqué l’adresse ${b.ip}`, 'info');
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/admin/security/ban', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 4096), { ip: V.str({ max: 60, pattern: /^[\da-f.:]+$/i, label: 'Adresse IP' }), hours: V.int({ min: 0, max: 24 * 365 }) }, { required: ['ip'] });
+  if (b.ip === ctx.ip) throw new HttpError(400, 'C’est votre propre adresse');
+  banIp(b.ip, b.hours ? b.hours * 3600e3 : Infinity, `bloquée à la main par ${me.name}`);
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/admin/security/test-email', async (ctx) => {
+  requireAdmin(ctx);
+  checkRate('join', ctx.ip);
+  const to = twofaEmail() || smtpConf().from;
+  if (!to) throw new HttpError(400, 'Indiquez l’adresse e-mail de l’administrateur');
+  try {
+    await sendMail({ to, subject: `${getSetting('server_name', 'Venus')} : e-mail de test`, text: 'Le serveur d’e-mails de Venus fonctionne. Vous pouvez activer la double authentification.' });
+  } catch (e) { setSetting('smtp_verified', false); throw new HttpError(502, `Envoi impossible : ${e.message}`); }
+  setSetting('smtp_verified', true);
+  sendJson(ctx.res, { ok: true, to: maskEmail(to) });
+});
+router.post('/api/admin/security/audit', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await runSecurityAudit()); });
+router.post('/api/admin/security/logout-others', (ctx) => {
+  const me = requireAdmin(ctx);
+  revokeOtherTokens(ctx.auth.token);
+  logSecurity('deconnexion', ctx.ip, `${me.name} a déconnecté tous les autres appareils`, 'warn');
+  sendJson(ctx.res, { ok: true });
+});
+router.del('/api/admin/security/log', (ctx) => {
+  const me = requireAdmin(ctx);
+  run('DELETE FROM security_log');
+  logSecurity('journal', ctx.ip, `${me.name} a vidé le journal de sécurité`, 'warn');
+  sendJson(ctx.res, { ok: true });
+});
+
 router.del('/api/admin/devices/:id', (ctx) => {
   const p = requireAdmin(ctx);
   const t = all('SELECT token FROM tokens').map((r) => r.token).find((x) => deviceId(x) === ctx.params.id);
@@ -1403,9 +1522,39 @@ router.post('/api/admin/ratings/refresh', (ctx) => {
   sendJson(ctx.res, { queued: refreshRatings({ force: true }) });
 });
 
+const SETTINGS_SCHEMA = {
+  tmdbKey: V.str({ max: 400 }), omdbKey: V.str({ max: 100 }), simklClientId: V.str({ max: 200 }),
+  ntfyServer: V.url({ label: 'Serveur ntfy' }), ntfyTopic: V.str({ max: 100, pattern: /^[\w-]+$/, label: 'Sujet ntfy' }),
+  discordWebhook: V.url({ https: true, label: 'Webhook Discord' }), telegramToken: V.str({ max: 100, pattern: /^\d+:[\w-]+$/, label: 'Jeton Telegram' }),
+  telegramChat: V.str({ max: 40, pattern: /^-?\d+$|^@\w+$/, label: 'Discussion Telegram' }), publicUrl: V.url({ label: 'Adresse publique' }),
+  notifyNew: V.bool(), autoBackup: V.bool(), detectSegments: V.bool(), kidsAllowUnrated: V.bool(),
+  opensubtitlesKey: V.str({ max: 200 }), opensubtitlesUser: V.str({ max: 100 }), opensubtitlesPass: V.str({ max: 200, trim: false }),
+  seerrUrl: V.str({ max: 500 }), seerrKey: V.str({ max: 300 }),
+  serverName: V.str({ max: 40 }), maxSessions: V.int({ min: 1, max: 20 }), scanInterval: V.int({ min: 5, max: 10080 }),
+  metadataLang: V.str({ max: 10, pattern: /^[a-z]{2}(-[A-Z]{2})?$/ }), hwaccel: V.oneOf(['auto', 'nvenc', 'vaapi', 'qsv', 'amf', 'videotoolbox', 'v4l2m2m', 'none']),
+  password: V.str({ max: 200, trim: false, label: 'Mot de passe' }), logoutOthers: V.bool(),
+  // Sécurité
+  smtpHost: V.str({ max: 200, pattern: /^[\w.-]+$/, label: 'Serveur d’e-mails' }), smtpPort: V.int({ min: 1, max: 65535 }),
+  smtpSecure: V.oneOf(['auto', 'tls', 'starttls', 'none']), smtpUser: V.str({ max: 200 }), smtpPass: V.str({ max: 300, trim: false }),
+  smtpFrom: V.email({ label: 'Expéditeur' }), twofaEmail: V.email({ label: 'Adresse de l’administrateur' }), twofaMode: V.oneOf(['off', 'new_device']),
+  forceHttps: V.oneOf(['off', 'remote', 'all']),
+};
 router.put('/api/admin/settings', async (ctx) => {
   requireAdmin(ctx);
-  const b = await readBody(ctx.req);
+  const b = validate(await readBody(ctx.req, 64 * 1024), SETTINGS_SCHEMA);
+  // Serveur d'e-mails et double authentification
+  for (const [k, key] of [['smtpHost', 'smtp_host'], ['smtpPort', 'smtp_port'], ['smtpSecure', 'smtp_secure'], ['smtpUser', 'smtp_user'], ['smtpFrom', 'smtp_from'], ['twofaEmail', 'twofa_email']]) {
+    if (b[k] !== undefined) setSetting(key, b[k]);
+  }
+  if (b.smtpPass) setSetting('smtp_pass', b.smtpPass);
+  if (b.twofaMode !== undefined) {
+    if (b.twofaMode !== 'off' && (!smtpOn() || !twofaEmail())) throw new HttpError(400, 'Configurez d’abord le serveur d’e-mails et l’adresse de l’administrateur, puis envoyez un e-mail de test');
+    if (b.twofaMode !== 'off' && !getSetting('smtp_verified', false)) throw new HttpError(400, 'Envoyez d’abord un e-mail de test réussi : sans lui, vous risqueriez de ne plus pouvoir vous connecter');
+    setSetting('twofa_mode', b.twofaMode);
+    logSecurity('2fa', ctx.ip, `Double authentification par e-mail ${b.twofaMode === 'off' ? 'désactivée' : 'activée'}`, 'warn');
+  }
+  if (b.smtpHost !== undefined || b.smtpPort !== undefined || b.smtpUser !== undefined || b.smtpPass || b.smtpFrom !== undefined || b.smtpSecure !== undefined) setSetting('smtp_verified', false);
+  if (b.forceHttps !== undefined) { setSetting('force_https', b.forceHttps); logSecurity('https', ctx.ip, `HTTPS obligatoire : ${b.forceHttps}`, 'info'); }
   if (b.tmdbKey !== undefined) {
     if (b.tmdbKey && !(await testKey(b.tmdbKey).catch(() => false))) throw new HttpError(400, 'Clé TMDB invalide');
     setSetting('tmdb_key', b.tmdbKey || '');
@@ -1437,22 +1586,44 @@ router.put('/api/admin/settings', async (ctx) => {
   }
   if (ratingsChanged) refreshRatings({ force: true });
   if (b.serverName) setSetting('server_name', String(b.serverName).slice(0, 40));
-  if (b.maxSessions) setSetting('max_sessions', Math.max(1, Math.min(20, Number(b.maxSessions))));
+  if (b.maxSessions) setSetting('max_sessions', b.maxSessions);
   if (typeof b.detectSegments === 'boolean') setSetting('detect_segments', b.detectSegments ? '1' : '0');
-  if (b.scanInterval) setSetting('scan_interval', Math.max(5, Number(b.scanInterval)));
+  if (b.scanInterval) setSetting('scan_interval', b.scanInterval);
   if (b.kidsAllowUnrated !== undefined) setSetting('kids_allow_unrated', !!b.kidsAllowUnrated);
   if (b.metadataLang) setSetting('metadata_lang', b.metadataLang);
   if (b.hwaccel) { setSetting('hwaccel', b.hwaccel); await detectHardware(); }
   if (b.password) {
-    if (String(b.password).length < 4) throw new HttpError(400, 'Mot de passe trop court');
+    const weak = passwordProblem(b.password);
+    if (weak) throw new HttpError(400, weak);
     setSetting('household_password', hashSecret(b.password));
+    setSetting('password_weak', false);
+    // Les autres appareils devront se reconnecter avec le nouveau mot de passe
+    if (b.logoutOthers !== false) revokeOtherTokens(ctx.auth.token);
+    logSecurity('mot-de-passe', ctx.ip, 'Mot de passe du foyer changé ; autres appareils déconnectés', 'warn');
   }
   sendJson(ctx.res, { ok: true });
 });
 
 // ------------------------------------------------------------------ envoi de vidéos depuis l'application
 const UPLOAD_EXT = new Set(['.mkv', '.mp4', '.m4v', '.avi', '.mov', '.webm', '.ts', '.m2ts', '.wmv', '.mpg', '.mpeg', '.srt', '.ass', '.ssa', '.vtt', '.jpg', '.jpeg', '.png']);
-const safeSeg = (x) => String(x || '').normalize('NFC').replace(/[\u0000-\u001f<>:"|?*\\/]/g, ' ').replace(/^\.+/, '').replace(/\s+/g, ' ').trim().slice(0, 150);
+// Vérifie les premiers octets du fichier envoyé selon son extension
+function uploadContentProblem(file, ext) {
+  const fd = fs.openSync(file, 'r');
+  const head = Buffer.alloc(4096);
+  const n = fs.readSync(fd, head, 0, 4096, 0);
+  fs.closeSync(fd);
+  const b = head.subarray(0, n);
+  if (!n) return 'fichier vide';
+  if (b.subarray(0, 2).toString('latin1') === 'MZ' || b.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) || b.subarray(0, 2).toString() === '#!' || /^\s*<(\?php|script|html|!doctype)/i.test(b.toString('latin1', 0, 64))) return 'contenu exécutable ou page web';
+  if (['.jpg', '.jpeg'].includes(ext)) return b[0] === 0xff && b[1] === 0xd8 ? null : 'ce n’est pas une image JPEG';
+  if (ext === '.png') return b.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) ? null : 'ce n’est pas une image PNG';
+  if (['.srt', '.ass', '.ssa', '.vtt'].includes(ext)) return b.includes(0) && !(b[0] === 0xff || b[0] === 0xfe) ? 'ce n’est pas un fichier texte de sous-titres' : null;
+  // Vidéos : conteneurs connus (Matroska/WebM, MP4/MOV, AVI, MPEG-TS/PS, ASF)
+  const sig = b.subarray(0, 12);
+  const ok = sig.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])) || sig.toString('latin1', 4, 8) === 'ftyp' || ['moov', 'mdat', 'free', 'wide', 'skip'].includes(sig.toString('latin1', 4, 8))
+    || sig.toString('latin1', 0, 4) === 'RIFF' || b[0] === 0x47 || (b[4] === 0x47 && b[0] !== 0x47) || sig.subarray(0, 4).equals(Buffer.from([0x00, 0x00, 0x01, 0xba])) || sig.subarray(0, 4).equals(Buffer.from([0x30, 0x26, 0xb2, 0x75]));
+  return ok ? null : 'format vidéo non reconnu';
+}
 
 function diskInfo(l) {
   if (l.type === 'iptv') return { writable: false, free: null };
@@ -1467,12 +1638,11 @@ router.post('/api/admin/upload', async (ctx) => {
   const q = ctx.url.searchParams;
   const lib = get('SELECT * FROM libraries WHERE id = ?', Number(q.get('library')));
   if (!lib || lib.type === 'iptv') throw new HttpError(400, 'Choisissez une source de vidéos');
-  const name = safeSeg(q.get('name'));
+  const name = safeFileName(q.get('name'));
   if (!name || !UPLOAD_EXT.has(path.extname(name).toLowerCase())) throw new HttpError(415, 'Type de fichier non pris en charge (vidéo, sous-titres ou image)');
   const root = path.resolve(lib.path);
-  const folder = String(q.get('folder') || '').split('/').map(safeSeg).filter(Boolean).join(path.sep);
-  const dir = path.resolve(root, folder);
-  if (dir !== root && !dir.startsWith(root + path.sep)) throw new HttpError(400, 'Dossier invalide');
+  const folder = String(q.get('folder') || '').split('/').map((x) => safeFileName(x)).filter(Boolean).slice(0, 4).join(path.sep);
+  const dir = safeJoin(root, folder);
   try { fs.mkdirSync(dir, { recursive: true }); fs.accessSync(dir, fs.constants.W_OK); }
   catch { throw new HttpError(403, 'Ce dossier est en lecture seule. Avec Docker, retirez « :ro » sur le volume de cette source.'); }
   const size = Number(ctx.req.headers['content-length'] || 0);
@@ -1486,13 +1656,18 @@ router.post('/api/admin/upload', async (ctx) => {
   let received = 0;
   ctx.req.on('data', (c) => { received += c.length; });
   try {
-    await pipeline(ctx.req, fs.createWriteStream(tmp));
+    await pipeline(ctx.req, fs.createWriteStream(tmp, { mode: 0o644 }));
     if (size && received !== size) throw new Error('incomplet');
+    // Le contenu doit correspondre au type annoncé (pas de programme déguisé en vidéo)
+    const why = uploadContentProblem(tmp, path.extname(name).toLowerCase());
+    if (why) { logSecurity('envoi-refuse', ctx.ip, `Fichier « ${name} » refusé : ${why}`, 'warn'); throw new HttpError(415, `Fichier refusé : ${why}`); }
     fs.renameSync(tmp, target);
   } catch (e) {
     fs.rmSync(tmp, { force: true });
+    if (e instanceof HttpError) throw e;
     throw new HttpError(499, 'Envoi interrompu');
   }
+  logSecurity('envoi', ctx.ip, `Fichier envoyé : ${path.relative(root, target)} (${Math.round(received / 1e6)} Mo)`, 'info');
   scheduleScan(4000);
   sendJson(ctx.res, { ok: true, file: path.relative(root, target) });
 });

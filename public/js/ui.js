@@ -322,3 +322,31 @@ export async function copyText(text) {
   try { await navigator.clipboard.writeText(text); toast('Lien copié'); return true; }
   catch { toast('Copiez le lien affiché à la main'); return false; }
 }
+
+// Mot de passe : mêmes règles que le serveur (vérifiées des deux côtés), avec une jauge de solidité
+const COMMON_PW = ['password', 'motdepasse', 'azerty', 'azertyuiop', 'qwerty', '123456', '12345678', '123456789', '1234567890', 'admin', 'venus', 'soleil', 'bonjour', 'iloveyou', 'jetaime', 'famille', 'netflix'];
+export function passwordProblem(pw) {
+  const s = String(pw || '');
+  if (s.length < 10) return '10 caractères minimum';
+  if (COMMON_PW.includes(s.toLowerCase()) || COMMON_PW.includes(s.toLowerCase().replace(/\d+$/, ''))) return 'Trop courant, choisissez-en un autre';
+  if (/^(.)\1+$/.test(s)) return 'Trop simple';
+  const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^a-zA-Z\d]/].filter((r) => r.test(s)).length;
+  if (kinds < 2 && s.length < 16) return 'Mélangez lettres et chiffres (ou une phrase de 16 caractères et plus)';
+  return '';
+}
+export function passwordMeter(input) {
+  const bar = h('i');
+  const txt = h('small', { class: 'pw-text' });
+  const el = h('div', { class: 'pw-meter', 'aria-live': 'polite' }, h('span', { class: 'pw-bar' }, bar), txt);
+  const paint = () => {
+    const s = input.value;
+    const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^a-zA-Z\d]/].filter((r) => r.test(s)).length;
+    const score = !s ? 0 : passwordProblem(s) ? 1 : Math.min(4, 1 + kinds + (s.length >= 14 ? 1 : 0) - 1);
+    bar.style.width = `${score * 25}%`;
+    el.dataset.level = String(score);
+    txt.textContent = !s ? '10 caractères minimum, lettres et chiffres' : passwordProblem(s) || ['', 'Faible', 'Correct', 'Solide', 'Très solide'][score];
+  };
+  input.addEventListener('input', paint);
+  paint();
+  return el;
+}

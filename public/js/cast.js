@@ -1,4 +1,5 @@
 // Chromecast (Google Cast) — chargé uniquement sur Chrome/Edge, en contexte sécurisé (HTTPS)
+import { auth } from './api.js';
 let ready = null;
 
 export function castSupported() {
@@ -42,7 +43,7 @@ export async function castMedia(info) {
   mi.metadata = new chrome.cast.media.GenericMediaMetadata();
   mi.metadata.title = info.title;
   mi.metadata.subtitle = info.subtitle;
-  if (info.backdrop) mi.metadata.images = [new chrome.cast.Image(new URL(`/img/${info.backdrop}`, location.origin).href)];
+  if (info.backdrop) mi.metadata.images = [new chrome.cast.Image(new URL(`/img/${info.backdrop}?token=${encodeURIComponent(auth.token || '')}`, location.origin).href)];
   const req = new chrome.cast.media.LoadRequest(mi);
   req.currentTime = isHls ? 0 : info.startAt || 0;
   req.autoplay = true;

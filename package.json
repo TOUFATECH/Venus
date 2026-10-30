@@ -6,8 +6,12 @@
   "main": "server/index.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/index.js",
-    "dev": "node --watch --disable-warning=ExperimentalWarning server/index.js"
+    "dev": "node --watch --disable-warning=ExperimentalWarning server/index.js",
+    "security": "node scripts/security-check.mjs",
+    "audit": "npm audit --omit=dev && node scripts/security-check.mjs"
   },
-  "engines": { "node": ">=22.13" },
+  "engines": {
+    "node": ">=22.13"
+  },
   "license": "MIT"
 }

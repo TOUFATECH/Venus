@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import { Router, HttpError, readBody, sendJson } from './http.js';
 import { get } from './db.js';
-import { requireProfile, checkRate, resetRate } from './auth.js';
+import { requireProfile, checkRate, failRate, resetRate } from './auth.js';
 
 export const together = new Router();
 
@@ -70,8 +70,9 @@ together.post('/api/rooms', async (ctx) => {
 
 together.get('/api/rooms/:code', (ctx) => {
   const p = requireProfile(ctx);
+  checkRate('join', ctx.ip);
   const r = rooms.get(String(ctx.params.code).toUpperCase());
-  if (!r) throw new HttpError(404, 'Aucune séance avec ce code. Vérifiez les 4 lettres.');
+  if (!r) { failRate('join', ctx.ip, 'Code de séance faux'); throw new HttpError(404, 'Aucune séance avec ce code. Vérifiez les 4 lettres.'); }
   checkBlocked(r, p);
   sendJson(ctx.res, publicRoom(r));
 });
@@ -153,8 +154,11 @@ together.post('/api/rooms/:code/action', async (ctx) => {
   const p = requireProfile(ctx);
   const r = rooms.get(String(ctx.params.code).toUpperCase());
   if (!r) throw new HttpError(404, 'Séance terminée');
-  const b = await readBody(ctx.req);
-  const from = String(b.client || '');
+  const b = await readBody(ctx.req, 16384);
+  if (b.client != null && typeof b.client !== 'string') throw new HttpError(400, 'Données invalides');
+  if (b.text != null && typeof b.text !== 'string') throw new HttpError(400, 'Message invalide');
+  if (b.emoji != null && typeof b.emoji !== 'string') throw new HttpError(400, 'Réaction invalide');
+  const from = String(b.client || '').slice(0, 20);
   checkBlocked(r, p);
   if (r.removed.has(from)) throw new HttpError(403, 'Vous ne faites plus partie de cette séance');
   if (b.type === 'state') {
@@ -203,12 +207,12 @@ together.get('/api/remote/screen', (ctx) => {
 // Le téléphone saisit le code : il reçoit son lien, l'écran reçoit un nouveau code
 together.post('/api/remote/pair', async (ctx) => {
   requireProfile(ctx);
-  checkRate(`remote:${ctx.req.socket.remoteAddress}`);
-  const b = await readBody(ctx.req);
-  const code = String(b.code || '').replace(/\D/g, '');
+  checkRate('join', ctx.ip);
+  const b = await readBody(ctx.req, 4096);
+  const code = String(b.code || '').replace(/\D/g, '').slice(0, 6);
   const scr = remotes.get(code);
-  if (!scr) throw new HttpError(404, 'Code inconnu ou déjà utilisé. Le code change après chaque connexion : regardez celui affiché sur la TV.');
-  resetRate(`remote:${ctx.req.socket.remoteAddress}`);
+  if (!scr) { failRate('join', ctx.ip, 'Code de télécommande faux'); throw new HttpError(404, 'Code inconnu ou déjà utilisé. Le code change après chaque connexion : regardez celui affiché sur la TV.'); }
+  resetRate('join', ctx.ip);
   const link = crypto.randomBytes(18).toString('base64url');
   links.set(link, { owner: scr.owner, at: Date.now() });
   remotes.delete(code);
@@ -275,8 +279,9 @@ together.post('/api/vote', async (ctx) => {
 });
 together.get('/api/vote/:code', (ctx) => {
   requireProfile(ctx);
+  checkRate('join', ctx.ip);
   const v = votes.get(String(ctx.params.code).toUpperCase());
-  if (!v) throw new HttpError(404, 'Vote terminé ou code inconnu');
+  if (!v) { failRate('join', ctx.ip, 'Code de vote faux'); throw new HttpError(404, 'Vote terminé ou code inconnu'); }
   sendJson(ctx.res, publicVote(v));
 });
 together.get('/api/vote/:code/stream', (ctx) => {

@@ -44,20 +44,38 @@ export class Router {
   }
 }
 
-export function readBody(req, limit = 1e6) {
+// Lecture du corps JSON d'une requête : taille et durée limitées, uniquement un objet, sans clés
+// dangereuses (__proto__, constructor, prototype : pollution de prototype), profondeur et textes bornés
+const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+function checkShape(v, depth = 0) {
+  if (depth > 8) throw new HttpError(400, 'Données trop imbriquées');
+  if (typeof v === 'string' && v.length > 200000) throw new HttpError(413, 'Texte trop long');
+  if (Array.isArray(v)) { if (v.length > 5000) throw new HttpError(413, 'Liste trop longue'); v.forEach((x) => checkShape(x, depth + 1)); }
+  else if (v && typeof v === 'object') { const keys = Object.keys(v); if (keys.length > 500) throw new HttpError(413, 'Trop de champs'); for (const k of keys) checkShape(v[k], depth + 1); }
+}
+export function readBody(req, limit = 1e6, { timeout = 20000 } = {}) {
   return new Promise((resolve, reject) => {
+    const type = String(req.headers['content-type'] || '');
+    if (req.headers['content-length'] && Number(req.headers['content-length']) > limit) { reject(new HttpError(413, 'Requête trop volumineuse')); req.resume(); return; }
     let size = 0; const chunks = [];
+    const timer = setTimeout(() => { reject(new HttpError(408, 'Requête trop lente')); req.destroy(); }, timeout);
     req.on('data', (c) => {
       size += c.length;
-      if (size > limit) { reject(new HttpError(413, 'Requête trop volumineuse')); req.destroy(); return; }
+      if (size > limit) { clearTimeout(timer); reject(new HttpError(413, 'Requête trop volumineuse')); req.destroy(); return; }
       chunks.push(c);
     });
     req.on('end', () => {
+      clearTimeout(timer);
       if (!chunks.length) return resolve({});
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-      catch { reject(new HttpError(400, 'JSON invalide')); }
+      if (type && !/^application\/json|^text\/plain/i.test(type)) return reject(new HttpError(415, 'Format attendu : JSON'));
+      let data;
+      try { data = JSON.parse(Buffer.concat(chunks).toString('utf8'), (k, v) => (BAD_KEYS.has(k) ? undefined : v)); }
+      catch { return reject(new HttpError(400, 'JSON invalide')); }
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return reject(new HttpError(400, 'Objet JSON attendu'));
+      try { checkShape(data); } catch (e) { return reject(e); }
+      resolve(data);
     });
-    req.on('error', reject);
+    req.on('error', (e) => { clearTimeout(timer); reject(e); });
   });
 }
 
