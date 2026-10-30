@@ -26,6 +26,7 @@ const ROUTES = [
   [/^\/reglages$/, () => import('./views/settings.js')],
   [/^\/tableau-de-bord$/, () => import('./views/dashboard.js')],
   [/^\/qualite$/, () => import('./views/quality.js')],
+  [/^\/securite$/, () => import('./views/security.js')],
   [/^\/stats$/, () => import('./views/stats.js')],
   [/^\/vote$/, () => import('./views/vote.js')],
   [/^\/telechargements$/, () => import('./views/downloads.js')],

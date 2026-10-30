@@ -20,6 +20,11 @@ services:
       - PORT=8096
       # - TMDB_API_KEY=votre_cle      # facultatif : peut aussi se saisir dans l'interface
       # - HWACCEL=auto                # auto | nvenc | vaapi | qsv | v4l2m2m | none
+      # Sécurité (voir SECURITY.md) :
+      # - HTTPS_PORT=8920             # HTTPS intégré (certificat auto-signé si TLS_CERT/TLS_KEY absents)
+      # - FORCE_HTTPS=remote          # off | remote (hors réseau local, défaut) | all
+      # - TRUST_PROXY=1               # Venus derrière Caddy/Nginx sur une autre machine du réseau
+      # - VENUS_DISABLE_2FA=1         # secours : coupe la double authentification par e-mail
     volumes:
       - ./config:/config                       # base de données, affiches, réglages
       - ./transcode:/transcode                 # fichiers temporaires de conversion

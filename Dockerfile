@@ -15,7 +15,7 @@ ENV NODE_ENV=production \
 # avec repli automatique sur le ffmpeg de Debian si le dépôt est indisponible.
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl gnupg; \
+    apt-get install -y --no-install-recommends ca-certificates curl gnupg openssl; \
     mkdir -p /etc/apt/keyrings; \
     if curl -fsSL https://repo.jellyfin.org/jellyfin_team.gpg.key | gpg --dearmor -o /etc/apt/keyrings/jellyfin.gpg; then \
       . /etc/os-release; \

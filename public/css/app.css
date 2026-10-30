@@ -2115,3 +2115,48 @@ html:not(.touch) .btn-del:hover { background: rgb(255 77 79 / .22); color: #ff8a
 .p-mode-q { display: none; }
 .p-mode-q:not(:empty) { display: inline; margin-left: 6px; font-size: .78rem; font-weight: 700; color: var(--paper); }
 .p-top .p-mode:has(.p-mode-q:not(:empty)) { width: auto; padding: 0 10px; border-radius: 999px; background: rgb(var(--night-rgb) / .45); display: inline-flex; align-items: center; }
+
+/* Page Sécurité */
+.sec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 16px; align-items: start; margin-bottom: 16px; }
+.sec-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.sec-sub { font-size: .92rem; margin: 18px 0 6px; color: var(--haze); }
+.sec-score { display: flex; align-items: center; gap: 14px; margin: 10px 0 14px; }
+.sec-score b { display: flex; align-items: center; justify-content: center; width: 74px; height: 74px; border-radius: 50%; font-size: 1.15rem; font-weight: 850;
+  background: radial-gradient(closest-side, var(--deep) 79%, transparent 80% 100%), conic-gradient(#3ddc84 var(--p), rgb(255 255 255 / .1) 0); }
+.sec-score span { color: var(--haze); }
+.sec-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.sec-items li { display: flex; gap: 10px; align-items: flex-start; }
+.sec-items .sec-dot { flex: none; width: 10px; height: 10px; margin-top: 6px; border-radius: 50%; background: #3ddc84; }
+.sec-items .lv-warn .sec-dot { background: #ff9f2e; }
+.sec-items .lv-bad .sec-dot { background: #ff4d4f; box-shadow: 0 0 10px rgb(255 77 79 / .7); }
+.sec-items b { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: .95rem; }
+.sec-items b em { font-style: normal; font-size: .7rem; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: rgb(255 255 255 / .08); color: var(--haze); }
+.sec-items .lv-bad b em { background: rgb(255 77 79 / .18); color: #ff8a8c; }
+.sec-items .lv-warn b em { background: rgb(255 159 46 / .16); color: #ffb866; }
+.sec-items p { margin: 2px 0 0; color: var(--mist); font-size: .88rem; }
+.sec-items small { display: block; margin-top: 2px; color: var(--sulfur); font-size: .82rem; }
+.sec-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.sec-more { align-self: flex-start; margin-bottom: 8px; }
+.sec-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--night); }
+.sec-row .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sec-row small { color: var(--haze); font-size: .8rem; overflow-wrap: anywhere; }
+.sec-me { font-style: normal; margin-left: 8px; font-size: .72rem; font-weight: 800; color: var(--sulfur); }
+.sec-inline { display: flex; gap: 8px; margin-top: 10px; }
+.sec-inline .input { flex: 1; min-width: 0; }
+.sec-table { display: flex; flex-direction: column; gap: 2px; max-height: 60vh; overflow-y: auto; margin: 8px 0; font-size: .86rem; }
+.sec-ev { display: flex; gap: 12px; align-items: baseline; padding: 6px 8px; border-radius: 6px; }
+.sec-ev:nth-child(odd) { background: rgb(255 255 255 / .03); }
+.sec-ev .sec-when { flex: 0 0 120px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.sec-ev .sec-kind { flex: 0 0 150px; font-weight: 700; }
+.sec-ev .sec-detail { flex: 1; min-width: 0; color: var(--mist); overflow-wrap: anywhere; }
+.sec-ev .sec-ip { flex: none; color: var(--dim); font-variant-numeric: tabular-nums; }
+.sec-ev.sv-warn .sec-kind { color: #ffb866; }
+.sec-ev.sv-high .sec-kind { color: #ff8a8c; }
+@media (max-width: 700px) { .sec-ev { flex-wrap: wrap; gap: 2px 10px; } .sec-ev .sec-when, .sec-ev .sec-kind { flex-basis: auto; } .sec-ev .sec-detail { flex-basis: 100%; } }
+/* Jauge de solidité du mot de passe */
+.pw-meter { display: flex; align-items: center; gap: 10px; margin: -6px 0 14px; }
+.pw-bar { flex: 0 0 120px; height: 5px; border-radius: 3px; background: rgb(255 255 255 / .12); overflow: hidden; }
+.pw-bar i { display: block; height: 100%; width: 0; background: #ff4d4f; transition: width .25s, background .25s; }
+.pw-meter[data-level="2"] .pw-bar i { background: #ff9f2e; }
+.pw-meter[data-level="3"] .pw-bar i, .pw-meter[data-level="4"] .pw-bar i { background: #3ddc84; }
+.pw-text { color: var(--haze); font-size: .8rem; }

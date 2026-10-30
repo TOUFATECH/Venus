@@ -114,11 +114,14 @@ async function toTelegram(msg) {
 // ------------------------------------------------------------------ envoi
 // profileId : seulement ce profil (ses appareils) ; sinon tout le foyer. Les canaux partagés (ntfy, Discord…)
 // ne reçoivent que les messages pour tout le foyer.
-export async function notify(msg, { profileId = null } = {}) {
+// adminOnly : seulement les profils administrateurs (alertes de sécurité) + les canaux partagés
+export async function notify(msg, { profileId = null, adminOnly = false } = {}) {
   const errors = [];
   // Dans l'application ouverte (les nouveautés du foyer y sont déjà annoncées en direct)
   if (profileId) control.emit('cmd', { profileId, cmd: 'notify', text: msg.body, title: msg.title, url: msg.url });
-  const subs = profileId ? all('SELECT * FROM push_subs WHERE profile_id = ?', profileId) : all('SELECT * FROM push_subs');
+  if (adminOnly) for (const a of all('SELECT id FROM profiles WHERE is_admin = 1')) control.emit('cmd', { profileId: a.id, cmd: 'notify', text: msg.body, title: msg.title, url: msg.url });
+  const subs = profileId ? all('SELECT * FROM push_subs WHERE profile_id = ?', profileId)
+    : adminOnly ? all('SELECT s.* FROM push_subs s JOIN profiles p ON p.id = s.profile_id WHERE p.is_admin = 1') : all('SELECT * FROM push_subs');
   await Promise.all(subs.map((s) => sendPush(s, { title: msg.title, body: msg.body, url: msg.url || '/', tag: msg.tag || 'venus' }).catch((e) => errors.push(`push : ${e.message}`))));
   if (!profileId) {
     for (const [name, fn] of [['ntfy', toNtfy], ['Discord', toDiscord], ['Telegram', toTelegram]]) {

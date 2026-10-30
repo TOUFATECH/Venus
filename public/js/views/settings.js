@@ -1,6 +1,6 @@
 // Réglages : mon profil (tous) + administration du serveur (administrateur)
 import { api, auth, preferredQuality, setPreferredQuality, prefs, hoverMode, heroTrailers, detailsTrailers } from '../api.js';
-import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet } from '../ui.js';
+import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet, passwordProblem, passwordMeter } from '../ui.js';
 import { state, switchProfile, go } from '../app.js';
 import { openSourceWizard } from './source-wizard.js';
 import { NAV_ITEMS, menuPrefs, saveMenuPrefs, resetMenuPrefs, labelOf, iconOf } from '../menu.js';
@@ -392,17 +392,22 @@ export async function render(main, { query } = {}) {
 
   function serverBox(a) {
     const name = h('input', { class: 'input', value: a.settings.serverName });
-    const pass = h('input', { class: 'input', type: 'password', placeholder: 'Nouveau mot de passe', autocomplete: 'new-password' });
+    const pass = h('input', { class: 'input', type: 'password', placeholder: 'Nouveau mot de passe', autocomplete: 'new-password', minlength: 10, maxlength: 200 });
     const interval = h('input', { class: 'input', type: 'number', min: 5, value: a.settings.scanInterval });
     return h('section', { class: 'box' },
       h('h2', {}, 'Serveur'),
       h('p', {}, `Venus ${a.version}, en ligne depuis ${fmtTime(a.system.uptime)}`),
       field('Nom', name),
-      field('Mot de passe du foyer', pass, 'Les appareils déjà connectés restent connectés.'),
+      field('Mot de passe du foyer', pass, 'Après un changement, les autres appareils devront se reconnecter.'), passwordMeter(pass),
       field('Vérifier les nouveautés toutes les (minutes)', interval, 'Les ajouts sont aussi détectés automatiquement quand c’est possible.'),
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small f', onclick: async () => {
-        await api('/api/admin/settings', { method: 'PUT', body: { serverName: name.value, password: pass.value || undefined, scanInterval: Number(interval.value) } });
-        pass.value = ''; toast('Réglages enregistrés');
+        if (pass.value && passwordProblem(pass.value)) { toast(`Mot de passe : ${passwordProblem(pass.value).toLowerCase()}`, true); pass.focus(); return; }
+        if (!(Number(interval.value) >= 5)) { toast('Vérification : 5 minutes minimum', true); return; }
+        try {
+          await api('/api/admin/settings', { method: 'PUT', body: { serverName: name.value.trim().slice(0, 40), password: pass.value || undefined, scanInterval: Number(interval.value) } });
+          toast(pass.value ? 'Mot de passe changé : les autres appareils devront se reconnecter' : 'Réglages enregistrés', { type: 'success' });
+          pass.value = ''; pass.dispatchEvent(new Event('input'));
+        } catch (e) { toast(e.message, true); }
       } }, 'Enregistrer')));
   }
 
@@ -438,6 +443,10 @@ function editProfile(p, self, onDone) {
   const s = sheet(isNew ? 'Nouveau profil' : `Modifier ${p.name}`, h('form', { onsubmit: async (e) => {
     e.preventDefault();
     if (pin.value && !/^\d{4}$/.test(pin.value)) { err.textContent = 'Le code PIN doit contenir 4 chiffres.'; return; }
+    if (!nameIn.value.trim()) { err.textContent = 'Indiquez un nom.'; return; }
+    const willBeAdmin = adminSw ? adminSw.querySelector('input').checked : !!(p && p.isAdmin);
+    const hasPinAfter = pin.value ? true : p && p.hasPin && !(removePin && removePin.querySelector('input').checked);
+    if (willBeAdmin && !hasPinAfter) { err.textContent = 'Un profil administrateur doit avoir un code PIN.'; pin.focus(); return; }
     const body = { name: nameIn.value.trim(), avatar: av };
     if (pin.value) body.pin = pin.value; else if (removePin && removePin.querySelector('input').checked) body.pin = null;
     if (age) body.maxAge = age.value === '' ? null : Number(age.value);

@@ -1,11 +1,12 @@
 // Venus — point d'entrée du serveur
 import http from 'node:http';
+import https from 'node:https';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { HttpError, sendJson, serveStatic } from './http.js';
-import { authenticate } from './auth.js';
+import { authenticate, migrateTokens } from './auth.js';
 import { router } from './api.js';
 import { together } from './together.js';
 import { detectHardware } from './hw.js';
@@ -20,27 +21,37 @@ import { stopAllSessions } from './stream.js';
 import { mountAll, watchMounts } from './netshare.js';
 import { runtime } from './env.js';
 import { getSetting, all } from './db.js';
+import { clientIp, isSecure, inspectRequest, isBanned, applyHeaders, handlePreflight, checkCsrf, checkHpp, rateLimit, requireHttps, publicError, suspicious, logSecurity, onSecurityAlert } from './security.js';
+import { tlsOptions } from './tls.js';
+import { notify } from './notify.js';
+import { startSecurityAudit } from './audit.js';
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
-const server = http.createServer(async (req, res) => {
+let httpsPort = null;
+async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const ctx = { req, res, url, params: {}, auth: null };
   res.req = req;
+  const ip = clientIp(req);
+  ctx.ip = ip;
+  const secure = isSecure(req);
   try {
-    // En-têtes de sécurité
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'same-origin');
+    // En-têtes de sécurité (CSP, anti-clickjacking, CORS limité aux flux vidéo…)
+    applyHeaders(req, res, url, secure);
+    if (isBanned(ip)) { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Accès bloqué pour cette adresse.'); }
+    inspectRequest(req, url, ip);
+    if (requireHttps(req, res, url, ip, httpsPort)) return;
 
     if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/img/')) {
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Range', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE' });
-        return res.end();
-      }
+      if (req.method === 'OPTIONS') return handlePreflight(req, res, url, ip);
+      rateLimit(ip, url.pathname);
+      checkHpp(url, ip);
+      checkCsrf(req, url, ip);
       const m = router.match(req.method, url.pathname) || together.match(req.method, url.pathname);
-      if (!m) throw new HttpError(404, 'Route inconnue');
+      if (!m) { suspicious(ip, 2, `Route inconnue : ${req.method} ${url.pathname.slice(0, 80)}`); throw new HttpError(404, 'Route inconnue'); }
       ctx.params = m.params;
-      ctx.auth = authenticate(req, url);
+      ctx.auth = authenticate(req, url, ip, secure);
       await m.handler(ctx);
       return;
     }
@@ -49,15 +60,22 @@ const server = http.createServer(async (req, res) => {
     // Application monopage : toute autre route renvoie l'interface
     serveStatic(req, res, publicDir, '/index.html');
   } catch (e) {
-    const status = e.status || 500;
-    if (status >= 500) console.error(`[${req.method} ${url.pathname}]`, e);
-    if (!res.headersSent) sendJson(res, { error: e.message || 'Erreur interne' }, status);
+    const { status, error } = publicError(e, ip, req, url);
+    if (status === 401 && ctx.auth === null && (req.headers.authorization || url.searchParams.has('token'))) suspicious(ip, 1, 'Identifiant de session refusé');
+    if (status === 429) suspicious(ip, 2, 'Limite de requêtes atteinte');
+    if (!res.headersSent) sendJson(res, { error }, status);
     else res.end();
   }
-});
+}
+const server = http.createServer(handle);
+// Délais : en-têtes lents (attaque « slowloris ») et connexions inactives coupés ; les vidéos et les
+// envois de fichiers, qui transfèrent en continu, ne sont pas concernés
+server.headersTimeout = 20000;
+server.requestTimeout = 0;
+server.setTimeout(120000);
+server.maxHeadersCount = 100;
 
 server.keepAliveTimeout = 65000;
-server.requestTimeout = 0; // les longues lectures vidéo ne doivent pas être coupées
 
 function lanAddresses() {
   return Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address);
@@ -66,6 +84,7 @@ function lanAddresses() {
 async function main() {
   const where = { docker: 'Docker', lxc: `conteneur LXC ${runtime.unprivileged ? 'non privilégié' : 'privilégié'}`, machine: 'machine' }[runtime.kind];
   console.log(`[système] Venus tourne dans : ${where}${runtime.canMount ? '' : ' (montage réseau non autorisé)'}`);
+  migrateTokens();
   await detectHardware();
   server.listen(config.port, config.host, () => {
     console.log(`\n  ✨ Venus ${config.version} est prêt`);
@@ -73,6 +92,21 @@ async function main() {
     for (const ip of lanAddresses()) console.log(`     http://${ip}:${config.port}`);
     console.log('');
   });
+  // HTTPS : certificat fourni (TLS_CERT / TLS_KEY) ou créé automatiquement (autosigné) dans le dossier de données
+  const tls = await tlsOptions(lanAddresses()).catch((e) => { console.warn('[https]', e.message); return null; });
+  const wanted = Number(process.env.HTTPS_PORT || getSetting('https_port', 8920)) || 0;
+  if (tls && wanted) {
+    const secureServer = https.createServer({ ...tls, minVersion: 'TLSv1.2' }, handle);
+    secureServer.headersTimeout = 20000; secureServer.requestTimeout = 0; secureServer.setTimeout(120000); secureServer.keepAliveTimeout = 65000;
+    secureServer.on('error', (e) => console.warn('[https]', e.message));
+    secureServer.listen(wanted, config.host, () => {
+      httpsPort = wanted;
+      console.log(`  🔒 HTTPS : https://localhost:${wanted}${tls.selfSigned ? ' (certificat autosigné : le navigateur demandera de l’accepter une fois)' : ''}`);
+    });
+  }
+  // Alertes de sécurité envoyées à l'administrateur (notifications, ntfy, Discord, Telegram)
+  onSecurityAlert((m) => notify({ title: m.title, body: m.body, url: m.url, tag: 'securite' }, { adminOnly: true }));
+  startSecurityAudit();
   // Partages réseau (NAS, PC) : montés avant la première analyse
   await mountAll().catch((e) => console.warn('[réseau]', e.message));
   watchMounts(() => scanAll());
