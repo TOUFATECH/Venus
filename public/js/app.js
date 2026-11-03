@@ -246,6 +246,7 @@ let bootDone = false;
 function hideBoot() {
   if (bootDone) return;
   bootDone = true;
+  window.__vnBooted = true;
   const el = document.querySelector('.boot');
   if (!el) return;
   // Toute première ouverture : on laisse l'intro du Soleil se jouer jusqu'au bout (environ 3,5 s)
@@ -384,7 +385,29 @@ let mountTicket = 0;
 // Lueur d'ambiance : prend la couleur du titre en cours (voir ambiance.js)
 if (!document.querySelector('.tint-glow')) document.body.prepend(h('div', { class: 'tint-glow', 'aria-hidden': 'true' }));
 
+// Une erreur pendant l'affichage ne doit jamais laisser l'écran figé sur le logo
 async function route() {
+  try { return await showRoute(); } catch (e) { startFailed(e); }
+}
+function startFailed(e) {
+  console.error(e);
+  if (bootDone && app.querySelector(':scope > main')) { toast(e && e.message ? e.message : 'Erreur inattendue', true); return; }
+  document.querySelector('.route-bar')?.classList.remove('on');
+  dropShell();
+  app.replaceChildren(h('div', { class: 'center-screen' }, h('div', { class: 'panel' }, brand(), h('h2', {}, 'Impossible d’afficher Venus'),
+    h('p', {}, (e && e.message) || 'Erreur inattendue'),
+    h('div', { class: 'form-actions' }, h('button', { class: 'btn btn-play f', onclick: () => location.reload() }, 'Recharger'),
+      h('button', { class: 'btn btn-ghost f', onclick: () => repairAndReload() }, 'Réparer (vider le cache)')))));
+  hideBoot();
+}
+// Service worker et caches retirés, puis rechargement : utile après une mise à jour qui coince
+async function repairAndReload() {
+  try { const l = await navigator.serviceWorker?.getRegistrations(); await Promise.all((l || []).map((r) => r.unregister())); } catch { /* */ }
+  try { const k = await caches.keys(); await Promise.all(k.map((n) => caches.delete(n))); } catch { /* */ }
+  try { sessionStorage.clear(); } catch { /* */ }
+  location.replace('/');
+}
+async function showRoute() {
   if (!state.profile) return;
   listenEvents();
   // Sur une TV, la télécommande-téléphone est prête dès l'ouverture
@@ -427,6 +450,9 @@ async function showGate(kind) {
 }
 
 async function boot() {
+  try { await startApp(); } catch (e) { startFailed(e); }
+}
+async function startApp() {
   try {
     state.status = await api('/api/status');
   } catch (e) {
