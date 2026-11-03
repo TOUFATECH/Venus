@@ -68,6 +68,8 @@ async function handle(req, res) {
     // CSS personnalisé (Tableau de bord → Serveur → Personnalisation)
     if (url.pathname === '/custom.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end(customCss()); }
     if (serveStatic(req, res, publicDir, url.pathname)) return;
+    // Fichier absent (police, image, script…) : vraie erreur 404, pas la page d'accueil à sa place
+    if (/\.(woff2?|ttf|otf|eot|m?js|css|map|png|jpe?g|gif|webp|avif|svg|ico|json|webmanifest|xml|txt)$/.test(url.pathname)) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end('Fichier introuvable'); }
     // Application monopage : toute autre route renvoie l'interface
     serveStatic(req, res, publicDir, '/index.html');
   } catch (e) {

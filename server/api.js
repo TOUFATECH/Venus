@@ -1345,7 +1345,7 @@ router.get('/api/admin/dashboard', (ctx) => {
       os: `${os.type()} ${os.release()}`, platform: process.platform, arch: process.arch, host: os.hostname(), runtime: runtime.kind,
       canRestart: supervised(), hw: { type: hw.type, label: hw.label, tested: hw.tested },
     },
-    counts: { movie: counts.movie || 0, show: (counts.show || 0) - anime, anime, episode: counts.episode || 0, clip: counts.clip || 0, channel: counts.channel || 0, season: counts.season || 0 },
+    counts: { movie: counts.movie || 0, show: (counts.show || 0) - anime, anime, episode: counts.episode || 0, clip: counts.clip || 0, channel: counts.channel || 0, season: counts.season || 0, track: counts.track || 0, photo: counts.photo || 0, book: (counts.book || 0) + (counts.audiobook || 0) },
     totals: { size: tot.size || 0, hours: Math.round((tot.dur || 0) / 3600) },
     playing: live.map((e) => ({ ...e, token: undefined, hls: e.sessionId ? hlsById.get(e.sessionId) || null : null })),
     transcodes: [...hlsById.values()].length,
