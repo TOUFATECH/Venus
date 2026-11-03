@@ -25,7 +25,10 @@ const ROUTES = [
   // Adresses rangées comme les dossiers : /films/Titre, /series/Titre/S01E02, /animes/Titre/S01E02, /clips/Titre
   [/^\/(?:films|clips)\/([^/]+)\/lecture$/, () => import('./views/player.js'), (m) => idOrSlug(m[1])],
   [/^\/(?:series|animes)\/([^/]+)\/(S\d{1,3}E\d{1,4}(?:-E\d{1,4})?)$/i, () => import('./views/player.js'), (m) => ({ slug: dec(m[1]), ep: m[2] })],
-  [/^\/(?:films|clips|series|animes)\/([^/]+)$/, () => import('./views/details.js'), (m) => idOrSlug(m[1])],
+  // Films et clips : même adresse pour la fiche et la lecture ; la lecture est notée dans l'historique
+  // du navigateur (elle reprend donc après un rechargement), un lien partagé ouvre la fiche
+  [/^\/(?:films|clips)\/([^/]+)$/, () => (playingHere() ? import('./views/player.js') : import('./views/details.js')), (m) => (playingHere() ? { id: playingHere() } : idOrSlug(m[1]))],
+  [/^\/(?:series|animes)\/([^/]+)$/, () => import('./views/details.js'), (m) => idOrSlug(m[1])],
   [/^\/lecture\/([^/]+)$/, () => import('./views/player.js'), (m) => idOrSlug(m[1])],
   [/^\/reglages$/, () => import('./views/settings.js')],
   [/^\/tableau-de-bord$/, () => import('./views/dashboard.js')],
@@ -49,6 +52,7 @@ const ROUTES = [
   [/^\/seance$/, () => import('./views/seance.js')],
   [/^\/telecommande$/, () => import('./views/telecommande.js')],
 ];
+const playingHere = () => (!window.__VN_MEMORY_ROUTER && history.state && history.state.vnPlay) || null;
 const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
 // Adresses lisibles : /lecture/Breaking.Bad.S01E02, #/titre/Inception.2010 (le numéro marche aussi)
 function idOrSlug(raw) {
@@ -78,7 +82,7 @@ export function showSlug(kind, slug, keep = []) {
 // Adresse « propre » donnée par le serveur (/films/Inception.2010, /series/Breaking.Bad/S01E02…),
 // seulement si l'on est toujours sur la page qui l'a demandée
 export const currentUrl = () => (memory ? stack[stack.length - 1] : `${location.pathname}${location.search}`);
-export function showPath(target, keep = [], from = null) {
+export function showPath(target, keep = [], from = null, state = null) {
   if (memory || !target) return;
   if (from && currentUrl() !== from && !currentUrl().startsWith(target)) return;
   const { query } = parseHash();
@@ -86,11 +90,11 @@ export function showPath(target, keep = [], from = null) {
   for (const k of keep) if (query.get(k) != null) q.set(k, query.get(k));
   const enc = target.split('/').map((seg) => seg.split('').map((c) => (/[\p{L}\p{N}.~-]/u.test(c) ? c : encodeURIComponent(c))).join('')).join('/');
   const full = `${enc}${q.toString() ? `?${q}` : ''}`;
-  if (currentUrl() !== full) history.replaceState(history.state, '', full);
+  if (currentUrl() !== full || state) history.replaceState(state || history.state, '', full);
 }
 // Écrans plein écran, sans navigation
 const BARE = ['/lecture', '/telecommande', '/vote'];
-const isBare = (p) => BARE.some((b) => p.startsWith(b)) || /^\/(films|clips)\/[^/]+\/lecture$/.test(p) || /^\/(series|animes)\/[^/]+\/S\d+E\d+/i.test(p);
+const isBare = (p) => BARE.some((b) => p.startsWith(b)) || (!!playingHere() && /^\/(films|clips)\/[^/]+$/.test(p)) || /^\/(films|clips)\/[^/]+\/lecture$/.test(p) || /^\/(series|animes)\/[^/]+\/S\d+E\d+/i.test(p);
 
 // Routeur : adresse (#/films…) par défaut, ou pile en mémoire quand l'adresse n'est pas modifiable (démo intégrée)
 const memory = !!window.__VN_MEMORY_ROUTER;
@@ -108,7 +112,11 @@ export function go(path, { replace = false } = {}) {
   if (replace) history.replaceState(null, '', path); else history.pushState(null, '', path);
   notify();
 }
+let lastBack = 0;
 export function back(fallback = '/') {
+  // Une seule touche Retour = un seul pas en arrière (le lecteur et la navigation peuvent la recevoir tous les deux)
+  if (Date.now() - lastBack < 500) return;
+  lastBack = Date.now();
   if (memory) { if (stack.length > 1) stack.pop(); else stack[0] = fallback; notify(); return; }
   if (history.length > 1 && ss.get('vn_nav')) history.back();
   else go(fallback, { replace: true });
