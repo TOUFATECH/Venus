@@ -248,6 +248,17 @@ Hors de chez vous, baissez la qualité dans le lecteur (720p ou 480p) si votre c
 | `VENUS_SECRET` | — | Clé de chiffrement des clés d'API (sinon `/config/secret.key`) |
 | `VENUS_DISABLE_2FA` | — | `1` : coupe la double authentification par e-mail (secours) |
 
+## Administration (comme Jellyfin)
+
+Tableau de bord → **Serveur** :
+- **Tâches planifiées** : analyse, notes, génériques, sauvegardes, audit, Seerr, vignettes ; dernière exécution, durée, bouton « Lancer ».
+- **Journal du serveur** : les 2 000 dernières lignes (filtres, recherche, téléchargement), mots de passe et jetons masqués.
+- **Clés API** pour vos scripts et la domotique : en-tête `X-Api-Key`, par exemple `curl -X POST -H "X-Api-Key: vk_…" http://venus:8096/api/admin/scan`.
+- **Webhooks** : POST JSON `{ event, at, server, data }` vers Home Assistant, n8n, Gotify… pour `library.added`, `playback.start`, `playback.stop`, `login.new_device`, `security.alert`, `task.failed` ; signature `X-Venus-Signature: sha256=…` (HMAC du corps) si un secret est donné.
+- **Personnalisation** : message sur la page de connexion et CSS personnalisé.
+
+Profils : bibliothèques visibles, téléchargement, lecture convertie, accès depuis l'extérieur et horaires, dans Réglages → Profils → Modifier.
+
 ## Sécurité
 
 Tableau de bord → **Sécurité** : note de l'audit (refait chaque semaine), double authentification par e-mail, HTTPS, adresses bloquées, appareils connectés et journal. Détails, réglages et marche à suivre en cas de problème : [SECURITY.md](SECURITY.md). Vérification automatique : `npm run security`.

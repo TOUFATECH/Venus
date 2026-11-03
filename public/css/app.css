@@ -2353,3 +2353,27 @@ html[data-glass] .coll-cover { border-radius: 18px; box-shadow: 0 10px 30px rgba
 .day { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--edge); background: none; color: var(--haze); font-weight: 800; cursor: pointer; }
 .day.on { background: var(--sulfur); border-color: var(--sulfur); color: var(--night); }
 .perms .field { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+
+/* ------------------------------------------------ administration du serveur */
+.srv-tabs { margin-bottom: 18px; flex-wrap: wrap; }
+.srv-body { display: flex; flex-direction: column; gap: 12px; max-width: 1100px; }
+.srv-inline { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.srv-inline .input { flex: 1 1 260px; max-width: 420px; }
+.task-list { display: flex; flex-direction: column; gap: 8px; }
+.task { display: flex; align-items: center; gap: 16px; padding: 14px 16px; border-radius: 12px; background: var(--deep); border: 1px solid var(--edge); }
+.task p { margin: 2px 0; color: var(--haze); font-size: .9rem; }
+.task small { display: block; color: var(--dim); font-size: .8rem; }
+.task.failed { border-color: color-mix(in oklab, var(--alarm) 50%, transparent); }
+.task-bar { height: 4px; border-radius: 2px; background: var(--raise); overflow: hidden; margin-top: 8px; }
+.task-bar i { display: block; height: 100%; background: var(--sulfur); transition: width .5s; }
+.task-bar i.indet { animation: indet 1.2s ease-in-out infinite; }
+@keyframes indet { 0% { transform: translateX(-100%); } 100% { transform: translateX(340%); } }
+.log-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.log-tools .input { flex: 1 1 220px; max-width: 360px; min-height: 36px; }
+.log-view { font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #0b0c0f; color: #d6d6d6; border-radius: 10px; padding: 10px 12px; max-height: 62vh; overflow: auto; border: 1px solid var(--edge); }
+.log-line { display: flex; gap: 12px; white-space: pre-wrap; word-break: break-word; padding: 1px 0; }
+.log-line time { flex: none; color: #7d8590; }
+.log-line.lv-warn span { color: #f3c969; }
+.log-line.lv-error span { color: #ff8a80; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86rem; }
+.login-msg { margin: 0 0 6px; padding: 10px 14px; border-radius: 10px; background: color-mix(in oklab, var(--sulfur) 12%, transparent); color: var(--paper); white-space: pre-wrap; }

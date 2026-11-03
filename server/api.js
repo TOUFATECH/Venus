@@ -1,5 +1,6 @@
 // Routes de l'API
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -26,6 +27,9 @@ import { probeLive, readChapters } from './probe.js';
 import { runTask, listTasks } from './tasks.js';
 import { versionLabel, groupVersions } from './versions.js';
 import { permsOf, accessProblem, libraryClause, validPerms } from './perms.js';
+import { logLines, logText } from './logbuf.js';
+import { createApiKey, listApiKeys, revokeApiKey } from './apikeys.js';
+import { HOOK_EVENTS, listHooks, saveHooks, testHook, emitHook } from './webhooks.js';
 import { traktId, testTrakt, posterSource, traktFind, downloadTraktImage } from './trakt.js';
 import { ensureTrickplay, trickplayInfo, trickplaySheet, trickplayMode, removeTrickplay } from './trickplay.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
@@ -192,6 +196,7 @@ router.get('/api/status', (ctx) => {
   if (ctx.auth && ctx.auth.via === 'header') setCookie(ctx, ctx.auth.token);
   sendJson(ctx.res, {
     setup: isSetup(), name: getSetting('server_name', 'Venus'), version: config.version,
+    loginMessage: String(getSetting('login_message', '') || '') || null, customCss: !!getSetting('custom_css', ''),
     authenticated: !!ctx.auth, profile: publicProfile(ctx.auth?.profile),
   });
 });
@@ -235,6 +240,7 @@ function issueToken(ctx, how) {
   const token = createToken(ctx.req.headers['user-agent'] || '');
   logActivity('login', `Nouvel appareil connecté ${how} (${deviceLabel(ctx.req.headers['user-agent'])})`, { device: deviceId(token) });
   logSecurity('connexion', ctx.ip, `Nouvel appareil connecté ${how} (${deviceLabel(ctx.req.headers['user-agent'])})`, 'info');
+  emitHook('login.new_device', { how, device: deviceLabel(ctx.req.headers['user-agent']), ip: ctx.ip });
   setCookie(ctx, token);
   return token;
 }
@@ -2159,3 +2165,88 @@ router.post('/api/playlists/:id/items', async (ctx) => {
   if (get('SELECT COUNT(*) AS n FROM playlist_items WHERE playlist_id = ?', pl.id).n + ids.length > 5000) throw new HttpError(400, '5 000 vidéos au plus par liste');
   sendJson(ctx.res, { ok: true, added: addToPlaylist(pl.id, ids), name: pl.name });
 });
+
+// ------------------------------------------------------------------ administration avancée (comme Jellyfin)
+// Tâches planifiées
+router.get('/api/admin/tasks', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, listTasks()); });
+router.post('/api/admin/tasks/:id/run', (ctx) => {
+  const me = requireAdmin(ctx);
+  const id = String(ctx.params.id);
+  if (!listTasks().some((t) => t.id === id)) throw new HttpError(404, 'Tâche inconnue');
+  runTask(id).catch(() => {});
+  logActivity('task', `${me.name} a lancé « ${listTasks().find((t) => t.id === id).label} »`);
+  sendJson(ctx.res, { ok: true });
+});
+// Journal du serveur
+router.get('/api/admin/logs', (ctx) => {
+  requireAdmin(ctx);
+  const u = ctx.url.searchParams;
+  if (u.get('download') === '1') {
+    ctx.res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Disposition': `attachment; filename="venus-${new Date().toISOString().slice(0, 10)}.log"`, 'Cache-Control': 'no-store' });
+    return ctx.res.end(logText());
+  }
+  const level = ['all', 'warn', 'error'].includes(u.get('level')) ? u.get('level') : 'all';
+  sendJson(ctx.res, logLines({ level, q: String(u.get('q') || '').slice(0, 100), limit: 800 }));
+});
+// Clés API
+router.get('/api/admin/apikeys', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, listApiKeys()); });
+router.post('/api/admin/apikeys', async (ctx) => {
+  const me = requireAdmin(ctx);
+  if (ctx.auth.via === 'apikey') throw new HttpError(403, 'Une clé API ne peut pas créer d’autres clés');
+  const b = validate(await readBody(ctx.req, 2048), { name: V.str({ min: 1, max: 60, label: 'Nom' }) }, { required: ['name'] });
+  if (listApiKeys().length >= 50) throw new HttpError(400, '50 clés au plus');
+  const key = createApiKey(b.name);
+  logSecurity('cle-api', ctx.ip, `${me.name} a créé la clé API « ${b.name} »`, 'warn');
+  sendJson(ctx.res, { key });
+});
+router.del('/api/admin/apikeys/:id', (ctx) => {
+  const me = requireAdmin(ctx);
+  if (!revokeApiKey(ctx.params.id)) throw new HttpError(404, 'Clé introuvable');
+  logSecurity('cle-api', ctx.ip, `${me.name} a supprimé une clé API`, 'info');
+  sendJson(ctx.res, { ok: true });
+});
+// Webhooks
+const HOOK_SCHEMA = { name: V.str({ max: 60 }), url: V.url({ label: 'Adresse' }), secret: V.str({ max: 200, trim: false }), events: V.list(V.oneOf(Object.keys(HOOK_EVENTS)), { max: 20 }), enabled: V.bool() };
+router.get('/api/admin/webhooks', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { events: HOOK_EVENTS, hooks: listHooks().map((h) => ({ ...h, secret: h.secret ? '••••' : '' })) }); });
+router.post('/api/admin/webhooks', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 8192), HOOK_SCHEMA, { required: ['url', 'events'] });
+  const list = listHooks();
+  if (list.length >= 20) throw new HttpError(400, '20 webhooks au plus');
+  const h = { id: crypto.randomBytes(6).toString('hex'), name: b.name || new URL(b.url).hostname, url: b.url, secret: b.secret || '', events: b.events, enabled: b.enabled !== false, lastAt: null, lastError: null };
+  saveHooks([...list, h]);
+  sendJson(ctx.res, { id: h.id });
+});
+router.put('/api/admin/webhooks/:id', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 8192), HOOK_SCHEMA);
+  const list = listHooks();
+  const h = list.find((x) => x.id === ctx.params.id);
+  if (!h) throw new HttpError(404, 'Webhook introuvable');
+  for (const k of ['name', 'url', 'events', 'enabled']) if (b[k] !== undefined) h[k] = b[k];
+  if (b.secret !== undefined && b.secret !== '••••') h.secret = b.secret;
+  saveHooks(list);
+  sendJson(ctx.res, { ok: true });
+});
+router.del('/api/admin/webhooks/:id', (ctx) => {
+  requireAdmin(ctx);
+  saveHooks(listHooks().filter((x) => x.id !== ctx.params.id));
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/admin/webhooks/:id/test', async (ctx) => {
+  requireAdmin(ctx);
+  const h = listHooks().find((x) => x.id === ctx.params.id);
+  if (!h) throw new HttpError(404, 'Webhook introuvable');
+  try { const st = await testHook(h); sendJson(ctx.res, { ok: true, status: st }); } catch (e) { throw new HttpError(400, `Échec : ${e.message}`); }
+});
+// Personnalisation : message sur la page de connexion, CSS personnalisé
+router.get('/api/admin/branding', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { loginMessage: getSetting('login_message', '') || '', customCss: getSetting('custom_css', '') || '' }); });
+router.put('/api/admin/branding', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 120 * 1024), { loginMessage: V.str({ max: 1000, trim: false }), customCss: V.str({ max: 100000, trim: false }) });
+  if (b.customCss !== undefined && /<\/?\s*(script|style)|javascript:|expression\s*\(|@import/i.test(b.customCss)) throw new HttpError(400, 'CSS refusé : pas de balises, de javascript: ni de @import');
+  if (b.loginMessage !== undefined) setSetting('login_message', b.loginMessage.trim());
+  if (b.customCss !== undefined) setSetting('custom_css', b.customCss);
+  sendJson(ctx.res, { ok: true });
+});
+export const customCss = () => String(getSetting('custom_css', '') || '');

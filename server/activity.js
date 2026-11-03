@@ -1,5 +1,6 @@
 // Tableau de bord : lectures en cours, journal d'activité, commandes envoyées aux appareils,
 // et code de connexion à 6 chiffres (à usage unique : il change à chaque connexion).
+import { emitHook } from './webhooks.js';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
@@ -27,6 +28,7 @@ export function heartbeat(token, data) {
   if (startedNew) {
     entry.since = Date.now();
     logActivity('play', `${data.profile} regarde ${data.label}`, { itemId: data.itemId, device: entry.device });
+    emitHook('playback.start', { profile: data.profile, title: data.label, itemId: data.itemId });
   }
   playing.set(token, entry);
   return entry;
@@ -37,6 +39,7 @@ export function stopHeartbeat(token) {
   playing.delete(token);
   const mins = Math.round((Date.now() - e.since) / 60000);
   logActivity('stop', `${e.profile} a arrêté ${e.label}${mins >= 1 ? ` après ${mins} min` : ''}`, { itemId: e.itemId, device: e.device });
+  emitHook('playback.stop', { profile: e.profile, title: e.label, itemId: e.itemId, minutes: mins });
 }
 export function nowPlaying() {
   const now = Date.now();

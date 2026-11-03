@@ -13,7 +13,7 @@ const KIND = {
   'force-brute': 'Force brute', 'force-brute-repartie': 'Force brute répartie', ban: 'Adresse bloquée', deblocage: 'Adresse débloquée', suspect: 'Requête suspecte',
   cors: 'Autre origine', '2fa-envoye': 'Code envoyé', '2fa-echec': 'Code e-mail faux', '2fa-limite': 'Limite e-mails', '2fa-envoi': 'E-mail non envoyé', '2fa-ip': 'Code autre appareil', '2fa': 'Double authentification',
   'mot-de-passe': 'Mot de passe', droits: 'Droits', profil: 'Profil', pin: 'Code PIN', 'envoi-refuse': 'Fichier refusé', envoi: 'Fichier envoyé', audit: 'Audit', https: 'HTTPS',
-  deconnexion: 'Déconnexion', journal: 'Journal', installation: 'Installation', 'erreur-serveur': 'Erreur serveur',
+  deconnexion: 'Déconnexion', journal: 'Journal', installation: 'Installation', 'erreur-serveur': 'Erreur serveur', 'cle-api': 'Clé API',
 };
 
 export async function render(main) {

@@ -1,4 +1,5 @@
 // Venus — point d'entrée du serveur
+import './logbuf.js'; // journal du serveur (tableau de bord) : chargé en premier
 import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
@@ -7,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { HttpError, sendJson, serveStatic } from './http.js';
 import { authenticate, migrateTokens } from './auth.js';
-import { router } from './api.js';
+import { router, customCss } from './api.js';
 import { together } from './together.js';
 import { detectHardware } from './hw.js';
 import { scanAll, watchLibraries, events } from './scanner.js';
@@ -27,6 +28,10 @@ import { notify } from './notify.js';
 import { startSecurityAudit } from './audit.js';
 import { defineTask } from './tasks.js';
 import { trickplayBackfill } from './trickplay.js';
+import { refreshRatings as ratingsAll } from './ratings.js';
+import { makeBackup } from './backup.js';
+import { runSecurityAudit } from './audit.js';
+import { emitHook } from './webhooks.js';
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -58,6 +63,8 @@ async function handle(req, res) {
       return;
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Méthode non autorisée');
+    // CSS personnalisé (Tableau de bord → Serveur → Personnalisation)
+    if (url.pathname === '/custom.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end(customCss()); }
     if (serveStatic(req, res, publicDir, url.pathname)) return;
     // Application monopage : toute autre route renvoie l'interface
     serveStatic(req, res, publicDir, '/index.html');
@@ -107,7 +114,7 @@ async function main() {
     });
   }
   // Alertes de sécurité envoyées à l'administrateur (notifications, ntfy, Discord, Telegram)
-  onSecurityAlert((m) => notify({ title: m.title, body: m.body, url: m.url, tag: 'securite' }, { adminOnly: true }));
+  onSecurityAlert((m) => { notify({ title: m.title, body: m.body, url: m.url, tag: 'securite' }, { adminOnly: true }); emitHook('security.alert', { title: m.title, message: m.body }); });
   startSecurityAudit();
   // Partages réseau (NAS, PC) : montés avant la première analyse
   await mountAll().catch((e) => console.warn('[réseau]', e.message));
@@ -124,11 +131,19 @@ async function main() {
   events.on('library', (d) => {
     if (d && d.added && d.added.length) {
       libraryAdded(d.added);
+      emitHook('library.added', { titles: d.added.slice(0, 50), count: d.added.length });
       clearTimeout(watchSoon); watchSoon = setTimeout(() => runWatch().catch(() => {}), 90000);
     }
   });
   startBackups();
   // Vignettes d'aperçu de la barre de lecture : préparées en arrière-plan, titre après titre
+  // Tâches visibles dans Tableau de bord → Serveur (leur propre minuterie reste celle d'origine)
+  defineTask('scan', { label: 'Analyse des bibliothèques', description: 'Cherche les nouveaux fichiers, les fichiers modifiés et supprimés.', when: `Toutes les ${getSetting('scan_interval', 60)} min, et dès qu’un fichier apparaît`, run: async () => { await scanAll(); return 'Analyse terminée'; } });
+  defineTask('ratings', { label: 'Notes, distribution et bandes-annonces', description: 'Notes des sites, épisodes manquants, affiches Trakt : titres nouveaux ou vus il y a plus de 10 jours.', when: 'Toutes les 6 heures', run: async () => `${ratingsAll()} titre(s) mis en file` });
+  defineTask('segments', { label: 'Repérage des génériques', description: 'Analyse audio des épisodes pour « Passer l’intro » et « Passer le générique ».', when: 'Toutes les 30 minutes', run: async () => { schedulePending(); return 'Épisodes en attente ajoutés à la file'; } });
+  defineTask('backup', { label: 'Sauvegarde de la base', description: 'Profils, vus, listes, envies et réglages (10 dernières gardées).', when: 'Chaque nuit', run: async () => { makeBackup(); return 'Sauvegarde faite'; } });
+  defineTask('audit', { label: 'Audit de sécurité', description: 'Vérifie les réglages de sécurité et prévient en cas de problème.', when: 'Chaque semaine', run: async () => { const r = await runSecurityAudit(); return `Note : ${r.score} %`; } });
+  defineTask('seerr', { label: 'Séries suivies (Seerr)', description: 'Demande à Seerr les nouvelles saisons des séries suivies.', when: 'Toutes les 6 heures', run: async () => { await runWatch(); return 'Vérification faite'; } });
   defineTask('trickplay', { label: 'Vignettes de la barre de lecture', description: 'Une image toutes les 10 secondes pour chaque film, épisode et clip, montrée au survol de la barre.', every: 6 * 3600e3, firstDelay: 5 * 60e3, run: trickplayBackfill });
   setInterval(() => refreshRatings(), 6 * 3600000).unref();
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)
