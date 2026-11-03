@@ -340,6 +340,7 @@ export function quickMenu(item) {
       const r = await api(`/api/items/${titleId}/mylist`, { method: 'POST' });
       toast(r.inList ? 'Ajouté à ma liste' : 'Retiré de ma liste', { type: r.inList ? 'success' : 'info', action: { label: 'Annuler', onClick: () => api(`/api/items/${titleId}/mylist`, { method: 'POST' }).then(() => toast(r.inList ? 'Retiré de ma liste' : 'Ajouté à ma liste')) } });
     }),
+    item.type !== 'channel' ? opt('list', 'Ajouter à une liste…', async () => { const m = await import('./views/collections.js'); m.addToSheet(item); }) : null,
     opt('eye', seen ? 'Marquer comme non vu' : 'Marquer comme vu', async () => {
       await api(`/api/items/${item.id}/watched`, { method: 'POST', body: { watched: !seen } });
       toast(seen ? `« ${item.title} » : non vu` : `« ${item.title} » : vu`, { type: 'success', action: { label: 'Annuler', onClick: () => api(`/api/items/${item.id}/watched`, { method: 'POST', body: { watched: seen } }) } });

@@ -1998,3 +1998,150 @@ router.post('/api/admin/match/:id', async (ctx) => {
   else await matchShow(item, Number(b.tmdbId));
   sendJson(ctx.res, { ok: true });
 });
+
+// ------------------------------------------------------------------ collections et listes de lecture (comme Jellyfin)
+// Sagas : regroupées automatiquement d'après TMDB (Harry Potter, Star Wars…). Collections : faites à la main par
+// l'administrateur, visibles par tous. Listes de lecture : propres à chaque profil, dans l'ordre choisi, lues à la suite.
+function sagas(p) {
+  const age = ageClause(p);
+  const map = new Map();
+  for (const i of all(`SELECT i.* FROM items i WHERE i.type = 'movie' AND i.credits LIKE '%"collection":{%' AND ${age.sql}`, ...age.args)) {
+    const c = (parseJson(i.credits, {}) || {}).collection;
+    if (!c || !c.id) continue;
+    if (!map.has(c.id)) map.set(c.id, { id: `s${c.id}`, name: String(c.name || '').replace(/ - (Saga|Collection)$|^Saga /i, ''), auto: true, items: [] });
+    map.get(c.id).items.push(i);
+  }
+  return [...map.values()].filter((x) => x.items.length > 1).map((x) => ({ ...x, items: x.items.sort((a, b) => (a.release_date || String(a.year)).localeCompare(b.release_date || String(b.year))) }));
+}
+const coverOf = (items) => {
+  const pics = [...new Set(items.map((i) => i.poster || i.show_poster).filter(Boolean))];
+  const b = items.map((i) => i.backdrop || i.show_backdrop).find(Boolean) || null;
+  return { poster: pics[0] || null, backdrop: b, posters: pics.slice(0, 4) };
+};
+function collectionItems(cid, p) {
+  const age = ageClause(p);
+  return all(`SELECT i.* FROM collection_items c JOIN items i ON i.id = c.item_id WHERE c.collection_id = ? AND ${age.sql} ORDER BY c.pos, i.sort_title`, cid, ...age.args);
+}
+function playlistOf(id, p) {
+  const pl = get('SELECT * FROM playlists WHERE id = ?', Number(id));
+  if (!pl || pl.profile_id !== p.id) throw new HttpError(404, 'Liste introuvable');
+  return pl;
+}
+function playlistItems(pid, p) {
+  return all('SELECT i.*, s.title AS show_title, s.poster AS show_poster, s.backdrop AS show_backdrop FROM playlist_items x JOIN items i ON i.id = x.item_id LEFT JOIN items s ON s.id = i.show_id WHERE x.playlist_id = ? ORDER BY x.pos', pid).filter((i) => visible(p, i));
+}
+// Un titre ajouté à une liste : film, épisode, clip ; une série ou une saison ajoute tous ses épisodes dans l'ordre
+function playableIds(item) {
+  if (['movie', 'episode', 'clip', 'extra'].includes(item.type)) return [item.version_of || item.id];
+  if (item.type === 'show') return all("SELECT id FROM items WHERE type = 'episode' AND show_id = ? ORDER BY season_num = 0, season_num, episode_num", item.id).map((r) => r.id);
+  if (item.type === 'season') return all("SELECT id FROM items WHERE type = 'episode' AND parent_id = ? ORDER BY episode_num", item.id).map((r) => r.id);
+  return [];
+}
+const plCard = (i, pm) => { const c = card(i, pm && pm.get(i.id)); if (i.type === 'episode') c.showTitle = i.show_title; c.duration = i.duration; return c; };
+
+router.get('/api/collections', (ctx) => {
+  const p = requireProfile(ctx);
+  const auto = sagas(p).map((x) => ({ id: x.id, name: x.name, auto: true, count: x.items.length, ...coverOf(x.items) }));
+  const manual = all('SELECT * FROM collections ORDER BY name').map((c) => { const items = collectionItems(c.id, p); return { id: c.id, name: c.name, overview: c.overview, auto: false, count: items.length, ...coverOf(items) }; })
+    .filter((c) => c.count || p.is_admin);
+  const playlists = all('SELECT * FROM playlists WHERE profile_id = ? ORDER BY updated_at DESC', p.id).map((pl) => { const items = playlistItems(pl.id, p); return { id: pl.id, name: pl.name, count: items.length, duration: items.reduce((n, i) => n + (i.duration || 0), 0), ...coverOf(items) }; });
+  sendJson(ctx.res, { collections: [...manual, ...auto.sort((a, b) => a.name.localeCompare(b.name, 'fr'))], playlists });
+});
+router.get('/api/collections/:id', (ctx) => {
+  const p = requireProfile(ctx);
+  const raw = String(ctx.params.id);
+  const idx = statusIndex(p.id);
+  if (/^s\d+$/.test(raw)) {
+    const x = sagas(p).find((y) => y.id === raw);
+    if (!x) throw new HttpError(404, 'Collection introuvable');
+    return sendJson(ctx.res, { id: x.id, name: x.name, auto: true, editable: false, ...coverOf(x.items), items: x.items.map((i) => withStatus(card(i), idx)) });
+  }
+  const c = get('SELECT * FROM collections WHERE id = ?', Number(raw));
+  if (!c) throw new HttpError(404, 'Collection introuvable');
+  const items = collectionItems(c.id, p);
+  sendJson(ctx.res, { id: c.id, name: c.name, overview: c.overview, auto: false, editable: !!p.is_admin, ...coverOf(items), items: items.map((i) => withStatus(card(i), idx)) });
+});
+router.post('/api/admin/collections', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 8192), { name: V.str({ min: 1, max: 80, label: 'Nom' }), overview: V.nullable(V.str({ max: 1000 })), itemId: V.int({ min: 1 }) }, { required: ['name'] });
+  const r = run('INSERT INTO collections(name, overview, created_at) VALUES(?, ?, ?)', b.name, b.overview || null, Date.now());
+  if (b.itemId) run('INSERT OR IGNORE INTO collection_items(collection_id, item_id, pos) VALUES(?, ?, 0)', Number(r.lastInsertRowid), b.itemId);
+  sendJson(ctx.res, { id: Number(r.lastInsertRowid) });
+});
+router.put('/api/admin/collections/:id', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 64 * 1024), { name: V.str({ min: 1, max: 80, label: 'Nom' }), overview: V.nullable(V.str({ max: 1000 })), order: V.list(V.int({ min: 1 }), { max: 2000 }) });
+  const c = get('SELECT * FROM collections WHERE id = ?', Number(ctx.params.id));
+  if (!c) throw new HttpError(404, 'Collection introuvable');
+  if (b.name) run('UPDATE collections SET name = ? WHERE id = ?', b.name, c.id);
+  if (b.overview !== undefined) run('UPDATE collections SET overview = ? WHERE id = ?', b.overview, c.id);
+  if (b.order) tx(() => b.order.forEach((id, i) => run('UPDATE collection_items SET pos = ? WHERE collection_id = ? AND item_id = ?', i, c.id, id)));
+  sendJson(ctx.res, { ok: true });
+});
+router.del('/api/admin/collections/:id', (ctx) => {
+  requireAdmin(ctx);
+  run('DELETE FROM collections WHERE id = ?', Number(ctx.params.id));
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/admin/collections/:id/items', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 4096), { itemId: V.int({ min: 1 }), remove: V.bool() }, { required: ['itemId'] });
+  const c = get('SELECT * FROM collections WHERE id = ?', Number(ctx.params.id));
+  if (!c) throw new HttpError(404, 'Collection introuvable');
+  const it = get('SELECT * FROM items WHERE id = ?', b.itemId);
+  if (!it || !['movie', 'show', 'clip'].includes(it.type)) throw new HttpError(400, 'Seuls les films, séries et clips vont dans une collection');
+  if (b.remove) run('DELETE FROM collection_items WHERE collection_id = ? AND item_id = ?', c.id, it.version_of || it.id);
+  else run('INSERT OR IGNORE INTO collection_items(collection_id, item_id, pos) VALUES(?, ?, (SELECT COALESCE(MAX(pos), -1) + 1 FROM collection_items WHERE collection_id = ?))', c.id, it.version_of || it.id, c.id);
+  sendJson(ctx.res, { ok: true, name: c.name });
+});
+
+router.get('/api/playlists/:id', (ctx) => {
+  const p = requireProfile(ctx);
+  const pl = playlistOf(ctx.params.id, p);
+  const items = playlistItems(pl.id, p);
+  const pm = progressMap(p.id, items.map((i) => i.id));
+  sendJson(ctx.res, { id: pl.id, name: pl.name, ...coverOf(items), duration: items.reduce((n, i) => n + (i.duration || 0), 0), items: items.map((i) => plCard(i, pm)) });
+});
+router.post('/api/playlists', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = validate(await readBody(ctx.req, 4096), { name: V.str({ min: 1, max: 80, label: 'Nom' }), itemId: V.int({ min: 1 }) }, { required: ['name'] });
+  if (get('SELECT COUNT(*) AS n FROM playlists WHERE profile_id = ?', p.id).n >= 200) throw new HttpError(400, '200 listes au plus');
+  const r = run('INSERT INTO playlists(profile_id, name, created_at, updated_at) VALUES(?, ?, ?, ?)', p.id, b.name, Date.now(), Date.now());
+  const id = Number(r.lastInsertRowid);
+  let added = 0;
+  if (b.itemId) { const it = get('SELECT * FROM items WHERE id = ?', b.itemId); if (it && visible(p, it)) added = addToPlaylist(id, playableIds(it)); }
+  sendJson(ctx.res, { id, added });
+});
+function addToPlaylist(pid, ids) {
+  let n = 0;
+  tx(() => { for (const id of ids) { const r = run('INSERT OR IGNORE INTO playlist_items(playlist_id, item_id, pos) VALUES(?, ?, (SELECT COALESCE(MAX(pos), -1) + 1 FROM playlist_items WHERE playlist_id = ?))', pid, id, pid); n += r.changes; } });
+  run('UPDATE playlists SET updated_at = ? WHERE id = ?', Date.now(), pid);
+  return n;
+}
+router.put('/api/playlists/:id', async (ctx) => {
+  const p = requireProfile(ctx);
+  const pl = playlistOf(ctx.params.id, p);
+  const b = validate(await readBody(ctx.req, 64 * 1024), { name: V.str({ min: 1, max: 80, label: 'Nom' }), order: V.list(V.int({ min: 1 }), { max: 5000 }) });
+  if (b.name) run('UPDATE playlists SET name = ? WHERE id = ?', b.name, pl.id);
+  if (b.order) tx(() => b.order.forEach((id, i) => run('UPDATE playlist_items SET pos = ? WHERE playlist_id = ? AND item_id = ?', i, pl.id, id)));
+  run('UPDATE playlists SET updated_at = ? WHERE id = ?', Date.now(), pl.id);
+  sendJson(ctx.res, { ok: true });
+});
+router.del('/api/playlists/:id', (ctx) => {
+  const p = requireProfile(ctx);
+  const pl = playlistOf(ctx.params.id, p);
+  run('DELETE FROM playlists WHERE id = ?', pl.id);
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/playlists/:id/items', async (ctx) => {
+  const p = requireProfile(ctx);
+  const pl = playlistOf(ctx.params.id, p);
+  const b = validate(await readBody(ctx.req, 4096), { itemId: V.int({ min: 1 }), remove: V.bool() }, { required: ['itemId'] });
+  const it = get('SELECT * FROM items WHERE id = ?', b.itemId);
+  if (!it || !visible(p, it)) throw new HttpError(404, 'Introuvable');
+  if (b.remove) { run('DELETE FROM playlist_items WHERE playlist_id = ? AND item_id = ?', pl.id, it.id); return sendJson(ctx.res, { ok: true, removed: 1 }); }
+  const ids = playableIds(it);
+  if (!ids.length) throw new HttpError(400, 'Ce titre ne peut pas aller dans une liste de lecture');
+  if (get('SELECT COUNT(*) AS n FROM playlist_items WHERE playlist_id = ?', pl.id).n + ids.length > 5000) throw new HttpError(400, '5 000 vidéos au plus par liste');
+  sendJson(ctx.res, { ok: true, added: addToPlaylist(pl.id, ids), name: pl.name });
+});
