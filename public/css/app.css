@@ -158,6 +158,44 @@ main.with-nav { padding-left: var(--rail); }
 .boot-line i { display: block; width: 40%; height: 100%; background: var(--sulfur); animation: sweep 1.3s var(--ease) infinite; }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 .boot-note { color: var(--dim); font-size: 0.85rem; min-height: 1.3em; }
+/* Écran de chargement : la planète Vénus, voilée de nuages qui tournent lentement */
+.boot-venus {
+  width: min(170px, 44vw); aspect-ratio: 1; border-radius: 50%; position: relative; overflow: hidden; isolation: isolate;
+  background: radial-gradient(circle at 36% 32%, #fff3d6 0%, #f6d9a4 26%, #e8b878 52%, #c98a4e 76%, #94582e 100%);
+  box-shadow: 0 0 46px 4px rgba(246, 210, 160, .30), 0 0 120px 26px rgba(231, 159, 123, .13);
+}
+.bv-clouds, .bv-swirl { position: absolute; top: 0; left: 0; width: 200%; height: 100%; will-change: transform; }
+/* Voile de nuages (acide sulfurique) : bandes horizontales très douces, motif répété deux fois pour tourner sans couture */
+.bv-clouds {
+  background:
+    linear-gradient(180deg, rgba(255, 246, 226, .0) 0%, rgba(255, 246, 226, .22) 14%, rgba(196, 134, 80, .10) 24%, rgba(255, 240, 214, .18) 36%,
+      rgba(186, 122, 70, .12) 50%, rgba(255, 244, 222, .20) 62%, rgba(176, 112, 62, .12) 76%, rgba(255, 238, 210, .14) 88%, rgba(150, 92, 50, .1) 100%);
+  animation: bv-turn 60s linear infinite;
+}
+/* Volutes : le « Y » sombre et les traînées claires des photos de Vénus en ultraviolet (loin des bords du motif : pas de raccord visible) */
+.bv-swirl {
+  background:
+    radial-gradient(ellipse 22% 7% at 30% 40%, rgba(150, 90, 46, .22), transparent 70%),
+    radial-gradient(ellipse 16% 5% at 38% 52%, rgba(150, 90, 46, .18), transparent 70%),
+    radial-gradient(ellipse 18% 6% at 26% 30%, rgba(255, 248, 230, .30), transparent 70%),
+    radial-gradient(ellipse 20% 6% at 64% 64%, rgba(255, 246, 226, .26), transparent 70%),
+    radial-gradient(ellipse 18% 5% at 70% 34%, rgba(160, 98, 52, .16), transparent 70%),
+    radial-gradient(ellipse 14% 6% at 56% 78%, rgba(255, 244, 222, .22), transparent 70%);
+  background-size: 50% 100%; background-repeat: repeat-x;
+  animation: bv-turn 40s linear infinite;
+}
+/* Relief et ombre : jour à gauche, nuit à droite, liseré d'atmosphère */
+.boot-venus::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; z-index: 2; pointer-events: none;
+  background:
+    radial-gradient(circle at 30% 27%, rgba(255, 252, 240, .5), transparent 34%),
+    radial-gradient(circle at 34% 32%, transparent 48%, rgba(60, 28, 10, .42) 74%, rgba(18, 8, 3, .82) 100%);
+  box-shadow: inset 3px 3px 10px rgba(255, 248, 230, .35), inset -14px -10px 30px rgba(20, 8, 2, .45);
+}
+@keyframes bv-turn { to { transform: translateX(-50%); } }
+.first-open .boot-venus { animation: bv-in 1s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes bv-in { from { opacity: 0; transform: scale(.82); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@media (prefers-reduced-motion: reduce) { .bv-clouds, .bv-swirl, .first-open .boot-venus { animation: none !important; } }
 /* Démarrage bloqué : explication et boutons (voir index.html) */
 .boot.stuck .boot-note { max-width: min(440px, calc(100vw - 32px)); text-align: center; color: var(--text, #eceae4); line-height: 1.45; }
 .boot-note { margin-top: 18px; }
