@@ -9,6 +9,7 @@ import { refreshMissing, copyLocalImage } from './metadata.js';
 import { remoteReady } from './netshare.js';
 import { movieNfo, showNfo } from './nfo.js';
 import { groupVersions } from './versions.js';
+import { rememberEpgUrl } from './epg.js';
 
 const VIDEO_EXT = new Set(['.mkv', '.mp4', '.m4v', '.avi', '.mov', '.webm', '.ts', '.m2ts', '.mts', '.wmv', '.flv', '.mpg', '.mpeg', '.vob', '.ogv', '.3gp']);
 const SKIP_DIR = /^(\.|@eaDir$|#recycle$|\$RECYCLE|System Volume Information$|lost\+found$|samples?$)/i;
@@ -291,15 +292,20 @@ async function scanIptv(lib) {
     text = await res.text();
   } else text = fs.readFileSync(lib.path, 'utf8');
   const channels = parseM3u(text);
+  // Guide des programmes : adresse donnée dans l'en-tête de la liste, ou celle de l'abonnement Xtream
+  const head = (/^#EXTM3U([^\n]*)/i.exec(text.slice(0, 4000)) || [])[1] || '';
+  const epg = [...head.matchAll(/(?:url-tvg|x-tvg-url|tvg-url)="([^"]+)"/gi)].flatMap((m) => m[1].split(',')).map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u));
+  if (/\/get\.php\?/i.test(lib.path)) { try { const u = new URL(lib.path); const x = new URL('/xmltv.php', u); x.searchParams.set('username', u.searchParams.get('username') || ''); x.searchParams.set('password', u.searchParams.get('password') || ''); epg.push(x.href); } catch { /* */ } }
+  rememberEpgUrl(lib.id, [...new Set(epg)]);
   const known = new Map(all("SELECT id, stream_url FROM items WHERE library_id=? AND type='channel'", lib.id).map((r) => [r.stream_url, r]));
   const seen = new Set();
   tx(() => {
     channels.forEach((c, i) => {
       seen.add(c.url);
       const k = known.get(c.url);
-      if (k) run('UPDATE items SET title=?, poster=?, grp=?, episode_num=?, channel_num=? WHERE id=?', c.name, c.logo, c.group, i + 1, c.chno, k.id);
-      else run(`INSERT INTO items(library_id, type, category, title, sort_title, poster, grp, stream_url, episode_num, channel_num, added_at, matched)
-                VALUES(?, 'channel', 'channel', ?, ?, ?, ?, ?, ?, ?, ?, 1)`, lib.id, c.name, sortTitle(c.name), c.logo, c.group, c.url, i + 1, c.chno, Date.now());
+      if (k) run('UPDATE items SET title=?, poster=?, grp=?, episode_num=?, channel_num=?, key=? WHERE id=?', c.name, c.logo, c.group, i + 1, c.chno, c.id || null, k.id);
+      else run(`INSERT INTO items(library_id, type, category, title, sort_title, poster, grp, stream_url, episode_num, channel_num, added_at, matched, key)
+                VALUES(?, 'channel', 'channel', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`, lib.id, c.name, sortTitle(c.name), c.logo, c.group, c.url, i + 1, c.chno, Date.now(), c.id || null);
     });
     for (const [url, r] of known) if (!seen.has(url)) run('DELETE FROM items WHERE id=?', r.id);
   });

@@ -22,6 +22,7 @@ Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec un
   - **Séries suivies** : chaque nouvelle saison annoncée des séries de « Ma liste » (ou de toute la médiathèque, au choix) est demandée automatiquement. Vérification toutes les 6 heures, ou « Vérifier maintenant ».
   - **Au nom de chacun** : reliez chaque profil à son compte Seerr, ses demandes et sa liste de suivi Seerr sont à son nom. Les profils enfants ajoutent des envies, un adulte décide.
 - **Bandes-annonces** au survol des affiches et dans le carrousel d'accueil (son activable), réglables dans **Réglages → Lecture sur cet appareil**.
+- **Guide des programmes et enregistrements** : TV → Guide (grille XMLTV : adresse lue dans la liste M3U ou l'abonnement Xtream, ou ajoutée dans « Réglages du guide »), programme en cours sur chaque chaîne, enregistrement d'un programme ou de toutes les diffusions d'une émission, avec marges avant / après ; les enregistrements se lisent dans TV → Enregistrements.
 - **TV en direct** : numéros de chaîne (ceux de la liste M3U, `tvg-chno`, sinon dans l'ordre), saisie d'un numéro au clavier, à la télécommande ou au pavé numérique du téléphone, liste des chaînes à droite pendant la lecture (touche L).
 - **Thème Verre** (inspiré de [Free My TV](https://github.com/simbasjungles/free-my-tv)) : verre dépoli, clair le jour et sombre la nuit, au lever et au coucher du soleil.
 - **Thèmes planètes** : Mercure, Vénus, Terre, Mars, Jupiter, Saturne, Uranus, Neptune, Pluton. Couleurs, nom et logo animé changent (**Réglages → Thème**).

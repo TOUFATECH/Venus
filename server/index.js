@@ -32,6 +32,8 @@ import { refreshRatings as ratingsAll } from './ratings.js';
 import { makeBackup } from './backup.js';
 import { runSecurityAudit } from './audit.js';
 import { emitHook } from './webhooks.js';
+import { refreshEpg, pruneEpg } from './epg.js';
+import { startDvr, applyRules } from './dvr.js';
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -144,6 +146,10 @@ async function main() {
   defineTask('backup', { label: 'Sauvegarde de la base', description: 'Profils, vus, listes, envies et réglages (10 dernières gardées).', when: 'Chaque nuit', run: async () => { makeBackup(); return 'Sauvegarde faite'; } });
   defineTask('audit', { label: 'Audit de sécurité', description: 'Vérifie les réglages de sécurité et prévient en cas de problème.', when: 'Chaque semaine', run: async () => { const r = await runSecurityAudit(); return `Note : ${r.score} %`; } });
   defineTask('seerr', { label: 'Séries suivies (Seerr)', description: 'Demande à Seerr les nouvelles saisons des séries suivies.', when: 'Toutes les 6 heures', run: async () => { await runWatch(); return 'Vérification faite'; } });
+  defineTask('epg', { label: 'Guide des programmes TV', description: 'Télécharge le guide XMLTV des chaînes et programme les enregistrements des émissions suivies.', every: 12 * 3600e3, firstDelay: 60e3,
+    run: async (progress) => { const r = await refreshEpg(progress); const n = applyRules(); return n ? `${r} · ${n} enregistrement(s) programmé(s)` : r; } });
+  setInterval(() => pruneEpg(), 3600e3).unref();
+  startDvr();
   defineTask('trickplay', { label: 'Vignettes de la barre de lecture', description: 'Une image toutes les 10 secondes pour chaque film, épisode et clip, montrée au survol de la barre.', every: 6 * 3600e3, firstDelay: 5 * 60e3, run: trickplayBackfill });
   setInterval(() => refreshRatings(), 6 * 3600000).unref();
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)
