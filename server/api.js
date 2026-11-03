@@ -24,6 +24,7 @@ import {
 import { detectHardware } from './hw.js';
 import { probeLive, readChapters } from './probe.js';
 import { runTask, listTasks } from './tasks.js';
+import { traktId, testTrakt, posterSource } from './trakt.js';
 import { ensureTrickplay, trickplayInfo, trickplaySheet, trickplayMode, removeTrickplay } from './trickplay.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
 import { getSegments, scheduleSeason, segmentsPending } from './segments.js';
@@ -1251,7 +1252,7 @@ router.get('/api/admin', (ctx) => {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
       maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0', trickplay: trickplayMode(),
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
-      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
+      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
   });
@@ -1556,6 +1557,7 @@ router.post('/api/admin/ratings/refresh', (ctx) => {
 
 const SETTINGS_SCHEMA = {
   tmdbKey: V.str({ max: 400 }), omdbKey: V.str({ max: 100 }), simklClientId: V.str({ max: 200 }),
+  traktClientId: V.str({ max: 200, pattern: /^[\w-]*$/, label: 'Client ID Trakt' }), posterSource: V.oneOf(['tmdb', 'trakt']),
   ntfyServer: V.url({ label: 'Serveur ntfy' }), ntfyTopic: V.str({ max: 100, pattern: /^[\w-]+$/, label: 'Sujet ntfy' }),
   discordWebhook: V.url({ https: true, label: 'Webhook Discord' }), telegramToken: V.str({ max: 100, pattern: /^\d+:[\w-]+$/, label: 'Jeton Telegram' }),
   telegramChat: V.str({ max: 40, pattern: /^-?\d+$|^@\w+$/, label: 'Discussion Telegram' }), publicUrl: V.url({ label: 'Adresse publique' }),
@@ -1611,6 +1613,12 @@ router.put('/api/admin/settings', async (ctx) => {
   if (b.opensubtitlesUser !== undefined) { setSetting('opensubtitles_user', String(b.opensubtitlesUser || '').trim()); resetOsLogin(); }
   if (b.opensubtitlesPass !== undefined && b.opensubtitlesPass !== '') { setSetting('opensubtitles_pass', String(b.opensubtitlesPass)); resetOsLogin(); }
   if (b.simklClientId !== undefined) { setSetting('simkl_client_id', String(b.simklClientId || '').trim()); ratingsChanged = true; }
+  if (b.traktClientId !== undefined) {
+    const id = String(b.traktClientId || '').trim();
+    if (id) { try { await testTrakt(id); } catch (e) { throw new HttpError(400, e.message === 'Identifiant client Trakt refusé' ? e.message : `Trakt injoignable (${e.message})`); } }
+    setSetting('trakt_client_id', id); ratingsChanged = true;
+  }
+  if (b.posterSource) { setSetting('poster_source', b.posterSource); ratingsChanged = true; }
   if (b.seerrUrl !== undefined || b.seerrKey !== undefined) {
     const conf = { url: String(b.seerrUrl ?? seerrConf().url).trim().replace(/\/+$/, ''), key: String(b.seerrKey ?? seerrConf().key).trim() };
     if (conf.url && !/^https?:\/\//.test(conf.url)) conf.url = `http://${conf.url}`;

@@ -11,11 +11,11 @@ Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec un
 - **Sous-titres** SRT / ASS / VTT, intégrés ou externes (`Film.fr.srt`, `Film.forced.fr.srt`), encodage Windows détecté. Les sous-titres image (PGS Blu-ray) sont incrustés à la volée.
 - **TV** : navigation complète aux flèches de la télécommande (Android TV, Fire TV, Samsung, LG…).
 - **Chromecast** et **AirPlay**, contrôles sur l'écran verrouillé du téléphone, application installable (PWA).
-- **Affiches et résumés en français** via TMDB (gratuit), ou vos propres `poster.jpg` / `fanart.jpg`.
+- **Affiches et résumés en français** via TMDB (gratuit) et [Trakt](https://app.trakt.tv) (en secours ou en premier), ou vos propres `poster.jpg` / `fanart.jpg`.
 
 ## Notes, nouveautés, Seerr, thèmes
 
-- **Notes des sites** sur chaque fiche, et tri par note : TMDB, IMDb, Rotten Tomatoes, Metacritic (clé gratuite [OMDb](https://www.omdbapi.com/apikey.aspx)), AniList et MyAnimeList (sans clé), Simkl (identifiant gratuit). SensCritique n'a pas d'API publique : un lien vers sa page est proposé. Clés à coller dans **Réglages → Notes des sites**.
+- **Notes des sites** sur chaque fiche, et tri par note : TMDB, IMDb, Rotten Tomatoes, Metacritic (clé gratuite [OMDb](https://www.omdbapi.com/apikey.aspx)), AniList et MyAnimeList (sans clé), Simkl (identifiant gratuit), Trakt (identifiant gratuit, qui fournit aussi des affiches, fonds et logos : en secours de TMDB ou en premier, au choix). SensCritique n'a pas d'API publique : un lien vers sa page est proposé. Clés à coller dans **Réglages → Notes des sites**.
 - **Nouveautés** : films au cinéma et à venir, séries de la semaine, animés de la saison (TMDB et AniList), avec une grande affiche qui suit le titre survolé et sa bande-annonce.
 - **Seerr** (Overseerr / Jellyseerr) : **Réglages → Seerr**. Le plus simple : l'adresse de Seerr et un compte administrateur Seerr (e-mail, ou compte Jellyfin / Emby) ; Venus récupère la clé API tout seul, le mot de passe n'est pas gardé. On peut aussi coller la clé API.
   - **Mes envies** : le ♡ des Nouveautés ajoute un film, une série ou un animé (sorti ou à venir) à « Ma liste → Mes envies ». Il est demandé à Seerr aussitôt : Radarr / Sonarr le téléchargent dès sa sortie, puis il passe tout seul dans « Ma liste ».
@@ -23,6 +23,7 @@ Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec un
   - **Au nom de chacun** : reliez chaque profil à son compte Seerr, ses demandes et sa liste de suivi Seerr sont à son nom. Les profils enfants ajoutent des envies, un adulte décide.
 - **Bandes-annonces** au survol des affiches et dans le carrousel d'accueil (son activable), réglables dans **Réglages → Lecture sur cet appareil**.
 - **TV en direct** : numéros de chaîne (ceux de la liste M3U, `tvg-chno`, sinon dans l'ordre), saisie d'un numéro au clavier, à la télécommande ou au pavé numérique du téléphone, liste des chaînes à droite pendant la lecture (touche L).
+- **Thème Verre** (inspiré de [Free My TV](https://github.com/simbasjungles/free-my-tv)) : verre dépoli, clair le jour et sombre la nuit, au lever et au coucher du soleil.
 - **Thèmes planètes** : Mercure, Vénus, Terre, Mars, Jupiter, Saturne, Uranus, Neptune, Pluton. Couleurs, nom et logo animé changent (**Réglages → Thème**).
 
 ## Sur le téléphone, le soir, et pour l'administrateur
