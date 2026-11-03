@@ -2,6 +2,7 @@
 // (le code ne sert qu'une fois : il change à chaque connexion)
 import { api, auth } from '../api.js';
 import { h, brand } from '../ui.js';
+import { state } from '../app.js';
 
 export function render(main, { done }) {
   let mode = 'password';
@@ -90,6 +91,9 @@ export function render(main, { done }) {
   intro, passField, codeField, mailField,
   err,
   h('div', { class: 'form-actions login-actions' }, switchBtn, submit));
+  // Message de l'administrateur (Tableau de bord → Serveur → Personnalisation)
+  const msg = state.status && state.status.loginMessage;
+  if (msg) form.insertBefore(h('p', { class: 'login-msg' }, msg), form.children[1] || null);
   main.append(h('div', { class: 'center-screen' }, form));
   setMode(new URLSearchParams(location.hash.split('?')[1] || '').has('code') ? 'code' : 'password');
 }

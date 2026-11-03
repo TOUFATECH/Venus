@@ -8,6 +8,7 @@ import { get, all, run, getSetting } from './db.js';
 import { HttpError, parseCookies } from './http.js';
 import { guardAttempt, failAttempt, okAttempt } from './security.js';
 import { accessProblem, permsOf } from './perms.js';
+import { profileFromApiKey } from './apikeys.js';
 
 const TOKEN_TTL = 180 * 864e5;
 const TOKEN_IDLE = 45 * 864e5;
@@ -72,7 +73,13 @@ export function tokenFromReq(req, url) {
 }
 
 const seenThrottle = new Map();
-export function authenticate(req, url) {
+export function authenticate(req, url, ip) {
+  // Clé API (scripts, domotique) : en-tête X-Api-Key uniquement
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey) {
+    const profile = profileFromApiKey(String(apiKey), ip);
+    return profile ? { token: null, key: null, profile, via: 'apikey' } : null;
+  }
   const found = tokenFromReq(req, url);
   if (!found) return null;
   const { token } = found;
