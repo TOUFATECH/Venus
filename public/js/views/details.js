@@ -43,9 +43,25 @@ export async function render(main, { id, query }) {
   let label = 'Lecture';
   if (isShow && target) label = showDone ? 'Revoir depuis le début' : `${resumable ? 'Reprendre' : 'Lecture'} S${target.season} É${target.episode}`;
   else if (resumable) label = `Reprendre (${remaining} min restantes)`;
+  // Plusieurs versions du film (4K, 1080p, version longue) : choix mémorisé sur cet appareil
+  const vKey = `vn_version_${d.id}`;
+  let versionId = target && target.id;
+  if (!isShow && d.versions && d.versions.length > 1) {
+    try { const v = Number(localStorage.getItem(vKey)); if (d.versions.some((x) => x.id === v)) versionId = v; } catch { /* */ }
+  }
   if (target) {
-    actions.append(h('button', { class: 'btn btn-play f', 'data-autofocus': true, onclick: () => go(playPath(target.id)) }, icon('play'), label));
-    if (resumable) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Recommencer depuis le début', title: 'Recommencer', onclick: () => go(playPath(target.id, 0)) }, icon('restart')));
+    actions.append(h('button', { class: 'btn btn-play f', 'data-autofocus': true, onclick: () => go(playPath(isShow ? target.id : versionId)) }, icon('play'), label));
+    if (resumable) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Recommencer depuis le début', title: 'Recommencer', onclick: () => go(playPath(isShow ? target.id : versionId, 0)) }, icon('restart')));
+  }
+  if (!isShow && d.versions && d.versions.length > 1) {
+    const cur = () => d.versions.find((x) => x.id === versionId) || d.versions[0];
+    const vBtn = h('button', { class: 'btn btn-ghost f', title: 'Choisir la version', onclick: () => {
+      const s = sheet('Version', h('div', {}, d.versions.map((x) => h('button', { class: `opt f${x.id === versionId ? ' on' : ''}`, onclick: () => {
+        versionId = x.id; try { localStorage.setItem(vKey, String(x.id)); } catch { /* */ }
+        vBtn.querySelector('span').textContent = x.quality || 'Version'; s.close(); toast(`Version ${x.quality} ${x.detail ? `· ${x.detail}` : ''}`);
+      } }, icon('check'), x.quality || 'Version', h('small', {}, x.detail)))));
+    } }, icon('film'), h('span', {}, cur().quality || 'Version'));
+    actions.append(vBtn);
   }
   let bt = null;
   if (d.trailer) actions.append(h('button', { class: 'btn btn-ghost f', onclick: () => openTrailer(d, bt) }, icon('film'), 'Bande-annonce'));
@@ -69,7 +85,12 @@ export async function render(main, { id, query }) {
     const m = await import('./downloads.js');
     m.openDownload({ id: d.id, title: d.title, size: d.file && d.file.size, duration: d.duration || (d.runtime ? d.runtime * 60 : 0) });
   } }, icon('down')));
-  if (state.profile.isAdmin && !isClip) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Corriger l’identification', title: 'Corriger l’identification', onclick: () => fixMatch(d) }, icon('gear')));
+  if (state.profile.isAdmin) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Modifier', title: 'Modifier les infos, les images, l’identification', onclick: () => {
+    const s = sheet(d.title, h('div', {},
+      h('button', { class: 'opt ic f', onclick: () => { s.close(); editInfo(d); } }, icon('edit'), 'Modifier les infos', h('small', {}, 'Titre, résumé, année, genres, âge')),
+      isClip ? null : h('button', { class: 'opt ic f', onclick: () => { s.close(); chooseImages(d); } }, icon('grid4'), 'Choisir les images', h('small', {}, 'Affiche, fond, logo (TMDB, Trakt)')),
+      isClip ? null : h('button', { class: 'opt ic f', onclick: () => { s.close(); fixMatch(d); } }, icon('search'), 'Corriger l’identification', h('small', {}, 'Ce n’est pas le bon titre'))));
+  } }, icon('gear')));
   if (state.profile.isAdmin) {
     const nEps = isShow ? d.seasons.reduce((n, s) => n + s.episodes.length, 0) : 0;
     const size = !isShow && d.file && d.file.size ? d.file.size : 0;
@@ -168,6 +189,16 @@ export async function render(main, { id, query }) {
       const list = s.episodes.filter((e) => epFilter === 'all' || (epFilter === 'unseen' ? !isSeen(e) : isSeen(e)));
       epList.replaceChildren(...list.map((e) => episodeRow(e, e.id === focusId, (w) => markEpisode(e, w))));
       if (!list.length) epList.replaceChildren(h('p', { class: 'grid-empty' }, epFilter === 'unseen' ? 'Tous les épisodes de cette saison sont vus.' : 'Aucun épisode vu dans cette saison.'));
+      // Épisodes diffusés mais absents des dossiers (d'après TMDB), à leur place dans l'ordre
+      if (epFilter === 'all' && prefs.get('showMissing') !== false && s.missing && s.missing.length) {
+        for (const m of s.missing) {
+          const ghost = h('div', { class: 'episode missing', title: 'Pas dans vos dossiers' },
+            h('div', { class: 'thumb' }, m.still ? h('img', { src: m.still, alt: '', loading: 'lazy' }) : placeholder(m.title || `Épisode ${m.number}`), h('span', { class: 'miss-tag' }, 'Manquant')),
+            h('div', {}, h('div', { class: 'ep-meta' }, `Épisode ${m.number}${m.air ? `, ${fmtDate(m.air)}` : ''}`), h('h3', {}, m.title || `Épisode ${m.number}`), m.overview ? h('p', {}, m.overview) : null));
+          const after = [...epList.children].find((el) => !el.classList.contains('missing') && Number(el.dataset.ep || el.querySelector('[data-ep]')?.dataset.ep) > m.number);
+          if (after) epList.insertBefore(ghost, after); else epList.append(ghost);
+        }
+      }
       // Fin de saison : on enchaîne sur la suivante
       const idx = d.seasons.indexOf(s);
       const nextS = d.seasons[idx + 1];
@@ -236,7 +267,8 @@ export async function render(main, { id, query }) {
     }
     content.append(h('section', { class: 'd-section', id: 'episodes' },
       h('div', { class: 'ep-head' }, h('h2', { class: 'section-title' }, d.seasons.length > 1 ? `${d.seasons.length} saisons` : 'Épisodes'), epChips),
-      d.seasons.length > 1 ? seasonBar : null, seasonHead, epList));
+      d.seasons.length > 1 ? seasonBar : null, seasonHead, epList,
+      d.missingSeasons && d.missingSeasons.length && prefs.get('showMissing') !== false ? h('p', { class: 'missing-seasons' }, `Pas dans vos dossiers : ${d.missingSeasons.map((x) => `${x.title || `Saison ${x.number}`} (${x.count} épisodes)`).join(', ')}.`) : null));
     showSeason(startSeason, fromPlayer ? wantEp : null);
   }
 
@@ -291,6 +323,16 @@ export async function render(main, { id, query }) {
       cr.tags && cr.tags.length ? h('div', { class: 'tag-cloud' }, h('span', { class: 'tag-cloud-label' }, 'Étiquettes'), cr.tags.map((t) => h('span', { class: 'tag ghost' }, t))) : null));
   }
 
+  if (d.extras && d.extras.length) {
+    const list = h('div', { class: 'extras-row' }, d.extras.map((x) => {
+      const im = h('img', { src: x.still ? img(x.still) : `/api/items/${x.id}/thumb`, alt: '', loading: 'lazy' });
+      im.addEventListener('error', () => im.replaceWith(placeholder(x.title)), { once: true });
+      return h('button', { class: 'extra f', onclick: () => go(playPath(x.id, 0)) },
+        h('span', { class: 'thumb' }, im, h('span', { class: 'ep-play' }, icon('play'))),
+        h('small', {}, [x.kindLabel, x.duration ? `${Math.max(1, Math.round(x.duration / 60))} min` : null].filter(Boolean).join(' · ')), h('b', {}, x.title));
+    }));
+    content.append(h('section', { class: 'd-section' }, h('h2', { class: 'section-title' }, `Bonus (${d.extras.length})`), scrollArrows(list)));
+  }
   if (d.saga && d.saga.items.length > 1) {
     content.append(h('div', { class: 'd-similar' }, row({ title: `Saga : ${d.saga.name.replace(/ - (Saga|Collection)$|^Saga /i, '')}`, items: d.saga.items })));
   }
@@ -421,7 +463,7 @@ function episodeRow(e, current = false, onToggle = null) {
   const dur = e.runtime || (e.duration ? Math.round(e.duration / 60) : null);
   const seen = !!(p && p.watched);
   const toggle = onToggle ? h('button', { class: `ep-toggle f${seen ? ' on' : ''}`, 'aria-label': seen ? `Marquer « ${e.title} » comme non vu` : `Marquer « ${e.title} » comme vu`, title: seen ? 'Vu' : 'Marquer comme vu', onclick: (ev) => { ev.stopPropagation(); onToggle(!seen); } }, icon(seen ? 'check' : 'eye')) : null;
-  const row = h('button', { class: `episode f${current ? ' is-current' : ''}${seen ? ' seen' : ''}`, onclick: () => go(playPath(e.id)) },
+  const row = h('button', { class: `episode f${current ? ' is-current' : ''}${seen ? ' seen' : ''}`, 'data-ep': e.episode, onclick: () => go(playPath(e.id)) },
     h('div', { class: 'thumb' }, thumb, h('span', { class: 'ep-play' }, icon('play')),
       pct > 0 && !p.watched ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
       p && p.watched ? h('span', { class: 'check' }, icon('check')) : null),
@@ -435,6 +477,64 @@ function episodeRow(e, current = false, onToggle = null) {
 }
 
 // Administration : choisir la bonne fiche TMDB quand l'identification automatique s'est trompée
+// ---------------------------------------------------------------- modifier les infos (administrateur)
+async function editInfo(d) {
+  let r;
+  try { r = await api(`/api/admin/items/${d.id}/edit`); } catch (e) { toast(e.message, true); return; }
+  const f = r.fields;
+  const inp = (v, attrs = {}) => h('input', { class: 'input', value: v ?? '', ...attrs });
+  const title = inp(f.title, { maxlength: 200 }), orig = inp(f.originalTitle, { maxlength: 200 }), year = inp(f.year, { inputmode: 'numeric', maxlength: 4 });
+  const tagline = inp(f.tagline, { maxlength: 300 }), genres = inp((f.genres || []).join(', '), { placeholder: 'Action, Comédie' });
+  const age = h('select', { class: 'input' }, [['', 'Non classé'], ['0', 'Tous publics'], ['10', '10 ans et plus'], ['12', '12 ans et plus'], ['16', '16 ans et plus'], ['18', '18 ans et plus']].map(([v, l]) => h('option', { value: v, selected: String(f.age ?? '') === v }, l)));
+  const overview = h('textarea', { class: 'input', rows: 6, maxlength: 5000 }, f.overview || '');
+  const err = h('p', { class: 'error-text' });
+  const field = (l, el) => h('div', { class: 'field' }, h('label', {}, l), el);
+  const s = sheet('Modifier les infos', h('form', { class: 'edit-form', onsubmit: async (e) => {
+    e.preventDefault(); err.textContent = '';
+    const y = year.value.trim();
+    if (!title.value.trim()) { err.textContent = 'Le titre est obligatoire'; return; }
+    if (y && !/^\d{4}$/.test(y)) { err.textContent = 'Année sur 4 chiffres'; return; }
+    try {
+      await api(`/api/admin/items/${d.id}/edit`, { method: 'PUT', body: { title: title.value.trim(), originalTitle: orig.value.trim() || null, year: y ? Number(y) : null,
+        overview: overview.value.trim() || null, tagline: tagline.value.trim() || null, genres: genres.value.split(',').map((g) => g.trim()).filter(Boolean).slice(0, 12), age: age.value === '' ? null : Number(age.value) } });
+      s.close(); toast('Infos enregistrées : elles ne seront plus remplacées par TMDB', { type: 'success' });
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } catch (e2) { err.textContent = e2.message; }
+  } },
+  h('div', { class: 'two-cols' }, field('Titre', title), field('Titre original', orig)),
+  h('div', { class: 'two-cols' }, field('Année', year), field('Âge minimum', age)),
+  field('Genres (séparés par des virgules)', genres), field('Accroche', tagline), field('Résumé', overview), err,
+  h('div', { class: 'form-actions' },
+    r.custom.length ? h('button', { class: 'btn btn-ghost f', type: 'button', onclick: async () => {
+      await api(`/api/admin/items/${d.id}/reset`, { method: 'POST' }); s.close(); toast('Infos d’origine rétablies'); window.dispatchEvent(new HashChangeEvent('hashchange'));
+    } }, 'Revenir aux infos d’origine') : null,
+    h('button', { class: 'btn btn-play f', type: 'submit' }, 'Enregistrer'))), { wide: true });
+}
+
+async function chooseImages(d) {
+  const body = h('div', { class: 'img-pick' }, h('p', { class: 'muted' }, h('span', { class: 'mini-spin' }), ' Recherche des images…'));
+  const s = sheet('Choisir les images', body, { wide: true });
+  let r;
+  try { r = await api(`/api/admin/items/${d.id}/edit`); } catch (e) { body.replaceChildren(h('p', { class: 'error-text' }, e.message)); return; }
+  let kind = 'poster';
+  const tabs = h('div', { class: 'seg' });
+  const grid = h('div', { class: 'img-grid' });
+  const NAMES = { poster: 'Affiches', backdrop: 'Fonds', logo: 'Logos' };
+  const paint = () => {
+    tabs.replaceChildren(...Object.keys(NAMES).map((k) => h('button', { class: `seg-b f${k === kind ? ' on' : ''}`, onclick: () => { kind = k; paint(); } }, `${NAMES[k]} (${r.images[k].length})`)));
+    grid.className = `img-grid ${kind}`;
+    const list = r.images[kind];
+    grid.replaceChildren(...(list.length ? list.map((x) => h('button', { class: 'img-opt f', title: [x.src === 'trakt' ? 'Trakt' : 'TMDB', x.lang ? x.lang.toUpperCase() : null, x.w ? `${x.w}×${x.h}` : null].filter(Boolean).join(' · '), onclick: async (e) => {
+      const b = e.currentTarget; b.classList.add('busy');
+      try { await api(`/api/admin/items/${d.id}/image`, { method: 'POST', body: { kind, src: x.src, ref: x.ref } }); s.close(); toast(`${NAMES[kind].slice(0, -1)} changé${kind === 'poster' ? 'e' : ''}`, { type: 'success' }); window.dispatchEvent(new HashChangeEvent('hashchange')); }
+      catch (err) { b.classList.remove('busy'); toast(err.message, true); }
+    } }, h('img', { src: x.preview, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }), h('span', { class: 'img-src' }, [x.src === 'trakt' ? 'Trakt' : 'TMDB', x.lang ? x.lang.toUpperCase() : null].filter(Boolean).join(' · '))))
+      : [h('p', { class: 'muted' }, 'Aucune image proposée. Ajoutez une clé TMDB ou un identifiant Trakt dans Réglages, ou placez poster.jpg / fanart.jpg dans le dossier.')]));
+  };
+  body.replaceChildren(tabs, grid);
+  paint();
+}
+
 export function fixMatch(item) {
   const input = h('input', { class: 'input', value: item.title });
   const year = h('input', { class: 'input', value: item.year || '', inputmode: 'numeric', style: { maxWidth: '110px' } });

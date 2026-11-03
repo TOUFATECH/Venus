@@ -7,9 +7,15 @@ import { downloadedSubs } from './subtitles.js';
 import { parseMovie, parseEpisode, normKey, sortTitle } from './parse.js';
 import { refreshMissing, copyLocalImage } from './metadata.js';
 import { remoteReady } from './netshare.js';
+import { movieNfo, showNfo } from './nfo.js';
+import { groupVersions } from './versions.js';
 
 const VIDEO_EXT = new Set(['.mkv', '.mp4', '.m4v', '.avi', '.mov', '.webm', '.ts', '.m2ts', '.mts', '.wmv', '.flv', '.mpg', '.mpeg', '.vob', '.ogv', '.3gp']);
-const SKIP_DIR = /^(\.|@eaDir$|#recycle$|\$RECYCLE|System Volume Information$|lost\+found$|extras?$|featurettes?$|behind the scenes$|deleted scenes$|trailers?$|samples?$|bonus$)/i;
+const SKIP_DIR = /^(\.|@eaDir$|#recycle$|\$RECYCLE|System Volume Information$|lost\+found$|samples?$)/i;
+// Bonus (noms de dossiers et suffixes de fichiers reconnus par Jellyfin, Plex et Kodi)
+const EXTRA_DIRS = { extras: 'extra', extra: 'extra', bonus: 'extra', featurettes: 'featurette', featurette: 'featurette', 'behind the scenes': 'behindthescenes',
+  'deleted scenes': 'deleted', interviews: 'interview', interview: 'interview', scenes: 'scene', shorts: 'short', trailers: 'trailer', trailer: 'trailer', others: 'extra', other: 'extra' };
+const EXTRA_SUFFIX = /-(trailer|teaser|featurette|behindthescenes|deleted|deletedscene|interview|scene|short|other|extra)$/i;
 
 import { EventEmitter } from 'node:events';
 export const events = new EventEmitter();
@@ -18,19 +24,28 @@ export const scanState = { running: false, phase: '', done: 0, total: 0, lastSca
 let added = [];
 let pendingRescan = false;
 
-function walk(dir, out = []) {
+function walk(dir, out = [], extra = null) {
   let entries;
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
   for (const e of entries) {
     const full = path.join(dir, e.name);
-    if (e.isDirectory()) { if (!SKIP_DIR.test(e.name)) walk(full, out); continue; }
+    if (e.isDirectory()) {
+      if (SKIP_DIR.test(e.name)) continue;
+      const kind = EXTRA_DIRS[e.name.toLowerCase()];
+      walk(full, out, extra || (kind ? { kind, owner: dir } : null));
+      continue;
+    }
     if (!e.isFile() && !e.isSymbolicLink()) continue;
     const ext = path.extname(e.name).toLowerCase();
     if (!VIDEO_EXT.has(ext) || /(^|[._-])sample([._-]|$)/i.test(e.name)) continue;
     try {
       const st = fs.statSync(full);
-      if (st.size < 5 * 1024 * 1024) continue; // ignore les fichiers minuscules
-      out.push({ path: full, size: st.size, mtime: Math.floor(st.mtimeMs) });
+      const base = path.basename(e.name, ext);
+      const suf = EXTRA_SUFFIX.exec(base);
+      // Suffixe (« Film-trailer.mkv ») : rattaché au fichier « Film.* » du même dossier
+      const x = extra || (suf ? { kind: suf[1].toLowerCase().replace('deletedscene', 'deleted').replace('teaser', 'trailer'), owner: path.join(dir, base.slice(0, suf.index)), byName: true } : null);
+      if (st.size < (x ? 0.01 : 5) * 1024 * 1024) continue; // ignore les fichiers minuscules
+      out.push({ path: full, size: st.size, mtime: Math.floor(st.mtimeMs), extra: x });
     } catch { /* fichier inaccessible */ }
   }
   return out;
@@ -67,9 +82,12 @@ function upsertShow(lib, info, showDir) {
       if (p) poster = copyLocalImage(p);
       if (b) backdrop = copyLocalImage(b);
     }
-    const r = run(`INSERT INTO items(library_id, type, category, key, title, sort_title, year, poster, backdrop, added_at, matched)
-                   VALUES(?, 'show', ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-    lib.id, catOf(lib), key, info.show, sortTitle(info.show), info.showYear, poster, backdrop, Date.now());
+    const nfo = showNfo(showDir);
+    const title = (nfo && nfo.title) || info.show;
+    const r = run(`INSERT INTO items(library_id, type, category, key, title, sort_title, year, poster, backdrop, added_at, matched, nfo, overview, genres, tmdb_id, imdb_id)
+                   VALUES(?, 'show', ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)`,
+    lib.id, catOf(lib), key, title, sortTitle(title), (nfo && nfo.year) || info.showYear, poster, backdrop, Date.now(),
+    nfo ? JSON.stringify(nfo) : null, (nfo && nfo.plot) || null, nfo && nfo.genres.length ? JSON.stringify(nfo.genres) : null, null, (nfo && nfo.imdb) || null);
     show = get('SELECT * FROM items WHERE id=?', Number(r.lastInsertRowid));
   }
   const sKey = `${show.id}:${info.season}`;
@@ -90,9 +108,19 @@ async function processFile(lib, f, existing) {
   probe.subs.push(...findExternalSubs(f.path));
   const probeJson = JSON.stringify(probe);
 
+  // Ancienne version de Venus : un « Film-trailer.mkv » avait été pris pour un film
+  if (existing && f.extra && existing.type !== 'extra') { run('DELETE FROM items WHERE id = ?', existing.id); existing = null; }
   if (existing) {
     probe.subs.push(...downloadedSubs(existing.id));
     run('UPDATE items SET size=?, mtime=?, duration=?, probe=? WHERE id=?', f.size, f.mtime, probe.duration, JSON.stringify(probe), existing.id);
+    return;
+  }
+  if (f.extra && lib.type !== 'clips') {
+    // Bonus : rattaché plus tard au film ou à la série du dossier parent (linkExtras)
+    const base = path.basename(f.path, path.extname(f.path)).replace(EXTRA_SUFFIX, '').replace(/[._]+/g, ' ').trim();
+    run(`INSERT INTO items(library_id, type, category, key, title, sort_title, path, size, mtime, duration, probe, added_at, matched)
+         VALUES(?, 'extra', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+    lib.id, f.extra.kind, (f.extra.byName ? 'f:' : 'd:') + f.extra.owner, base || 'Bonus', sortTitle(base || 'bonus'), f.path, f.size, f.mtime, probe.duration, probeJson, Date.now());
     return;
   }
   if (lib.type === 'clips') {
@@ -114,10 +142,14 @@ async function processFile(lib, f, existing) {
     const dedicated = dir !== lib.path;
     const p = findArt(dir, base, dedicated ? ['poster', 'folder', 'cover', 'movie'] : ['poster']);
     const b = findArt(dir, base, dedicated ? ['fanart', 'backdrop', 'background'] : ['fanart']);
-    run(`INSERT INTO items(library_id, type, category, title, sort_title, year, path, size, mtime, duration, probe, poster, backdrop, added_at, matched)
-         VALUES(?, 'movie', 'movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-    lib.id, info.title, sortTitle(info.title), info.year, f.path, f.size, f.mtime, probe.duration, probeJson,
-    p ? copyLocalImage(p) : null, b ? copyLocalImage(b) : null, Date.now());
+    const nfo = movieNfo(f.path, dedicated);
+    const title = (nfo && nfo.title) || info.title;
+    run(`INSERT INTO items(library_id, type, category, title, sort_title, year, path, size, mtime, duration, probe, poster, backdrop, added_at, matched, nfo, original_title, overview, tagline, genres, imdb_id, vote)
+         VALUES(?, 'movie', 'movie', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+    lib.id, title, sortTitle(title), (nfo && nfo.year) || info.year, f.path, f.size, f.mtime, probe.duration, probeJson,
+    p ? copyLocalImage(p) : null, b ? copyLocalImage(b) : null, Date.now(),
+    nfo ? JSON.stringify(nfo) : null, (nfo && nfo.originalTitle) || null, (nfo && nfo.plot) || null, (nfo && nfo.tagline) || null,
+    nfo && nfo.genres.length ? JSON.stringify(nfo.genres) : null, (nfo && nfo.imdb) || null, (nfo && nfo.rating) || null);
   } else {
     const info = parseEpisode(f.path, lib.path);
     added.push(`${info.show} (S${info.season}E${info.episode})`);
@@ -145,7 +177,7 @@ export async function scanAll({ force = false } = {}) {
       if (!fs.existsSync(lib.path)) { console.warn(`[scan] dossier introuvable : ${lib.path}`); continue; }
       if (lib.remote && !remoteReady(lib)) { console.warn(`[scan] partage réseau indisponible : ${lib.name}, on garde la bibliothèque telle quelle`); continue; }
       const files = walk(lib.path);
-      const known = new Map(all("SELECT id, path, size, mtime FROM items WHERE library_id=? AND path IS NOT NULL", lib.id).map((r) => [r.path, r]));
+      const known = new Map(all("SELECT id, type, path, size, mtime FROM items WHERE library_id=? AND path IS NOT NULL", lib.id).map((r) => [r.path, r]));
       const seen = new Set(files.map((f) => f.path));
 
       // Suppressions — sauf si le dossier est soudain vide (disque débranché, partage coupé) : on ne vide pas la bibliothèque
@@ -161,10 +193,12 @@ export async function scanAll({ force = false } = {}) {
     }
     // Nettoyage des saisons / séries vides
     run("DELETE FROM items WHERE type='season' AND NOT EXISTS (SELECT 1 FROM items e WHERE e.parent_id = items.id)");
-    run("DELETE FROM items WHERE type='show' AND NOT EXISTS (SELECT 1 FROM items s WHERE s.parent_id = items.id)");
+    run("DELETE FROM items WHERE type='show' AND NOT EXISTS (SELECT 1 FROM items s WHERE s.parent_id = items.id AND s.type = 'season')");
+    linkExtras();
 
     scanState.phase = 'Téléchargement des affiches et résumés';
     await refreshMissing((d, t) => { scanState.done = d; scanState.total = t; });
+    groupVersions();
     scanState.lastScan = Date.now();
     if (added.length) {
       // Titres définitifs (après identification TMDB) pour la notification
@@ -182,6 +216,30 @@ export async function scanAll({ force = false } = {}) {
     if (pendingRescan) { pendingRescan = false; setTimeout(() => scanAll(), 1000); }
   }
 }
+
+// Rattache chaque bonus au film du même dossier, ou à la série dont le dossier le contient
+function linkExtras() {
+  const extras = all("SELECT id, key, library_id FROM items WHERE type = 'extra' AND (parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM items o WHERE o.id = items.parent_id))");
+  const roots = new Map(all('SELECT id, path FROM libraries').map((l) => [l.id, path.resolve(l.path || '')]));
+  for (const x of extras) {
+    const key = x.key || '';
+    const target = key.slice(2);
+    let owner = null;
+    if (key.startsWith('f:')) {
+      const m = get("SELECT id FROM items WHERE type = 'movie' AND library_id = ? AND path LIKE ? ESCAPE '\\' ORDER BY version_of IS NOT NULL LIMIT 1", x.library_id, `${likeEsc(target)}.%`);
+      const ep = m ? null : get("SELECT id FROM items WHERE type = 'episode' AND library_id = ? AND path LIKE ? ESCAPE '\\' LIMIT 1", x.library_id, `${likeEsc(target)}.%`);
+      owner = m ? m.id : ep ? ep.id : null;
+    } else if (path.resolve(target) !== roots.get(x.library_id)) {
+      // Dossier « Extras » : le film rangé directement dans le dossier parent, sinon la série qui le contient
+      const m = get("SELECT id FROM items WHERE type = 'movie' AND library_id = ? AND path LIKE ? ESCAPE '\\' AND path NOT LIKE ? ESCAPE '\\' ORDER BY version_of IS NOT NULL LIMIT 1",
+        x.library_id, `${likeEsc(target + path.sep)}%`, `${likeEsc(target + path.sep)}%${likeEsc(path.sep)}%`);
+      const ep = m ? null : get("SELECT show_id FROM items WHERE type = 'episode' AND library_id = ? AND path LIKE ? ESCAPE '\\' LIMIT 1", x.library_id, `${likeEsc(target + path.sep)}%`);
+      owner = m ? m.id : ep ? ep.show_id : null;
+    }
+    run('UPDATE items SET parent_id = ?, show_id = COALESCE((SELECT o.show_id FROM items o WHERE o.id = ? AND o.type = \'episode\'), ?) WHERE id = ?', owner, owner, owner, x.id);
+  }
+}
+const likeEsc = (s) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 let scheduled;
 export function scheduleScan(ms = 5000) { clearTimeout(scheduled); scheduled = setTimeout(() => scanAll(), ms); }

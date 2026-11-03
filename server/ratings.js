@@ -11,7 +11,7 @@
 //
 // Tout est récupéré en arrière-plan, un titre à la fois, et rafraîchi tous les 10 jours.
 import { all, get, run, getSetting } from './db.js';
-import { tmdb, tmdbKey, lang, downloadImage } from './metadata.js';
+import { tmdb, tmdbKey, lang, downloadImage, refreshSeasonLists } from './metadata.js';
 import { traktId, traktFind, downloadTraktImage, posterSource } from './trakt.js';
 
 const DAY = 86400000;
@@ -115,6 +115,7 @@ export async function enrich(item) {
       if (d.vote_count > 0) r.tmdb = { v: Math.round(d.vote_average * 10) / 10, max: 10, votes: d.vote_count, url: `https://www.themoviedb.org/${kind}/${item.tmdb_id}` };
       imdb = d.imdb_id || (d.external_ids && d.external_ids.imdb_id) || imdb;
       trailer = pickTrailer(d.videos && d.videos.results) || trailer;
+      if (kind === 'tv') await refreshSeasonLists(item, d);
     } catch { /* TMDB injoignable : on garde le reste */ }
   }
 
@@ -210,6 +211,9 @@ async function applyTraktImages(item, t, d) {
     if (url && (pref === 'trakt' || !cur)) { const n = await downloadTraktImage(url); if (n && n !== cur) set[col] = n; }
     else if (pref === 'tmdb' && String(cur || '').startsWith('k_') && tmdbPath) { const n = await downloadImage(tmdbPath, size); if (n) set[col] = n; }
   }
+  let custom = {};
+  try { custom = JSON.parse(item.custom || '{}') || {}; } catch { /* */ }
+  for (const k of Object.keys(set)) if (custom[k] !== undefined) delete set[k]; // image choisie à la main : on n'y touche pas
   const cols = Object.keys(set);
   if (cols.length) run(`UPDATE items SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`, ...cols.map((c) => set[c]), item.id);
 }
