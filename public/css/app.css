@@ -2191,3 +2191,79 @@ html:not(.touch) .btn-del:hover { background: rgb(255 77 79 / .22); color: #ff8a
 .pw-meter[data-level="2"] .pw-bar i { background: #ff9f2e; }
 .pw-meter[data-level="3"] .pw-bar i, .pw-meter[data-level="4"] .pw-bar i { background: #3ddc84; }
 .pw-text { color: var(--haze); font-size: .8rem; }
+
+/* =====================================================================
+   Thème « Verre » (inspiré de Free My TV, licence MIT) : verre dépoli, coins arrondis,
+   boutons ronds, clair le jour et sombre la nuit (au lever et au coucher du soleil)
+   ===================================================================== */
+html[data-glass] {
+  --sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI Variable Display', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --wide: 100%; --r: 14px;
+  --glass: linear-gradient(rgba(40, 40, 44, .78), rgba(17, 17, 19, .62));
+  --glass-solid: rgba(28, 28, 30, .86);
+  --glass-line: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 0 0 1px rgba(255, 255, 255, .08);
+  --glass-shadow: 0 12px 34px rgba(0, 0, 0, .34);
+}
+html[data-glass="day"] {
+  color-scheme: light;
+  --glass: linear-gradient(rgba(255, 255, 255, .78), rgba(255, 255, 255, .55));
+  --glass-solid: rgba(255, 255, 255, .86);
+  --glass-line: inset 0 1.5px 0 rgba(255, 255, 255, .95), inset 0 0 0 1px rgba(255, 255, 255, .55);
+  --glass-shadow: 0 12px 34px rgba(0, 0, 0, .12);
+}
+html[data-glass] body { background: linear-gradient(#1c1c1e, #0b0b0d) fixed; letter-spacing: .005em; }
+html[data-glass="day"] body { background: linear-gradient(#f5f5f7, #e2e2e7) fixed; }
+html[data-glass] .tint-glow { opacity: .22; }
+html[data-glass] .hero-title, html[data-glass] h1, html[data-glass] h2 { font-weight: 700; letter-spacing: -.01em; }
+
+/* Surfaces en verre : barre latérale, barres du téléphone, fenêtres, encadrés */
+html[data-glass] .rail { background: var(--glass); -webkit-backdrop-filter: blur(28px) saturate(1.6); backdrop-filter: blur(28px) saturate(1.6); border-right: 0; box-shadow: var(--glass-line); }
+html[data-glass] .rail a.active { background: var(--glass-solid); box-shadow: 0 6px 20px rgba(0, 0, 0, .14); border-radius: 16px; }
+html[data-glass] .sheet, html[data-glass] .box { background: var(--glass); -webkit-backdrop-filter: blur(30px) saturate(1.6); backdrop-filter: blur(30px) saturate(1.6); border: 0; box-shadow: var(--glass-line), var(--glass-shadow); border-radius: 22px; }
+html[data-glass] .sheet { background: var(--glass-solid); }
+@media (max-width: 900px) {
+  html[data-glass] .tabbar { inset: auto 10px calc(8px + env(safe-area-inset-bottom, 0px)) 10px; border-radius: 30px; padding: 6px 8px; border-top: 0;
+    background: var(--glass); -webkit-backdrop-filter: blur(28px) saturate(1.6); backdrop-filter: blur(28px) saturate(1.6); box-shadow: var(--glass-line), var(--glass-shadow); }
+  html[data-glass] .mobile-top.solid { background: var(--glass-solid); -webkit-backdrop-filter: blur(24px); backdrop-filter: blur(24px); }
+  html[data-glass] main.with-nav { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* Boutons en pilule, icônes rondes ; le bouton choisi devient blanc (comme Free My TV) */
+html[data-glass] .btn, html[data-glass] .chip, html[data-glass] .seg, html[data-glass] .seg-b { border-radius: 999px; }
+html[data-glass] .btn-ghost, html[data-glass] .chip { background: var(--glass); box-shadow: var(--glass-line); border-color: transparent; -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
+html[data-glass] .btn-play { background: #fff; color: #1d1d1f; box-shadow: 0 8px 26px rgba(0, 0, 0, .22); }
+html[data-glass] .btn-play:hover, html[data-glass] .btn-play:focus-visible, html[data-glass] .btn-play.is-focus { background: #fff; transform: scale(1.05); }
+html[data-glass] .btn { transition: transform .2s cubic-bezier(.2, .9, .3, 1.2), background-color .17s, box-shadow .2s; }
+html[data-glass] .btn:focus-visible, html[data-glass] .btn.is-focus { transform: scale(1.05); }
+html[data-glass] .chip.on { background: #fff; color: #1d1d1f; border-color: #fff; }
+html[data-glass="day"] .chip.on { background: #1d1d1f; color: #fff; border-color: #1d1d1f; }
+html[data-glass] .input, html[data-glass] select.input { border-radius: 14px; }
+html[data-glass] .p-icon { border-radius: 50%; }
+
+/* Affiches : coins arrondis, relief au survol, bord lumineux à la sélection */
+html[data-glass] .card .shot { border-radius: 18px; box-shadow: 0 10px 30px rgba(0, 0, 0, .3); transition: transform .22s cubic-bezier(.2, .9, .3, 1.15), box-shadow .22s; }
+html[data-glass="day"] .card .shot { box-shadow: 0 10px 30px rgba(0, 0, 0, .14); background: #dadadf; }
+html[data-glass] .card .shot::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity .17s;
+  box-shadow: inset 0 0 0 2.5px rgba(255, 255, 255, .85); background: linear-gradient(150deg, rgba(255, 255, 255, .22), rgba(255, 255, 255, 0) 55%); }
+html:not(.touch)[data-glass] .card:hover .shot, html[data-glass] .card:focus-visible .shot, html[data-glass] .card.is-focus .shot { transform: translateY(-6px) scale(1.05); box-shadow: 0 24px 46px rgba(0, 0, 0, .34); outline: none; }
+html:not(.touch)[data-glass] .card:hover .shot::after, html[data-glass] .card:focus-visible .shot::after, html[data-glass] .card.is-focus .shot::after { opacity: 1; }
+html[data-glass] .ph { color: #fff; }
+
+/* Le jour : textes posés sur les images restent clairs */
+html[data-glass="day"] .card .rank { color: #fff; }
+html[data-glass="day"] .hero::after {
+  background: linear-gradient(to top, var(--night) 0%, rgb(var(--night-rgb) / .62) 32%, rgb(var(--night-rgb) / 0) 64%),
+    linear-gradient(to right, rgb(var(--night-rgb) / .92) 0%, rgb(var(--night-rgb) / .5) 42%, rgb(var(--night-rgb) / 0) 70%);
+}
+html[data-glass="day"] .hero-overview { color: rgba(29, 29, 31, .82); }
+html[data-glass="day"] .badge { border-color: rgba(29, 29, 31, .3); }
+
+/* Choix jour / nuit dans Réglages → Thème */
+.glass-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 14px; }
+.glass-mode small { color: var(--haze); }
+html[data-glass="day"] .r-mc .r-src { color: #3d8f12; }
+html[data-glass="day"] .r-tmdb .r-src { color: #0b8fb5; }
+html[data-glass="day"] .r-simkl .r-src { color: #1d1d1f; }
+html[data-glass="day"] .r-sc .r-src { color: #a88a00; }
+html[data-glass="day"] .person .face { color: rgba(255, 255, 255, .78); }
+html[data-glass] .person .face { box-shadow: 0 8px 22px rgba(0, 0, 0, .18); }
