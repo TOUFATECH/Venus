@@ -174,7 +174,7 @@ export async function render(main) {
     body.replaceChildren(...[
       h('div', { class: 'hero-kicker' }, live ? h('span', { class: 'live-dot' }, 'Direct') : icon('restart'), live ? 'Votre dernière chaîne' : item.next ? 'À suivre' : 'Reprendre là où vous en étiez'),
       item.logo && !live ? h('img', { class: 'hero-logo', src: img(item.logo), alt: title }) : h('h1', { class: 'hero-title' }, title),
-      isEp ? h('a', { class: 'hero-ep f', href: `#/titre/${item.showId}?ep=${item.id}`, onclick: (e) => { e.preventDefault(); go(`/titre/${item.showId}?ep=${item.id}`); } }, `S${item.season}:É${item.episode} - ${item.title}`) : null,
+      isEp ? h('a', { class: 'hero-ep f', href: `/titre/${item.showId}?ep=${item.id}`, onclick: (e) => { e.preventDefault(); go(`/titre/${item.showId}?ep=${item.id}`); } }, `S${item.season}:É${item.episode} - ${item.title}`) : null,
       pct ? h('div', { class: 'hero-progress' }, h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })), h('span', {}, `${left} min restantes`)) : null,
       item.overview && !live ? h('p', { class: 'hero-overview' }, item.overview) : null,
       h('div', { class: 'actions' }, playBtn, info,

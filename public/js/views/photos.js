@@ -6,12 +6,11 @@ import { isBack } from '../ui.js';
 
 const dateOf = (d) => (d ? new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 
-export async function render(main, { view = 'albums', query } = {}) {
+export async function render(main, { view = 'albums', name } = {}) {
   const page = h('div', { class: 'page photos-page' });
   main.append(page);
   if (view === 'album') {
-    const key = query.get('album') || '';
-    const a = await api(`/api/photos/album?key=${encodeURIComponent(key)}`);
+    const a = await api(`/api/photos/album?slug=${encodeURIComponent(name || '')}`);
     setTitle(a.name);
     page.append(h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, a.name), h('p', { class: 'count' }, `${a.photos.length} photo${a.photos.length > 1 ? 's' : ''}`)),
       h('div', { class: 'head-tools' }, h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go('/photos') }, icon('back'), 'Albums'),
@@ -22,7 +21,7 @@ export async function render(main, { view = 'albums', query } = {}) {
   setTitle('Photos');
   const albums = await api('/api/photos');
   page.append(h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, 'Photos'), h('p', { class: 'count' }, `${albums.length} album${albums.length > 1 ? 's' : ''}`))),
-    albums.length ? h('div', { class: 'm-grid' }, albums.map((a) => h('button', { class: 'm-tile f', onclick: () => go(`/photos/album?album=${encodeURIComponent(a.key)}`) },
+    albums.length ? h('div', { class: 'm-grid' }, albums.map((a) => h('button', { class: 'm-tile f', onclick: () => go(`/photos/${encodeURIComponent(a.slug)}`) },
       h('span', { class: 'm-cover wide' }, h('img', { src: `/api/photo/${a.cover}?w=640`, alt: '', loading: 'lazy' })), h('b', {}, a.name), h('small', {}, `${a.count} photo${a.count > 1 ? 's' : ''} · ${dateOf(a.last)}`))))
       : h('div', { class: 'empty' }, h('h2', {}, 'Pas encore de photos'), h('p', {}, 'Ajoutez une bibliothèque « Photos » dans Réglages → Bibliothèques : chaque dossier devient un album.')));
 }

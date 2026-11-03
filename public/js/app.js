@@ -33,19 +33,20 @@ const ROUTES = [
   [/^\/telechargements$/, () => import('./views/downloads.js')],
   [/^\/collections$/, () => import('./views/collections.js'), { view: 'all' }],
   [/^\/musique$/, () => import('./views/music.js'), { view: 'home' }],
-  [/^\/musique\/album$/, () => import('./views/music.js'), { view: 'album' }],
-  [/^\/musique\/artiste$/, () => import('./views/music.js'), { view: 'artist' }],
+  [/^\/musique\/album\/([^/]+)$/, () => import('./views/music.js'), (m) => ({ view: 'album', name: dec(m[1]) })],
+  [/^\/musique\/artiste\/([^/]+)$/, () => import('./views/music.js'), (m) => ({ view: 'artist', name: dec(m[1]) })],
   [/^\/photos$/, () => import('./views/photos.js'), { view: 'albums' }],
-  [/^\/photos\/album$/, () => import('./views/photos.js'), { view: 'album' }],
+  [/^\/photos\/([^/]+)$/, () => import('./views/photos.js'), (m) => ({ view: 'album', name: dec(m[1]) })],
   [/^\/livres$/, () => import('./views/books.js'), { view: 'all' }],
-  [/^\/lire\/(\d+)$/, () => import('./views/books.js'), (m) => ({ view: 'read', id: m[1] })],
+  [/^\/lire\/([^/]+)$/, () => import('./views/books.js'), (m) => ({ view: 'read', ...idOrSlug(m[1]) })],
   [/^\/collection\/(s?\d+)$/, () => import('./views/collections.js'), (m) => ({ view: 'collection', id: m[1] })],
   [/^\/liste-lecture\/(\d+)$/, () => import('./views/collections.js'), (m) => ({ view: 'playlist', id: m[1] })],
   [/^\/cesoir$/, () => import('./views/cesoir.js')],
   [/^\/seance$/, () => import('./views/seance.js')],
   [/^\/telecommande$/, () => import('./views/telecommande.js')],
 ];
-// Adresses lisibles : #/lecture/Breaking.Bad.S01E02, #/titre/Inception.2010 (le numéro marche aussi)
+const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
+// Adresses lisibles : /lecture/Breaking.Bad.S01E02, #/titre/Inception.2010 (le numéro marche aussi)
 function idOrSlug(raw) {
   let v = raw; try { v = decodeURIComponent(raw); } catch { /* */ }
   return /^\d+$/.test(v) ? { id: Number(v) } : { slug: v };
@@ -66,8 +67,8 @@ export function showSlug(kind, slug, keep = []) {
   for (const k of keep) if (query.get(k) != null) q.set(k, query.get(k));
   const qs = q.toString();
   const enc = slug.split('').map((c) => (/[\p{L}\p{N}.~-]/u.test(c) ? c : encodeURIComponent(c))).join('');
-  const target = `#/${kind}/${enc}${qs ? `?${qs}` : ''}`;
-  if (location.hash !== target) history.replaceState(history.state, '', target);
+  const target = `/${kind}/${enc}${qs ? `?${qs}` : ''}`;
+  if (here() !== target) history.replaceState(history.state, '', target);
 }
 // Écrans plein écran, sans navigation
 const BARE = ['/lecture', '/telecommande', '/vote'];
@@ -77,11 +78,16 @@ const memory = !!window.__VN_MEMORY_ROUTER;
 const stack = ['/'];
 const ss = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* */ } } };
 const notify = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
+// Adresses propres, avec le nom du titre : /titre/Inception.2010, /lecture/Breaking.Bad.S01E02, /tv…
+// Les anciens liens en « #/… » (favoris, QR codes, notifications) sont convertis au chargement.
+if (!memory && location.hash.startsWith('#/')) history.replaceState(history.state, '', location.hash.slice(1));
+const here = () => `${location.pathname}${location.search}`;
 
 export function go(path, { replace = false } = {}) {
   if (memory) { if (replace) stack[stack.length - 1] = path; else stack.push(path); notify(); return; }
-  const target = '#' + path;
-  if (replace) location.replace(target); else location.hash = target;
+  if (path === here() && !replace) { notify(); return; }
+  if (replace) history.replaceState(null, '', path); else history.pushState(null, '', path);
+  notify();
 }
 export function back(fallback = '/') {
   if (memory) { if (stack.length > 1) stack.pop(); else stack[0] = fallback; notify(); return; }
@@ -91,14 +97,14 @@ export function back(fallback = '/') {
 export const currentPath = () => parseHash().path;
 
 function parseHash() {
-  const raw = memory ? stack[stack.length - 1] : location.hash.replace(/^#/, '') || '/';
+  const raw = memory ? stack[stack.length - 1] : here() || '/';
   const [path, qs] = raw.split('?');
   return { path, query: new URLSearchParams(qs || '') };
 }
 
 function navLink(href, label, ic, path) {
   const active = isActive(href, path);
-  return h('a', { href: '#' + href, class: `f${active ? ' active' : ''}`, 'aria-current': active ? 'page' : null }, ic ? icon(ic) : null, h('span', {}, label));
+  return h('a', { href, class: `f${active ? ' active' : ''}`, 'aria-current': active ? 'page' : null }, ic ? icon(ic) : null, h('span', {}, label));
 }
 const isActive = (href, path) => (href === '/' ? path === '/' : path.startsWith(href));
 
@@ -129,16 +135,16 @@ function shell(path) {
   const { shown, more } = menuItems(p, hasCat);
   const moreBtn = (cls) => h('button', { class: cls, 'aria-label': 'Plus', 'data-more': '1', onclick: () => openMore(more) }, icon('more'), h('span', {}, 'Plus'));
   const rail = h('nav', { class: 'rail', 'aria-label': 'Navigation principale' },
-    h('a', { href: '#/', class: 'home-link f', 'aria-label': 'Venus, accueil' }, logoMark()),
+    h('a', { href: '/', class: 'home-link f', 'aria-label': 'Venus, accueil' }, logoMark()),
     shown.map((it) => itemLink(it, path)),
     more.length ? moreBtn('rail-item f') : null,
     h('div', { class: 'spacer' }),
     navLink('/reglages', 'Réglages', 'gear', path),
     h('button', { class: 'rail-item f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'), h('span', {}, p.name)));
   const top = h('header', { class: 'mobile-top' },
-    h('a', { href: '#/', class: 'f', 'aria-label': 'Accueil' }, brand()),
+    h('a', { href: '/', class: 'f', 'aria-label': 'Accueil' }, brand()),
     h('div', { style: { display: 'flex', gap: '4px' } },
-      h('a', { href: '#/reglages', class: 'icon-btn f', 'aria-label': 'Réglages' }, icon('gear')),
+      h('a', { href: '/reglages', class: 'icon-btn f', 'aria-label': 'Réglages' }, icon('gear')),
       h('button', { class: 'icon-btn f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'))));
   // Mobile : les 4 premiers éléments du menu, le reste dans « Plus »
   const tabItems = shown.filter((it) => !it.action).slice(0, 4);
@@ -159,8 +165,8 @@ function ensureShell(path) {
     if (chrome) chrome.cleanup();
     chrome = { sig, ...shell(path) };
   }
-  for (const a of [...chrome.rail.querySelectorAll('a[href^="#/"]'), ...chrome.tabs.querySelectorAll('a[href^="#/"]')]) {
-    const on = isActive(a.getAttribute('href').slice(1), path) && !a.classList.contains('home-link');
+  for (const a of [...chrome.rail.querySelectorAll('a[href^="/"]'), ...chrome.tabs.querySelectorAll('a[href^="/"]')]) {
+    const on = isActive(a.getAttribute('href'), path) && !a.classList.contains('home-link');
     a.classList.toggle('active', on);
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   }
@@ -411,13 +417,18 @@ async function boot() {
 }
 
 window.addEventListener('hashchange', () => { ss.set('vn_nav', '1'); route(); });
+// Retour / avance du navigateur ; et liens « #/… » encore présents (anciens favoris)
+window.addEventListener('popstate', () => { if (!memory) { if (location.hash.startsWith('#/')) history.replaceState(null, '', location.hash.slice(1)); notify(); } });
 window.addEventListener('vn:reboot', () => boot());
-if (memory) {
-  document.addEventListener('click', (e) => {
-    const a = e.target.closest && e.target.closest('a[href^="#/"]');
-    if (a) { e.preventDefault(); go(a.getAttribute('href').slice(1)); }
-  });
-}
+// Liens internes : navigation sans recharger la page (Ctrl / Cmd + clic ouvre toujours un nouvel onglet)
+document.addEventListener('click', (e) => {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest && e.target.closest('a[href]');
+  if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
+  const href = a.getAttribute('href');
+  if (href.startsWith('#/')) { e.preventDefault(); go(href.slice(1)); return; }
+  if (href.startsWith('/') && !href.startsWith('//') && !/^\/(api|img|b|custom\.css)\b/.test(href)) { e.preventDefault(); go(href); }
+});
 window.addEventListener('vn:unauth', () => { stopEvents(); auth.token = null; state.profile = null; showGate('login'); });
 window.addEventListener('vn:noprofile', () => { state.profile = null; showGate('profiles'); });
 

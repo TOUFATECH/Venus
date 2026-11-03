@@ -7,7 +7,7 @@ export const REACTIONS = ['😂', '😮', '❤️', '👏', '😱', '🔥'];
 const clientId = Math.random().toString(36).slice(2, 10);
 
 export function inviteLink(code) {
-  return `${location.origin}${location.pathname}#/seance?code=${code}`;
+  return `${location.origin}/seance?code=${code}`;
 }
 
 export function showInvite(code, title) {

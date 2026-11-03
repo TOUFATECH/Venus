@@ -85,7 +85,7 @@ export function channels() {
     publicUrl: getSetting('public_url', ''),
   };
 }
-const link = (url) => { const base = String(channels().publicUrl || '').replace(/\/+$/, ''); return base && url ? `${base}/#${url}` : null; };
+const link = (url) => { const base = String(channels().publicUrl || '').replace(/\/+$/, ''); return base && url ? `${base}${url}` : null; };
 
 async function toNtfy(msg) {
   const c = channels();

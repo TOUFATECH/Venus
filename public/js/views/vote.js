@@ -6,7 +6,7 @@ import { go, back } from '../app.js';
 import { playItem } from './home.js';
 
 const clientId = (() => { try { let c = sessionStorage.getItem('vn_vote_client'); if (!c) { c = Math.random().toString(36).slice(2); sessionStorage.setItem('vn_vote_client', c); } return c; } catch { return Math.random().toString(36).slice(2); } })();
-export const voteLink = (code) => `${location.origin}${location.pathname}#/vote?code=${code}`;
+export const voteLink = (code) => `${location.origin}/vote?code=${code}`;
 
 // ---------------------------------------------------------------- écran principal
 export async function startVote(itemIds) {

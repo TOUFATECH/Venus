@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { Router, HttpError, readBody, sendJson, sendFile } from './http.js';
 import { all, get, run, tx, getSetting, setSetting } from './db.js';
-import { slugFor, resolveSlug } from './slugs.js';
+import { slugFor, resolveSlug, cleanName } from './slugs.js';
 import { V, validate, passwordProblem, logSecurity, securityLog, listBans, unbanIp, banIp, attemptStats, isSecure, safeJoin, safeFileName, httpsMode } from './security.js';
 import { twofaOn, startChallenge, verifyChallenge, resendChallenge, twofaEmail, twofaStats, maskEmail } from './twofa.js';
 import { sendMail, smtpConf, smtpOn } from './smtp.js';
@@ -2348,7 +2348,7 @@ router.get('/api/music', (ctx) => {
   const tracks = all(`SELECT * FROM items i WHERE i.type = 'track' AND i.category = 'music' AND ${lib.sql} ORDER BY i.original_title, i.grp, i.season_num, i.episode_num`, ...lib.args);
   const albums = new Map(), artists = new Map();
   for (const t of tracks) {
-    const a = albums.get(t.key) || { key: t.key, album: t.grp, artist: t.original_title, year: t.year, cover: t.poster, count: 0, duration: 0, added: 0 };
+    const a = albums.get(t.key) || { key: t.key, slug: cleanName(`${t.original_title} ${t.grp}`), album: t.grp, artist: t.original_title, year: t.year, cover: t.poster, count: 0, duration: 0, added: 0 };
     a.count++; a.duration += t.duration || 0; a.added = Math.max(a.added, t.added_at || 0); a.year = a.year || t.year; a.cover = a.cover || t.poster;
     albums.set(t.key, a);
     const ar = artists.get(t.original_title) || { name: t.original_title, albums: new Set(), count: 0, cover: t.poster };
@@ -2356,7 +2356,7 @@ router.get('/api/music', (ctx) => {
   }
   sendJson(ctx.res, {
     albums: [...albums.values()].sort((a, b) => a.artist.localeCompare(b.artist, 'fr') || (a.year || 0) - (b.year || 0)),
-    artists: [...artists.values()].map((a) => ({ name: a.name, albums: a.albums.size, count: a.count, cover: a.cover })).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    artists: [...artists.values()].map((a) => ({ name: a.name, slug: cleanName(a.name), albums: a.albums.size, count: a.count, cover: a.cover })).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
     recent: [...albums.values()].sort((a, b) => b.added - a.added).slice(0, 20),
     tracks: tracks.length > 3000 ? [] : tracks.map((t) => trackOut(t)), total: tracks.length,
   });
@@ -2364,22 +2364,27 @@ router.get('/api/music', (ctx) => {
 router.get('/api/music/album', (ctx) => {
   const p = requireProfile(ctx);
   const lib = libOk(p);
-  const key = String(ctx.url.searchParams.get('key') || '').slice(0, 500);
+  let key = String(ctx.url.searchParams.get('key') || '').slice(0, 500);
+  // Adresse lisible : /musique/album/Daft.Punk.Discovery
+  const slug = String(ctx.url.searchParams.get('slug') || '').toLowerCase();
+  if (slug) { const hit = all("SELECT DISTINCT key, original_title, grp FROM items WHERE type = 'track' AND category = 'music'").find((r) => cleanName(`${r.original_title} ${r.grp}`).toLowerCase() === slug); key = hit ? hit.key : ''; }
   const tracks = all(`SELECT * FROM items i WHERE i.type = 'track' AND i.category = 'music' AND i.key = ? AND ${lib.sql} ORDER BY i.season_num, i.episode_num, i.sort_title`, key, ...lib.args);
   if (!tracks.length) throw new HttpError(404, 'Album introuvable');
   const t0 = tracks[0];
-  sendJson(ctx.res, { key, album: t0.grp, artist: t0.original_title, year: tracks.map((t) => t.year).find(Boolean) || null, cover: tracks.map((t) => t.poster).find(Boolean) || null,
+  sendJson(ctx.res, { key, slug: cleanName(`${t0.original_title} ${t0.grp}`), artistSlug: cleanName(t0.original_title), album: t0.grp, artist: t0.original_title, year: tracks.map((t) => t.year).find(Boolean) || null, cover: tracks.map((t) => t.poster).find(Boolean) || null,
     genres: [...new Set(tracks.flatMap((t) => parseJson(t.genres, [])))].slice(0, 5), duration: tracks.reduce((n, t) => n + (t.duration || 0), 0), tracks: tracks.map((t) => trackOut(t)) });
 });
 router.get('/api/music/artist', (ctx) => {
   const p = requireProfile(ctx);
   const lib = libOk(p);
-  const name = String(ctx.url.searchParams.get('name') || '').slice(0, 300);
+  let name = String(ctx.url.searchParams.get('name') || '').slice(0, 300);
+  const slug = String(ctx.url.searchParams.get('slug') || '').toLowerCase();
+  if (slug) { const hit = all("SELECT DISTINCT original_title FROM items WHERE type = 'track' AND category = 'music'").find((r) => cleanName(r.original_title).toLowerCase() === slug); name = hit ? hit.original_title : ''; }
   const tracks = all(`SELECT * FROM items i WHERE i.type = 'track' AND i.category = 'music' AND i.original_title = ? AND ${lib.sql} ORDER BY i.year, i.grp, i.season_num, i.episode_num`, name, ...lib.args);
   if (!tracks.length) throw new HttpError(404, 'Artiste introuvable');
   const albums = new Map();
-  for (const t of tracks) { const a = albums.get(t.key) || { key: t.key, album: t.grp, artist: t.original_title, year: t.year, cover: t.poster, count: 0 }; a.count++; albums.set(t.key, a); }
-  sendJson(ctx.res, { name, albums: [...albums.values()], tracks: tracks.map((t) => trackOut(t)) });
+  for (const t of tracks) { const a = albums.get(t.key) || { key: t.key, slug: cleanName(`${t.original_title} ${t.grp}`), album: t.grp, artist: t.original_title, year: t.year, cover: t.poster, count: 0 }; a.count++; albums.set(t.key, a); }
+  sendJson(ctx.res, { name, slug: cleanName(name), albums: [...albums.values()], tracks: tracks.map((t) => trackOut(t)) });
 });
 // Lecture audio : fichier tel quel quand le navigateur sait le lire, sinon conversion en MP3 à la volée
 const NATIVE_AUDIO = new Set(['.mp3', '.m4a', '.aac', '.m4b', '.wav', '.flac', '.ogg', '.oga', '.opus']);
@@ -2409,15 +2414,17 @@ router.get('/api/photos', (ctx) => {
   const lib = libOk(p);
   const rows = all(`SELECT i.key, i.grp, COUNT(*) AS n, MAX(i.release_date) AS last, MIN(i.id) AS first FROM items i WHERE i.type = 'photo' AND ${lib.sql} GROUP BY i.key ORDER BY last DESC`, ...lib.args);
   const covers = new Map(all(`SELECT i.key, i.id FROM items i WHERE i.type = 'photo' AND ${lib.sql} GROUP BY i.key HAVING i.release_date = MAX(i.release_date)`, ...lib.args).map((r) => [r.key, r.id]));
-  sendJson(ctx.res, rows.map((r) => ({ key: r.key, name: r.grp, count: r.n, last: r.last, cover: covers.get(r.key) || r.first })));
+  sendJson(ctx.res, rows.map((r) => ({ key: r.key, slug: cleanName(r.key), name: r.grp, count: r.n, last: r.last, cover: covers.get(r.key) || r.first })));
 });
 router.get('/api/photos/album', (ctx) => {
   const p = requireProfile(ctx);
   const lib = libOk(p);
-  const key = String(ctx.url.searchParams.get('key') || '').slice(0, 1000);
+  let key = String(ctx.url.searchParams.get('key') || '').slice(0, 1000);
+  const slug = String(ctx.url.searchParams.get('slug') || '').toLowerCase();
+  if (slug) { const hit = all("SELECT DISTINCT key FROM items WHERE type = 'photo'").find((r) => cleanName(r.key).toLowerCase() === slug); key = hit ? hit.key : ''; }
   const list = all(`SELECT i.id, i.title, i.release_date, i.size FROM items i WHERE i.type = 'photo' AND i.key = ? AND ${lib.sql} ORDER BY i.release_date, i.sort_title`, key, ...lib.args);
   if (!list.length) throw new HttpError(404, 'Album introuvable');
-  sendJson(ctx.res, { key, name: path.basename(key) || key, photos: list.map((x) => ({ id: x.id, title: x.title, date: x.release_date, size: x.size })) });
+  sendJson(ctx.res, { key, slug: cleanName(key), name: path.basename(key) || key, photos: list.map((x) => ({ id: x.id, title: x.title, date: x.release_date, size: x.size })) });
 });
 const photoCache = path.join(config.dataDir, 'cache', 'photos');
 router.get('/api/photo/:id', async (ctx) => {
@@ -2456,7 +2463,7 @@ const bookOf = (ctx) => {
 };
 router.get('/api/books/:id', (ctx) => {
   const { p, b } = bookOf(ctx);
-  const out = { id: b.id, type: b.type, format: b.category, title: b.title, author: b.original_title, overview: b.overview, cover: b.poster, duration: b.duration };
+  const out = { id: b.id, slug: slugFor(b.id), type: b.type, format: b.category, title: b.title, author: b.original_title, overview: b.overview, cover: b.poster, duration: b.duration };
   const pr = get('SELECT position, duration, watched FROM progress WHERE profile_id = ? AND item_id = ?', p.id, b.id);
   out.progress = pr || null;
   if (b.category === 'epub') {

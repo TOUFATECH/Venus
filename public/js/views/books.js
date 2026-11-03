@@ -2,7 +2,7 @@
 // et livres audio (lecteur audio de Venus, reprise là où on s'était arrêté)
 import { api } from '../api.js';
 import { h, icon, img, placeholder, sheet, toast, isBack } from '../ui.js';
-import { go, setTitle } from '../app.js';
+import { go, setTitle, showSlug } from '../app.js';
 import { playList } from '../audio.js';
 
 const pct = (b) => (b.progress && b.progress.duration ? Math.min(100, Math.round((b.progress.watched ? 1 : b.progress.position / b.progress.duration) * 100)) : 0);
@@ -47,6 +47,7 @@ export async function render(main, { view = 'all', id } = {}) {
 async function reader(main, id) {
   const b = await api(`/api/books/${id}`);
   setTitle(b.title);
+  showSlug('lire', b.slug);
   const total = b.format === 'epub' ? b.chapters : b.format === 'cbz' ? b.pages : 1;
   let n = b.progress && !b.progress.watched ? Math.min(total - 1, Math.floor(b.progress.position)) : 0;
   let saveT = null;
