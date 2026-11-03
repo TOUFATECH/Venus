@@ -3,9 +3,9 @@ import { api } from '../api.js';
 import { h, icon, sheet, toast } from '../ui.js';
 
 const TYPES = [
-  ['movies', 'Films'], ['shows', 'Séries'], ['anime', 'Animés'], ['clips', 'Clips'], ['iptv', 'TV en direct (IPTV)'],
+  ['movies', 'Films'], ['shows', 'Séries'], ['anime', 'Animés'], ['clips', 'Clips'], ['music', 'Musique'], ['photos', 'Photos'], ['books', 'Livres'], ['iptv', 'TV en direct (IPTV)'],
 ];
-const NAMES = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct' };
+const NAMES = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct', music: 'Musique', photos: 'Photos', books: 'Livres' };
 // Chemins Windows (C:\\Films) ou Linux / macOS (/media/films)
 const joinPath = (base, name) => (base.includes('\\') ? `${base.replace(/\\$/, '')}\\${name}` : `${base.replace(/\/$/, '')}/${name}`);
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', { for: input.id }, label), input, hint ? h('small', {}, hint) : null);

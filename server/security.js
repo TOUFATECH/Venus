@@ -219,7 +219,7 @@ export function contentSecurityPolicy(secure) {
     "media-src 'self' blob:",
     "connect-src 'self'",
     "worker-src 'self' blob:",
-    "frame-src https://www.youtube-nocookie.com https://www.youtube.com",
+    "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com",
     "font-src 'self' data:",
     "manifest-src 'self'",
     "object-src 'none'",
