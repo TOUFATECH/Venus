@@ -455,6 +455,34 @@ function editProfile(p, self, onDone) {
   const age = !self ? select(AGES, p ? p.maxAge : '') : null;
   const adminSw = !self && (!p || p.id !== state.profile.id) ? h('label', { class: 'switch' }, h('span', {}, 'Administrateur (accès aux réglages du serveur)'), h('input', { type: 'checkbox', class: 'f', checked: p ? p.isAdmin : false })) : null;
   const err = h('p', { class: 'error-text' });
+  // Droits (comme Jellyfin) : seulement pour les profils non administrateurs, réglés par un administrateur
+  const perms = { libraries: null, download: true, transcode: true, remote: true, schedule: [], ...(p && p.perms ? JSON.parse(JSON.stringify(p.perms)) : {}) };
+  const permsBox = !self && !isNew ? h('div', { class: 'perms' }) : null;
+  const DAYS = [[1, 'L'], [2, 'M'], [3, 'M'], [4, 'J'], [5, 'V'], [6, 'S'], [0, 'D']];
+  const DAY_NAMES = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+  const paintPerms = (libs) => {
+    if (!permsBox) return;
+    const sw = (label, key, hint) => h('label', { class: 'switch' }, h('span', {}, label, hint ? h('small', {}, hint) : null), h('input', { type: 'checkbox', class: 'f', checked: perms[key], onchange: (e) => { perms[key] = e.target.checked; } }));
+    const allLibs = perms.libraries == null;
+    const libList = h('div', { class: 'perm-libs' }, libs.map((l) => h('label', { class: 'chk' }, h('input', { type: 'checkbox', class: 'f', checked: allLibs || perms.libraries.includes(l.id), disabled: allLibs,
+      onchange: (e) => { perms.libraries = e.target.checked ? [...perms.libraries, l.id] : perms.libraries.filter((x) => x !== l.id); } }), l.name)));
+    const slots = h('div', { class: 'slots' }, perms.schedule.map((sl, i) => h('div', { class: 'slot' },
+      h('div', { class: 'days' }, DAYS.map(([d, l]) => h('button', { type: 'button', class: `day f${sl.days.includes(d) ? ' on' : ''}`, title: DAY_NAMES[d], 'aria-pressed': String(sl.days.includes(d)),
+        onclick: () => { sl.days = sl.days.includes(d) ? sl.days.filter((x) => x !== d) : [...sl.days, d]; paintPerms(libs); } }, l))),
+      h('input', { class: 'input', type: 'time', value: sl.from, onchange: (e) => { sl.from = e.target.value; } }), h('span', {}, 'à'),
+      h('input', { class: 'input', type: 'time', value: sl.to, onchange: (e) => { sl.to = e.target.value; } }),
+      h('button', { type: 'button', class: 'p-icon small f', 'aria-label': 'Retirer ce créneau', onclick: () => { perms.schedule.splice(i, 1); paintPerms(libs); } }, icon('close')))));
+    permsBox.replaceChildren(h('h3', {}, 'Droits'),
+      h('label', { class: 'switch' }, h('span', {}, 'Toutes les bibliothèques'), h('input', { type: 'checkbox', class: 'f', checked: allLibs, onchange: (e) => { perms.libraries = e.target.checked ? null : libs.map((l) => l.id); paintPerms(libs); } })),
+      allLibs ? null : libList,
+      sw('Télécharger pour regarder sans réseau', 'download'),
+      sw('Lire les vidéos qui demandent une conversion', 'transcode', 'Sinon, seulement les fichiers que l’appareil lit tels quels'),
+      sw('Accès depuis l’extérieur de la maison', 'remote', 'Sinon, seulement sur le réseau local'),
+      h('div', { class: 'field' }, h('label', {}, 'Horaires autorisés'), perms.schedule.length ? slots : h('small', {}, 'À toute heure.'),
+        perms.schedule.length < 7 ? h('button', { type: 'button', class: 'btn btn-small btn-ghost f', onclick: () => { perms.schedule.push({ days: [1, 2, 3, 4, 5], from: '17:00', to: '20:00' }); paintPerms(libs); } }, icon('plus'), 'Ajouter un créneau') : null,
+        perms.schedule.length ? h('small', {}, 'Heure du serveur. En dehors de ces créneaux, le profil ne s’ouvre pas.') : null));
+  };
+  if (permsBox) api('/api/admin').then((a) => paintPerms(a.libraries.filter((l) => l.type !== 'iptv' || true))).catch(() => permsBox.remove());
   const s = sheet(isNew ? 'Nouveau profil' : `Modifier ${p.name}`, h('form', { onsubmit: async (e) => {
     e.preventDefault();
     if (pin.value && !/^\d{4}$/.test(pin.value)) { err.textContent = 'Le code PIN doit contenir 4 chiffres.'; return; }
@@ -466,6 +494,11 @@ function editProfile(p, self, onDone) {
     if (pin.value) body.pin = pin.value; else if (removePin && removePin.querySelector('input').checked) body.pin = null;
     if (age) body.maxAge = age.value === '' ? null : Number(age.value);
     if (adminSw) body.isAdmin = adminSw.querySelector('input').checked;
+    if (permsBox && !willBeAdmin) {
+      if (perms.libraries && !perms.libraries.length) { err.textContent = 'Choisissez au moins une bibliothèque.'; return; }
+      if (perms.schedule.some((x) => !x.days.length || !x.from || !x.to || x.from === x.to)) { err.textContent = 'Chaque créneau a besoin d’au moins un jour et de deux heures différentes.'; return; }
+      body.perms = perms;
+    }
     try {
       await api(isNew ? '/api/profiles' : `/api/profiles/${p.id}`, { method: isNew ? 'POST' : 'PUT', body });
       s.close(); toast(isNew ? 'Profil créé' : 'Profil enregistré'); onDone && onDone();
@@ -474,7 +507,7 @@ function editProfile(p, self, onDone) {
   field('Nom', nameIn), field('Couleur', picker),
   field('Code PIN', pin, 'Protège l’accès à ce profil.'), removePin,
   age ? field('Contrôle parental', age, 'Les titres au-dessus de cet âge sont masqués.') : null,
-  adminSw, err,
+  adminSw, permsBox, err,
   h('div', { class: 'form-actions' },
     !isNew && !self && p.id !== state.profile.id ? h('button', { type: 'button', class: 'btn btn-danger f', onclick: async () => {
       if (!(await confirmSheet(`Supprimer le profil « ${p.name} » et sa progression ?`, 'Supprimer'))) return;

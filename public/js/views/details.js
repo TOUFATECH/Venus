@@ -81,7 +81,7 @@ export async function render(main, { id, query }) {
     const what = isShow ? (d.seasons.length > 1 ? `Les ${d.seasons.length} saisons` : 'Toute la série') : d.title;
     toast(allWatched ? `${what} : marqué comme non vu` : `${what} : marqué comme vu`, { type: 'success', action: { label: 'Annuler', onClick: () => set(allWatched) } });
   } }, icon('eye')));
-  if (!isShow) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Télécharger pour regarder sans réseau', title: 'Télécharger', onclick: async () => {
+  if (!isShow && !(state.profile.perms && state.profile.perms.download === false)) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Télécharger pour regarder sans réseau', title: 'Télécharger', onclick: async () => {
     const m = await import('./downloads.js');
     m.openDownload({ id: d.id, title: d.title, size: d.file && d.file.size, duration: d.duration || (d.runtime ? d.runtime * 60 : 0) });
   } }, icon('down')));
@@ -178,7 +178,7 @@ export async function render(main, { id, query }) {
         h('div', { class: 'sh-actions' },
           next ? h('button', { class: 'btn btn-small f', onclick: () => go(playPath(next.id)) }, icon('play'), all ? 'Revoir la saison' : seen ? `Continuer É${next.episode}` : 'Lire la saison') : null,
           h('button', { class: `btn btn-small btn-ghost f${all ? ' is-on' : ''}`, onclick: () => markSeason(s, !all) }, icon('eye'), all ? 'Saison vue' : 'Marquer la saison vue'),
-          h('button', { class: 'btn btn-small btn-ghost btn-icon f', 'aria-label': 'Télécharger la saison', title: 'Télécharger la saison', onclick: async () => { const m = await import('./downloads.js'); m.openDownload({ id: s.id, title: seasonName(s), season: true }); } }, icon('down')),
+          state.profile.perms && state.profile.perms.download === false ? null : h('button', { class: 'btn btn-small btn-ghost btn-icon f', 'aria-label': 'Télécharger la saison', title: 'Télécharger la saison', onclick: async () => { const m = await import('./downloads.js'); m.openDownload({ id: s.id, title: seasonName(s), season: true }); } }, icon('down')),
           state.profile.isAdmin ? h('button', { class: 'btn btn-small btn-ghost btn-icon btn-del f', 'aria-label': `Supprimer ${seasonName(s)}`, title: `Supprimer ${seasonName(s)} (fichiers effacés)`, onclick: () => deleteVideo({
             id: s.id, what: `${seasonName(s).toLowerCase().startsWith('saison') ? 'la ' : ''}${seasonName(s)}`, detail: `Les ${total} épisode${total > 1 ? 's' : ''} de cette saison seront supprimés.`,
             onDone: (r) => (r.gone && d.seasons.length === 1 ? go(libOf(d), { replace: true }) : window.dispatchEvent(new HashChangeEvent('hashchange'))),

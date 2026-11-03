@@ -7,6 +7,7 @@ import crypto from 'node:crypto';
 import { get, all, run, getSetting } from './db.js';
 import { HttpError, parseCookies } from './http.js';
 import { guardAttempt, failAttempt, okAttempt } from './security.js';
+import { accessProblem, permsOf } from './perms.js';
 
 const TOKEN_TTL = 180 * 864e5;
 const TOKEN_IDLE = 45 * 864e5;
@@ -96,6 +97,8 @@ export function requireDevice(ctx) {
 export function requireProfile(ctx) {
   const a = requireDevice(ctx);
   if (!a.profile) throw new HttpError(403, 'Choisissez un profil');
+  const why = accessProblem(a.profile, ctx.ip);
+  if (why) throw new HttpError(403, why);
   return a.profile;
 }
 export function requireAdmin(ctx) {
@@ -119,6 +122,7 @@ export function publicProfile(p) {
     id: p.id, name: p.name, avatar: p.avatar, hasPin: !!p.pin_hash, isAdmin: !!p.is_admin,
     maxAge: p.max_age, isKids: p.max_age != null && p.max_age <= 12,
     subtitleLang: p.subtitle_lang, audioLang: p.audio_lang,
+    perms: (({ admin, ...rest }) => rest)(permsOf(p)),
   };
 }
 
