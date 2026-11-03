@@ -122,10 +122,10 @@ export async function render(main, { query } = {}) {
   function libraryBox(a) {
     const s = a.scan;
     const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
-    const COUNTS = { movies: [a.counts.movie, 'film'], shows: [a.counts.show, 'série'], anime: [null, 'animé'], clips: [a.counts.clip, 'clip'], iptv: [a.counts.channel, 'chaîne'] };
+    const COUNTS = { movies: [a.counts.movie, 'film'], shows: [a.counts.show, 'série'], anime: [null, 'animé'], clips: [a.counts.clip, 'clip'], iptv: [a.counts.channel, 'chaîne'], music: [a.counts.track, 'titre'], photos: [a.counts.photo, 'photo'], books: [a.counts.book, 'livre'] };
     const typeCard = ([type, label, hint]) => {
       const libs = a.libraries.filter((l) => l.type === type);
-      const [n, word] = COUNTS[type];
+      const [n, word] = COUNTS[type] || [null, ''];
       return h('div', { class: `lib-card${libs.length ? '' : ' is-empty'}` },
         h('div', { class: 'lib-head' }, icon(LIB_ICON[type]), h('b', {}, label),
           libs.length && n ? h('small', {}, `${n} ${word}${n > 1 ? 's' : ''}`) : null),
