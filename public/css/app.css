@@ -158,6 +158,10 @@ main.with-nav { padding-left: var(--rail); }
 .boot-line i { display: block; width: 40%; height: 100%; background: var(--sulfur); animation: sweep 1.3s var(--ease) infinite; }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 .boot-note { color: var(--dim); font-size: 0.85rem; min-height: 1.3em; }
+/* Démarrage bloqué : explication et boutons (voir index.html) */
+.boot.stuck .boot-line { display: none; }
+.boot.stuck .boot-note { max-width: min(440px, calc(100vw - 32px)); text-align: center; color: var(--text, #eceae4); line-height: 1.45; }
+.boot-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
 .splash { min-height: 60vh; display: flex; align-items: center; justify-content: center; }
 .splash .planet { width: 44px; }
 
