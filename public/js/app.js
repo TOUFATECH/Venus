@@ -22,6 +22,10 @@ const ROUTES = [
   [/^\/ajouter$/, () => import('./views/add.js')],
   [/^\/recherche$/, () => import('./views/search.js')],
   [/^\/titre\/([^/]+)$/, () => import('./views/details.js'), (m) => idOrSlug(m[1])],
+  // Adresses rangées comme les dossiers : /films/Titre, /series/Titre/S01E02, /animes/Titre/S01E02, /clips/Titre
+  [/^\/(?:films|clips)\/([^/]+)\/lecture$/, () => import('./views/player.js'), (m) => idOrSlug(m[1])],
+  [/^\/(?:series|animes)\/([^/]+)\/(S\d{1,3}E\d{1,4}(?:-E\d{1,4})?)$/i, () => import('./views/player.js'), (m) => ({ slug: dec(m[1]), ep: m[2] })],
+  [/^\/(?:films|clips|series|animes)\/([^/]+)$/, () => import('./views/details.js'), (m) => idOrSlug(m[1])],
   [/^\/lecture\/([^/]+)$/, () => import('./views/player.js'), (m) => idOrSlug(m[1])],
   [/^\/reglages$/, () => import('./views/settings.js')],
   [/^\/tableau-de-bord$/, () => import('./views/dashboard.js')],
@@ -54,8 +58,9 @@ function idOrSlug(raw) {
 const slugIds = new Map();
 async function resolveParams(params) {
   if (params.id || !params.slug) return params;
-  let id = slugIds.get(params.slug.toLowerCase());
-  if (!id) { id = (await api(`/api/resolve?slug=${encodeURIComponent(params.slug)}`)).id; slugIds.set(params.slug.toLowerCase(), id); }
+  const k = `${params.slug}|${params.ep || ''}`.toLowerCase();
+  let id = slugIds.get(k);
+  if (!id) { id = (await api(`/api/resolve?slug=${encodeURIComponent(params.slug)}${params.ep ? `&ep=${encodeURIComponent(params.ep)}` : ''}`)).id; slugIds.set(k, id); }
   return { ...params, id };
 }
 // Remplace le numéro par le nom dans la barre d'adresse, sans recharger la page
@@ -70,8 +75,22 @@ export function showSlug(kind, slug, keep = []) {
   const target = `/${kind}/${enc}${qs ? `?${qs}` : ''}`;
   if (here() !== target) history.replaceState(history.state, '', target);
 }
+// Adresse « propre » donnée par le serveur (/films/Inception.2010, /series/Breaking.Bad/S01E02…),
+// seulement si l'on est toujours sur la page qui l'a demandée
+export const currentUrl = () => (memory ? stack[stack.length - 1] : `${location.pathname}${location.search}`);
+export function showPath(target, keep = [], from = null) {
+  if (memory || !target) return;
+  if (from && currentUrl() !== from && !currentUrl().startsWith(target)) return;
+  const { query } = parseHash();
+  const q = new URLSearchParams();
+  for (const k of keep) if (query.get(k) != null) q.set(k, query.get(k));
+  const enc = target.split('/').map((seg) => seg.split('').map((c) => (/[\p{L}\p{N}.~-]/u.test(c) ? c : encodeURIComponent(c))).join('')).join('/');
+  const full = `${enc}${q.toString() ? `?${q}` : ''}`;
+  if (currentUrl() !== full) history.replaceState(history.state, '', full);
+}
 // Écrans plein écran, sans navigation
 const BARE = ['/lecture', '/telecommande', '/vote'];
+const isBare = (p) => BARE.some((b) => p.startsWith(b)) || /^\/(films|clips)\/[^/]+\/lecture$/.test(p) || /^\/(series|animes)\/[^/]+\/S\d+E\d+/i.test(p);
 
 // Routeur : adresse (#/films…) par défaut, ou pile en mémoire quand l'adresse n'est pas modifiable (démo intégrée)
 const memory = !!window.__VN_MEMORY_ROUTER;
@@ -375,7 +394,7 @@ async function route() {
       try { params = await resolveParams(params); }
       catch (e) { toast(e.message, true); go('/', { replace: true }); return; }
     }
-    const isPlayer = BARE.some((b) => path.startsWith(b));
+    const isPlayer = isBare(path);
     return mount(loader(), params, { withNav: !isPlayer, path });
   }
   go('/', { replace: true });
@@ -450,7 +469,7 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:' && !memory) {
   const ind = h('div', { class: 'ptr', 'aria-hidden': 'true' }, icon('refresh'));
   document.body.append(ind);
   let y0 = null, dy = 0, busy = false;
-  const usable = () => state.profile && !BARE.some((b) => parseHash().path.startsWith(b)) && !document.querySelector('.sheet-wrap, .player, .mini-player.drag');
+  const usable = () => state.profile && !isBare(parseHash().path) && !document.querySelector('.sheet-wrap, .player, .mini-player.drag');
   document.addEventListener('touchstart', (e) => { if (busy || window.scrollY > 0 || !usable() || e.touches.length > 1) { y0 = null; return; } y0 = e.touches[0].clientY; dy = 0; }, { passive: true });
   document.addEventListener('touchmove', (e) => {
     if (y0 == null) return;

@@ -1,7 +1,7 @@
 // Lecteur vidéo plein écran : lecture directe ou HLS, sous-titres, pistes, qualité, épisode suivant, Chromecast, AirPlay
 import { api, auth, deviceCaps, castCaps, preferredQuality, setPreferredQuality, prefs, clearApiCache } from '../api.js';
 import { h, icon, sheet, fmtTime, langName, toast, img, isBack } from '../ui.js';
-import { showSlug, go, back, setTitle } from '../app.js';
+import { showPath, currentUrl, go, back, setTitle } from '../app.js';
 import { focusEl } from '../nav.js';
 import { castSupported, loadCast, castContext, castMedia, remote } from '../cast.js';
 import { ambilight, ambianceOn } from '../ambiance.js';
@@ -48,6 +48,7 @@ function parseVtt(text) {
 }
 
 export async function render(main, { id, query }) {
+  const fromUrl = currentUrl();
   closeMini(); // une seule vidéo à la fois : le mini-lecteur s'arrête
   const startParam = query.get('t');
   let roomCode = query.get('salle');
@@ -208,7 +209,7 @@ export async function render(main, { id, query }) {
     subEl.hidden = !info.subtitle;
     paintBelow();
     setTitle(info.subtitle && info.type === 'episode' ? `${info.title} · ${info.subtitle}` : info.title);
-    showSlug('lecture', info.slug, ['salle']);
+    showPath(info.path, ['salle'], fromUrl);
     badge.textContent = info.mode === 'direct' ? 'Direct' : info.mode === 'remux' ? 'Remux' : `Converti · ${info.hwLabel || 'processeur'}`;
     badge.title = info.reason;
     qualityBtn.textContent = (info.qualities.find((q) => q.id === quality) || { label: 'Auto' }).label;
