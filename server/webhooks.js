@@ -11,6 +11,7 @@ export const HOOK_EVENTS = {
   'login.new_device': 'Nouvel appareil connecté',
   'security.alert': 'Alerte de sécurité',
   'task.failed': 'Tâche planifiée en échec',
+  'recording.done': 'Enregistrement TV terminé',
 };
 export const listHooks = () => (getSetting('webhooks', []) || []);
 export const saveHooks = (list) => setSetting('webhooks', list);

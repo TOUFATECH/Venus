@@ -30,6 +30,8 @@ import { permsOf, accessProblem, libraryClause, validPerms } from './perms.js';
 import { logLines, logText } from './logbuf.js';
 import { createApiKey, listApiKeys, revokeApiKey } from './apikeys.js';
 import { HOOK_EVENTS, listHooks, saveHooks, testHook, emitHook } from './webhooks.js';
+import { programsBetween, programById, nowNext, epgState, refreshEpg } from './epg.js';
+import { schedule as scheduleRecording, cancel as cancelRecording, listRecordings, listRules, addRule, removeRule, dvrDir } from './dvr.js';
 import { traktId, testTrakt, posterSource, traktFind, downloadTraktImage } from './trakt.js';
 import { ensureTrickplay, trickplayInfo, trickplaySheet, trickplayMode, removeTrickplay } from './trickplay.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
@@ -154,7 +156,7 @@ function withStatus(c, idx) {
 }
 
 // Catégories présentes (pour la navigation)
-const CATEGORY_SQL = `CASE WHEN i.type = 'movie' THEN 'movie' WHEN i.type = 'clip' THEN 'clip' WHEN i.type = 'channel' THEN 'channel'
+const CATEGORY_SQL = `CASE WHEN i.type = 'movie' THEN 'movie' WHEN i.type = 'clip' AND i.category = 'recording' THEN 'recording' WHEN i.type = 'clip' THEN 'clip' WHEN i.type = 'channel' THEN 'channel'
   WHEN i.category = 'anime' THEN 'anime' ELSE 'show' END`;
 const TOP_TYPES = "('movie','show','clip','channel')";
 
@@ -587,7 +589,7 @@ router.get('/api/library', (ctx) => {
   const type = ctx.url.searchParams.get('type');
   const where = {
     movie: "i.type = 'movie'", show: "i.type = 'show' AND COALESCE(i.category, 'show') = 'show'", anime: "i.type = 'show' AND i.category = 'anime'",
-    clip: "i.type = 'clip'", channel: "i.type = 'channel'",
+    clip: "i.type = 'clip' AND COALESCE(i.category, 'clip') != 'recording'", channel: "i.type = 'channel'", recording: "i.type = 'clip' AND i.category = 'recording'",
   }[type] || "i.type IN ('movie','show','clip')";
   const items = all(`SELECT i.* FROM items i WHERE ${where} AND ${age.sql} ORDER BY ${type === 'channel' ? 'i.episode_num' : 'i.sort_title'}`, ...age.args);
   const idx = statusIndex(p.id);
@@ -2250,3 +2252,81 @@ router.put('/api/admin/branding', async (ctx) => {
   sendJson(ctx.res, { ok: true });
 });
 export const customCss = () => String(getSetting('custom_css', '') || '');
+
+// ------------------------------------------------------------------ guide des programmes (EPG) et enregistrements
+router.get('/api/epg', (ctx) => {
+  const p = requireProfile(ctx);
+  const u = ctx.url.searchParams;
+  const from = Math.max(Date.now() - 12 * 3600e3, Number(u.get('from')) || Date.now() - 30 * 60000);
+  const to = Math.min(from + 12 * 3600e3, Number(u.get('to')) || from + 4 * 3600e3);
+  const age = ageClause(p);
+  const chans = all(`SELECT i.* FROM items i WHERE i.type = 'channel' AND ${age.sql} ORDER BY COALESCE(i.channel_num, i.episode_num)`, ...age.args);
+  const progs = programsBetween(from, to, chans.map((c) => c.id));
+  const recs = new Map(all("SELECT channel_id, start, id, status FROM recordings WHERE status IN ('scheduled','recording') AND stop > ?", from).map((r) => [`${r.channel_id}:${r.start}`, r]));
+  const by = {};
+  for (const x of progs) { const r = recs.get(`${x.channel}:${x.start}`); (by[x.channel] ||= []).push({ ...x, rec: r ? { id: r.id, status: r.status } : null }); }
+  sendJson(ctx.res, { from, to, now: Date.now(), state: { last: epgState().last, sources: epgState().sources.length }, channels: chans.map((c) => ({ id: c.id, title: c.title, logo: c.poster, number: channelNumber(c), group: c.grp })), programs: by });
+});
+router.get('/api/epg/now', (ctx) => {
+  const p = requireProfile(ctx);
+  const age = ageClause(p);
+  const ids = all(`SELECT i.id FROM items i WHERE i.type = 'channel' AND ${age.sql}`, ...age.args).map((r) => r.id);
+  sendJson(ctx.res, nowNext(ids));
+});
+router.get('/api/recordings', (ctx) => {
+  const p = requireProfile(ctx);
+  const list = listRecordings().filter((r) => p.is_admin || !r.profile_id || r.profile_id === p.id);
+  sendJson(ctx.res, { recordings: list.map((r) => ({ id: r.id, channel: r.channel_title, logo: r.channel_logo, channelId: r.channel_id, title: r.title, sub: r.sub, descr: r.descr, start: r.start, stop: r.stop, status: r.status, error: r.error, itemId: r.item_id, ruleId: r.rule_id })), rules: listRules(), dir: p.is_admin ? dvrDir() : null });
+});
+router.post('/api/recordings', async (ctx) => {
+  const p = requireProfile(ctx);
+  if (!p.is_admin && getSetting('dvr_everyone', true) === false) throw new HttpError(403, 'Seul l’administrateur peut programmer des enregistrements');
+  const b = validate(await readBody(ctx.req, 8192), { programId: V.int({ min: 1 }), series: V.bool(), channelId: V.int({ min: 1 }), title: V.str({ max: 200 }), start: V.int({ min: 0, max: 1e14 }), stop: V.int({ min: 0, max: 1e14 }) });
+  let prog;
+  if (b.programId) { prog = programById(b.programId); if (!prog) throw new HttpError(404, 'Programme introuvable (guide mis à jour ?)'); }
+  else {
+    if (!b.channelId || !b.start || !b.stop) throw new HttpError(400, 'Chaîne, début et fin obligatoires');
+    prog = { channel: b.channelId, title: b.title || 'Enregistrement', start: b.start, stop: b.stop };
+  }
+  const ch = get("SELECT * FROM items WHERE id = ? AND type = 'channel'", prog.channel);
+  if (!ch || !visible(p, ch)) throw new HttpError(404, 'Chaîne introuvable');
+  if (b.series) { const id = addRule({ channelId: ch.id, title: prog.title, profileId: p.id }); return sendJson(ctx.res, { ok: true, ruleId: id }); }
+  const id = scheduleRecording({ channelId: ch.id, title: prog.title, sub: prog.sub || null, descr: prog.descr || null, start: prog.start, stop: prog.stop, profileId: p.id });
+  sendJson(ctx.res, { ok: true, id });
+});
+router.del('/api/recordings/:id', (ctx) => {
+  const p = requireProfile(ctx);
+  const r = get('SELECT * FROM recordings WHERE id = ?', Number(ctx.params.id));
+  if (!r || (!p.is_admin && r.profile_id && r.profile_id !== p.id)) throw new HttpError(404, 'Enregistrement introuvable');
+  cancelRecording(r.id);
+  sendJson(ctx.res, { ok: true });
+});
+router.del('/api/recordings/rules/:id', (ctx) => {
+  const p = requireProfile(ctx);
+  const r = get('SELECT * FROM record_rules WHERE id = ?', Number(ctx.params.id));
+  if (!r || (!p.is_admin && r.profile_id !== p.id)) throw new HttpError(404, 'Règle introuvable');
+  removeRule(r.id);
+  sendJson(ctx.res, { ok: true });
+});
+router.get('/api/admin/livetv', (ctx) => {
+  requireAdmin(ctx);
+  sendJson(ctx.res, { epg: epgState(), dvrPath: dvrDir(), pre: Number(getSetting('dvr_pre', 2)), post: Number(getSetting('dvr_post', 5)), everyone: getSetting('dvr_everyone', true) !== false });
+});
+router.put('/api/admin/livetv', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 16 * 1024), { epgUrls: V.str({ max: 8000 }), dvrPath: V.str({ max: 1000 }), pre: V.int({ min: 0, max: 30 }), post: V.int({ min: 0, max: 120 }), everyone: V.bool() });
+  if (b.epgUrls !== undefined) {
+    const list = b.epgUrls.split(/\s+/).filter(Boolean);
+    if (list.some((u) => !/^https?:\/\/\S+$/i.test(u) && !path.isAbsolute(u))) throw new HttpError(400, 'Adresses http(s):// ou chemins de fichiers, une par ligne');
+    setSetting('epg_urls', list.join('\n'));
+  }
+  if (b.dvrPath !== undefined && b.dvrPath.trim()) {
+    const dir = path.resolve(b.dvrPath.trim());
+    try { fs.mkdirSync(dir, { recursive: true }); fs.accessSync(dir, fs.constants.W_OK); } catch { throw new HttpError(400, 'Dossier impossible à créer ou en lecture seule'); }
+    setSetting('dvr_path', dir);
+  }
+  if (b.pre !== undefined) setSetting('dvr_pre', b.pre);
+  if (b.post !== undefined) setSetting('dvr_post', b.post);
+  if (b.everyone !== undefined) setSetting('dvr_everyone', b.everyone);
+  sendJson(ctx.res, { ok: true });
+});

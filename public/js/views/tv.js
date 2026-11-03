@@ -8,8 +8,18 @@ import { attachStream, numberZapper } from '../live.js';
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
 
-export async function render(main) {
+export async function render(main, { query } = {}) {
+  const vue = query && query.get('vue');
+  if (vue === 'guide' || vue === 'enregistrements') {
+    const m = await import('./guide.js');
+    return vue === 'guide' ? m.renderGuide(main) : m.renderRecordings(main);
+  }
+  const { tvTabs, programSheet } = await import('./guide.js');
   const channels = await api('/api/library?type=channel');
+  // Programme en cours et suivant (guide XMLTV), s'il y en a un
+  let nn = {};
+  try { nn = await api('/api/epg/now'); } catch { /* pas de guide */ }
+  const hm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const groups = [...new Set(channels.map((c) => c.group).filter(Boolean))];
   let group = '';
   let selected = null, session = null, detach = null, switchTimer = null, destroyed = false, muted = true;
@@ -21,11 +31,12 @@ export async function render(main) {
   const status = h('div', { class: 'pv-status' });
   const nameEl = h('h2', { class: 'pv-name' });
   const groupEl = h('p', { class: 'pv-group' });
+  const progEl = h('div', { class: 'pv-prog' });
   const soundBtn = h('button', { class: 'btn btn-ghost btn-small f', onclick: () => { muted = !muted; video.muted = muted; soundBtn.textContent = muted ? 'Activer le son' : 'Couper le son'; } }, 'Activer le son');
   const watchBtn = h('button', { class: 'btn btn-play f', onclick: () => selected && go(playPath(selected.id)) }, icon('play'), 'Regarder');
   const preview = h('section', { class: 'pv', 'aria-label': 'Aperçu de la chaîne' },
     h('div', { class: 'pv-screen' }, still, video, status, h('span', { class: 'live-dot pv-live' }, 'Direct')),
-    h('div', { class: 'pv-info' }, h('div', {}, nameEl, groupEl), h('div', { class: 'actions' }, watchBtn, soundBtn)));
+    h('div', { class: 'pv-info' }, h('div', {}, nameEl, groupEl, progEl), h('div', { class: 'actions' }, watchBtn, soundBtn)));
 
   async function stopPreview() {
     if (detach) { detach(); detach = null; }
@@ -37,6 +48,11 @@ export async function render(main) {
     selected = ch;
     nameEl.textContent = ch.number ? `${ch.number}. ${ch.title}` : ch.title;
     groupEl.textContent = ch.group || 'TV en direct';
+    const [cur, nxt] = nn[ch.id] || [];
+    progEl.replaceChildren(...(cur ? [
+      h('button', { class: 'pv-now f', onclick: () => programSheet(cur, ch) }, h('b', {}, cur.title), h('small', {}, `${hm(cur.start)} – ${hm(cur.stop)}${cur.sub ? ` · ${cur.sub}` : ''}`),
+        h('span', { class: 'prog-bar' }, h('i', { style: { width: `${Math.min(100, Math.round(((Date.now() - cur.start) / (cur.stop - cur.start)) * 100))}%` } }))),
+      nxt ? h('small', { class: 'pv-next' }, `Ensuite à ${hm(nxt.start)} : ${nxt.title}`) : null] : []));
     still.src = ch.preview || `/api/channels/${ch.id}/preview.jpg?token=${encodeURIComponent(auth.token || '')}&t=${Math.floor(Date.now() / 60000)}`;
     still.hidden = false;
     status.textContent = 'Connexion à la chaîne…';
@@ -73,7 +89,7 @@ export async function render(main) {
       onerror: (e) => e.target.remove() });
     const el = h('button', { class: 'tile f', 'data-id': c.id, 'aria-label': `${c.number ? `${c.number}, ` : ''}${c.title}, ${c.group || 'en direct'}`, onclick: () => go(playPath(c.id)) },
       h('div', { class: 'tile-img' }, h('span', { class: 'ch-initials' }, initials(c.title)), shot, logo, c.number ? h('span', { class: 'ch-num' }, c.number) : null),
-      h('div', { class: 'tile-cap' }, h('b', {}, c.title), c.group ? h('small', {}, c.group) : null));
+      h('div', { class: 'tile-cap' }, h('b', {}, c.title), nn[c.id] && nn[c.id][0] ? h('small', { class: 'tile-now' }, nn[c.id][0].title) : c.group ? h('small', {}, c.group) : null));
     el.addEventListener('focus', () => showPreview(c));
     el.addEventListener('mouseenter', () => showPreview(c, 300));
     return el;
@@ -104,7 +120,7 @@ export async function render(main) {
   }
 
   main.append(h('div', { class: 'page tv-page' },
-    h('div', { class: 'page-head' }, h('h1', {}, 'TV en direct'), count),
+    h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, 'TV en direct'), count), h('div', { class: 'head-tools' }, tvTabs('chaines'))),
     preview,
     h('div', { class: 'filters' }, chips || h('span'), channels.length > 8 ? h('div', { class: 'search-box small' }, icon('search'), input) : null),
     grid));
