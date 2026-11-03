@@ -17,14 +17,15 @@ import {
 } from './auth.js';
 import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scanner.js';
 import { pipeline } from 'node:stream/promises';
-import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage } from './metadata.js';
+import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
 import {
   decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot,
 } from './stream.js';
 import { detectHardware } from './hw.js';
 import { probeLive, readChapters } from './probe.js';
 import { runTask, listTasks } from './tasks.js';
-import { traktId, testTrakt, posterSource } from './trakt.js';
+import { versionLabel, groupVersions } from './versions.js';
+import { traktId, testTrakt, posterSource, traktFind, downloadTraktImage } from './trakt.js';
 import { ensureTrickplay, trickplayInfo, trickplaySheet, trickplayMode, removeTrickplay } from './trickplay.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
 import { getSegments, scheduleSeason, segmentsPending } from './segments.js';
@@ -45,10 +46,11 @@ const imagesDir = path.join(config.dataDir, 'images');
 const parseJson = (s, d) => { if (s == null) return d; try { return JSON.parse(s) ?? d; } catch { return d; } };
 
 function ageClause(profile, alias = 'i') {
-  if (!profile || profile.max_age == null) return { sql: '1=1', args: [] };
+  // Les autres versions d'un même film n'apparaissent pas dans les listes (choix sur la fiche)
+  if (!profile || profile.max_age == null) return { sql: `${alias}.version_of IS NULL`, args: [] };
   const allowUnrated = getSetting('kids_allow_unrated', false);
   return {
-    sql: `(${alias}.age <= ?${allowUnrated ? ` OR ${alias}.age IS NULL` : ''})`,
+    sql: `${alias}.version_of IS NULL AND (${alias}.age <= ?${allowUnrated ? ` OR ${alias}.age IS NULL` : ''})`,
     args: [profile.max_age],
   };
 }
@@ -612,6 +614,18 @@ router.get('/api/items/:id', (ctx) => {
   };
   out.inList = !!get('SELECT 1 FROM mylist WHERE profile_id=? AND item_id=?', p.id, item.id);
 
+  // Bonus (making-of, scènes coupées, bandes-annonces…) rangés avec le titre
+  const KIND_LABEL = { extra: 'Bonus', featurette: 'Making-of', behindthescenes: 'Coulisses', deleted: 'Scène coupée', interview: 'Interview', scene: 'Scène', short: 'Court métrage', trailer: 'Bande-annonce', other: 'Bonus' };
+  const owners = item.type === 'movie' ? all("SELECT id FROM items WHERE type='movie' AND (id = ? OR version_of = ? OR id = ?)", item.version_of || item.id, item.version_of || item.id, item.id).map((r) => r.id) : [item.id];
+  const extras = all(`SELECT * FROM items WHERE type = 'extra' AND parent_id IN (${owners.map(() => '?').join(',') || 'NULL'}) ORDER BY category = 'trailer' DESC, sort_title`, ...owners);
+  if (extras.length) out.extras = extras.map((x) => ({ ...card(x), kind: x.category, kindLabel: KIND_LABEL[x.category] || 'Bonus', duration: x.duration }));
+  // Versions d'un même film (4K, 1080p, version longue)
+  if (item.type === 'movie') {
+    const pid = item.version_of || item.id;
+    const vers = all("SELECT id, path, size, probe FROM items WHERE type = 'movie' AND (id = ? OR version_of = ?) ORDER BY id = ? DESC", pid, pid, pid);
+    if (vers.length > 1) out.versions = vers.map((v) => ({ id: v.id, ...versionLabel(v), primary: v.id === pid }));
+  }
+
   if (item.type !== 'show') {
     out.media = mediaSummary(item.probe);
     out.duration = item.duration;
@@ -621,14 +635,26 @@ router.get('/api/items/:id', (ctx) => {
     const seasons = all("SELECT * FROM items WHERE type='season' AND show_id=? ORDER BY season_num = 0, season_num", item.id);
     const eps = all("SELECT * FROM items WHERE type='episode' AND show_id=? ORDER BY season_num, episode_num", item.id);
     const pm = progressMap(p.id, eps.map((e) => e.id));
-    out.seasons = seasons.map((s) => ({
-      id: s.id, number: s.season_num, title: s.title, poster: s.poster, overview: s.overview,
-      episodes: eps.filter((e) => e.parent_id === s.id).map((e) => {
-        const c = card(e, pm.get(e.id));
-        c.duration = e.duration; c.episodeEnd = e.episode_end;
-        return c;
-      }),
-    }));
+    const today = new Date().toISOString().slice(0, 10);
+    out.seasons = seasons.map((s) => {
+      const list = eps.filter((e) => e.parent_id === s.id);
+      // Épisodes déjà diffusés (d'après TMDB) mais absents des dossiers
+      const have = new Set(list.flatMap((e) => { const a = []; for (let n = e.episode_num; n <= (e.episode_end || e.episode_num); n++) a.push(n); return a; }));
+      const missing = parseJson(s.tmdb_eps, []).filter((x) => x.n && !have.has(x.n) && x.air && x.air <= today)
+        .map((x) => ({ number: x.n, title: x.title, air: x.air, overview: x.overview, still: x.still ? `https://image.tmdb.org/t/p/w300${x.still}` : null }));
+      return {
+        id: s.id, number: s.season_num, title: s.title, poster: s.poster, overview: s.overview,
+        episodes: list.map((e) => {
+          const c = card(e, pm.get(e.id));
+          c.duration = e.duration; c.episodeEnd = e.episode_end;
+          return c;
+        }),
+        missing,
+      };
+    });
+    const haveSeasons = new Set(seasons.map((s) => s.season_num));
+    out.missingSeasons = parseJson(item.tmdb_seasons, []).filter((x) => x.n > 0 && !haveSeasons.has(x.n) && x.count > 0 && x.air && x.air <= today)
+      .map((x) => ({ number: x.n, title: x.name, count: x.count, air: x.air }));
     // Prochain épisode à regarder
     const watchedSorted = eps.filter((e) => pm.get(e.id)).sort((a, b) => pm.get(b.id).updated_at - pm.get(a.id).updated_at);
     let next = eps.find((e) => e.season_num > 0) || eps[0];
@@ -1553,6 +1579,84 @@ router.post('/api/admin/restart', (ctx) => {
 router.post('/api/admin/ratings/refresh', (ctx) => {
   requireAdmin(ctx);
   sendJson(ctx.res, { queued: refreshRatings({ force: true }) });
+});
+
+// ------------------------------------------------------------------ modifier les infos d'un titre (comme Jellyfin)
+const EDIT_SCHEMA = {
+  title: V.str({ min: 1, max: 200, label: 'Titre' }), originalTitle: V.nullable(V.str({ max: 200 })), year: V.nullable(V.int({ min: 1880, max: 2200, label: 'Année' })),
+  overview: V.nullable(V.str({ max: 5000, trim: false })), tagline: V.nullable(V.str({ max: 300 })), genres: V.list(V.str({ min: 1, max: 40 }), { max: 12 }),
+  age: V.nullable(V.int({ min: 0, max: 21, label: 'Âge minimum' })),
+};
+const editable = (id) => {
+  const it = get('SELECT * FROM items WHERE id = ?', Number(id));
+  if (!it || !['movie', 'show', 'clip', 'episode', 'season', 'extra'].includes(it.type)) throw new HttpError(404, 'Introuvable');
+  return it;
+};
+router.get('/api/admin/items/:id/edit', async (ctx) => {
+  requireAdmin(ctx);
+  const it = editable(ctx.params.id);
+  const custom = parseJson(it.custom, {}) || {};
+  const out = {
+    id: it.id, type: it.type, custom: Object.keys(custom),
+    fields: { title: it.title, originalTitle: it.original_title, year: it.year, overview: it.overview, tagline: it.tagline, genres: parseJson(it.genres, []), age: it.age },
+    current: { poster: it.poster, backdrop: it.backdrop, logo: it.logo },
+    nfo: !!it.nfo, images: { poster: [], backdrop: [], logo: [] },
+  };
+  // Images proposées : TMDB (toutes langues utiles) puis Trakt
+  if (['movie', 'show'].includes(it.type) && it.tmdb_id && tmdbKey()) {
+    try {
+      const im = await tmdb(`/${it.type === 'movie' ? 'movie' : 'tv'}/${it.tmdb_id}/images`, { include_image_language: `${(getSetting('metadata_lang', 'fr-FR') || 'fr').split('-')[0]},en,null` });
+      const map = (list, size) => (list || []).slice(0, 40).map((x) => ({ src: 'tmdb', ref: x.file_path, preview: `https://image.tmdb.org/t/p/${size}${x.file_path}`, lang: x.iso_639_1 || null, w: x.width, h: x.height }));
+      out.images.poster = map(im.posters, 'w342'); out.images.backdrop = map(im.backdrops, 'w780'); out.images.logo = map(im.logos, 'w300');
+    } catch { /* TMDB injoignable */ }
+  }
+  if (['movie', 'show'].includes(it.type) && traktId()) {
+    try {
+      const t = await traktFind(it);
+      if (t) {
+        for (const u of t.posters || []) out.images.poster.push({ src: 'trakt', ref: u, preview: u });
+        for (const u of t.fanarts || []) out.images.backdrop.push({ src: 'trakt', ref: u, preview: u });
+        if (t.logo) out.images.logo.push({ src: 'trakt', ref: t.logo, preview: t.logo });
+      }
+    } catch { /* */ }
+  }
+  sendJson(ctx.res, out);
+});
+router.put('/api/admin/items/:id/edit', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const it = editable(ctx.params.id);
+  const b = validate(await readBody(ctx.req, 32 * 1024), EDIT_SCHEMA);
+  const custom = parseJson(it.custom, {}) || {};
+  for (const k of Object.keys(EDIT_SCHEMA)) if (b[k] !== undefined) custom[k] = k === 'genres' ? (b.genres || []).map((g) => g.trim()) : b[k];
+  run('UPDATE items SET custom = ? WHERE id = ?', JSON.stringify(custom), it.id);
+  applyCustom(it.id);
+  logActivity('edit', `${me.name} a modifié les infos de « ${b.title || it.title} »`);
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/admin/items/:id/image', async (ctx) => {
+  requireAdmin(ctx);
+  const it = editable(ctx.params.id);
+  const b = validate(await readBody(ctx.req, 8192), { kind: V.oneOf(['poster', 'backdrop', 'logo']), src: V.oneOf(['tmdb', 'trakt', 'none']), ref: V.str({ max: 600 }) }, { required: ['kind', 'src'] });
+  let name = null;
+  if (b.src === 'tmdb') {
+    if (!/^\/[\w.-]+\.(jpg|png|svg|webp)$/i.test(b.ref || '')) throw new HttpError(400, 'Image invalide');
+    name = await downloadImage(b.ref, b.kind === 'backdrop' ? 'w1280' : b.kind === 'logo' ? 'w500' : 'w500');
+  } else if (b.src === 'trakt') name = await downloadTraktImage(b.ref);
+  if (b.src !== 'none' && !name) throw new HttpError(502, 'Image impossible à récupérer');
+  const custom = parseJson(it.custom, {}) || {};
+  custom[b.kind] = name;
+  run('UPDATE items SET custom = ? WHERE id = ?', JSON.stringify(custom), it.id);
+  applyCustom(it.id);
+  sendJson(ctx.res, { ok: true, image: name });
+});
+// Revenir aux infos d'origine (TMDB / .nfo) : les modifications faites à la main sont oubliées
+router.post('/api/admin/items/:id/reset', async (ctx) => {
+  requireAdmin(ctx);
+  const it = editable(ctx.params.id);
+  run('UPDATE items SET custom = NULL WHERE id = ?', it.id);
+  if (it.type === 'movie' && it.tmdb_id && tmdbKey()) await matchMovie(it, it.tmdb_id).catch(() => {});
+  else if (it.type === 'show' && it.tmdb_id && tmdbKey()) await matchShow(it, it.tmdb_id).catch(() => {});
+  sendJson(ctx.res, { ok: true });
 });
 
 const SETTINGS_SCHEMA = {

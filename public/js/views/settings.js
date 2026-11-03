@@ -61,6 +61,8 @@ export async function render(main, { query } = {}) {
       h('input', { type: 'checkbox', class: 'f', checked: heroTrailers(), onchange: (e) => { prefs.set('heroTrailer', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
     h('label', { class: 'switch' }, h('span', {}, 'Bande-annonce en fond des fiches (films, séries, animés)'),
       h('input', { type: 'checkbox', class: 'f', checked: detailsTrailers(), onchange: (e) => { prefs.set('detailsTrailer', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
+    h('label', { class: 'switch' }, h('span', {}, 'Montrer les épisodes manquants dans les saisons (diffusés mais pas dans vos dossiers)'),
+      h('input', { type: 'checkbox', class: 'f', checked: prefs.get('showMissing') !== false, onchange: (e) => { prefs.set('showMissing', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
     h('label', { class: 'switch' }, h('span', {}, 'Avec le son'),
       h('input', { type: 'checkbox', class: 'f', checked: !!prefs.get('detailsSound'), onchange: (e) => { prefs.set('detailsSound', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
     h('div', { class: 'two-cols wide' },
