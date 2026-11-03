@@ -38,16 +38,46 @@ function ensure() {
   if (s === sig && byId.size) return;
   sig = s;
   // Les titres principaux passent en premier : ils gardent le nom sans numéro (les autres versions et les bonus reçoivent « ~numéro »)
-  const rows = all(`SELECT id, type, title, original_title, year, show_id, season_num, episode_num, episode_end FROM items
+  const rows = all(`SELECT id, type, category, title, original_title, year, show_id, season_num, episode_num, episode_end FROM items
     ORDER BY (type IN ('movie','show','channel','book','audiobook') AND version_of IS NULL) DESC, type = 'extra', id`);
   const showTitles = new Map(rows.filter((x) => x.type === 'show').map((x) => [x.id, x.title]));
-  bySlug = new Map(); byId = new Map();
+  bySlug = new Map(); byId = new Map(); meta = new Map();
   for (const i of rows) {
     let slug = baseSlug(i, showTitles) || String(i.id);
     if (bySlug.has(slug.toLowerCase())) slug = `${slug}~${i.id}`;
     bySlug.set(slug.toLowerCase(), i.id);
     byId.set(i.id, slug);
+    meta.set(i.id, { type: i.type, category: i.category, show: i.show_id, s: i.season_num, e: i.episode_num, end: i.episode_end });
   }
+}
+let meta = new Map();
+// Adresse affichée dans le navigateur, rangée comme les dossiers :
+//   films/Inception.2010   séries/Breaking.Bad/S01E02   animes/Frieren/S01E02   clips/Daft.Punk.Around.The.World
+// Les autres (chaînes, livres…) gardent /titre/… et /lecture/…
+export function pathFor(id, { play = false } = {}) {
+  ensure();
+  const m = meta.get(id);
+  const slug = byId.get(id) || String(id);
+  if (!m) return play ? `/lecture/${slug}` : `/titre/${slug}`;
+  const showCat = (sid) => (meta.get(sid) || {}).category === 'anime' ? 'animes' : 'series';
+  if (m.type === 'movie') return `/films/${slug}${play ? '/lecture' : ''}`;
+  if (m.type === 'clip' && m.category !== 'recording') return `/clips/${slug}${play ? '/lecture' : ''}`;
+  if (m.type === 'show') return `/${m.category === 'anime' ? 'animes' : 'series'}/${slug}`;
+  if (m.type === 'season' && m.show) return `/${showCat(m.show)}/${byId.get(m.show) || m.show}`;
+  if (m.type === 'episode' && m.show) {
+    const ep = `S${pad(m.s)}E${pad(m.e)}${m.end ? `-E${pad(m.end)}` : ''}`;
+    return play ? `/${showCat(m.show)}/${byId.get(m.show) || m.show}/${ep}` : `/${showCat(m.show)}/${byId.get(m.show) || m.show}`;
+  }
+  return play ? `/lecture/${slug}` : `/titre/${slug}`;
+}
+// Épisode à partir de l'adresse /series/Breaking.Bad/S01E02
+export function resolveEpisode(showSlug, ep) {
+  const sid = resolveSlug(showSlug);
+  const mm = /^S(\d{1,3})E(\d{1,4})/i.exec(String(ep || ''));
+  if (!sid || !mm) return null;
+  ensure();
+  for (const [id, m] of meta) if (m.type === 'episode' && m.show === sid && m.s === Number(mm[1]) && m.e === Number(mm[2])) return id;
+  return null;
 }
 export function slugFor(id) { ensure(); return byId.get(id) || String(id); }
 export function resolveSlug(slug) {

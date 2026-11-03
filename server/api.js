@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { Router, HttpError, readBody, sendJson, sendFile } from './http.js';
 import { all, get, run, tx, getSetting, setSetting } from './db.js';
-import { slugFor, resolveSlug, cleanName } from './slugs.js';
+import { slugFor, resolveSlug, cleanName, pathFor, resolveEpisode } from './slugs.js';
 import { V, validate, passwordProblem, logSecurity, securityLog, listBans, unbanIp, banIp, attemptStats, isSecure, safeJoin, safeFileName, httpsMode } from './security.js';
 import { twofaOn, startChallenge, verifyChallenge, resendChallenge, twofaEmail, twofaStats, maskEmail } from './twofa.js';
 import { sendMail, smtpConf, smtpOn } from './smtp.js';
@@ -100,7 +100,7 @@ const CODEC = { hevc: 'HEVC', h264: 'H.264', av1: 'AV1', vp9: 'VP9', mpeg2video:
 
 function card(i, prog) {
   return {
-    id: i.id, slug: slugFor(i.id), type: i.type, title: i.title, originalTitle: i.original_title, year: i.year, poster: i.poster, backdrop: i.backdrop, logo: i.logo,
+    id: i.id, slug: slugFor(i.id), path: pathFor(i.id), type: i.type, title: i.title, originalTitle: i.original_title, year: i.year, poster: i.poster, backdrop: i.backdrop, logo: i.logo,
     still: i.still, age: i.age, cert: i.certification, vote: i.vote, genres: parseJson(i.genres, []),
     overview: i.overview, runtime: i.runtime || (i.duration ? Math.round(i.duration / 60) : null),
     season: i.season_num, episode: i.episode_num, showId: i.show_id, showTitle: i.show_title,
@@ -873,7 +873,9 @@ router.post('/api/nowplaying', async (ctx) => {
 // Adresse lisible (#/lecture/Breaking.Bad.S01E02) → numéro du titre
 router.get('/api/resolve', (ctx) => {
   requireProfile(ctx);
-  const id = resolveSlug(new URL(ctx.req.url, 'http://x').searchParams.get('slug'));
+  const q = new URL(ctx.req.url, 'http://x').searchParams;
+  // /series/Breaking.Bad/S01E02 : la série puis l'épisode
+  const id = q.get('ep') ? resolveEpisode(q.get('slug'), q.get('ep')) : resolveSlug(q.get('slug'));
   if (!id) throw new HttpError(404, 'Vidéo introuvable : elle a peut-être été renommée ou supprimée');
   sendJson(ctx.res, { id, slug: slugFor(id) });
 });
@@ -938,7 +940,7 @@ router.post('/api/play/:id', async (ctx) => {
   const prev = item.type === 'episode' ? prevEpisode(item) : null;
   if (item.type === 'episode') scheduleSeason(item.parent_id, true); // génériques prêts pour la suite
   sendJson(ctx.res, {
-    itemId: item.id, slug: slugFor(item.id), type: item.type, mode: decision.mode, reason: decision.reason, url, sessionId, offset,
+    itemId: item.id, slug: slugFor(item.id), path: pathFor(item.id, { play: true }), type: item.type, mode: decision.mode, reason: decision.reason, url, sessionId, offset,
     hwLabel: decision.mode === 'transcode' ? hw.label : null,
     duration: probe.duration, title: item.show_title || item.title, showId: item.show_id || null, season: item.season_num ?? null,
     subtitle: item.type === 'episode' ? `S${item.season_num} · É${item.episode_num} — ${item.title}` : (item.year ? String(item.year) : ''),
@@ -1002,7 +1004,7 @@ async function playChannel(ctx, p, item, b) {
   if (b.replace) sessions.get(b.replace)?.stop();
   const s = startSession({ item, probe: probe || { video: null, audio: [], subs: [], bitrate: 0 }, decision, start: 0, profileId: p.id, quality: 'auto', live: true });
   sendJson(ctx.res, {
-    itemId: item.id, slug: slugFor(item.id), type: 'channel', live: true, mode: decision.mode, reason: decision.reason, url: `/api/hls/${s.id}/index.m3u8`,
+    itemId: item.id, slug: slugFor(item.id), path: pathFor(item.id, { play: true }), type: 'channel', live: true, mode: decision.mode, reason: decision.reason, url: `/api/hls/${s.id}/index.m3u8`,
     sessionId: s.id, offset: 0, hwLabel: decision.mode === 'transcode' ? hw.label : null, duration: 0,
     title: item.title, subtitle: item.grp || 'TV en direct', backdrop: null, logo: item.poster, startAt: 0,
     audioOrder: 0, subId: null, quality: 'auto', audio: [], subs: [], qualities: [], video: probe && probe.video ? { width: probe.video.width, height: probe.video.height, codec: probe.video.codec } : null,

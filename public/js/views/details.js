@@ -4,7 +4,7 @@ import { api, prefs, detailsTrailers } from '../api.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince, hueOf } from '../ui.js';
 import { row, card, playPath, metaLine, frameImage, framePoster, ratingChips, scrollArrows, deleteVideo } from '../components.js';
 import { trailerUrl, trailerPlayer } from '../trailer.js';
-import { go, state, setTitle, showSlug } from '../app.js';
+import { go, state, setTitle, showPath, currentUrl } from '../app.js';
 import { focusEl } from '../nav.js';
 import { tintFrom } from '../ambiance.js';
 
@@ -19,13 +19,14 @@ let regionNames = null;
 const country = (c) => { try { regionNames = regionNames || new Intl.DisplayNames(['fr'], { type: 'region' }); return regionNames.of(c); } catch { return c; } };
 
 export async function render(main, { id, query }) {
+  const from = currentUrl();
   const d = await api(`/api/items/${id}`);
   const isShow = d.type === 'show';
   const isClip = d.type === 'clip';
   const cr = d.credits || {};
   tintFrom(img(d.backdrop || d.poster));
   setTitle(d.title);
-  showSlug('titre', d.slug, ['ep']);
+  showPath(d.path, ['ep'], from);
   const cleanups = [];
 
   const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : frameImage(d.id, d.title, { fade: false }));
