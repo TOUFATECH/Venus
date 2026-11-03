@@ -223,7 +223,6 @@ export function applyTheme(id = currentPlanet()) {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', vars['--night']);
   document.documentElement.dataset.planet = id;
-  document.querySelectorAll('.boot-word').forEach((e) => { e.textContent = (t.brand || t.name).toUpperCase(); });
 }
 
 // Changement de planète : une onde de la couleur de la planète part de l'endroit touché et recouvre l'écran
