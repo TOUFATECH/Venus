@@ -77,7 +77,7 @@ export function startPairing() {
 }
 export function stopPairing() { if (pairing) { pairing.close(); pairing = null; } }
 
-export function remoteLink(code) { return `${location.origin}${location.pathname}#/telecommande?code=${code}`; }
+export function remoteLink(code) { return `${location.origin}/telecommande?code=${code}`; }
 
 // Fenêtre « Piloter avec votre téléphone » : QR code + code à 6 chiffres
 export function showPairing() {

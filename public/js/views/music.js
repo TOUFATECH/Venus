@@ -7,7 +7,7 @@ import { playList, addToQueue, onAudioChange, nowPlaying } from '../audio.js';
 const fmt = (s) => { s = Math.round(s || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 const total = (s) => { const m = Math.round((s || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
 const cover = (c, title, w = 342) => (c ? h('img', { src: img(c, w), alt: '', loading: 'lazy' }) : placeholder(title));
-const albumTile = (a) => h('button', { class: 'm-tile f', onclick: () => go(`/musique/album?key=${encodeURIComponent(a.key)}`) },
+const albumTile = (a) => h('button', { class: 'm-tile f', onclick: () => go(`/musique/album/${encodeURIComponent(a.slug)}`) },
   h('span', { class: 'm-cover' }, cover(a.cover, a.album)), h('b', {}, a.album), h('small', {}, [a.artist, a.year].filter(Boolean).join(' · ')));
 
 function trackList(tracks, { showAlbum = false, showArtist = false } = {}) {
@@ -25,15 +25,15 @@ function trackList(tracks, { showAlbum = false, showArtist = false } = {}) {
   return list;
 }
 
-export async function render(main, { view = 'home', query } = {}) {
+export async function render(main, { view = 'home', query, name } = {}) {
   const page = h('div', { class: 'page music-page' });
   main.append(page);
   if (view === 'album') {
-    const a = await api(`/api/music/album?key=${encodeURIComponent(query.get('key') || '')}`);
+    const a = await api(`/api/music/album?slug=${encodeURIComponent(name || '')}`);
     setTitle(a.album);
     page.append(h('div', { class: 'm-head' }, h('span', { class: 'm-cover big' }, cover(a.cover, a.album, 500)),
       h('div', {}, h('small', {}, 'Album'), h('h1', {}, a.album),
-        h('p', {}, h('button', { class: 'linkish f', onclick: () => go(`/musique/artiste?nom=${encodeURIComponent(a.artist)}`) }, a.artist), [a.year, `${a.tracks.length} titre${a.tracks.length > 1 ? 's' : ''}`, total(a.duration), ...a.genres].filter(Boolean).map((x) => ` · ${x}`).join('')),
+        h('p', {}, h('button', { class: 'linkish f', onclick: () => go(`/musique/artiste/${encodeURIComponent(a.artistSlug)}`) }, a.artist), [a.year, `${a.tracks.length} titre${a.tracks.length > 1 ? 's' : ''}`, total(a.duration), ...a.genres].filter(Boolean).map((x) => ` · ${x}`).join('')),
         h('div', { class: 'actions' }, h('button', { class: 'btn btn-play f', 'data-autofocus': true, onclick: () => playList(a.tracks, 0) }, icon('play'), 'Lecture'),
           h('button', { class: 'btn btn-ghost f', onclick: () => playList([...a.tracks].sort(() => Math.random() - 0.5), 0) }, icon('shuffle'), 'Aléatoire'),
           h('button', { class: 'btn btn-ghost f', onclick: () => addToQueue(a.tracks) }, icon('plus'), 'À la suite')))),
@@ -41,8 +41,7 @@ export async function render(main, { view = 'home', query } = {}) {
     return;
   }
   if (view === 'artist') {
-    const name = query.get('nom') || '';
-    const a = await api(`/api/music/artist?name=${encodeURIComponent(name)}`);
+    const a = await api(`/api/music/artist?slug=${encodeURIComponent(name || '')}`);
     setTitle(a.name);
     page.append(h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, a.name), h('p', { class: 'count' }, `${a.albums.length} album${a.albums.length > 1 ? 's' : ''} · ${a.tracks.length} titres`)),
       h('div', { class: 'head-tools' }, h('button', { class: 'btn btn-play btn-small f', onclick: () => playList([...a.tracks].sort(() => Math.random() - 0.5), 0) }, icon('shuffle'), 'Lecture aléatoire'))),
@@ -58,7 +57,7 @@ export async function render(main, { view = 'home', query } = {}) {
     tabs.replaceChildren(...[['albums', `Albums (${d.albums.length})`], ['artistes', `Artistes (${d.artists.length})`], ['titres', `Titres (${d.total})`]].map(([k, l]) => h('button', { class: `seg-b f${k === tab ? ' on' : ''}`, onclick: () => { tab = k; paint(); } }, l)));
     if (tab === 'albums') body.replaceChildren(d.recent.length > 4 ? h('h2', { class: 'section-title' }, 'Ajoutés récemment') : null, d.recent.length > 4 ? h('div', { class: 'm-row' }, d.recent.slice(0, 12).map(albumTile)) : null,
       h('h2', { class: 'section-title' }, 'Tous les albums'), h('div', { class: 'm-grid' }, d.albums.map(albumTile)));
-    else if (tab === 'artistes') body.replaceChildren(h('div', { class: 'm-grid artists' }, d.artists.map((a) => h('button', { class: 'm-tile f', onclick: () => go(`/musique/artiste?nom=${encodeURIComponent(a.name)}`) },
+    else if (tab === 'artistes') body.replaceChildren(h('div', { class: 'm-grid artists' }, d.artists.map((a) => h('button', { class: 'm-tile f', onclick: () => go(`/musique/artiste/${encodeURIComponent(a.slug)}`) },
       h('span', { class: 'm-cover round' }, cover(a.cover, a.name)), h('b', {}, a.name), h('small', {}, `${a.albums} album${a.albums > 1 ? 's' : ''}`)))));
     else body.replaceChildren(d.tracks.length ? trackList(d.tracks, { showArtist: true, showAlbum: true }) : h('p', { class: 'muted' }, 'Trop de titres pour les afficher tous : passez par les albums ou les artistes.'));
   };

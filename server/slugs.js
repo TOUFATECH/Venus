@@ -22,6 +22,8 @@ function baseSlug(i, showTitles) {
     case 'season': return `${cleanName(show || i.title)}.S${pad(i.season_num)}`;
     case 'episode': return `${cleanName(show || i.title)}.S${pad(i.season_num)}E${pad(i.episode_num)}${i.episode_end ? `-E${pad(i.episode_end)}` : ''}`;
     case 'clip': return cleanName(i.original_title ? `${i.original_title} ${i.title}` : i.title);
+    case 'extra': return cleanName(`Bonus ${i.title}`);
+    case 'track': return cleanName(`${i.original_title || ''} ${i.title}`);
     default: return cleanName(i.title);
   }
 }
@@ -35,7 +37,9 @@ function ensure() {
   const s = `${r.n}:${r.m}:${r.t}:${r.y}:${r.o}`;
   if (s === sig && byId.size) return;
   sig = s;
-  const rows = all('SELECT id, type, title, original_title, year, show_id, season_num, episode_num, episode_end FROM items ORDER BY id');
+  // Les titres principaux passent en premier : ils gardent le nom sans numéro (les autres versions et les bonus reçoivent « ~numéro »)
+  const rows = all(`SELECT id, type, title, original_title, year, show_id, season_num, episode_num, episode_end FROM items
+    ORDER BY (type IN ('movie','show','channel','book','audiobook') AND version_of IS NULL) DESC, type = 'extra', id`);
   const showTitles = new Map(rows.filter((x) => x.type === 'show').map((x) => [x.id, x.title]));
   bySlug = new Map(); byId = new Map();
   for (const i of rows) {

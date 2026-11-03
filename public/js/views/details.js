@@ -263,7 +263,7 @@ export async function render(main, { id, query }) {
           h('button', { class: 'nu-shot f', 'aria-label': `Lire ${label}`, onclick: () => go(playPath(nu.id)) }, shot, h('span', { class: 'ep-play' }, icon('play')),
             pct ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null),
           h('div', { class: 'nu-text' },
-            h('a', { class: 'nu-link f', href: `#/titre/${d.id}?ep=${nu.id}`, title: label, onclick: (e) => { e.preventDefault(); toEpisode(); } }, label),
+            h('a', { class: 'nu-link f', href: `/titre/${d.id}?ep=${nu.id}`, title: label, onclick: (e) => { e.preventDefault(); toEpisode(); } }, label),
             h('small', {}, [nuSeason ? (nuSeason.title || `Saison ${nuSeason.number}`) : null, nu.runtime ? `${nu.runtime} min` : null, pct && p.duration ? `${Math.max(1, Math.round((p.duration - p.position) / 60))} min restantes` : null].filter(Boolean).join(' · ')),
             nu.overview ? h('p', {}, nu.overview) : null))));
     }

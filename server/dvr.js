@@ -87,7 +87,7 @@ function start(rec) {
     const item = get('SELECT id FROM items WHERE path = ?', file);
     run("UPDATE recordings SET status = 'done', item_id = ? WHERE id = ?", item ? item.id : null, rec.id);
     logActivity('record', `« ${rec.title} » enregistré`);
-    notify({ title: 'Enregistrement terminé', body: `« ${rec.title} » est prêt à regarder`, url: item ? `/#/lecture/${item.id}` : '/#/tv', tag: `rec-${rec.id}` }, rec.profile_id ? { profileId: rec.profile_id } : {});
+    notify({ title: 'Enregistrement terminé', body: `« ${rec.title} » est prêt à regarder`, url: item ? `/lecture/${item.id}` : '/tv', tag: `rec-${rec.id}` }, rec.profile_id ? { profileId: rec.profile_id } : {});
     emitHook('recording.done', { title: rec.title, channel: ch.title, itemId: item ? item.id : null });
     void r;
   });

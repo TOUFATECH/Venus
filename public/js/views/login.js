@@ -95,5 +95,5 @@ export function render(main, { done }) {
   const msg = state.status && state.status.loginMessage;
   if (msg) form.insertBefore(h('p', { class: 'login-msg' }, msg), form.children[1] || null);
   main.append(h('div', { class: 'center-screen' }, form));
-  setMode(new URLSearchParams(location.hash.split('?')[1] || '').has('code') ? 'code' : 'password');
+  setMode(new URLSearchParams(location.search || location.hash.split('?')[1] || '').has('code') ? 'code' : 'password');
 }
