@@ -118,6 +118,14 @@ CREATE TABLE IF NOT EXISTS mylist (
 );
 `);
 
+// Collections (choisies par l'administrateur) et listes de lecture (propres à chaque profil)
+db.exec(`
+CREATE TABLE IF NOT EXISTS collections (id INTEGER PRIMARY KEY, name TEXT NOT NULL, overview TEXT, created_at INTEGER);
+CREATE TABLE IF NOT EXISTS collection_items (collection_id INTEGER REFERENCES collections(id) ON DELETE CASCADE, item_id INTEGER REFERENCES items(id) ON DELETE CASCADE, pos INTEGER, PRIMARY KEY (collection_id, item_id));
+CREATE TABLE IF NOT EXISTS playlists (id INTEGER PRIMARY KEY, profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at INTEGER, updated_at INTEGER);
+CREATE TABLE IF NOT EXISTS playlist_items (playlist_id INTEGER REFERENCES playlists(id) ON DELETE CASCADE, item_id INTEGER REFERENCES items(id) ON DELETE CASCADE, pos INTEGER, PRIMARY KEY (playlist_id, item_id));
+`);
+
 // Migrations légères (bases créées par une version précédente)
 const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
 for (const [col, def] of [['category', 'TEXT'], ['release_date', 'TEXT'], ['popularity', 'REAL'], ['stream_url', 'TEXT'], ['grp', 'TEXT'],

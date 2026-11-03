@@ -19,6 +19,7 @@ export const NAV_ITEMS = [
   { id: 'clips', href: '/clips', label: 'Clips', icon: 'note', cat: 'clip' },
   { id: 'tv', href: '/tv', label: 'TV', icon: 'live', cat: 'channel' },
   { id: 'mylist', href: '/liste', label: 'Ma liste', icon: 'list' },
+  { id: 'collections', href: '/collections', label: 'Collections', icon: 'grid4', hint: 'Sagas, collections et listes de lecture' },
   { id: 'search', href: '/recherche', label: 'Recherche', icon: 'search' },
   { id: 'seance', href: '/seance', label: 'Séance', icon: 'people', hint: 'Regarder ensemble, chacun sur son écran' },
   { id: 'remote', action: 'remote', label: 'Télécommande', icon: 'remote', hint: 'Piloter Venus avec votre téléphone' },
@@ -28,7 +29,7 @@ export const NAV_ITEMS = [
   { id: 'dashboard', href: '/tableau-de-bord', label: 'Tableau de bord', icon: 'gauge', admin: true, hint: 'Lectures en cours, appareils, code de connexion' },
 ];
 // Menu court par défaut : Aujourd'hui, Accueil, Films, Séries, Animés, Nouveautés, Recherche ; le reste dans « Plus »
-const DEFAULT_HIDDEN = ['clips', 'tv', 'mylist', 'seance', 'remote', 'add', 'dashboard', 'stats', 'downloads'];
+const DEFAULT_HIDDEN = ['clips', 'tv', 'mylist', 'collections', 'seance', 'remote', 'add', 'dashboard', 'stats', 'downloads'];
 const labelOf = (it) => (typeof it.label === 'function' ? it.label() : it.label);
 const iconOf = (it) => (typeof it.icon === 'function' ? it.icon() : it.icon);
 export { labelOf, iconOf };

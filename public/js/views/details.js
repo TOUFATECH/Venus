@@ -85,12 +85,14 @@ export async function render(main, { id, query }) {
     const m = await import('./downloads.js');
     m.openDownload({ id: d.id, title: d.title, size: d.file && d.file.size, duration: d.duration || (d.runtime ? d.runtime * 60 : 0) });
   } }, icon('down')));
-  if (state.profile.isAdmin) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Modifier', title: 'Modifier les infos, les images, l’identification', onclick: () => {
+  actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Plus d’options', title: 'Ajouter à une liste, modifier…', onclick: () => {
+    const admin = state.profile.isAdmin;
     const s = sheet(d.title, h('div', {},
-      h('button', { class: 'opt ic f', onclick: () => { s.close(); editInfo(d); } }, icon('edit'), 'Modifier les infos', h('small', {}, 'Titre, résumé, année, genres, âge')),
-      isClip ? null : h('button', { class: 'opt ic f', onclick: () => { s.close(); chooseImages(d); } }, icon('grid4'), 'Choisir les images', h('small', {}, 'Affiche, fond, logo (TMDB, Trakt)')),
-      isClip ? null : h('button', { class: 'opt ic f', onclick: () => { s.close(); fixMatch(d); } }, icon('search'), 'Corriger l’identification', h('small', {}, 'Ce n’est pas le bon titre'))));
-  } }, icon('gear')));
+      h('button', { class: 'opt ic f', onclick: async () => { s.close(); const m = await import('./collections.js'); m.addToSheet(d); } }, icon('list'), 'Ajouter à une liste de lecture', h('small', {}, admin ? 'ou à une collection' : '')),
+      !admin ? null : h('button', { class: 'opt ic f', onclick: () => { s.close(); editInfo(d); } }, icon('edit'), 'Modifier les infos', h('small', {}, 'Titre, résumé, année, genres, âge')),
+      isClip || !admin ? null : h('button', { class: 'opt ic f', onclick: () => { s.close(); chooseImages(d); } }, icon('grid4'), 'Choisir les images', h('small', {}, 'Affiche, fond, logo (TMDB, Trakt)')),
+      isClip || !admin ? null : h('button', { class: 'opt ic f', onclick: () => { s.close(); fixMatch(d); } }, icon('search'), 'Corriger l’identification', h('small', {}, 'Ce n’est pas le bon titre'))));
+  } }, icon('more')));
   if (state.profile.isAdmin) {
     const nEps = isShow ? d.seasons.reduce((n, s) => n + s.episodes.length, 0) : 0;
     const size = !isShow && d.file && d.file.size ? d.file.size : 0;
