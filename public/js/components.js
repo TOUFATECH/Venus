@@ -349,7 +349,7 @@ export function quickMenu(item) {
       const frame = h('iframe', { class: 'trailer-frame', src: trailerUrl(item.trailer), title: `Bande-annonce de ${item.title}`, allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true });
       sheet(`Bande-annonce : ${item.title}`, h('div', { class: 'trailer-box' }, frame), { wide: true, onClose: () => frame.remove() });
     }) : null,
-    item.type === 'movie' || isEp ? opt('down', 'Télécharger', async () => { const m = await import('./views/downloads.js'); m.openDownload({ id: item.id, title: item.title, duration: (item.runtime || 0) * 60 }); }) : null,
+    (item.type === 'movie' || isEp) && !(state.profile && state.profile.perms && state.profile.perms.download === false) ? opt('down', 'Télécharger', async () => { const m = await import('./views/downloads.js'); m.openDownload({ id: item.id, title: item.title, duration: (item.runtime || 0) * 60 }); }) : null,
     state.profile && state.profile.isAdmin && item.type !== 'channel' ? opt('trash', item.type === 'show' ? 'Supprimer la série' : 'Supprimer la vidéo', () => deleteVideo({ id: item.id, what: isEp ? `l’épisode S${item.season} É${item.episode}` : item.type === 'show' ? `la série « ${item.title} »` : `« ${item.title} »`, onDone: () => window.dispatchEvent(new HashChangeEvent('hashchange')) })) : null));
 }
 

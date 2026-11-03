@@ -25,6 +25,7 @@ import { detectHardware } from './hw.js';
 import { probeLive, readChapters } from './probe.js';
 import { runTask, listTasks } from './tasks.js';
 import { versionLabel, groupVersions } from './versions.js';
+import { permsOf, accessProblem, libraryClause, validPerms } from './perms.js';
 import { traktId, testTrakt, posterSource, traktFind, downloadTraktImage } from './trakt.js';
 import { ensureTrickplay, trickplayInfo, trickplaySheet, trickplayMode, removeTrickplay } from './trickplay.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
@@ -46,17 +47,21 @@ const imagesDir = path.join(config.dataDir, 'images');
 const parseJson = (s, d) => { if (s == null) return d; try { return JSON.parse(s) ?? d; } catch { return d; } };
 
 function ageClause(profile, alias = 'i') {
-  // Les autres versions d'un même film n'apparaissent pas dans les listes (choix sur la fiche)
-  if (!profile || profile.max_age == null) return { sql: `${alias}.version_of IS NULL`, args: [] };
+  // Les autres versions d'un même film n'apparaissent pas dans les listes (choix sur la fiche) ;
+  // bibliothèques limitées pour certains profils
+  const lib = libraryClause(profile, alias);
+  if (!profile || profile.max_age == null) return { sql: `${alias}.version_of IS NULL AND ${lib.sql}`, args: lib.args };
   const allowUnrated = getSetting('kids_allow_unrated', false);
   return {
-    sql: `${alias}.version_of IS NULL AND (${alias}.age <= ?${allowUnrated ? ` OR ${alias}.age IS NULL` : ''})`,
-    args: [profile.max_age],
+    sql: `${alias}.version_of IS NULL AND ${lib.sql} AND (${alias}.age <= ?${allowUnrated ? ` OR ${alias}.age IS NULL` : ''})`,
+    args: [...lib.args, profile.max_age],
   };
 }
 
 function visible(profile, item) {
   if (!item) return false;
+  const r = permsOf(profile);
+  if (!r.admin && Array.isArray(r.libraries) && item.library_id != null && !r.libraries.includes(item.library_id)) return false;
   if (!profile || profile.max_age == null) return true;
   const top = ['movie', 'show', 'clip', 'channel'].includes(item.type) ? item : get('SELECT age FROM items WHERE id=?', item.show_id);
   if (!top) return false;
@@ -297,6 +302,8 @@ router.post('/api/profiles/:id/select', async (ctx) => {
   const b = validate(await readBody(ctx.req, 4096), { pin: V.str({ max: 8, label: 'Code PIN' }) });
   const p = get('SELECT * FROM profiles WHERE id = ?', Number(ctx.params.id));
   if (!p) throw new HttpError(404, 'Profil introuvable');
+  const why = accessProblem(p, ctx.ip);
+  if (why) throw new HttpError(403, why);
   if (p.pin_hash) {
     checkRate(`pin:${p.id}`, ctx.ip);
     if (!verifySecret(b.pin || '', p.pin_hash)) { failRate(`pin:${p.id}`, ctx.ip, `Code PIN faux pour le profil « ${p.name} »`); throw new HttpError(403, 'Code PIN incorrect'); }
@@ -333,7 +340,7 @@ router.put('/api/profiles/:id', async (ctx) => {
   const b = validate(await readBody(ctx.req, 8192), {
     name: V.str({ min: 1, max: 30, label: 'Nom' }), avatar: V.int({ min: 0, max: 50 }), pin: V.nullable(V.pin()),
     subtitleLang: V.str({ max: 8, pattern: /^[a-z]{2,3}(-[a-z]{2,4})?$|^none$/i }), audioLang: V.str({ max: 8, pattern: /^[a-z]{2,3}(-[a-z]{2,4})?$/i }),
-    maxAge: V.nullable(V.int({ min: 0, max: 21 })), isAdmin: V.bool(),
+    maxAge: V.nullable(V.int({ min: 0, max: 21 })), isAdmin: V.bool(), perms: (v) => validPerms(v),
   });
   const p = get('SELECT * FROM profiles WHERE id = ?', id);
   if (!p) throw new HttpError(404, 'Profil introuvable');
@@ -349,12 +356,16 @@ router.put('/api/profiles/:id', async (ctx) => {
   if (b.audioLang != null) run('UPDATE profiles SET audio_lang = ? WHERE id = ?', b.audioLang, id);
   if (me.is_admin) {
     if (b.maxAge !== undefined) run('UPDATE profiles SET max_age = ? WHERE id = ?', b.maxAge, id);
+    if (b.perms !== undefined) {
+      run('UPDATE profiles SET perms = ? WHERE id = ?', JSON.stringify(b.perms), id);
+      logSecurity('droits', ctx.ip, `${me.name} a changé les droits du profil « ${p.name} »`, 'info');
+    }
     if (b.isAdmin !== undefined && id !== me.id) {
       if (b.isAdmin && !p.pin_hash && !b.pin) throw new HttpError(400, 'Donnez d’abord un code PIN à ce profil : un administrateur doit en avoir un');
       run('UPDATE profiles SET is_admin = ? WHERE id = ?', b.isAdmin ? 1 : 0, id);
       logSecurity('droits', ctx.ip, `${me.name} a ${b.isAdmin ? 'donné' : 'retiré'} les droits d’administrateur ${b.isAdmin ? 'à' : 'au profil'} « ${p.name} »`, 'warn');
     }
-  } else if (b.maxAge !== undefined || b.isAdmin !== undefined) {
+  } else if (b.maxAge !== undefined || b.isAdmin !== undefined || b.perms !== undefined) {
     logSecurity('droits', ctx.ip, `« ${me.name} » a tenté de changer ses propres droits`, 'warn');
     throw new HttpError(403, 'Réservé à l’administrateur');
   }
@@ -891,6 +902,7 @@ router.post('/api/play/:id', async (ctx) => {
 
   const decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? 'auto' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
   decision.burnIndex = b.preview ? null : burnIndex;
+  if (decision.mode === 'transcode' && !b.preview && !permsOf(p).transcode) throw new HttpError(403, 'Cette vidéo doit être convertie pour cet appareil, ce qui n’est pas autorisé pour ce profil. Essayez sur un autre appareil ou demandez à l’administrateur.');
   // Aperçu (affiche d'accueil) : lecture directe quand c'est possible ; sinon petite conversion légère
   if (b.preview && decision.mode === 'transcode') Object.assign(decision, { limitHeight: 480, limitBitrate: 1.2e6 });
   const progress = get('SELECT * FROM progress WHERE profile_id=? AND item_id=?', p.id, item.id);
@@ -1106,6 +1118,7 @@ router.get('/api/items/:id/download', (ctx) => {
   const p = requireProfile(ctx);
   const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
   if (!item || !item.path || !visible(p, item)) throw new HttpError(404, 'Introuvable');
+  if (!permsOf(p).download) throw new HttpError(403, 'Les téléchargements ne sont pas autorisés pour ce profil');
   if (getSetting('allow_downloads', true) === false && !p.is_admin) throw new HttpError(403, 'Téléchargements désactivés par l’administrateur');
   const name = `${niceName(item)}${path.extname(item.path)}`;
   ctx.res.setHeader('Content-Disposition', `attachment; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(name)}`);
@@ -1113,6 +1126,7 @@ router.get('/api/items/:id/download', (ctx) => {
 });
 router.post('/api/items/:id/download', async (ctx) => {
   const p = requireProfile(ctx);
+  if (!permsOf(p).download) throw new HttpError(403, 'Les téléchargements ne sont pas autorisés pour ce profil');
   const b = await readBody(ctx.req);
   const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
   if (!item || !visible(p, item)) throw new HttpError(404, 'Introuvable');

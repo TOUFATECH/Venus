@@ -2338,3 +2338,18 @@ html[data-glass] .coll-cover { border-radius: 18px; box-shadow: 0 10px 30px rgba
 .pl-tools { display: flex; gap: 4px; flex: none; }
 .pl-main:focus-visible .pl-thumb { outline: 3px solid var(--sulfur); outline-offset: 2px; }
 @media (max-width: 600px) { .pl-n { display: none; } .pl-tools .pl-up, .pl-tools .pl-down { display: none; } }
+
+/* ------------------------------------------------ droits des profils */
+.perms { margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--edge); display: flex; flex-direction: column; gap: 4px; }
+.perms h3 { margin: 0 0 6px; }
+.perms .switch small { display: block; color: var(--haze); font-size: .8rem; font-weight: 500; }
+.perm-libs { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 4px 0 8px; }
+.chk { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; }
+.chk input { width: 18px; height: 18px; accent-color: var(--sulfur); }
+.slots { display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px; }
+.slot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.slot .input { width: auto; min-width: 110px; }
+.slot .days { display: flex; gap: 4px; }
+.day { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--edge); background: none; color: var(--haze); font-weight: 800; cursor: pointer; }
+.day.on { background: var(--sulfur); border-color: var(--sulfur); color: var(--night); }
+.perms .field { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
