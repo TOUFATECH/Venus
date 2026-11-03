@@ -23,7 +23,10 @@ export class Router {
   constructor() { this.routes = []; }
   add(method, pattern, handler) {
     const keys = [];
-    const re = new RegExp('^' + pattern.replace(/\/:(\w+)/g, (_, k) => { keys.push(k); return '/([^/]+)'; }) + '/?$');
+    // « /* » en fin de motif : le reste du chemin (avec ses « / ») dans params.rest
+    let src = pattern.replace(/\/:(\w+)/g, (_, k) => { keys.push(k); return '/([^/]+)'; });
+    if (src.endsWith('/*')) { src = `${src.slice(0, -2)}/(.+)`; keys.push('rest'); }
+    const re = new RegExp('^' + src + '/?$');
     this.routes.push({ method, re, keys, handler });
   }
   get(p, h) { this.add('GET', p, h); }

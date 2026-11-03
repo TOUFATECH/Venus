@@ -10,6 +10,7 @@ import { remoteReady } from './netshare.js';
 import { movieNfo, showNfo } from './nfo.js';
 import { groupVersions } from './versions.js';
 import { rememberEpgUrl } from './epg.js';
+import { scanMediaLibrary } from './media.js';
 
 const VIDEO_EXT = new Set(['.mkv', '.mp4', '.m4v', '.avi', '.mov', '.webm', '.ts', '.m2ts', '.mts', '.wmv', '.flv', '.mpg', '.mpeg', '.vob', '.ogv', '.3gp']);
 const SKIP_DIR = /^(\.|@eaDir$|#recycle$|\$RECYCLE|System Volume Information$|lost\+found$|samples?$)/i;
@@ -176,6 +177,12 @@ export async function scanAll({ force = false } = {}) {
     for (const lib of libs) {
       if (lib.type === 'iptv') { scanState.phase = `Chaînes : ${lib.name}`; await scanIptv(lib).catch((e) => console.warn(`[iptv] ${lib.name} : ${e.message}`)); continue; }
       if (!fs.existsSync(lib.path)) { console.warn(`[scan] dossier introuvable : ${lib.path}`); continue; }
+      if (['music', 'photos', 'books'].includes(lib.type)) {
+        if (lib.remote && !remoteReady(lib)) continue;
+        scanState.phase = `Analyse : ${lib.name}`;
+        added.push(...await scanMediaLibrary(lib, () => { scanState.done++; }).catch((e) => { console.warn(`[scan] ${lib.name} : ${e.message}`); return []; }));
+        continue;
+      }
       if (lib.remote && !remoteReady(lib)) { console.warn(`[scan] partage réseau indisponible : ${lib.name}, on garde la bibliothèque telle quelle`); continue; }
       const files = walk(lib.path);
       const known = new Map(all("SELECT id, type, path, size, mtime FROM items WHERE library_id=? AND path IS NOT NULL", lib.id).map((r) => [r.path, r]));

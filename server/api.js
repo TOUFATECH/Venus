@@ -1,7 +1,7 @@
 // Routes de l'API
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { Router, HttpError, readBody, sendJson, sendFile } from './http.js';
@@ -31,6 +31,8 @@ import { logLines, logText } from './logbuf.js';
 import { createApiKey, listApiKeys, revokeApiKey } from './apikeys.js';
 import { HOOK_EVENTS, listHooks, saveHooks, testHook, emitHook } from './webhooks.js';
 import { programsBetween, programById, nowNext, epgState, refreshEpg } from './epg.js';
+import { lyricsOf, epubPackage, cbzPages } from './media.js';
+import { zipRead } from './zip.js';
 import { schedule as scheduleRecording, cancel as cancelRecording, listRecordings, listRules, addRule, removeRule, dvrDir } from './dvr.js';
 import { traktId, testTrakt, posterSource, traktFind, downloadTraktImage } from './trakt.js';
 import { ensureTrickplay, trickplayInfo, trickplaySheet, trickplayMode, removeTrickplay } from './trickplay.js';
@@ -411,6 +413,10 @@ router.get('/api/categories', (ctx) => {
   const p = requireProfile(ctx);
   const age = ageClause(p);
   const rows = all(`SELECT ${CATEGORY_SQL} AS cat, COUNT(*) AS n FROM items i WHERE i.type IN ${TOP_TYPES} AND ${age.sql} GROUP BY cat`, ...age.args);
+  // Musique, photos, livres
+  const lib = libraryClause(p);
+  rows.push(...all(`SELECT CASE WHEN i.type = 'track' THEN 'music' WHEN i.type = 'photo' THEN 'photo' ELSE 'book' END AS cat, COUNT(*) AS n FROM items i
+    WHERE (i.type = 'photo' OR i.type IN ('book','audiobook') OR (i.type = 'track' AND i.category = 'music')) AND ${lib.sql} GROUP BY cat`, ...lib.args));
   sendJson(ctx.res, Object.fromEntries(rows.map((r) => [r.cat, r.n])));
 });
 
@@ -433,6 +439,7 @@ router.get('/api/home', (ctx) => {
     let it = get(`SELECT i.*, s.title AS show_title, s.backdrop AS show_backdrop, s.logo AS show_logo, s.poster AS show_poster
                   FROM items i LEFT JOIN items s ON s.id = i.show_id WHERE i.id = ?`, pr.item_id);
     if (!it || !visible(p, it)) continue;
+    if (['book', 'audiobook', 'track', 'photo'].includes(it.type)) continue; // livres et musique : dans leurs pages
     if (it.type === 'episode') {
       if (seenShows.has(it.show_id)) continue;
       seenShows.add(it.show_id);
@@ -1873,7 +1880,7 @@ router.post('/api/admin/network/shares', async (ctx) => {
   catch (e) { throw new HttpError(422, e.message); }
 });
 
-const NAMES = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct' };
+const NAMES = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct', music: 'Musique', photos: 'Photos', books: 'Livres' };
 
 router.post('/api/admin/libraries', async (ctx) => {
   requireAdmin(ctx);
@@ -2329,4 +2336,195 @@ router.put('/api/admin/livetv', async (ctx) => {
   if (b.post !== undefined) setSetting('dvr_post', b.post);
   if (b.everyone !== undefined) setSetting('dvr_everyone', b.everyone);
   sendJson(ctx.res, { ok: true });
+});
+
+// ------------------------------------------------------------------ musique, photos, livres
+const libOk = (p) => libraryClause(p);
+const trackOut = (t, pm) => ({ id: t.id, title: t.title, artist: t.original_title, album: t.grp, albumKey: t.key, disc: t.season_num, track: t.episode_num, year: t.year, duration: t.duration, cover: t.poster,
+  progress: pm && pm.get(t.id) ? { position: pm.get(t.id).position, watched: !!pm.get(t.id).watched } : null });
+router.get('/api/music', (ctx) => {
+  const p = requireProfile(ctx);
+  const lib = libOk(p);
+  const tracks = all(`SELECT * FROM items i WHERE i.type = 'track' AND i.category = 'music' AND ${lib.sql} ORDER BY i.original_title, i.grp, i.season_num, i.episode_num`, ...lib.args);
+  const albums = new Map(), artists = new Map();
+  for (const t of tracks) {
+    const a = albums.get(t.key) || { key: t.key, album: t.grp, artist: t.original_title, year: t.year, cover: t.poster, count: 0, duration: 0, added: 0 };
+    a.count++; a.duration += t.duration || 0; a.added = Math.max(a.added, t.added_at || 0); a.year = a.year || t.year; a.cover = a.cover || t.poster;
+    albums.set(t.key, a);
+    const ar = artists.get(t.original_title) || { name: t.original_title, albums: new Set(), count: 0, cover: t.poster };
+    ar.albums.add(t.key); ar.count++; artists.set(t.original_title, ar);
+  }
+  sendJson(ctx.res, {
+    albums: [...albums.values()].sort((a, b) => a.artist.localeCompare(b.artist, 'fr') || (a.year || 0) - (b.year || 0)),
+    artists: [...artists.values()].map((a) => ({ name: a.name, albums: a.albums.size, count: a.count, cover: a.cover })).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    recent: [...albums.values()].sort((a, b) => b.added - a.added).slice(0, 20),
+    tracks: tracks.length > 3000 ? [] : tracks.map((t) => trackOut(t)), total: tracks.length,
+  });
+});
+router.get('/api/music/album', (ctx) => {
+  const p = requireProfile(ctx);
+  const lib = libOk(p);
+  const key = String(ctx.url.searchParams.get('key') || '').slice(0, 500);
+  const tracks = all(`SELECT * FROM items i WHERE i.type = 'track' AND i.category = 'music' AND i.key = ? AND ${lib.sql} ORDER BY i.season_num, i.episode_num, i.sort_title`, key, ...lib.args);
+  if (!tracks.length) throw new HttpError(404, 'Album introuvable');
+  const t0 = tracks[0];
+  sendJson(ctx.res, { key, album: t0.grp, artist: t0.original_title, year: tracks.map((t) => t.year).find(Boolean) || null, cover: tracks.map((t) => t.poster).find(Boolean) || null,
+    genres: [...new Set(tracks.flatMap((t) => parseJson(t.genres, [])))].slice(0, 5), duration: tracks.reduce((n, t) => n + (t.duration || 0), 0), tracks: tracks.map((t) => trackOut(t)) });
+});
+router.get('/api/music/artist', (ctx) => {
+  const p = requireProfile(ctx);
+  const lib = libOk(p);
+  const name = String(ctx.url.searchParams.get('name') || '').slice(0, 300);
+  const tracks = all(`SELECT * FROM items i WHERE i.type = 'track' AND i.category = 'music' AND i.original_title = ? AND ${lib.sql} ORDER BY i.year, i.grp, i.season_num, i.episode_num`, name, ...lib.args);
+  if (!tracks.length) throw new HttpError(404, 'Artiste introuvable');
+  const albums = new Map();
+  for (const t of tracks) { const a = albums.get(t.key) || { key: t.key, album: t.grp, artist: t.original_title, year: t.year, cover: t.poster, count: 0 }; a.count++; albums.set(t.key, a); }
+  sendJson(ctx.res, { name, albums: [...albums.values()], tracks: tracks.map((t) => trackOut(t)) });
+});
+// Lecture audio : fichier tel quel quand le navigateur sait le lire, sinon conversion en MP3 à la volée
+const NATIVE_AUDIO = new Set(['.mp3', '.m4a', '.aac', '.m4b', '.wav', '.flac', '.ogg', '.oga', '.opus']);
+router.get('/api/audio/:id', (ctx) => {
+  const p = requireProfile(ctx);
+  const t = get("SELECT * FROM items WHERE id = ? AND type IN ('track','audiobook')", Number(ctx.params.id));
+  if (!t || !t.path || !visible(p, t)) throw new HttpError(404, 'Introuvable');
+  const ext = path.extname(t.path).toLowerCase();
+  const force = ctx.url.searchParams.get('mp3') === '1';
+  if (!force && NATIVE_AUDIO.has(ext)) return sendFile(ctx.req, ctx.res, t.path, { cache: 'private, max-age=3600' });
+  const start = Math.max(0, Number(ctx.url.searchParams.get('t')) || 0);
+  ctx.res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store' });
+  const ff = spawn(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...(start ? ['-ss', String(start)] : []), '-i', t.path, '-vn', '-map', '0:a:0', '-c:a', 'libmp3lame', '-b:a', '256k', '-f', 'mp3', 'pipe:1'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  ff.stdout.pipe(ctx.res);
+  ctx.req.on('close', () => ff.kill('SIGKILL'));
+});
+router.get('/api/lyrics/:id', (ctx) => {
+  const p = requireProfile(ctx);
+  const t = get("SELECT * FROM items WHERE id = ? AND type = 'track'", Number(ctx.params.id));
+  if (!t || !visible(p, t)) throw new HttpError(404, 'Introuvable');
+  sendJson(ctx.res, lyricsOf(t) || { synced: null, plain: null });
+});
+
+// Photos : albums = dossiers
+router.get('/api/photos', (ctx) => {
+  const p = requireProfile(ctx);
+  const lib = libOk(p);
+  const rows = all(`SELECT i.key, i.grp, COUNT(*) AS n, MAX(i.release_date) AS last, MIN(i.id) AS first FROM items i WHERE i.type = 'photo' AND ${lib.sql} GROUP BY i.key ORDER BY last DESC`, ...lib.args);
+  const covers = new Map(all(`SELECT i.key, i.id FROM items i WHERE i.type = 'photo' AND ${lib.sql} GROUP BY i.key HAVING i.release_date = MAX(i.release_date)`, ...lib.args).map((r) => [r.key, r.id]));
+  sendJson(ctx.res, rows.map((r) => ({ key: r.key, name: r.grp, count: r.n, last: r.last, cover: covers.get(r.key) || r.first })));
+});
+router.get('/api/photos/album', (ctx) => {
+  const p = requireProfile(ctx);
+  const lib = libOk(p);
+  const key = String(ctx.url.searchParams.get('key') || '').slice(0, 1000);
+  const list = all(`SELECT i.id, i.title, i.release_date, i.size FROM items i WHERE i.type = 'photo' AND i.key = ? AND ${lib.sql} ORDER BY i.release_date, i.sort_title`, key, ...lib.args);
+  if (!list.length) throw new HttpError(404, 'Album introuvable');
+  sendJson(ctx.res, { key, name: path.basename(key) || key, photos: list.map((x) => ({ id: x.id, title: x.title, date: x.release_date, size: x.size })) });
+});
+const photoCache = path.join(config.dataDir, 'cache', 'photos');
+router.get('/api/photo/:id', async (ctx) => {
+  requireDevice(ctx);
+  const it = get("SELECT * FROM items WHERE id = ? AND type = 'photo'", Number(ctx.params.id));
+  if (!it || !it.path || !fs.existsSync(it.path)) throw new HttpError(404, 'Photo introuvable');
+  const p = ctx.auth.profile;
+  if (p && !visible(p, it)) throw new HttpError(404, 'Photo introuvable');
+  const w = Number(ctx.url.searchParams.get('w')) || 0;
+  const ext = path.extname(it.path).toLowerCase();
+  // Les formats que les navigateurs ne lisent pas (HEIC, TIFF) sont toujours convertis
+  if (!w && ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif'].includes(ext)) return sendFile(ctx.req, ctx.res, it.path, { cache: 'private, max-age=86400' });
+  const size = [320, 640, 1280, 2048].find((x) => x >= (w || 2048)) || 2048;
+  const out = path.join(photoCache, `${it.id}_${it.mtime}_${size}.jpg`);
+  if (!fs.existsSync(out)) {
+    if (!resizing.has(out)) resizing.set(out, resizeImage(it.path, out, size).finally(() => resizing.delete(out)));
+    if (!(await resizing.get(out))) throw new HttpError(415, 'Format de photo non pris en charge');
+  }
+  sendFile(ctx.req, ctx.res, out, { cache: 'private, max-age=2592000, immutable' });
+});
+
+// Livres : EPUB lu chapitre par chapitre, CBZ page par page, PDF par le lecteur du navigateur
+router.get('/api/books', (ctx) => {
+  const p = requireProfile(ctx);
+  const lib = libOk(p);
+  const list = all(`SELECT i.* FROM items i WHERE i.type IN ('book','audiobook') AND ${lib.sql} ORDER BY i.original_title, i.sort_title`, ...lib.args);
+  const pm = progressMap(p.id, list.map((b) => b.id));
+  sendJson(ctx.res, list.map((b) => ({ id: b.id, type: b.type, format: b.category, title: b.title, author: b.original_title, year: b.year, cover: b.poster, duration: b.duration, size: b.size,
+    progress: pm.get(b.id) ? { position: pm.get(b.id).position, duration: pm.get(b.id).duration, watched: !!pm.get(b.id).watched, updated: pm.get(b.id).updated_at } : null })));
+});
+const bookOf = (ctx) => {
+  const p = requireProfile(ctx);
+  const b = get("SELECT * FROM items WHERE id = ? AND type IN ('book','audiobook')", Number(ctx.params.id));
+  if (!b || !visible(p, b) || !b.path || !fs.existsSync(b.path)) throw new HttpError(404, 'Livre introuvable');
+  return { p, b };
+};
+router.get('/api/books/:id', (ctx) => {
+  const { p, b } = bookOf(ctx);
+  const out = { id: b.id, type: b.type, format: b.category, title: b.title, author: b.original_title, overview: b.overview, cover: b.poster, duration: b.duration };
+  const pr = get('SELECT position, duration, watched FROM progress WHERE profile_id = ? AND item_id = ?', p.id, b.id);
+  out.progress = pr || null;
+  if (b.category === 'epub') {
+    const pk = epubPackage(b.path);
+    out.chapters = pk.spine.length;
+    const nav = [...pk.manifest.values()].find((x) => /nav/.test(x.props));
+    out.toc = [];
+    try {
+      if (nav) {
+        const html = zipRead(b.path, nav.href).toString('utf8');
+        const dir = path.posix.dirname(nav.href);
+        for (const m of html.matchAll(/<a\s[^>]*href="([^"#]+)[^"]*"[^>]*>([\s\S]*?)<\/a>/gi)) {
+          const href = path.posix.normalize(`${dir === '.' ? '' : `${dir}/`}${decodeURIComponent(m[1])}`);
+          const i = pk.spine.indexOf(href);
+          if (i >= 0) out.toc.push({ title: m[2].replace(/<[^>]+>/g, '').trim().slice(0, 120), chapter: i });
+        }
+      }
+    } catch { /* table des matières absente */ }
+  }
+  if (b.category === 'cbz') out.pages = cbzPages(b.path).length;
+  if (b.type === 'audiobook') {
+    const parts = b.path.toLowerCase().endsWith('.m4b') ? [b] : all("SELECT * FROM items WHERE type = 'track' AND parent_id = ? ORDER BY season_num, episode_num, sort_title, path", b.id);
+    out.parts = parts.map((t) => ({ id: t.id, title: t.title, duration: t.duration }));
+  }
+  sendJson(ctx.res, out);
+});
+// Les pages des livres sont affichées dans un cadre de Venus : leurs propres scripts sont désactivés
+const bookHeaders = (res, type) => {
+  res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-ancestors 'self'; sandbox allow-same-origin");
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Content-Type', type);
+  res.setHeader('Cache-Control', 'private, max-age=86400');
+};
+const MIME = { '.xhtml': 'application/xhtml+xml; charset=utf-8', '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.ttf': 'font/ttf', '.otf': 'font/otf', '.woff': 'font/woff', '.woff2': 'font/woff2' };
+router.get('/api/books/:id/chapter/:n', (ctx) => {
+  const { b } = bookOf(ctx);
+  if (b.category !== 'epub') throw new HttpError(400, 'Pas un EPUB');
+  const pk = epubPackage(b.path);
+  const n = Number(ctx.params.n);
+  const href = pk.spine[n];
+  if (!href) throw new HttpError(404, 'Chapitre introuvable');
+  // Redirection vers le fichier du chapitre : ses liens relatifs (images, styles) fonctionnent tels quels
+  ctx.res.writeHead(302, { Location: `/api/books/${b.id}/res/${href.split('/').map(encodeURIComponent).join('/')}` });
+  ctx.res.end();
+});
+router.get('/api/books/:id/page/:n', (ctx) => {
+  const { b } = bookOf(ctx);
+  if (b.category !== 'cbz') throw new HttpError(400, 'Pas une bande dessinée');
+  const name = cbzPages(b.path)[Number(ctx.params.n)];
+  if (!name) throw new HttpError(404, 'Page introuvable');
+  const data = zipRead(b.path, name);
+  bookHeaders(ctx.res, MIME[path.extname(name).toLowerCase()] || 'image/jpeg');
+  ctx.res.end(data);
+});
+router.get('/api/books/:id/file', (ctx) => {
+  const { b } = bookOf(ctx);
+  if (b.category !== 'pdf' && ctx.url.searchParams.get('download') !== '1') throw new HttpError(400, 'Ouvrez ce livre dans le lecteur');
+  if (b.category === 'pdf') { ctx.res.setHeader('X-Frame-Options', 'SAMEORIGIN'); ctx.res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'self'; sandbox allow-scripts allow-same-origin"); }
+  sendFile(ctx.req, ctx.res, b.path, { cache: 'private, max-age=3600', type: b.category === 'pdf' ? 'application/pdf' : undefined });
+});
+router.get('/api/books/:id/res/*', (ctx) => {
+  const { b } = bookOf(ctx);
+  if (b.category !== 'epub') throw new HttpError(400, 'Pas un EPUB');
+  let name;
+  name = path.posix.normalize(String(ctx.params.rest));
+  if (name.startsWith('..') || name.includes('\0')) throw new HttpError(400, 'Chemin invalide');
+  const data = zipRead(b.path, name);
+  if (!data) throw new HttpError(404, 'Introuvable dans le livre');
+  bookHeaders(ctx.res, MIME[path.extname(name).toLowerCase()] || 'application/octet-stream');
+  ctx.res.end(data);
 });

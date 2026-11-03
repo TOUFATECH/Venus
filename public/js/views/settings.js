@@ -12,12 +12,15 @@ const HW = [['auto', 'Automatique (recommandé)'], ['nvenc', 'NVIDIA (NVENC)'], 
 
 const select = (opts, value, attrs = {}) => h('select', { class: 'input', ...attrs }, opts.map(([v, l]) => h('option', { value: v, selected: String(value ?? '') === v }, l)));
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('small', {}, hint) : null);
-const LIB_ICON = { movies: 'film', shows: 'tv', anime: 'spark', clips: 'note', iptv: 'live' };
+const LIB_ICON = { movies: 'film', shows: 'tv', anime: 'spark', clips: 'note', iptv: 'live', music: 'note', photos: 'image', books: 'book' };
 const SOURCE_TYPES = [
   ['movies', 'Films', 'Un film par fichier, ou un dossier par film.'],
   ['shows', 'Séries', 'Un dossier par série, puis un dossier par saison (S01E01 dans le nom).'],
   ['anime', 'Animés', 'Rangés comme des séries : un dossier par animé, épisodes numérotés.'],
   ['clips', 'Clips', 'Clips musicaux ou vidéos courtes. Nom conseillé : « Artiste - Titre ».'],
+  ['music', 'Musique', 'Un dossier par artiste, puis par album. Pochette : cover.jpg ; paroles : fichier .lrc du même nom.'],
+  ['photos', 'Photos', 'Chaque dossier devient un album.'],
+  ['books', 'Livres', 'EPUB, PDF, bandes dessinées CBZ, et livres audio (un dossier par livre, ou un fichier .m4b).'],
   ['iptv', 'TV en direct (IPTV)', 'Collez l’adresse M3U fournie par votre abonnement IPTV, ou le chemin d’un fichier .m3u sur le serveur.'],
 ];
 // Conseil affiché quand le serveur ne peut pas faire quelque chose seul (GPU, partages réseau)

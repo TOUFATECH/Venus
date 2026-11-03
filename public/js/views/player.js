@@ -140,6 +140,8 @@ export async function render(main, { id, query }) {
   document.body.style.overflow = 'hidden';
   // Style des sous-titres choisi dans Réglages (texte seul par défaut)
   applySubLook();
+  // La musique ou le livre audio en cours s'arrête quand une vidéo démarre
+  import('../audio.js').then((m) => { if (m.nowPlaying().playing) m.toggle(); }).catch(() => {});
   // Plein écran dès le lancement (réglable dans Réglages). Demandé tout de suite, pendant que le clic
   // sur « Lecture » compte encore comme une action de l'utilisateur.
   if (prefs.get('fullscreenOnPlay') && document.documentElement.requestFullscreen && !document.fullscreenElement) enterFullscreen();

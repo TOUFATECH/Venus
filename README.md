@@ -27,6 +27,12 @@ Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec un
 - **Thème Verre** (inspiré de [Free My TV](https://github.com/simbasjungles/free-my-tv)) : verre dépoli, clair le jour et sombre la nuit, au lever et au coucher du soleil.
 - **Thèmes planètes** : Mercure, Vénus, Terre, Mars, Jupiter, Saturne, Uranus, Neptune, Pluton. Couleurs, nom et logo animé changent (**Réglages → Thème**).
 
+## Musique, photos et livres
+
+- **Musique** (bibliothèque « Musique », un dossier par artiste puis par album) : albums, artistes, titres, pochettes (`cover.jpg` ou intégrée), paroles synchronisées (fichier `.lrc` du même nom), lecteur en bas de l'écran qui continue pendant la navigation, file d'attente, écran verrouillé du téléphone. Les formats que le navigateur ne lit pas sont convertis à la volée.
+- **Photos** (un dossier = un album) : grille, visionneuse plein écran, glisser du doigt, diaporama, HEIC et TIFF convertis par le serveur.
+- **Livres** : EPUB lus dans Venus (fond clair, sépia ou sombre, taille du texte, table des matières, reprise au bon endroit), PDF, bandes dessinées CBZ, et **livres audio** (un dossier de fichiers audio ou un `.m4b`) avec reprise là où on s'était arrêté.
+
 ## Sur le téléphone, le soir, et pour l'administrateur
 
 - **Comme une vraie appli sur téléphone** : bandeau « Installer Venus » (sur iPhone, les étapes Safari sont expliquées), glisser vers le bas pour fermer une fenêtre, tirer vers le bas pour actualiser, appui long sur une affiche pour un menu rapide (lecture, Ma liste, vu, bande-annonce, téléchargement), verrouillage de l'écran tactile pendant la lecture (pour les enfants), et **mini-lecteur** : en quittant le lecteur, la vidéo continue en petit pendant qu'on navigue.
@@ -291,4 +297,4 @@ public/         interface (JavaScript natif, sans framework ni compilation)
 
 ## Honnêtement, par rapport à Plex et Jellyfin
 
-Venus fait mieux sur la légèreté, la simplicité d'installation et la sobriété de l'interface. Plex et Jellyfin restent plus complets sur certains points qui ne sont pas (encore) dans cette version : applications natives dans les stores des TV, guide des programmes (EPG) pour l'IPTV, musique et photos, vignettes d'aperçu sur la barre de progression, saut automatique du générique de début, plugins.
+Venus fait mieux sur la légèreté, la simplicité d'installation et la sobriété de l'interface. Plex et Jellyfin restent plus complets sur certains points qui ne sont pas (encore) dans cette version : applications natives dans les stores des TV, guide des programmes (EPG) pour l'IPTV, plugins et DLNA. Les vignettes de la barre de progression, le guide des programmes, la musique, les photos et les livres sont maintenant dans Venus.

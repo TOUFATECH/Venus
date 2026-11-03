@@ -3,7 +3,7 @@ import { api, auth } from '../api.js';
 import { h, icon, toast } from '../ui.js';
 import { go, state } from '../app.js';
 
-const TYPE_LABEL = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct' };
+const TYPE_LABEL = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct', music: 'Musique', photos: 'Photos', books: 'Livres' };
 const GUIDE = {
   movies: ['Un fichier par film, ou un dossier par film.', 'Inception (2010).mkv', 'Interstellar (2014)/Interstellar.mkv'],
   shows: ['Un dossier par série, puis un dossier par saison. Le numéro d’épisode dans le nom : S01E02.', 'Breaking Bad/Saison 1/Breaking Bad S01E01.mkv', 'Breaking Bad/Saison 2/Breaking Bad S02E05.mkv'],
