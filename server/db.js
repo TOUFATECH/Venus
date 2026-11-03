@@ -158,7 +158,7 @@ export function tx(fn) {
 // Clés d'API et mots de passe des services : chiffrés dans la base (AES-256-GCM). La clé de chiffrement est
 // dans le dossier de données (secret.key, lisible seulement par Venus) ou dans VENUS_SECRET : une copie de la
 // base ou d'une sauvegarde seule ne révèle aucun secret.
-const SECRET_KEYS = new Set(['tmdb_key', 'omdb_key', 'seerr_key', 'telegram_token', 'discord_webhook', 'opensubtitles_key', 'opensubtitles_pass', 'smtp_pass', 'vapid', 'simkl_client_id']);
+const SECRET_KEYS = new Set(['tmdb_key', 'omdb_key', 'seerr_key', 'telegram_token', 'discord_webhook', 'opensubtitles_key', 'opensubtitles_pass', 'smtp_pass', 'vapid', 'simkl_client_id', 'trakt_client_id']);
 let masterKey = null;
 function keyOf() {
   if (masterKey) return masterKey;

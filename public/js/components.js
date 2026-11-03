@@ -271,7 +271,7 @@ export function metaLine(item, extra = []) {
 // ------------------------------------------------------------------ notes des sites (fiche, cartes, tri)
 export const RATING_SOURCES = [
   ['imdb', 'IMDb'], ['rt', 'Rotten Tomatoes'], ['mc', 'Metacritic'], ['tmdb', 'TMDB'],
-  ['anilist', 'AniList'], ['mal', 'MyAnimeList'], ['simkl', 'Simkl'],
+  ['anilist', 'AniList'], ['mal', 'MyAnimeList'], ['simkl', 'Simkl'], ['trakt', 'Trakt'],
 ];
 export const fmtScore = (x) => (x.max === 10 ? x.v.toFixed(1).replace('.', ',') : x.max === 100 && x.v <= 100 ? `${Math.round(x.v)}${['rt', 'anilist'].includes(x.src) ? ' %' : ''}` : String(x.v));
 // Note globale sur 10 (moyenne des sources), pour les cartes

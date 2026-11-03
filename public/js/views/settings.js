@@ -207,11 +207,12 @@ export async function render(main, { query } = {}) {
         h('input', { type: 'checkbox', class: 'f', checked: a.settings.kidsAllowUnrated, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { kidsAllowUnrated: e.target.checked } }); toast('Enregistré'); } })));
   }
 
-  // Notes des sites : clés facultatives (OMDb pour IMDb / Rotten Tomatoes / Metacritic, Simkl)
+  // Notes des sites : clés facultatives (OMDb pour IMDb / Rotten Tomatoes / Metacritic, Simkl, Trakt)
   function ratingsBox(a) {
     const link = (href, text) => h('a', { href, target: '_blank', rel: 'noopener', style: { textDecoration: 'underline' } }, text);
     const omdb = h('input', { class: 'input', placeholder: a.settings.omdbConfigured ? 'Clé enregistrée (laisser vide pour conserver)' : 'Clé OMDb' });
     const simkl = h('input', { class: 'input', placeholder: a.settings.simklConfigured ? 'Identifiant enregistré (laisser vide pour conserver)' : 'Client ID Simkl' });
+    const trakt = h('input', { class: 'input', placeholder: a.settings.traktConfigured ? 'Identifiant enregistré (laisser vide pour conserver)' : 'Client ID Trakt' });
     const err = h('p', { class: 'error-text' });
     const save = async (body, btn) => {
       err.textContent = ''; btn.disabled = true;
@@ -226,6 +227,7 @@ export async function render(main, { query } = {}) {
         h('span', { class: `src${a.settings.tmdbConfigured ? ' ok' : ''}` }, 'TMDB'),
         h('span', { class: `src${a.settings.omdbConfigured ? ' ok' : ''}` }, 'IMDb'), h('span', { class: `src${a.settings.omdbConfigured ? ' ok' : ''}` }, 'Rotten Tomatoes'),
         h('span', { class: `src${a.settings.omdbConfigured ? ' ok' : ''}` }, 'Metacritic'), h('span', { class: `src${a.settings.simklConfigured ? ' ok' : ''}` }, 'Simkl'),
+        h('span', { class: `src${a.settings.traktConfigured ? ' ok' : ''}` }, 'Trakt'),
         h('span', { class: 'src link', title: 'SensCritique n’a pas d’API publique : un lien vers sa page est proposé sur chaque fiche' }, 'SensCritique (lien)')),
       field('Clé OMDb : notes IMDb, Rotten Tomatoes et Metacritic', omdb, h('span', {}, 'Gratuite (1 000 titres par jour) sur ', link('https://www.omdbapi.com/apikey.aspx', 'omdbapi.com'), '.')),
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
@@ -235,6 +237,12 @@ export async function render(main, { query } = {}) {
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
         h('button', { class: 'btn btn-small f', onclick: (e) => simkl.value.trim() && save({ simklClientId: simkl.value.trim() }, e.currentTarget) }, 'Enregistrer'),
         a.settings.simklConfigured ? h('button', { class: 'btn btn-small btn-ghost f', onclick: (e) => save({ simklClientId: '' }, e.currentTarget) }, 'Retirer') : null),
+      field('Client ID Trakt : note Trakt, et affiches, fonds et logos', trakt, h('span', {}, 'Gratuit : créez une application sur ', link('https://trakt.tv/oauth/applications/new', 'trakt.tv/oauth/applications'), ' (adresse de redirection : urn:ietf:wg:oauth:2.0:oob), puis copiez le « Client ID ».')),
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+        h('button', { class: 'btn btn-small f', onclick: (e) => trakt.value.trim() && save({ traktClientId: trakt.value.trim() }, e.currentTarget) }, 'Enregistrer'),
+        a.settings.traktConfigured ? h('button', { class: 'btn btn-small btn-ghost f', onclick: (e) => save({ traktClientId: '' }, e.currentTarget) }, 'Retirer') : null),
+      a.settings.traktConfigured ? field('Affiches des films, séries et animés', select([['tmdb', 'TMDB d’abord, Trakt quand TMDB n’en a pas'], ['trakt', 'Trakt d’abord, TMDB en secours']], a.settings.posterSource || 'tmdb',
+        { onchange: (e) => save({ posterSource: e.target.value }, e.target) }), 'Vos images du dossier (poster.jpg, fanart.jpg) restent toujours prioritaires. Le changement se fait en arrière-plan.') : null,
       err,
       h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { const r = await api('/api/admin/ratings/refresh', { method: 'POST' }); toast(`${r.queued} titre(s) en cours de mise à jour`); } }, 'Mettre à jour toutes les notes'));
   }

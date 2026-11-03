@@ -1069,6 +1069,7 @@ a.rating:hover { border-color: rgba(236,234,228,.4); transform: translateY(-1px)
 .r-anilist .r-src { color: #02a9ff; }
 .r-mal .r-src { color: #6f8fdc; }
 .r-simkl .r-src { color: #f5f5f5; }
+.r-trakt .r-src { color: #ff4d5e; }
 .r-sc .r-src { color: #ffd600; }
 .r-link .r-go { color: var(--haze); }
 .cap-score { margin-left: 8px; color: var(--sulfur); font-weight: 700; }
@@ -2267,3 +2268,4 @@ html[data-glass="day"] .r-simkl .r-src { color: #1d1d1f; }
 html[data-glass="day"] .r-sc .r-src { color: #a88a00; }
 html[data-glass="day"] .person .face { color: rgba(255, 255, 255, .78); }
 html[data-glass] .person .face { box-shadow: 0 8px 22px rgba(0, 0, 0, .18); }
+html[data-glass="day"] .r-trakt .r-src { color: #d81f30; }

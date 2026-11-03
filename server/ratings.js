@@ -6,11 +6,13 @@
 //  - MyAnimeList, via Jikan (gratuit, sans clé)
 //  - OMDb (clé gratuite) : notes IMDb, Rotten Tomatoes et Metacritic
 //  - Simkl (identifiant client gratuit)
+//  - Trakt (identifiant client gratuit) : note, et affiches / fonds / logos en complément de TMDB
 // SensCritique n'a pas d'API publique : l'interface propose un lien vers sa recherche.
 //
 // Tout est récupéré en arrière-plan, un titre à la fois, et rafraîchi tous les 10 jours.
 import { all, get, run, getSetting } from './db.js';
-import { tmdb, tmdbKey, lang } from './metadata.js';
+import { tmdb, tmdbKey, lang, downloadImage } from './metadata.js';
+import { traktId, traktFind, downloadTraktImage, posterSource } from './trakt.js';
 
 const DAY = 86400000;
 const UA = { 'User-Agent': 'Venus/1.0 (serveur multimédia personnel)', Accept: 'application/json' };
@@ -173,6 +175,18 @@ export async function enrich(item) {
     } catch { /* */ }
   }
 
+  if (traktId()) {
+    try {
+      const t = await traktFind({ ...item, imdb_id: imdb });
+      if (t) {
+        ok = true;
+        if (t.rating) r.trakt = t.rating;
+        imdb = imdb || t.ids.imdb || null;
+        await applyTraktImages(item, t, d);
+      }
+    } catch { /* Trakt injoignable */ }
+  }
+
   // Sans TMDB : la note déjà connue (fichier .nfo, ancienne analyse) reste affichée
   if (!r.tmdb && item.vote) r.tmdb = { v: Math.round(item.vote * 10) / 10, max: 10, url: item.tmdb_id ? `https://www.themoviedb.org/${kind}/${item.tmdb_id}` : null };
   const vals = Object.values(r).map((x) => (x.v / x.max) * 100).filter((x) => x > 0);
@@ -182,6 +196,22 @@ export async function enrich(item) {
     JSON.stringify(r), ok || Object.keys(r).filter((k) => k !== 'score').length > 1 ? Date.now() : null, imdb, anilistId, malId, trailer ? JSON.stringify(trailer) : null,
     credits ? JSON.stringify(credits) : null, item.id);
   return r;
+}
+
+// Affiches Trakt : en secours quand TMDB n'a rien, ou en premier si choisi dans Réglages.
+// Les images locales du dossier (poster.jpg, fanart.jpg) gardent toujours la priorité.
+async function applyTraktImages(item, t, d) {
+  const pref = posterSource();
+  const local = (v) => String(v || '').startsWith('l_');
+  const set = {};
+  for (const [col, url, tmdbPath, size] of [['poster', t.poster, d && d.poster_path, 'w500'], ['backdrop', t.fanart, d && d.backdrop_path, 'w1280'], ['logo', t.logo, null, 'w500']]) {
+    const cur = item[col];
+    if (local(cur)) continue;
+    if (url && (pref === 'trakt' || !cur)) { const n = await downloadTraktImage(url); if (n && n !== cur) set[col] = n; }
+    else if (pref === 'tmdb' && String(cur || '').startsWith('k_') && tmdbPath) { const n = await downloadImage(tmdbPath, size); if (n) set[col] = n; }
+  }
+  const cols = Object.keys(set);
+  if (cols.length) run(`UPDATE items SET ${cols.map((c) => `${c} = ?`).join(', ')} WHERE id = ?`, ...cols.map((c) => set[c]), item.id);
 }
 
 // ------------------------------------------------------------------ file d'attente
