@@ -249,10 +249,9 @@ function hideBoot() {
   window.__vnBooted = true;
   const el = document.querySelector('.boot');
   if (!el) return;
-  // Toute première ouverture : on laisse l'intro du Soleil se jouer jusqu'au bout (environ 3,5 s)
+  // Écran de chargement : seulement « VENUS », le temps de l'apercevoir (un peu plus à la première ouverture)
   const first = document.documentElement.classList.contains('first-open');
-  // Compté depuis l'ouverture de la page, et toujours un moment pour voir le Soleil tourner
-  const wait = Math.max(first ? 3800 - performance.now() : 0, first ? 1400 : 700);
+  const wait = Math.max(first ? 1300 - performance.now() : 0, first ? 500 : 250);
   setTimeout(() => {
     el.classList.add('out');
     setTimeout(() => { el.remove(); document.documentElement.classList.remove('first-open'); }, 500);

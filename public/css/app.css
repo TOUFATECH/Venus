@@ -159,8 +159,8 @@ main.with-nav { padding-left: var(--rail); }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
 .boot-note { color: var(--dim); font-size: 0.85rem; min-height: 1.3em; }
 /* Démarrage bloqué : explication et boutons (voir index.html) */
-.boot.stuck .boot-line { display: none; }
 .boot.stuck .boot-note { max-width: min(440px, calc(100vw - 32px)); text-align: center; color: var(--text, #eceae4); line-height: 1.45; }
+.boot-note { margin-top: 18px; }
 .boot-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
 .splash { min-height: 60vh; display: flex; align-items: center; justify-content: center; }
 .splash .planet { width: 44px; }
@@ -1710,7 +1710,7 @@ html:not(.touch) .theme-opt:hover .mark { filter: drop-shadow(0 0 10px color-mix
 .first-open .orb .oy > * { animation: pl-in .8s ease both; }
 .first-open .o1 .oy > * { animation-delay: 1.1s; } .first-open .o2 .oy > .planet { animation: pl-in .8s ease 1.3s both, drift 6s linear infinite; } .first-open .o3 .oy > * { animation-delay: 1.5s; }
 @keyframes pl-in { from { opacity: 0; } to { opacity: 1; } }
-.first-open .boot-word { animation: word-in 1.1s cubic-bezier(.2, .7, .2, 1) 1.5s both; }
+.first-open .boot-word { animation: word-in .9s cubic-bezier(.2, .7, .2, 1) both; }
 @keyframes word-in { from { opacity: 0; letter-spacing: 1.1em; filter: blur(6px); } to { opacity: 1; letter-spacing: .4em; filter: none; } }
 .first-open .boot-tag { animation: pl-in .9s ease 2.2s both; }
 .first-open .boot-line { animation: pl-in .6s ease 2.4s both; }
