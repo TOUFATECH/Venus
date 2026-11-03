@@ -52,7 +52,7 @@ function ensure() {
 }
 let meta = new Map();
 // Adresse affichée dans le navigateur, rangée comme les dossiers :
-//   films/Inception.2010   séries/Breaking.Bad/S01E02   animes/Frieren/S01E02   clips/Daft.Punk.Around.The.World
+//   films/Inception.2010 (fiche et lecture : même adresse)   séries/Breaking.Bad/S01E02   animes/Frieren/S01E02   clips/Daft.Punk.Around.The.World
 // Les autres (chaînes, livres…) gardent /titre/… et /lecture/…
 export function pathFor(id, { play = false } = {}) {
   ensure();
@@ -60,8 +60,8 @@ export function pathFor(id, { play = false } = {}) {
   const slug = byId.get(id) || String(id);
   if (!m) return play ? `/lecture/${slug}` : `/titre/${slug}`;
   const showCat = (sid) => (meta.get(sid) || {}).category === 'anime' ? 'animes' : 'series';
-  if (m.type === 'movie') return `/films/${slug}${play ? '/lecture' : ''}`;
-  if (m.type === 'clip' && m.category !== 'recording') return `/clips/${slug}${play ? '/lecture' : ''}`;
+  if (m.type === 'movie') return `/films/${slug}`;
+  if (m.type === 'clip' && m.category !== 'recording') return `/clips/${slug}`;
   if (m.type === 'show') return `/${m.category === 'anime' ? 'animes' : 'series'}/${slug}`;
   if (m.type === 'season' && m.show) return `/${showCat(m.show)}/${byId.get(m.show) || m.show}`;
   if (m.type === 'episode' && m.show) {

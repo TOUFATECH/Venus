@@ -209,7 +209,7 @@ export async function render(main, { id, query }) {
     subEl.hidden = !info.subtitle;
     paintBelow();
     setTitle(info.subtitle && info.type === 'episode' ? `${info.title} · ${info.subtitle}` : info.title);
-    showPath(info.path, ['salle'], fromUrl);
+    showPath(info.path, ['salle'], fromUrl, { vnPlay: info.itemId });
     badge.textContent = info.mode === 'direct' ? 'Direct' : info.mode === 'remux' ? 'Remux' : `Converti · ${info.hwLabel || 'processeur'}`;
     badge.title = info.reason;
     qualityBtn.textContent = (info.qualities.find((q) => q.id === quality) || { label: 'Auto' }).label;
