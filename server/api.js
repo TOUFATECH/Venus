@@ -22,7 +22,9 @@ import {
   decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot,
 } from './stream.js';
 import { detectHardware } from './hw.js';
-import { probeLive } from './probe.js';
+import { probeLive, readChapters } from './probe.js';
+import { runTask, listTasks } from './tasks.js';
+import { ensureTrickplay, trickplayInfo, trickplaySheet, trickplayMode, removeTrickplay } from './trickplay.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
 import { getSegments, scheduleSeason, segmentsPending } from './segments.js';
 import { searchSubs, downloadSub, osOn, resetOsLogin } from './subtitles.js';
@@ -835,6 +837,11 @@ router.post('/api/play/:id', async (ctx) => {
   if (!fs.existsSync(item.path)) throw new HttpError(410, 'Fichier déplacé ou supprimé, relancez un scan');
   const probe = parseJson(item.probe, null);
   if (!probe) throw new HttpError(500, 'Fichier non analysé');
+  if (!probe.chaptersChecked) {
+    probe.chapters = await readChapters(item.path, probe.duration); probe.chaptersChecked = true;
+    run('UPDATE items SET probe = ? WHERE id = ?', JSON.stringify(probe), item.id);
+  }
+  if (!b.preview) ensureTrickplay(item, true);
 
   // Choix des pistes par défaut selon les préférences du profil
   const langMatch = (l, pref) => l && pref && (l.startsWith(pref) || ({ fr: ['fre', 'fra'], en: ['eng'] }[pref] || []).includes(l));
@@ -894,7 +901,32 @@ router.post('/api/play/:id', async (ctx) => {
     next: next ? { id: next.id, title: next.title, season: next.season_num, episode: next.episode_num, still: next.still, overview: next.overview } : null,
     prev: prev ? { id: prev.id, title: prev.title, season: prev.season_num, episode: prev.episode_num } : null,
     segments: item.type === 'episode' ? getSegments(item) : { intro: null, credits: null },
+    chapters: probe.chapters || [],
+    trickplay: trickplayPublic(item),
   });
+});
+
+// Vignettes de la barre de progression : description des planches (null tant qu'elles se préparent)
+function trickplayPublic(item) {
+  const t = trickplayInfo(item);
+  return t ? { interval: t.interval, width: t.width, height: t.height, cols: t.cols, rows: t.rows, count: t.count, sheets: t.sheets, url: `/api/items/${item.id}/trickplay/` } : null;
+}
+router.get('/api/items/:id/trickplay', (ctx) => {
+  const p = requireProfile(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item || !item.path || !visible(p, item)) throw new HttpError(404, 'Introuvable');
+  const t = trickplayPublic(item);
+  if (!t) ensureTrickplay(item, true);
+  sendJson(ctx.res, { ready: !!t, trickplay: t, mode: trickplayMode() });
+});
+router.get('/api/items/:id/trickplay/:n', (ctx) => {
+  requireDevice(ctx);
+  const n = Number(String(ctx.params.n).replace(/\.jpg$/, ''));
+  if (!Number.isInteger(n) || n < 0 || n > 999) throw new HttpError(400, 'Planche invalide');
+  const item = get('SELECT id, mtime FROM items WHERE id = ?', Number(ctx.params.id));
+  const file = item && trickplaySheet(item, n);
+  if (!file) throw new HttpError(404, 'Vignettes pas encore prêtes');
+  sendFile(ctx.req, ctx.res, file, { cache: 'private, max-age=2592000, immutable' });
 });
 
 // TV en direct : le flux est relu par ffmpeg et servi en HLS (copie de la vidéo quand c'est possible)
@@ -1217,7 +1249,7 @@ router.get('/api/admin', (ctx) => {
     devices: all('SELECT t.device, t.last_seen, p.name AS profile FROM tokens t LEFT JOIN profiles p ON p.id = t.profile_id ORDER BY t.last_seen DESC LIMIT 30'),
     settings: {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
-      maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0',
+      maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0', trickplay: trickplayMode(),
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
       omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
     },
@@ -1343,7 +1375,7 @@ router.post('/api/admin/items/:id/delete', async (ctx) => {
     const lib = get('SELECT * FROM libraries WHERE id = ?', f.library_id);
     try {
       freed += removeFileWithSides(f.path, lib && lib.path);
-      run('DELETE FROM items WHERE id = ?', f.id);
+      run('DELETE FROM items WHERE id = ?', f.id); removeTrickplay(f.id);
       deleted++;
     } catch (e) {
       errors.push(/EROFS|EACCES|EPERM/.test(e.code || '') ? `${path.basename(f.path)} : dossier en lecture seule (partage réseau ou droits insuffisants)` : `${path.basename(f.path)} : ${e.message}`);
@@ -1538,6 +1570,7 @@ const SETTINGS_SCHEMA = {
   smtpSecure: V.oneOf(['auto', 'tls', 'starttls', 'none']), smtpUser: V.str({ max: 200 }), smtpPass: V.str({ max: 300, trim: false }),
   smtpFrom: V.email({ label: 'Expéditeur' }), twofaEmail: V.email({ label: 'Adresse de l’administrateur' }), twofaMode: V.oneOf(['off', 'new_device']),
   forceHttps: V.oneOf(['off', 'remote', 'all']),
+  trickplay: V.oneOf(['auto', 'play', 'off']),
 };
 router.put('/api/admin/settings', async (ctx) => {
   requireAdmin(ctx);
@@ -1588,6 +1621,7 @@ router.put('/api/admin/settings', async (ctx) => {
   if (b.serverName) setSetting('server_name', String(b.serverName).slice(0, 40));
   if (b.maxSessions) setSetting('max_sessions', b.maxSessions);
   if (typeof b.detectSegments === 'boolean') setSetting('detect_segments', b.detectSegments ? '1' : '0');
+  if (b.trickplay) { setSetting('trickplay', b.trickplay); if (b.trickplay === 'auto') runTask('trickplay').catch(() => {}); }
   if (b.scanInterval) setSetting('scan_interval', b.scanInterval);
   if (b.kidsAllowUnrated !== undefined) setSetting('kids_allow_unrated', !!b.kidsAllowUnrated);
   if (b.metadataLang) setSetting('metadata_lang', b.metadataLang);

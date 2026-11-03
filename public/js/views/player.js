@@ -76,11 +76,18 @@ export async function render(main, { id, query }) {
   const fill = h('div', { class: 'p-fill' });
   const buf = h('div', { class: 'p-buf' });
   const knob = h('div', { class: 'p-knob' });
-  const hoverTip = h('div', { class: 'p-hover', hidden: true });
-  const track = h('div', { class: 'p-track f', tabindex: '0', role: 'slider', 'aria-label': 'Position de lecture' }, buf, fill, knob, hoverTip);
+  // Survol de la barre : vignette de l'instant visé (comme Jellyfin / Netflix), nom du chapitre et heure
+  const tipThumb = h('div', { class: 'p-hover-img', hidden: true });
+  const tipChap = h('div', { class: 'p-hover-chap', hidden: true });
+  const tipTime = h('div', { class: 'p-hover-time' });
+  const hoverTip = h('div', { class: 'p-hover', hidden: true }, tipThumb, tipChap, tipTime);
+  const chapMarks = h('div', { class: 'p-chapmarks', 'aria-hidden': 'true' });
+  const track = h('div', { class: 'p-track f', tabindex: '0', role: 'slider', 'aria-label': 'Position de lecture' }, buf, fill, chapMarks, knob, hoverTip);
   const curEl = h('span', {}, '0:00');
   const remEl = h('span', {}, '');
   const tracksBtn = h('button', { class: 'p-icon f', 'aria-label': 'Audio et sous-titres', onclick: () => openTracks() }, icon('subs'));
+  const speedBtn = h('button', { class: 'p-icon f p-speed', 'aria-label': 'Vitesse de lecture', title: 'Vitesse de lecture (touches < et >)', onclick: () => openSpeed() }, icon('speed'), h('small', { class: 'p-speed-val', hidden: true }));
+  const chapBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Chapitres', title: 'Chapitres', onclick: () => openChapters() }, icon('chapters'));
   const qualityBtn = h('button', { class: 'btn btn-ghost btn-small f', onclick: () => openQuality() }, 'Auto');
   const nextBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, onclick: () => playNext(), 'aria-label': 'Épisode suivant' }, icon('next'), h('span', { class: 'lbl' }, 'Épisode suivant'));
   const chPrev = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Chaîne précédente', onclick: () => zap(-1) }, icon('up'));
@@ -127,17 +134,24 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, ambBtn, castBtn, airBtn, fsBtn)),
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, ambBtn, castBtn, airBtn, fsBtn)),
     nextPanel, overlay, volOsd, skipBtn, chPanel, below, lockLayer);
   main.append(root);
   document.body.style.overflow = 'hidden';
   // Style des sous-titres choisi dans Réglages (texte seul par défaut)
-  root.classList.toggle('sub-box', prefs.get('subStyle') === 'box');
-  root.classList.add(`sub-${prefs.get('subSize') || 'medium'}`);
+  applySubLook();
   // Plein écran dès le lancement (réglable dans Réglages). Demandé tout de suite, pendant que le clic
   // sur « Lecture » compte encore comme une action de l'utilisateur.
   if (prefs.get('fullscreenOnPlay') && document.documentElement.requestFullscreen && !document.fullscreenElement) enterFullscreen();
   applyVolume();
+
+  function applySubLook() {
+    root.classList.remove('sub-box', 'sub-small', 'sub-medium', 'sub-large', 'sub-xlarge', 'sub-yellow', 'sub-high');
+    root.classList.toggle('sub-box', prefs.get('subStyle') === 'box');
+    root.classList.add(`sub-${prefs.get('subSize') || 'medium'}`);
+    root.classList.toggle('sub-yellow', prefs.get('subColor') === 'yellow');
+    root.classList.toggle('sub-high', prefs.get('subPos') === 'high');
+  }
 
   // ---------------------------------------------------------------- utilitaires de temps
   const position = () => (casting ? casting.position() : offset + (video.currentTime || 0));
@@ -206,9 +220,13 @@ export async function render(main, { id, query }) {
     if (live) badge.textContent = info.mode === 'transcode' ? `Direct converti · ${info.hwLabel || 'processeur'}` : 'Direct';
     paintMode();
     tracksBtn.hidden = !!info.live && info.audio.length < 2 && !info.subs.length;
+    speedBtn.hidden = live;
+    setupChapters();
+    setupTrickplay();
     if (reason) toast(reason);
 
     teardownSource();
+    video.defaultPlaybackRate = live ? 1 : speed; video.playbackRate = live ? 1 : speed;
     const startAt = info.mode === 'direct' ? info.startAt || 0 : 0;
     if (info.mode === 'direct' || caps.nativeHls && (isSafari || isIOS)) {
       video.src = info.url;
@@ -339,6 +357,8 @@ export async function render(main, { id, query }) {
   function paintSubs() {
     const t = position() - subDelay;
     const active = cues.filter((c) => c.start <= t && c.end >= t);
+    if (subsLayer.dataset.sample && !active.length) return; // exemple affiché pendant le réglage de l'apparence
+    if (active.length) delete subsLayer.dataset.sample;
     const key = active.map((c) => c.start).join(',');
     if (key === lastCue) return;
     lastCue = key;
@@ -471,13 +491,124 @@ export async function render(main, { id, query }) {
   let dragging = false;
   track.addEventListener('pointerdown', (e) => { dragging = true; track.setPointerCapture(e.pointerId); paintTimeline(timeAt(e.clientX)); showUi(true); });
   track.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch' && !dragging) return;
     const t = timeAt(e.clientX);
-    hoverTip.hidden = false; hoverTip.textContent = fmtTime(t);
-    hoverTip.style.left = `${(t / duration()) * 100}%`;
+    showTip(t); showUi();
     if (dragging) paintTimeline(t);
   });
-  track.addEventListener('pointerleave', () => { hoverTip.hidden = true; });
-  track.addEventListener('pointerup', (e) => { if (!dragging) return; dragging = false; seekTo(timeAt(e.clientX), { immediate: true }); showUi(); });
+  track.addEventListener('pointerleave', () => { if (!dragging) hoverTip.hidden = true; });
+  track.addEventListener('pointerup', (e) => { if (!dragging) return; dragging = false; hoverTip.hidden = true; seekTo(timeAt(e.clientX), { immediate: true }); showUi(); });
+  track.addEventListener('pointercancel', () => { dragging = false; hoverTip.hidden = true; });
+
+  function showTip(t) {
+    const d = duration();
+    if (!d) return;
+    hoverTip.hidden = false;
+    tipTime.textContent = fmtTime(t);
+    const ch = chapterAt(t);
+    tipChap.hidden = !ch; tipChap.textContent = ch ? ch.title : '';
+    const tile = tileAt(t);
+    tipThumb.hidden = !tile;
+    if (tile) Object.assign(tipThumb.style, tile);
+    // La bulle reste entière dans la barre (pas coupée au bord de l'écran)
+    const r = track.getBoundingClientRect();
+    const half = (hoverTip.offsetWidth || 120) / 2;
+    const x = Math.max(half - 8, Math.min(r.width - half + 8, (t / d) * r.width));
+    hoverTip.style.left = `${x}px`;
+  }
+
+  // ---------------------------------------------------------------- vignettes (trickplay)
+  let tp = null, tpPoll = null, tpTries = 0;
+  function setupTrickplay() {
+    clearTimeout(tpPoll);
+    tp = info && !info.live ? info.trickplay : null;
+    if (tp) { preloadSheet(0); return; }
+    if (!info || info.live || info.type === 'channel') return;
+    // Vignettes en préparation sur le serveur : on redemande de temps en temps
+    tpTries = 0;
+    const ask = async () => {
+      if (destroyed || !info) return;
+      try {
+        const r = await api(`/api/items/${info.itemId}/trickplay`);
+        if (r.ready) { tp = r.trickplay; preloadSheet(0); return; }
+        if (r.mode === 'off') return;
+      } catch { return; }
+      if (++tpTries < 40) tpPoll = setTimeout(ask, 15000);
+    };
+    tpPoll = setTimeout(ask, 8000);
+  }
+  const sheetLoaded = new Set();
+  function preloadSheet(n) {
+    if (!tp || sheetLoaded.has(n) || n >= tp.sheets) return;
+    sheetLoaded.add(n);
+    const img = new Image(); img.decoding = 'async'; img.src = `${tp.url}${n}.jpg`;
+  }
+  function tileAt(t, w = 200) {
+    if (!tp) return null;
+    const i = Math.min(tp.count - 1, Math.max(0, Math.floor(t / tp.interval)));
+    const per = tp.cols * tp.rows;
+    const n = Math.floor(i / per), k = i % per;
+    preloadSheet(n); preloadSheet(n + 1);
+    const scale = w / tp.width, hgt = Math.round(tp.height * scale);
+    return {
+      width: `${w}px`, height: `${hgt}px`,
+      backgroundImage: `url("${tp.url}${n}.jpg")`,
+      backgroundSize: `${tp.cols * w}px ${tp.rows * hgt}px`,
+      backgroundPosition: `-${(k % tp.cols) * w}px -${Math.floor(k / tp.cols) * hgt}px`,
+    };
+  }
+
+  // ---------------------------------------------------------------- chapitres
+  let chapters = [];
+  function setupChapters() {
+    chapters = (info && !info.live && info.chapters) || [];
+    chapBtn.hidden = chapters.length < 2;
+    const d = info && info.duration;
+    chapMarks.replaceChildren(...(d ? chapters.slice(1).map((c) => h('i', { style: { left: `${(c.start / d) * 100}%` } })) : []));
+  }
+  const chapterAt = (t) => { let c = null; for (const x of chapters) if (x.start <= t + 0.01) c = x; return c; };
+  function jumpChapter(dir) {
+    if (chapters.length < 2) return false;
+    const t = position();
+    const i = chapters.indexOf(chapterAt(t));
+    // Arrière : au début du chapitre en cours s'il a commencé depuis plus de 3 s, sinon au précédent
+    const target = dir > 0 ? chapters[i + 1] : (t - (chapters[i] ? chapters[i].start : 0) > 3 ? chapters[i] : chapters[Math.max(0, i - 1)]);
+    if (!target) return false;
+    seekTo(target.start + 0.05, { immediate: true });
+    toast(target.title);
+    return true;
+  }
+  function openChapters() {
+    const now = chapterAt(position());
+    const list = h('div', { class: 'chap-list' }, chapters.map((c, i) => {
+      const tile = tileAt(Math.min(c.start + Math.min(10, ((c.end || c.start + 20) - c.start) / 2), duration() - 1), 160);
+      return h('button', { class: `chap f${c === now ? ' on' : ''}`, onclick: () => { s.close(); seekTo(c.start + 0.05, { immediate: true }); } },
+        h('span', { class: 'chap-img', style: tile || {} }, tile ? null : h('b', {}, String(i + 1))),
+        h('span', { class: 'chap-txt' }, h('b', {}, c.title), h('small', {}, fmtTime(c.start))));
+    }));
+    const s = sheet('Chapitres', list, { wide: true });
+    requestAnimationFrame(() => { const cur = list.querySelector('.on'); if (cur) { cur.scrollIntoView({ block: 'nearest' }); focusEl(cur, { scroll: false }); } });
+  }
+
+  // ---------------------------------------------------------------- vitesse de lecture
+  const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  let speed = 1;
+  const fmtSpeed = (v) => `${String(v).replace('.', ',')}×`;
+  function setSpeed(v, { silent = false } = {}) {
+    speed = Math.max(0.5, Math.min(2, v));
+    video.defaultPlaybackRate = speed; video.playbackRate = speed;
+    if ('preservesPitch' in video) video.preservesPitch = true;
+    const val = speedBtn.querySelector('.p-speed-val');
+    val.hidden = speed === 1; val.textContent = fmtSpeed(speed);
+    speedBtn.classList.toggle('on', speed !== 1);
+    if (!silent) toast(`Vitesse ${fmtSpeed(speed)}`);
+  }
+  function openSpeed() {
+    const s = sheet('Vitesse de lecture', h('div', {}, h('div', { class: 'speed-grid' }, SPEEDS.map((v) => h('button', {
+      class: `chip f${v === speed ? ' on' : ''}`, onclick: () => { s.close(); setSpeed(v); },
+    }, v === 1 ? 'Normale' : fmtSpeed(v)))),
+    h('p', { class: 'muted' }, party ? 'En séance, la vitesse ne change que pour vous.' : 'Le ton des voix est conservé. Touches < et > pendant la lecture.')));
+  }
 
   // Souris et tactile
   // Seul un vrai mouvement de la souris affiche les commandes (le navigateur envoie aussi des « mouvements »
@@ -519,6 +650,8 @@ export async function render(main, { id, query }) {
     if (info && info.live && (k === 'ChannelUp' || k === 'PageUp' || code === 427 || code === 33)) { consume(); zap(-1); return; }
     if (info && info.live && (k === 'ChannelDown' || k === 'PageDown' || code === 428 || code === 34)) { consume(); zap(1); return; }
     if (k === 'f') { consume(); toggleFullscreen(); return; }
+    if ((k === '>' || k === '<') && info && !info.live) { consume(); const i = SPEEDS.indexOf(speed); setSpeed(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (i < 0 ? 2 : i) + (k === '>' ? 1 : -1)))]); return; }
+    if ((k === ']' || k === '[') && jumpChapter(k === ']' ? 1 : -1)) { consume(); showUi(); return; }
     if ((k === 'g' || k === 'h') && cues.length) { consume(); setSubDelay(subDelay + (k === 'h' ? 0.1 : -0.1)); return; }
     if (k === 'm') { consume(); setMuted(!video.muted); return; }
     if (k === 'c' && !chatBtn.hidden) { consume(); setChat(root.classList.contains('chat-hidden')); return; }
@@ -723,7 +856,25 @@ export async function render(main, { id, query }) {
       h('button', { class: 'p-icon small f', 'aria-label': 'Sous-titres plus tard', onclick: () => step(0.5) }, '+'),
       h('small', {}, 'Touches G et H : 0,1 s')));
     subCol.append(h('button', { class: 'opt ic f', onclick: () => { s.close(); findSubtitles(); } }, icon('search'), 'Chercher des sous-titres en ligne'));
+    subCol.append(h('button', { class: 'opt ic f', onclick: () => { s.close(); openSubLook(); } }, icon('subs'), 'Apparence des sous-titres'));
     const s = sheet('Audio et sous-titres', h('div', { class: 'sheet-cols' }, audioCol, subCol));
+  }
+
+  // Apparence des sous-titres (taille, couleur, fond, position), mémorisée sur cet appareil, appliquée en direct
+  function openSubLook() {
+    const row = (label, key, opts, def = opts[0][0]) => h('div', { class: 'look-row' }, h('span', {}, label), h('div', { class: 'seg' }, opts.map(([v, l]) => h('button', {
+      class: `seg-b f${(prefs.get(key) || def) === v ? ' on' : ''}`,
+      onclick: (e) => { prefs.set(key, v); e.currentTarget.parentNode.querySelectorAll('.seg-b').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); applySubLook(); paintSample(); },
+    }, l))));
+    const paintSample = () => { if (!subsLayer.childNodes.length || subsLayer.dataset.sample) { subsLayer.dataset.sample = '1'; lastCue = '__exemple'; subsLayer.replaceChildren(h('div', {}, h('span', {}, 'Voici à quoi ressemblent les sous-titres.'))); } };
+    const s = sheet('Apparence des sous-titres', h('div', { class: 'look' },
+      row('Taille', 'subSize', [['small', 'Petite'], ['medium', 'Moyenne'], ['large', 'Grande'], ['xlarge', 'Très grande']], 'medium'),
+      row('Couleur', 'subColor', [['white', 'Blanc'], ['yellow', 'Jaune']]),
+      row('Style', 'subStyle', [['text', 'Contour'], ['box', 'Fond noir']]),
+      row('Position', 'subPos', [['normal', 'En bas'], ['high', 'Plus haut']]),
+      h('p', { class: 'muted' }, 'Réglage gardé sur cet appareil. Aussi dans Réglages → Lecture sur cet appareil.')), { onClose: () => { if (subsLayer.dataset.sample) { delete subsLayer.dataset.sample; subsLayer.replaceChildren(); } lastCue = null; paintSubs(); } });
+    paintSample();
+    return s;
   }
 
   // Sous-titres manquants : recherche sur OpenSubtitles, le meilleur choix en premier (même version que le fichier)
