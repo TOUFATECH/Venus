@@ -336,7 +336,34 @@ html:not(.touch) .card:hover .shot { transform: scale(1.03); }
 .p-buf { background: rgba(236,234,228,.4); }
 .p-fill { background: var(--sulfur); }
 .p-knob { position: absolute; top: 5px; width: 18px; height: 18px; margin-left: -9px; border-radius: 50%; background: var(--paper); border: 3px solid var(--sulfur); pointer-events: none; }
-.p-hover { position: absolute; bottom: 34px; transform: translateX(-50%); background: rgb(var(--night-rgb) / .92); padding: 4px 10px; border-radius: 4px; font-size: 0.85rem; pointer-events: none; }
+.p-hover { position: absolute; bottom: 34px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 4px; background: rgb(var(--night-rgb) / .92); padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; pointer-events: none; z-index: 3; }
+.p-hover:has(.p-hover-img:not([hidden])) { padding: 4px 4px 6px; }
+.p-hover-img { border-radius: 4px; background-repeat: no-repeat; background-color: #000; box-shadow: 0 0 0 1px rgba(255,255,255,.18); }
+.p-hover-chap { max-width: 200px; font-weight: 700; font-size: .8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--paper); }
+.p-hover-time { font-variant-numeric: tabular-nums; }
+/* Repères des chapitres sur la barre */
+.p-chapmarks { position: absolute; inset: 0; pointer-events: none; }
+.p-chapmarks i { position: absolute; top: 9px; width: 3px; height: 10px; margin-left: -1.5px; border-radius: 1px; background: rgb(var(--night-rgb) / .85); }
+/* Vitesse : l'icône garde la taille des autres boutons, la valeur s'affiche en petit dessous */
+.p-speed { position: relative; }
+.p-speed-val { position: absolute; bottom: -2px; left: 50%; transform: translateX(-50%); font-size: .62rem; font-weight: 800; line-height: 1; color: var(--sulfur); pointer-events: none; }
+.p-speed.on svg { color: var(--sulfur); }
+.speed-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.speed-grid .chip { flex: 1 1 80px; justify-content: center; }
+/* Liste des chapitres */
+.chap-list { display: flex; flex-direction: column; gap: 6px; max-height: 65vh; overflow-y: auto; }
+.chap { display: flex; align-items: center; gap: 14px; padding: 6px; border-radius: 8px; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; }
+.chap:hover, .chap.f:focus-visible, .chap.on { background: rgba(255,255,255,.07); }
+.chap.on .chap-txt b { color: var(--sulfur); }
+.chap-img { flex: 0 0 auto; width: 160px; min-height: 90px; border-radius: 6px; background-color: #000; background-repeat: no-repeat; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.chap-img b { font-size: 1.4rem; color: var(--mist); }
+.chap-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chap-txt b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chap-txt small { color: var(--mist); font-variant-numeric: tabular-nums; }
+/* Apparence des sous-titres */
+.look { display: flex; flex-direction: column; gap: 12px; }
+.look-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.look-row > span { font-weight: 650; }
 .p-controls { display: flex; align-items: center; gap: 10px; }
 .p-controls .spacer { flex: 1; }
 .p-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: clamp(20px, 6vw, 64px); opacity: 0; transition: opacity .3s; }
@@ -357,6 +384,10 @@ html:not(.touch) .card:hover .shot { transform: scale(1.03); }
   paint-order: stroke fill; -webkit-text-stroke: .045em rgba(0,0,0,.85); }
 .player.sub-small .p-subs { --sub-size: clamp(.95rem, 2.1vw, 1.7rem); }
 .player.sub-large .p-subs { --sub-size: clamp(1.4rem, 3.4vw, 2.9rem); }
+.player.sub-xlarge .p-subs { --sub-size: clamp(1.7rem, 4.2vw, 3.6rem); }
+.player.sub-yellow .p-subs span { color: #ffe44d; }
+.player.sub-high .p-subs { bottom: 12%; }
+.player.sub-high.ui-on .p-subs { bottom: 24%; }
 /* Option « avec fond » pour ceux qui préfèrent l'ancien style */
 .player.sub-box .p-subs span { padding: .08em .32em; background: rgba(0,0,0,.6); border-radius: 3px; text-shadow: none; -webkit-text-stroke: 0; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .p-next { position: absolute; right: max(var(--gutter), env(safe-area-inset-right, 0px)); bottom: 150px; width: min(380px, 80vw); background: rgb(var(--deep-rgb) / .96); border: 1px solid var(--edge); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }

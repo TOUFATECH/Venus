@@ -8,7 +8,7 @@ const TEXT_SUBS = new Set(['subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 
 
 export function ffprobe(file, pre = [], timeout = 90000) {
   return new Promise((resolve, reject) => {
-    execFile(config.ffprobe, ['-v', 'error', ...pre, '-print_format', 'json', '-show_format', '-show_streams', file],
+    execFile(config.ffprobe, ['-v', 'error', ...pre, '-print_format', 'json', '-show_format', '-show_streams', '-show_chapters', file],
       { timeout, maxBuffer: 20 * 1024 * 1024 },
       (err, stdout) => {
         if (err) return reject(err);
@@ -79,8 +79,30 @@ export async function probeFile(file, pre = [], timeout = 90000) {
     duration,
     bitrate: Number(fmt.bit_rate) || (duration ? Math.round((Number(fmt.size) * 8) / duration) : 0),
     video, audio, subs,
-    chapters: [],
+    chapters: mapChapters(data.chapters, duration),
+    chaptersChecked: true,
   };
+}
+
+// Chapitres intégrés au fichier (MKV, MP4) : début, fin et titre
+export function mapChapters(list, duration = 0) {
+  const out = (list || []).map((c, i) => ({
+    start: Math.max(0, Number(c.start_time) || 0),
+    end: Number(c.end_time) || 0,
+    title: String((c.tags && (c.tags.title || c.tags.TITLE)) || '').trim().slice(0, 120) || `Chapitre ${i + 1}`,
+  })).filter((c) => !duration || c.start < duration);
+  // Un seul chapitre couvrant tout le fichier n'apporte rien
+  return out.length >= 2 ? out : [];
+}
+
+// Pour les fichiers analysés avant la prise en charge des chapitres
+export function readChapters(file, duration = 0) {
+  return new Promise((resolve) => {
+    execFile(config.ffprobe, ['-v', 'error', '-show_chapters', '-print_format', 'json', file], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
+      if (err) return resolve([]);
+      try { resolve(mapChapters(JSON.parse(out).chapters, duration)); } catch { resolve([]); }
+    });
+  });
 }
 
 const SUB_EXT = new Set(['.srt', '.ass', '.ssa', '.vtt']);

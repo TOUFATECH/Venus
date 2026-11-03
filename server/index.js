@@ -25,6 +25,8 @@ import { clientIp, isSecure, inspectRequest, isBanned, applyHeaders, handlePrefl
 import { tlsOptions } from './tls.js';
 import { notify } from './notify.js';
 import { startSecurityAudit } from './audit.js';
+import { defineTask } from './tasks.js';
+import { trickplayBackfill } from './trickplay.js';
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -126,6 +128,8 @@ async function main() {
     }
   });
   startBackups();
+  // Vignettes d'aperçu de la barre de lecture : préparées en arrière-plan, titre après titre
+  defineTask('trickplay', { label: 'Vignettes de la barre de lecture', description: 'Une image toutes les 10 secondes pour chaque film, épisode et clip, montrée au survol de la barre.', every: 6 * 3600e3, firstDelay: 5 * 60e3, run: trickplayBackfill });
   setInterval(() => refreshRatings(), 6 * 3600000).unref();
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)
   setTimeout(() => scanAll(), 2000);

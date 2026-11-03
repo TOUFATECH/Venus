@@ -65,7 +65,9 @@ export async function render(main, { query } = {}) {
       h('input', { type: 'checkbox', class: 'f', checked: !!prefs.get('detailsSound'), onchange: (e) => { prefs.set('detailsSound', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
     h('div', { class: 'two-cols wide' },
       field('Sous-titres', select([['text', 'Texte blanc seul'], ['box', 'Texte sur fond noir']], prefs.get('subStyle'), { onchange: (e) => { prefs.set('subStyle', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
-      field('Taille', select([['small', 'Petite'], ['medium', 'Moyenne'], ['large', 'Grande']], prefs.get('subSize'), { onchange: (e) => { prefs.set('subSize', e.target.value); toast('Préférence enregistrée pour cet appareil'); } }))),
+      field('Taille', select([['small', 'Petite'], ['medium', 'Moyenne'], ['large', 'Grande'], ['xlarge', 'Très grande']], prefs.get('subSize'), { onchange: (e) => { prefs.set('subSize', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
+      field('Couleur', select([['white', 'Blanc'], ['yellow', 'Jaune']], prefs.get('subColor'), { onchange: (e) => { prefs.set('subColor', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
+      field('Position', select([['normal', 'En bas de l’image'], ['high', 'Un peu plus haut']], prefs.get('subPos'), { onchange: (e) => { prefs.set('subPos', e.target.value); toast('Préférence enregistrée pour cet appareil'); } }))),
     prefSwitch('autoSkip', 'Passer automatiquement les génériques (opening, ending)'),
     prefSwitch('miniPlayer', 'Mini-lecteur : la vidéo continue en petit quand on quitte le lecteur'),
     pushRow(),
@@ -177,6 +179,9 @@ export async function render(main, { query } = {}) {
       field('Lectures simultanées maximum', maxS),
       h('label', { class: 'switch' }, h('span', {}, 'Repérer les génériques des séries et animés (analyse audio en arrière-plan)'),
         h('input', { type: 'checkbox', class: 'f', checked: a.settings.detectSegments !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { detectSegments: e.target.checked } }); toast('Réglage enregistré'); } })),
+      field('Vignettes d’aperçu de la barre de lecture', select([['auto', 'Préparées en arrière-plan pour toute la médiathèque'], ['play', 'Préparées à la première lecture seulement'], ['off', 'Désactivées']], a.settings.trickplay || 'auto',
+        { onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { trickplay: e.target.value } }); toast('Réglage enregistré'); } }),
+        'Une image toutes les 10 secondes, au survol de la barre. Environ 1 Mo par heure de vidéo.'),
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small f', onclick: async (e) => {
         e.target.disabled = true; e.target.textContent = 'Test du matériel…';
         try { await api('/api/admin/settings', { method: 'PUT', body: { hwaccel: hwSel.value, maxSessions: Number(maxS.value) } }); toast('Réglages enregistrés'); }

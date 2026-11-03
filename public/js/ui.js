@@ -93,6 +93,8 @@ const P = {
   airplay: '<path d="M6 17H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-1" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 14l5 6H7z" fill="currentColor"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12.2A2 2 0 0 0 9 21h6a2 2 0 0 0 2-1.8L18 7M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
   pip: '<rect x="2.5" y="4.5" width="19" height="15" rx="2.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="11.5" y="11.5" width="7.5" height="5.5" rx="1.2" fill="currentColor"/>',
+  chapters: '<path d="M4 6h3M4 12h3M4 18h3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M10 6h10M10 12h10M10 18h6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  speed: '<path d="M4.5 16.5a8 8 0 1 1 15 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M12 14.5l4-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="14.5" r="1.6" fill="currentColor"/>',
   clock: '<circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2" fill="none"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" stroke="currentColor" stroke-width="2" fill="none"/>',
   exit: '<path d="M14 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
