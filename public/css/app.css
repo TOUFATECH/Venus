@@ -2649,3 +2649,12 @@ main.home { display: flex; flex-direction: column; }
   .all-tile b { font-size: .86rem; }
   .all-tile small { font-size: .72rem; }
 }
+/* Accueil : note « ajoutez une clé TMDB » (administrateur sans affiches) */
+.home-note { position: relative; z-index: 3; display: flex; align-items: center; gap: 14px; margin: 0 var(--gutter) 18px; padding: 14px 16px; border-radius: 16px;
+  background: color-mix(in srgb, var(--sulfur) 12%, transparent); border: 1px solid color-mix(in srgb, var(--sulfur) 30%, transparent); }
+.home-note > svg { width: 26px; height: 26px; flex: none; color: var(--sulfur); }
+.home-note > div { flex: 1; min-width: 0; }
+.home-note p { margin: 2px 0 0; color: var(--haze); font-size: .9rem; }
+@media (max-width: 520px) { .home-note { flex-wrap: wrap; } .home-note .btn { width: 100%; justify-content: center; } }
+/* Rangées d'affiches : un peu plus serrées */
+.row-scroll.posters { gap: 12px; }

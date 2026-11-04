@@ -68,8 +68,8 @@ export function card(item, { poster = false, rank = null, onFocus, queue = null 
   const title = isEp ? item.showTitle || item.title : item.title;
 
   let media;
-  if (poster && !isClip) {
-    media = item.poster ? picture(img(item.poster, 342), item.title) : framePoster(item);
+  if (poster) {
+    media = item.poster ? picture(img(item.poster, 342), title) : framePoster({ ...item, title });
   } else {
     const src = img(item.backdrop || item.still, 780);
     media = src ? picture(src, title) : frameImage(item.id, title);
@@ -89,7 +89,7 @@ export function card(item, { poster = false, rank = null, onFocus, queue = null 
   const pct = p && p.duration ? Math.min(100, (p.position / p.duration) * 100) : 0;
   const seen = item.status === 'seen' || (p && p.watched && !resume);
   const el = h('button', {
-    class: `card f${poster && !isClip ? ' poster' : ''}`,
+    class: `card f${poster ? ' poster' : ''}`,
     'aria-label': [title, sub, seen ? 'déjà vu' : null].filter(Boolean).join(', '),
     // Le nom ouvre la fiche (film, série, animé) ; l'image lance la lecture quand c'est le plus utile
     onclick: (e) => {
@@ -241,7 +241,13 @@ export function row(r, opts = {}) {
   const ranked = r.id === 'top';
   const clips = r.items.filter((it) => it.type === 'clip');
   const queue = clips.length ? () => clips : null;
-  const scroller = h('div', { class: 'row-scroll' }, r.items.map((it, i) => card(it, { rank: ranked && i < 10 ? i + 1 : null, onFocus: opts.onFocus, queue })));
+  // Films, séries et animés : en affiches (comme sur une étagère) ; épisodes, clips et reprises : en vignettes larges
+  // Affiches (format portrait) dès que la rangée est surtout faite de films, séries et épisodes ;
+  // vignettes larges pour les rangées de clips, de chaînes ou d'épisodes
+  const posters = opts.poster !== undefined ? opts.poster : r.style !== 'channels' && r.items.length > 0
+    && !r.items.some((it) => it.type === 'channel')
+    && r.items.filter((it) => it.type === 'movie' || it.type === 'show').length >= Math.ceil(r.items.length * 0.6);
+  const scroller = h('div', { class: `row-scroll${posters ? ' posters' : ''}` }, r.items.map((it, i) => card(it, { poster: posters, rank: ranked && i < 10 ? i + 1 : null, onFocus: opts.onFocus, queue })));
   const tools = [];
   if (clips.length > 1 && clips.length === r.items.length) {
     tools.push(h('button', { class: 'row-link f', onclick: () => { const f = setQueue(clips, { title: r.title }); go(playPath(f.id)); } }, icon('play'), 'Tout lire'));
