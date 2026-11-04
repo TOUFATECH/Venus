@@ -5,6 +5,7 @@ import { h, icon, toast } from '../ui.js';
 import { card } from '../components.js';
 import { go, state } from '../app.js';
 
+const kindOf = (i) => (i.type === 'clip' ? 'clip' : i.type === 'movie' ? 'movie' : i.category === 'anime' ? 'anime' : 'show');
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const recentKey = () => `vn_recent_search_${state.profile ? state.profile.id : 0}`;
 const getRecent = () => { try { return JSON.parse(localStorage.getItem(recentKey())) || []; } catch { return []; } };
@@ -17,6 +18,14 @@ export async function render(main, { query } = {}) {
   const input = h('input', { type: 'search', placeholder: 'Titre, acteur, genre, année…', 'aria-label': 'Rechercher', autocomplete: 'off', enterkeyhint: 'search', 'data-autofocus': true, value: (query && query.get('q')) || '' });
   const clear = h('button', { class: 'search-clear f', type: 'button', 'aria-label': 'Effacer', hidden: true, onclick: () => { input.value = ''; paint(); input.focus(); } }, icon('close'));
   const body = h('div', { class: 'search-body' });
+  // Filtre : tout, films, séries, animés ou clips (gardé pendant la visite)
+  const KINDS = [['all', 'Tout'], ['movie', 'Films'], ['show', 'Séries'], ['anime', 'Animés'], ['clip', 'Clips']];
+  const has = (k) => k === 'all' || all.some((i) => kindOf(i) === k);
+  let kind = (query && query.get('type')) || 'all';
+  const kindBar = h('div', { class: 'seg search-kinds', role: 'group', 'aria-label': 'Type' });
+  const paintKinds = () => kindBar.replaceChildren(...KINDS.filter(([k]) => has(k)).map(([k, l]) => h('button', { class: `seg-b f${kind === k ? ' on' : ''}`, 'aria-pressed': String(kind === k), onclick: () => { kind = k; paintKinds(); paint(); } }, l)));
+  const keep = (list) => (kind === 'all' ? list : list.filter((i) => kindOf(i) === kind));
+  paintKinds();
   let onlineTimer = null, seq = 0;
 
   const section = (title, ...children) => h('section', { class: 'search-sec' }, h('h2', { class: 'section-title' }, title), ...children);
@@ -27,7 +36,7 @@ export async function render(main, { query } = {}) {
       h('div', { class: 'chips' }, recent.map((r) => h('button', { class: 'chip small f', onclick: () => { input.value = r; paint(); } }, icon('restart'), r)),
         h('button', { class: 'linkish f', onclick: () => { try { localStorage.removeItem(recentKey()); } catch { /* */ } paint(); } }, 'Effacer'))) : null;
     const genreEls = genres.length ? section('Parcourir par genre', h('div', { class: 'genre-tiles' }, genres.map((g, k) => h('button', { class: 'genre-tile f', style: { '--h': (k * 47) % 360 }, onclick: () => { input.value = g; paint(); } }, g)))) : null;
-    const recentAdded = [...all].sort((a, b) => (b.added || 0) - (a.added || 0)).slice(0, 18);
+    const recentAdded = keep([...all]).sort((a, b) => (b.added || 0) - (a.added || 0)).slice(0, 18);
     body.replaceChildren(...[recentEls, genreEls, section('Ajouts récents', h('div', { class: 'grid' }, recentAdded.map((i) => card(i, { poster: true }))))].filter(Boolean));
   };
 
@@ -52,7 +61,7 @@ export async function render(main, { query } = {}) {
       }
       for (const [name, n] of x.p) if (words.every((w) => n.split(' ').some((part) => part.startsWith(w)))) people.set(name, (people.get(name) || 0) + 1);
       return { i: x.i, s };
-    }).filter(Boolean).sort((a, b) => b.s - a.s || (b.i.year || 0) - (a.i.year || 0)).map((x) => x.i);
+    }).filter(Boolean).sort((a, b) => b.s - a.s || (b.i.year || 0) - (a.i.year || 0)).map((x) => x.i).filter((i) => kind === 'all' || kindOf(i) === kind);
     const genreHits = genres.filter((g) => norm(g).startsWith(q));
     const parts = [];
     if (people.size) {
@@ -99,7 +108,7 @@ export async function render(main, { query } = {}) {
   input.addEventListener('input', () => { clearTimeout(t); t = setTimeout(paint, 90); });
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && input.value.trim()) { pushRecent(input.value.trim()); input.blur(); } });
   body.addEventListener('click', (e) => { if (e.target.closest('.card') && input.value.trim()) pushRecent(input.value.trim()); }, true);
-  main.append(h('div', { class: 'page' }, h('div', { class: 'search-box' }, icon('search'), input, clear), body));
+  main.append(h('div', { class: 'page' }, h('div', { class: 'search-box' }, icon('search'), input, clear), kindBar, body));
   paint();
   setTimeout(() => input.focus(), 50);
   return { destroy: () => { clearTimeout(onlineTimer); clearTimeout(t); } };

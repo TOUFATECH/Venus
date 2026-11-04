@@ -156,11 +156,11 @@ function openAll(extra = []) {
   const tools = extra.filter((it) => !ids.has(it.id) && it.id !== 'home');
   const open = (it) => { s.close(); if (it.action === 'remote') openRemote(); else go(it.href); };
   const tile = (it) => h('button', { class: `all-tile f${isActive(it.href || '#', parseHash().path) ? ' on' : ''}`, onclick: () => open(it) },
-    h('span', { class: 'all-ic' }, icon(it.icon)), h('b', {}, it.label), it.sub ? h('small', {}, it.sub) : null);
+    h('span', { class: 'all-ic' }, icon(it.icon)), h('span', { class: 'all-txt' }, h('b', {}, it.label), it.sub ? h('small', {}, it.sub) : null));
   const s = sheet('Tout Venus', h('div', { class: 'all-sheet' },
     h('div', { class: 'all-grid' }, secs.map(tile)),
     tools.length ? h('h3', { class: 'all-h' }, 'Outils') : null,
-    tools.length ? h('div', { class: 'more-list' }, tools.map((it) => h('button', { class: 'opt f', onclick: () => open(it) }, icon(iconOf(it)), labelOf(it), it.hint ? h('small', {}, it.hint) : null))) : null,
+    tools.length ? h('div', { class: 'all-tools' }, tools.map((it) => tile({ ...it, label: labelOf(it), icon: iconOf(it), sub: it.hint || '' }))) : null,
     h('button', { class: 'opt f more-edit', onclick: () => { s.close(); go('/reglages?section=menu'); } }, icon('gear'), 'Personnaliser le menu')));
 }
 export { openAll, hasCat };
