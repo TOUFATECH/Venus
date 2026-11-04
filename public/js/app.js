@@ -2,7 +2,7 @@
 import { api, auth, clearApiCache } from './api.js';
 import { h, icon, avatar, toast, logoMark, brand, sheet, overlayHost } from './ui.js';
 import { initNav, focusFirst } from './nav.js';
-import { menuItems, menuPrefs, labelOf, iconOf, dayPart } from './menu.js';
+import { menuItems, menuPrefs, labelOf, iconOf, dayPart, sections } from './menu.js';
 import { applyTheme, currentPlanet, planet } from './themes.js';
 applyTheme();
 
@@ -148,24 +148,32 @@ const itemLink = (it, path) => (it.action === 'remote'
   ? h('button', { class: 'rail-item f', onclick: openRemote }, icon(iconOf(it)), h('span', {}, labelOf(it)))
   : navLink(it.href, labelOf(it), iconOf(it), path));
 
-function openMore(items) {
-  const s = sheet('Plus', h('div', { class: 'more-list' }, items.map((it) => h('button', { class: 'opt f', onclick: () => {
-    s.close();
-    if (it.action === 'remote') openRemote(); else go(it.href);
-  } }, icon(iconOf(it)), labelOf(it), it.hint ? h('small', {}, it.hint) : null)),
-  h('button', { class: 'opt f more-edit', onclick: () => { s.close(); go('/reglages?section=menu'); } }, icon('gear'), 'Personnaliser le menu')));
+// Grille « Tout » : toutes les sections en grandes tuiles (avec le nombre de titres), puis les outils
+function openAll(extra = []) {
+  const p = state.profile;
+  const secs = sections(p, hasCat, state.categories || {});
+  const ids = new Set(secs.map((x) => x.id));
+  const tools = extra.filter((it) => !ids.has(it.id) && it.id !== 'home');
+  const open = (it) => { s.close(); if (it.action === 'remote') openRemote(); else go(it.href); };
+  const tile = (it) => h('button', { class: `all-tile f${isActive(it.href || '#', parseHash().path) ? ' on' : ''}`, onclick: () => open(it) },
+    h('span', { class: 'all-ic' }, icon(it.icon)), h('b', {}, it.label), it.sub ? h('small', {}, it.sub) : null);
+  const s = sheet('Tout Venus', h('div', { class: 'all-sheet' },
+    h('div', { class: 'all-grid' }, secs.map(tile)),
+    tools.length ? h('h3', { class: 'all-h' }, 'Outils') : null,
+    tools.length ? h('div', { class: 'more-list' }, tools.map((it) => h('button', { class: 'opt f', onclick: () => open(it) }, icon(iconOf(it)), labelOf(it), it.hint ? h('small', {}, it.hint) : null))) : null,
+    h('button', { class: 'opt f more-edit', onclick: () => { s.close(); go('/reglages?section=menu'); } }, icon('gear'), 'Personnaliser le menu')));
 }
+export { openAll, hasCat };
 
 // Rail à gauche (ordinateur, TV) + barre du haut et onglets en bas (mobile)
 function shell(path) {
   const p = state.profile;
   const { shown, more } = menuItems(p, hasCat);
-  const moreBtn = (cls) => h('button', { class: cls, 'aria-label': 'Plus', 'data-more': '1', onclick: () => openMore(more) }, icon('more'), h('span', {}, 'Plus'));
+  const moreBtn = (cls, label = 'Plus', ic = 'more', list = more) => h('button', { class: cls, 'aria-label': label === 'Plus' ? 'Plus' : 'Toutes les sections', 'data-more': '1', onclick: () => openAll(list) }, icon(ic), h('span', {}, label));
   const rail = h('nav', { class: 'rail', 'aria-label': 'Navigation principale' },
     h('a', { href: '/', class: 'home-link f', 'aria-label': 'Venus, accueil' }, logoMark()),
-    shown.map((it) => itemLink(it, path)),
-    more.length ? moreBtn('rail-item f') : null,
-    h('div', { class: 'spacer' }),
+    // Sections : la liste défile si elle dépasse la hauteur de l'écran ; Réglages et profil restent en bas
+    h('div', { class: 'rail-scroll' }, shown.map((it) => itemLink(it, path)), more.length ? moreBtn('rail-item f') : null),
     navLink('/reglages', 'Réglages', 'gear', path),
     h('button', { class: 'rail-item f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'), h('span', {}, p.name)));
   const top = h('header', { class: 'mobile-top' },
@@ -173,10 +181,12 @@ function shell(path) {
     h('div', { style: { display: 'flex', gap: '4px' } },
       h('a', { href: '/reglages', class: 'icon-btn f', 'aria-label': 'Réglages' }, icon('gear')),
       h('button', { class: 'icon-btn f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'))));
-  // Mobile : les 4 premiers éléments du menu, le reste dans « Plus »
-  const tabItems = shown.filter((it) => !it.action).slice(0, 4);
-  const extra = [...shown.filter((it) => !tabItems.includes(it)), ...more];
-  const tabs = h('nav', { class: 'tabbar' }, tabItems.map((it) => itemLink(it, path)), extra.length ? moreBtn('f tab-more') : null);
+  // Mobile : Accueil, les deux premières sections du menu, Recherche, et « Tout » (toutes les sections en tuiles)
+  const all = [...shown, ...more];
+  const pick = (id) => all.find((it) => it.id === id);
+  const firstTwo = shown.filter((it) => !it.action && !['home', 'today', 'search'].includes(it.id)).slice(0, 2);
+  const tabItems = [pick('home'), ...firstTwo, pick('search')].filter(Boolean);
+  const tabs = h('nav', { class: 'tabbar' }, tabItems.map((it) => itemLink(it, path)), moreBtn('f tab-more', 'Tout', 'apps', all.filter((it) => !tabItems.includes(it))));
   const onScroll = () => top.classList.toggle('solid', scrollY > 40);
   addEventListener('scroll', onScroll, { passive: true });
   onScroll();

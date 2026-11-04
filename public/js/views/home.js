@@ -4,9 +4,9 @@ import { trailerPlayer } from '../trailer.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime } from '../ui.js';
 import { row, playPath, metaLine, frameImage } from '../components.js';
 import { attachStream } from '../live.js';
-import { go, state, currentPath } from '../app.js';
+import { go, state, currentPath, hasCat, openAll } from '../app.js';
 import { tintFrom } from '../ambiance.js';
-import { todayIcon, todayQuestion } from '../menu.js';
+import { sections } from '../menu.js';
 
 export async function render(main) {
   const data = await api('/api/home');
@@ -151,8 +151,7 @@ export async function render(main) {
       h('div', { class: 'meta' }, meta),
       item.overview ? h('p', { class: 'hero-overview' }, item.overview) : null,
       h('div', { class: 'actions' }, playBtn,
-        h('button', { class: 'btn btn-ghost f', onclick: () => go(`/titre/${item.id}`) }, icon('info'), 'Plus d’infos'),
-        h('button', { class: 'btn btn-ghost btn-tonight f', onclick: () => go('/cesoir') }, icon(todayIcon()), todayQuestion())),
+        h('button', { class: 'btn btn-ghost f', 'aria-label': 'Plus d’infos', onclick: () => go(`/titre/${item.id}`) }, icon('info'), h('span', { class: 'lbl' }, 'Plus d’infos'))),
     ].filter(Boolean));
     body.classList.remove('swap'); void body.offsetWidth; body.classList.add('swap');
     if (hadFocus) playBtn.focus({ preventScroll: true }); // la télécommande ne perd pas sa place
@@ -167,9 +166,10 @@ export async function render(main) {
     const title = isEp ? item.showTitle || item.title : item.title;
     const playBtn = h('button', { class: 'btn btn-play f', 'data-autofocus': true, onclick: () => go(playPath(item.id, item.next ? 0 : undefined)) },
       icon('play'), live ? 'Regarder' : item.next ? `Lire S${item.season} É${item.episode}` : pct ? 'Reprendre' : 'Lecture');
-    const info = live ? h('button', { class: 'btn btn-ghost f', onclick: () => go('/tv') }, icon('tv'), 'Toutes les chaînes')
-      : isEp ? h('button', { class: 'btn btn-ghost f', onclick: () => go(`/titre/${item.showId}?ep=${item.id}`) }, icon('info'), 'Voir l’épisode')
-        : h('button', { class: 'btn btn-ghost f', onclick: () => go(`/titre/${item.id}`) }, icon('info'), 'Plus d’infos');
+    const ghost = (ic, label, to) => h('button', { class: 'btn btn-ghost f', 'aria-label': label, onclick: () => go(to) }, icon(ic), h('span', { class: 'lbl' }, label));
+    const info = live ? ghost('tv', 'Toutes les chaînes', '/tv')
+      : isEp ? ghost('info', 'Voir l’épisode', `/titre/${item.showId}?ep=${item.id}`)
+        : ghost('info', 'Plus d’infos', `/titre/${item.id}`);
     body.classList.add('resume');
     body.replaceChildren(...[
       h('div', { class: 'hero-kicker' }, live ? h('span', { class: 'live-dot' }, 'Direct') : icon('restart'), live ? 'Votre dernière chaîne' : item.next ? 'À suivre' : 'Reprendre là où vous en étiez'),
@@ -177,8 +177,7 @@ export async function render(main) {
       isEp ? h('a', { class: 'hero-ep f', href: `/titre/${item.showId}?ep=${item.id}`, onclick: (e) => { e.preventDefault(); go(`/titre/${item.showId}?ep=${item.id}`); } }, `S${item.season}:É${item.episode} - ${item.title}`) : null,
       pct ? h('div', { class: 'hero-progress' }, h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })), h('span', {}, `${left} min restantes`)) : null,
       item.overview && !live ? h('p', { class: 'hero-overview' }, item.overview) : null,
-      h('div', { class: 'actions' }, playBtn, info,
-        h('button', { class: 'btn btn-ghost btn-tonight f', onclick: () => go('/cesoir') }, icon(todayIcon()), todayQuestion())),
+      h('div', { class: 'actions' }, playBtn, info),
     ].filter(Boolean));
     body.classList.remove('swap'); void body.offsetWidth; body.classList.add('swap');
     if (hadFocus) playBtn.focus({ preventScroll: true });
@@ -220,7 +219,7 @@ export async function render(main) {
   document.addEventListener('visibilitychange', onVis);
 
   main.classList.add('home');
-  main.append(hero, rows);
+  main.append(hero, sectionStrip(), rows);
   if (data.hero.length) { goTo(0); restart(); }
   else hero.remove();
 
@@ -259,4 +258,15 @@ function renderEmpty(main, data) {
     const t = setTimeout(() => { if (currentPath() === '/') window.dispatchEvent(new HashChangeEvent('hashchange')); }, 5000);
     return { destroy: () => clearTimeout(t) };
   }
+}
+
+// Tuiles des sections : tout Venus à portée de main (Films, Séries, Animés, TV, Clips, Musique, Photos, Livres…)
+function sectionStrip() {
+  const list = sections(state.profile, hasCat, state.categories || {});
+  return h('nav', { class: 'home-sections', 'aria-label': 'Sections' },
+    h('div', { class: 'hs-track' },
+      list.map((it) => h('a', { class: `hs-tile f hs-${it.id}`, href: it.href },
+        h('span', { class: 'hs-ic' }, icon(it.icon)),
+        h('span', { class: 'hs-txt' }, h('b', {}, it.label), it.sub ? h('small', {}, it.sub) : null))),
+      h('button', { class: 'hs-tile hs-all f', onclick: () => openAll() }, h('span', { class: 'hs-ic' }, icon('apps')), h('span', { class: 'hs-txt' }, h('b', {}, 'Tout'), h('small', {}, 'Toutes les sections')))));
 }

@@ -91,6 +91,9 @@ a { color: inherit; text-decoration: none; }
 .rail a.active { color: var(--paper); background: rgba(236, 234, 228, 0.08); }
 .rail a:hover, .rail .rail-item:hover { color: var(--paper); }
 .rail .spacer { flex: 1; }
+.rail-scroll { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px; overflow-y: auto; scrollbar-width: none;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 24px), transparent); padding-bottom: 18px; }
+.rail-scroll::-webkit-scrollbar { display: none; }
 .rail .avatar.sm { width: 38px; height: 38px; }
 main.with-nav { padding-left: var(--rail); }
 
@@ -244,7 +247,7 @@ main.with-nav { padding-left: var(--rail); }
 @keyframes shake { 20%, 60% { transform: translateX(-10px); } 40%, 80% { transform: translateX(10px); } }
 
 /* ------------------------------------------------ grande affiche */
-.hero { position: relative; min-height: min(78vh, 760px); display: flex; align-items: flex-end; }
+.hero { position: relative; min-height: min(64vh, 640px); display: flex; align-items: flex-end; }
 .hero-bg { position: absolute; inset: 0; overflow: hidden; }
 .hero-bg img, .hero-bg .ph { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.8s ease; }
 .hero-bg img.on, .hero-bg .ph.on { opacity: 1; }
@@ -509,7 +512,7 @@ html:not(.touch) .opt:hover { background: var(--raise); }
 .home .rows { background: rgb(var(--night-rgb) / .92); padding-top: 6px; min-height: 50vh; }
 .hero-bg .ph { font-size: 0; }
 @media (max-width: 760px) {
-  .hero { min-height: 74vh; }
+  .hero { min-height: 58vh; }
   .hero-dots { left: var(--gutter); right: auto; bottom: 12px; }
   .hero-body { padding-bottom: 36px; }
   .home .hero-bg { left: 0; }
@@ -662,7 +665,7 @@ body { position: relative; z-index: 0; }
 .rail::-webkit-scrollbar { display: none; }
 .rail .home-link { margin-bottom: 12px; }
 .rail a, .rail button.rail-item { padding: 7px 4px; font-size: .66rem; }
-.rail a[href="#/cesoir"] svg { color: var(--sulfur); }
+.rail a[href="/cesoir"] svg { color: var(--sulfur); }
 
 /* ------------------------------------------------ Mode Ambiance */
 .amb-canvas { position: absolute; inset: -12%; width: 124%; height: 124%; filter: blur(60px) saturate(1.6) brightness(1.05); opacity: 0; transition: opacity .8s; pointer-events: none; }
@@ -2580,3 +2583,69 @@ html[data-glass] .m-cover { border-radius: 16px; box-shadow: 0 10px 26px rgba(0,
 .rd-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid rgba(128,128,128,.25); }
 .rd-foot .btn { color: inherit; background: rgba(128,128,128,.15); }
 .rd-pos { font-variant-numeric: tabular-nums; opacity: .75; font-size: .88rem; }
+
+/* ------------------------------------------------ accueil : tuiles des sections (tout Venus d'un coup d'œil) */
+main.home { display: flex; flex-direction: column; }
+.home-sections { position: relative; z-index: 3; padding: 4px var(--gutter) 0; background: rgb(var(--night-rgb) / .92); }
+.hs-track { display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; padding: 8px 2px 16px; margin: 0 -2px; }
+.hs-track::-webkit-scrollbar { display: none; }
+.hs-tile {
+  flex: none; display: flex; align-items: center; gap: 12px; min-width: 170px; max-width: 250px; padding: 12px 18px 12px 12px; scroll-snap-align: start;
+  border-radius: 16px; border: 1px solid var(--edge); background: rgba(236, 234, 228, .05); color: var(--paper); text-align: left; cursor: pointer;
+  transition: transform .18s var(--ease), background-color .18s, border-color .18s;
+}
+.hs-tile:hover, .hs-tile:focus-visible, .hs-tile.is-focus { background: rgba(236, 234, 228, .11); border-color: rgba(236, 234, 228, .22); transform: translateY(-2px); }
+.hs-ic { width: 42px; height: 42px; border-radius: 12px; flex: none; display: grid; place-items: center; color: var(--sulfur); background: color-mix(in srgb, var(--sulfur) 14%, transparent); }
+.hs-ic svg { width: 22px; height: 22px; }
+.hs-today .hs-ic { color: var(--night); background: var(--sulfur); }
+.hs-all .hs-ic { color: var(--haze); background: rgba(236, 234, 228, .08); }
+.hs-txt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hs-txt b { font-size: .95rem; white-space: nowrap; }
+.hs-txt small { color: var(--dim); font-size: .78rem; white-space: nowrap; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.home .rows { padding-top: 0; }
+/* Grand écran : toutes les tuiles visibles d'un coup, sur une ou deux lignes */
+@media (min-width: 761px) {
+  .hs-track { display: grid; grid-template-columns: repeat(auto-fill, minmax(188px, 1fr)); gap: 10px; overflow: visible; }
+  .hs-tile { min-width: 0; max-width: none; }
+  .hs-all { display: none; }
+}
+/* Téléphone : les sections en pastilles juste sous l'en-tête, au-dessus de l'affiche */
+@media (max-width: 760px) {
+  .home-sections { order: -1; padding: calc(62px + env(safe-area-inset-top, 0px)) 0 0; background: var(--night); }
+  .hs-track { gap: 8px; padding: 4px 16px 12px; margin: 0; scroll-padding: 0 16px; }
+  .hs-tile { min-width: 0; gap: 8px; padding: 6px 14px 6px 6px; border-radius: 999px; }
+  .hs-ic { width: 30px; height: 30px; border-radius: 50%; }
+  .hs-ic svg { width: 17px; height: 17px; }
+  .hs-txt b { font-size: .86rem; }
+  .hs-txt small { display: none; }
+  .hs-tile:hover, .hs-tile:focus-visible { transform: none; }
+  /* Boutons de l'affiche sur une ligne : « Lecture » + icône d'infos */
+  .hero .actions { flex-wrap: nowrap; }
+  .hero .actions .btn-play { flex: 1; max-width: 260px; justify-content: center; }
+}
+@media (max-width: 520px) {
+  .hero .actions .btn-ghost .lbl { display: none; }
+  .hero .actions .btn-ghost { padding: 0; width: 52px; justify-content: center; flex: none; }
+}
+
+/* ------------------------------------------------ grille « Tout Venus » (bouton Tout / Plus) */
+.all-sheet { display: flex; flex-direction: column; gap: 6px; }
+.all-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+.all-tile {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 14px; border-radius: 16px; text-align: left; cursor: pointer;
+  border: 1px solid var(--edge); background: rgba(236, 234, 228, .05); color: var(--paper); transition: background-color .15s, border-color .15s;
+}
+.all-tile:hover, .all-tile:focus-visible, .all-tile.is-focus { background: rgba(236, 234, 228, .11); }
+.all-tile.on { border-color: var(--sulfur); }
+.all-tile .all-ic { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; margin-bottom: 6px; color: var(--sulfur); background: color-mix(in srgb, var(--sulfur) 14%, transparent); }
+.all-tile .all-ic svg { width: 21px; height: 21px; }
+.all-tile b { font-size: .95rem; }
+.all-tile small { color: var(--dim); font-size: .78rem; font-weight: 600; }
+.all-h { margin: 14px 0 2px; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+@media (max-width: 520px) {
+  .all-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .all-tile { padding: 12px 10px; }
+  .all-tile .all-ic { width: 34px; height: 34px; margin-bottom: 4px; }
+  .all-tile b { font-size: .86rem; }
+  .all-tile small { font-size: .72rem; }
+}
