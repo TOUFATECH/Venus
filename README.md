@@ -11,7 +11,7 @@ Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec un
 - **Sous-titres** SRT / ASS / VTT, intégrés ou externes (`Film.fr.srt`, `Film.forced.fr.srt`), encodage Windows détecté. Les sous-titres image (PGS Blu-ray) sont incrustés à la volée.
 - **TV** : navigation complète aux flèches de la télécommande (Android TV, Fire TV, Samsung, LG…).
 - **Chromecast** et **AirPlay**, contrôles sur l'écran verrouillé du téléphone, application installable (PWA).
-- **Affiches et résumés en français** via TMDB (gratuit) et [Trakt](https://app.trakt.tv) (en secours ou en premier), ou vos propres `poster.jpg` / `fanart.jpg`. Sans aucune clé, Venus trouve quand même les affiches des films (iTunes) et des séries (TVmaze), avec résumé et année.
+- **Affiches et résumés en français** via TMDB (gratuit) et [Trakt](https://app.trakt.tv) (en secours ou en premier), ou vos propres `poster.jpg` / `fanart.jpg`. Sans aucune clé, Venus trouve quand même les affiches : site de TMDB (en français), IMP Awards et iTunes pour les films, TMDB et TVmaze pour les séries et animés.
 
 ## Notes, nouveautés, Seerr, thèmes
 

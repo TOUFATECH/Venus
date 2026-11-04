@@ -131,7 +131,8 @@ export function frameImage(id, title, { fade = true } = {}) {
   return el;
 }
 export function framePoster(item) {
-  return h('div', { class: 'gen-poster' }, frameImage(item.id, item.title), h('b', {}, item.title));
+  // Pas de titre écrit sur l'image : le nom est déjà sous la carte
+  return h('div', { class: 'gen-poster' }, frameImage(item.id, item.title));
 }
 
 // Aperçu vidéo au survol de la souris (une seule carte à la fois)
