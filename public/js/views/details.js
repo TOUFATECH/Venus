@@ -156,16 +156,20 @@ export async function render(main, { id, query }) {
     const seasonName = (s) => s.title || (s.number === 0 ? 'Bonus' : `Saison ${s.number}`);
     const dur = (s) => s.episodes.reduce((n, e) => n + (e.runtime ? e.runtime * 60 : e.duration || 0), 0);
 
+    const stepSeason = (dir) => { const i = d.seasons.indexOf(current); showSeason(d.seasons[(i + dir + d.seasons.length) % d.seasons.length]); };
     const paintBar = () => {
       seasonBar.replaceChildren(...d.seasons.map((s) => {
         const seen = s.episodes.filter(isSeen).length, total = s.episodes.length;
         const on = s === current;
+        const pic = s.poster || d.poster;
         const b = h('button', { class: `season-card f${on ? ' on' : ''}${seen === total && total ? ' done' : ''}`, role: 'tab', 'aria-selected': String(on), 'data-id': s.id, onclick: () => showSeason(s) },
+          h('span', { class: 'season-pic' }, pic ? h('img', { src: img(pic, 342), alt: '', loading: 'lazy' }) : h('span', { class: 'season-ph' }, String(s.number)),
+            h('i', { class: 'season-prog' }, h('i', { style: { width: `${total ? (seen / total) * 100 : 0}%` } }))),
           h('b', {}, seasonName(s)),
-          h('span', {}, seen === total && total ? 'Vue en entier' : seen ? `${seen} / ${total} vus` : `${total} épisode${total > 1 ? 's' : ''}`),
-          h('i', { class: 'season-prog' }, h('i', { style: { width: `${total ? (seen / total) * 100 : 0}%` } })));
+          h('span', {}, seen === total && total ? 'Vue en entier' : seen ? `${seen} / ${total} vus` : `${total} épisode${total > 1 ? 's' : ''}`));
         return b;
       }));
+
       requestAnimationFrame(() => seasonBar.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'center' }));
     };
     const paintHead = () => {
@@ -204,9 +208,9 @@ export async function render(main, { id, query }) {
       }
       // Fin de saison : on enchaîne sur la suivante
       const idx = d.seasons.indexOf(s);
-      const nextS = d.seasons[idx + 1];
+      const nextS = d.seasons.length > 1 ? d.seasons[(idx + 1) % d.seasons.length] : null; // après la dernière : retour à la première
       if (nextS) epList.append(h('button', { class: 'next-season f', onclick: () => { showSeason(nextS); seasonBar.scrollIntoView({ block: 'start', behavior: 'smooth' }); } },
-        h('span', {}, h('small', {}, 'Ensuite'), h('b', {}, seasonName(nextS)), h('em', {}, `${nextS.episodes.length} épisodes`)), icon('fwd')));
+        h('span', {}, h('small', {}, idx === d.seasons.length - 1 ? 'Reprendre depuis le début' : 'Ensuite'), h('b', {}, seasonName(nextS)), h('em', {}, `${nextS.episodes.length} épisodes`)), icon('fwd')));
       if (focusId) {
         const el = epList.querySelector('.episode.is-current');
         if (el) setTimeout(() => { el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); focusEl(el); }, 350);
@@ -269,7 +273,11 @@ export async function render(main, { id, query }) {
             nu.overview ? h('p', {}, nu.overview) : null))));
     }
     content.append(h('section', { class: 'd-section', id: 'episodes' },
-      h('div', { class: 'ep-head' }, h('h2', { class: 'section-title' }, d.seasons.length > 1 ? `${d.seasons.length} saisons` : 'Épisodes'), epChips),
+      h('div', { class: 'ep-head' }, h('h2', { class: 'section-title' }, d.seasons.length > 1 ? `${d.seasons.length} saisons` : 'Épisodes'),
+        // Flèches : saison précédente / suivante, en boucle (après la dernière, retour à la première)
+        d.seasons.length > 1 ? h('div', { class: 'season-arrows' },
+          h('button', { class: 'season-arrow f', 'aria-label': 'Saison précédente', onclick: () => stepSeason(-1) }, icon('back')),
+          h('button', { class: 'season-arrow f', 'aria-label': 'Saison suivante', onclick: () => stepSeason(1) }, icon('fwd'))) : null, epChips),
       d.seasons.length > 1 ? seasonBar : null, seasonHead, epList,
       d.missingSeasons && d.missingSeasons.length && prefs.get('showMissing') !== false ? h('p', { class: 'missing-seasons' }, `Pas dans vos dossiers : ${d.missingSeasons.map((x) => `${x.title || `Saison ${x.number}`} (${x.count} épisodes)`).join(', ')}.`) : null));
     showSeason(startSeason, fromPlayer ? wantEp : null);
@@ -317,13 +325,14 @@ export async function render(main, { id, query }) {
     if (d.file && d.file.name) tech.push(['Fichier', [d.file.name, fmtSize(d.file.size), (d.file.container || '').toUpperCase(), fmtRate(m.bitrate)].filter(Boolean).join(' · ')]);
   }
   const dl = (list) => h('dl', { class: 'info-list' }, list.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)]));
+  // « À propos » et « Fiche technique » : deux boutons, les détails s'ouvrent dans une fenêtre si besoin
   if (pairs.length || tech.length || (cr.tags && cr.tags.length)) {
+    const open = (title, body) => sheet(title, h('div', { class: 'about-sheet' }, body));
     content.append(h('section', { class: 'd-section about' },
-      h('h2', { class: 'section-title' }, 'À propos'),
-      h('div', { class: 'about-grid' },
-        pairs.length ? h('div', { class: 'about-card' }, dl(pairs)) : null,
-        tech.length ? h('div', { class: 'about-card' }, h('h3', {}, isShow ? 'Fiche technique (premier épisode)' : 'Fiche technique'), dl(tech)) : null),
-      cr.tags && cr.tags.length ? h('div', { class: 'tag-cloud' }, h('span', { class: 'tag-cloud-label' }, 'Étiquettes'), cr.tags.map((t) => h('span', { class: 'tag ghost' }, t))) : null));
+      h('div', { class: 'about-btns' },
+        pairs.length || (cr.tags && cr.tags.length) ? h('button', { class: 'btn btn-ghost f', onclick: () => open('À propos', [dl(pairs),
+          cr.tags && cr.tags.length ? h('div', { class: 'tag-cloud' }, h('span', { class: 'tag-cloud-label' }, 'Étiquettes'), cr.tags.map((t) => h('span', { class: 'tag ghost' }, t))) : null]) }, icon('info'), 'À propos') : null,
+        tech.length ? h('button', { class: 'btn btn-ghost f', onclick: () => open(isShow ? 'Fiche technique (premier épisode)' : 'Fiche technique', dl(tech)) }, icon('film'), 'Fiche technique') : null)));
   }
 
   if (d.extras && d.extras.length) {
