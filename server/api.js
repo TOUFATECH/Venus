@@ -586,7 +586,9 @@ router.get('/api/home', (ctx) => {
     const r = heroResume.item;
     hero = [r, ...hero.filter((x) => x.id !== r.id && x.id !== r.showId)].slice(0, 6);
   }
-  sendJson(ctx.res, { hero, rows, empty: base.length === 0 && !channels.length, scanning: scanState.running });
+  // Administrateur sans clé TMDB : l'accueil le lui rappelle (sans elle, pas d'affiches ni de résumés)
+  const noPosters = !!p.is_admin && !tmdbKey() && base.some((i) => i.type === 'movie' || i.type === 'show') && !base.some((i) => i.poster);
+  sendJson(ctx.res, { hero, rows, empty: base.length === 0 && !channels.length, scanning: scanState.running, noPosters });
 });
 
 // Bibliothèque d'une source, avec l'état vu / non vu pour le profil (filtres et tris côté interface)

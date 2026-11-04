@@ -1,7 +1,7 @@
 // Accueil : grande affiche + rangées. L'affiche suit la carte sélectionnée (télécommande ou souris).
 import { api, heroTrailers, deviceCaps } from '../api.js';
 import { trailerPlayer } from '../trailer.js';
-import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime } from '../ui.js';
+import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, toast } from '../ui.js';
 import { row, playPath, metaLine, frameImage } from '../components.js';
 import { attachStream } from '../live.js';
 import { go, state, currentPath, hasCat, openAll } from '../app.js';
@@ -219,7 +219,7 @@ export async function render(main) {
   document.addEventListener('visibilitychange', onVis);
 
   main.classList.add('home');
-  main.append(hero, sectionStrip(), rows);
+  main.append(hero, sectionStrip(), data.noPosters ? noPostersNote() : null, rows);
   if (data.hero.length) { goTo(0); restart(); }
   else hero.remove();
 
@@ -269,4 +269,15 @@ function sectionStrip() {
         h('span', { class: 'hs-ic' }, icon(it.icon)),
         h('span', { class: 'hs-txt' }, h('b', {}, it.label), it.sub ? h('small', {}, it.sub) : null))),
       h('button', { class: 'hs-tile hs-all f', onclick: () => openAll() }, h('span', { class: 'hs-ic' }, icon('apps')), h('span', { class: 'hs-txt' }, h('b', {}, 'Tout'), h('small', {}, 'Toutes les sections')))));
+}
+
+// Pas de clé TMDB : les affiches, résumés et notes manquent ; l'administrateur est invité à l'ajouter (une minute)
+function noPostersNote() {
+  const btn = h('button', { class: 'btn btn-small f', onclick: async () => {
+    btn.disabled = true;
+    try { await api('/api/admin/tasks/posters/run', { method: 'POST' }); toast('Recherche des affiches lancée : elles apparaîtront d’ici quelques minutes'); } catch (e) { toast(e.message, true); btn.disabled = false; }
+  } }, 'Chercher les affiches');
+  return h('div', { class: 'home-note' }, icon('image'),
+    h('div', {}, h('b', {}, 'Vos films n’ont pas encore d’affiches'), h('p', {}, 'Venus les cherche tout seul sur des services gratuits. Pour les résumés complets, les notes et les bandes-annonces, ajoutez une clé TMDB (gratuite).')),
+    h('div', { class: 'actions' }, btn, h('button', { class: 'btn btn-small btn-play f', onclick: () => go('/reglages?section=sources') }, 'Ajouter la clé')));
 }
