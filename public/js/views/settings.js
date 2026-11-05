@@ -91,22 +91,39 @@ export async function render(main, { query } = {}) {
   const themeBox = themeEditor();
   page.append(h('div', { class: 'page-head' }, h('h1', {}, 'Réglages'),
     me.isAdmin ? h('button', { class: 'tool f', onclick: () => go('/tableau-de-bord') }, icon('gauge'), 'Tableau de bord') : null));
+  // Une rubrique à la fois : onglets en haut, seuls les blocs de la rubrique choisie sont affichés.
+  const TABS = me.isAdmin
+    ? [['medias', 'Médiathèques', 'folder'], ['profil', 'Mon profil', 'key'], ['affichage', 'Affichage', 'image'], ['lecture', 'Lecture', 'play'], ['famille', 'Profils', 'people'], ['infos', 'Infos et affiches', 'spark'], ['alertes', 'Notifications', 'chat'], ['serveur', 'Serveur', 'server']]
+    : [['profil', 'Mon profil', 'key'], ['affichage', 'Affichage', 'image']];
+  const SECTION_TAB = { menu: 'affichage', sources: 'infos', seerr: 'infos', ratings: 'infos', affiches: 'infos', subtitles: 'infos', notifications: 'alertes', backups: 'serveur' };
+  let tab = SECTION_TAB[query && query.get('section')] || (query && query.get('onglet')) || (() => { try { return sessionStorage.getItem('vn_settings_tab'); } catch { return null; } })() || TABS[0][0];
+  if (!TABS.some(([k]) => k === tab)) tab = TABS[0][0];
+  const tabBar = h('nav', { class: 'set-tabs', role: 'tablist', 'aria-label': 'Rubriques des réglages' });
+  const body = h('div', { class: 'admin-grid' });
+  const groups = {};
+  const paintTabs = () => tabBar.replaceChildren(...TABS.map(([k, label, ic]) => h('button', { class: `set-tab f${k === tab ? ' on' : ''}`, role: 'tab', 'aria-selected': String(k === tab), onclick: () => { tab = k; try { sessionStorage.setItem('vn_settings_tab', k); } catch { /* */ } paintTabs(); paintBody(); scrollTo({ top: 0 }); } }, icon(ic), h('span', {}, label))));
+  const paintBody = () => body.replaceChildren(...(groups[tab] || []).filter(Boolean));
   const toMenu = () => {
     const sec = query && query.get('section');
     if (!sec) return;
     requestAnimationFrame(() => { const el = sec === 'menu' ? menuBox : document.getElementById(sec); if (el) el.scrollIntoView({ block: 'start' }); });
   };
-  if (!me.isAdmin) { page.append(h('div', { class: 'admin-grid' }, themeBox, menuBox, myBox)); toMenu(); return; }
+  page.append(tabBar, body);
+  paintTabs();
+  if (!me.isAdmin) { groups.profil = [myBox]; groups.affichage = [themeBox, menuBox]; paintBody(); toMenu(); return; }
 
   // ----------------------------------------------------------- administration
-  const grid = h('div', { class: 'admin-grid' });
-  page.append(grid);
+  const grid = body;
 
   async function refresh() {
     let a;
     try { a = await api('/api/admin'); } catch (e) { grid.replaceChildren(h('p', { class: 'error-text' }, e.message)); return; }
-    const first = !grid.children.length;
-    grid.replaceChildren(libraryBox(a), myBox, themeBox, menuBox, playbackBox(a), profilesBox(a), metadataBox(a), postersBox(a), ratingsBox(a), seerrBox(a), subtitlesBox(a), notifyBox(a), backupBox(a), serverBox(a), devicesBox(a));
+    const first = !Object.keys(groups).length;
+    Object.assign(groups, {
+      medias: [libraryBox(a)], profil: [myBox], affichage: [themeBox, menuBox], lecture: [playbackBox(a), subtitlesBox(a)], famille: [profilesBox(a), devicesBox(a)],
+      infos: [metadataBox(a), postersBox(a), ratingsBox(a), seerrBox(a)], alertes: [notifyBox(a)], serveur: [serverBox(a), backupBox(a)],
+    });
+    paintBody();
     if (first) toMenu();
     clearTimeout(timer);
     const delay = a.scan.running || a.sessions.length ? 3000 : 15000;
@@ -598,7 +615,7 @@ function menuEditor(me) {
     const toggle = (id, on) => saveMenuPrefs(me.id, { ...p, hidden: on ? p.hidden.filter((x) => x !== id) : [...p.hidden, id] });
     box.replaceChildren(
       h('h2', {}, 'Menu'),
-      h('p', {}, 'Choisissez ce qui apparaît dans le menu et dans quel ordre. Le reste est rangé dans « Plus ». Réglages et profil restent toujours en bas.'),
+      h('p', {}, 'Choisissez ce qui apparaît dans le menu et dans quel ordre. Sur ordinateur, seules les 4 premières sections sont affichées ; le reste est rangé dans « Plus ». Réglages et profil restent toujours en bas.'),
       h('ol', { class: 'menu-edit' }, items.map((it, i) => h('li', { class: p.hidden.includes(it.id) ? 'off' : '' },
         h('span', { class: 'me-ic' }, icon(iconOf(it))), h('b', {}, it.id === 'today' ? 'Aujourd’hui / Ce soir' : labelOf(it)),
         h('button', { class: 'p-icon small f', 'data-id': it.id, 'data-dir': '-1', 'aria-label': `Monter ${labelOf(it)}`, disabled: i === 0, onclick: () => move(it.id, -1) }, icon('up')),

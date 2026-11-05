@@ -10,11 +10,11 @@ export const todayIcon = () => (dayPart() === 'soir' ? 'moon' : 'sun');
 export const todayQuestion = () => (dayPart() === 'soir' ? 'Que regarder ce soir ?' : 'Que regarder aujourd’hui ?');
 
 export const NAV_ITEMS = [
-  { id: 'today', href: '/cesoir', label: todayLabel, icon: todayIcon, hint: 'Trois questions, trois idées à regarder', short: '3 idées pour vous' },
   { id: 'home', href: '/', label: 'Accueil', icon: 'home' },
   { id: 'movies', href: '/films', label: 'Films', icon: 'film', cat: 'movie' },
   { id: 'shows', href: '/series', label: 'Séries', icon: 'tv', cat: 'show' },
   { id: 'anime', href: '/animes', label: 'Animés', icon: 'spark', cat: 'anime' },
+  { id: 'today', href: '/cesoir', label: todayLabel, icon: todayIcon, hint: 'Trois questions, trois idées à regarder', short: '3 idées pour vous' },
   { id: 'new', href: '/nouveautes', label: 'Nouveautés', icon: 'cal', hint: 'Films, séries et animés qui sortent', short: 'Sorties à venir' },
   { id: 'clips', href: '/clips', label: 'Clips', icon: 'clip', cat: 'clip' },
   { id: 'tv', href: '/tv', label: 'TV', icon: 'live', cat: 'channel' },
@@ -36,7 +36,9 @@ export const NAV_ITEMS = [
 const DEFAULT_HIDDEN = ['seance', 'remote', 'add', 'dashboard', 'stats', 'downloads'];
 // Sections de contenu : jamais masquées par un ancien réglage (avant la v2, elles étaient cachées par défaut)
 export const CONTENT_IDS = ['today', 'home', 'movies', 'shows', 'anime', 'new', 'clips', 'tv', 'music', 'photos', 'books', 'mylist', 'collections', 'search'];
-const PREFS_VERSION = 2;
+const PREFS_VERSION = 3;
+/** Sur ordinateur, le rail ne montre que les 4 premières sections ; le reste est dans « Plus ». */
+export const RAIL_MAX = 4;
 const labelOf = (it) => (typeof it.label === 'function' ? it.label() : it.label);
 const iconOf = (it) => (typeof it.icon === 'function' ? it.icon() : it.icon);
 export { labelOf, iconOf };
@@ -46,14 +48,16 @@ export function menuPrefs(pid) {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(key(pid))); } catch { /* */ }
   const ids = NAV_ITEMS.map((i) => i.id);
-  const order = [...((saved && saved.order) || []).filter((id) => ids.includes(id)), ...ids.filter((id) => !(saved && saved.order || []).includes(id))];
+  // Réglage d'avant la v3 : nouvel ordre par défaut (Accueil, Films, Séries, Animés d'abord)
+  const savedOrder = saved && saved.v >= 3 ? saved.order || [] : [];
+  const order = [...savedOrder.filter((id) => ids.includes(id)), ...ids.filter((id) => !savedOrder.includes(id))];
   // Éléments apparus depuis le dernier réglage : rangés dans « Plus » s'ils le sont par défaut
   const known = (saved && saved.order) || [];
   let hidden = saved && Array.isArray(saved.hidden)
     ? [...saved.hidden.filter((id) => ids.includes(id)), ...DEFAULT_HIDDEN.filter((id) => !known.includes(id))]
     : DEFAULT_HIDDEN;
   // Réglage enregistré avec l'ancien menu court : les sections de contenu réapparaissent
-  if (saved && saved.v !== PREFS_VERSION) hidden = hidden.filter((id) => !CONTENT_IDS.includes(id));
+  if (saved && saved.v < 2) hidden = hidden.filter((id) => !CONTENT_IDS.includes(id));
   hidden = [...new Set(hidden)];
   return { order, hidden };
 }

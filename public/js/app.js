@@ -2,7 +2,7 @@
 import { api, auth, clearApiCache } from './api.js';
 import { h, icon, avatar, toast, logoMark, brand, sheet, overlayHost } from './ui.js';
 import { initNav, focusFirst } from './nav.js';
-import { menuItems, menuPrefs, labelOf, iconOf, dayPart, sections } from './menu.js';
+import { menuItems, menuPrefs, labelOf, iconOf, dayPart, sections, RAIL_MAX } from './menu.js';
 import { applyTheme, currentPlanet, planet } from './themes.js';
 applyTheme();
 
@@ -185,7 +185,8 @@ function shell(path) {
   const rail = h('nav', { class: 'rail', 'aria-label': 'Navigation principale' },
     h('a', { href: '/', class: 'home-link f', 'aria-label': 'Venus, accueil' }, logoMark()),
     // Sections : la liste défile si elle dépasse la hauteur de l'écran ; Réglages et profil restent en bas
-    h('div', { class: 'rail-scroll' }, shown.map((it) => itemLink(it, path)), more.length ? moreBtn('rail-item f') : null),
+    // Ordinateur : 4 sections seulement, tout le reste dans « Plus » (réglable dans Réglages → Menu)
+    h('div', { class: 'rail-scroll' }, shown.slice(0, RAIL_MAX).map((it) => itemLink(it, path)), shown.length > RAIL_MAX || more.length ? moreBtn('rail-item f', 'Plus', 'more', [...shown.slice(RAIL_MAX), ...more]) : null),
     p.isAdmin ? liveBadge('rail-item live-badge') : null,
     p.dailyLeft != null ? h('span', { class: `rail-item time-left${p.dailyLeft <= 10 ? ' low' : ''}`, title: 'Temps d’écran restant aujourd’hui' }, icon('clock'), h('span', {}, p.dailyLeft ? `${p.dailyLeft} min` : 'Fini')) : null,
     p.isKids ? null : navLink('/reglages', 'Réglages', 'gear', path),

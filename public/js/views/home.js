@@ -263,7 +263,10 @@ function renderEmpty(main, data) {
 
 // Tuiles des sections : tout Venus à portée de main (Films, Séries, Animés, TV, Clips, Musique, Photos, Livres…)
 function sectionStrip() {
-  const list = sections(state.profile, hasCat, state.categories || {});
+  // Quatre tuiles seulement : ce qui n'est pas déjà dans le menu (Ce soir, Nouveautés, Ma liste), puis « Tout »
+  const all = sections(state.profile, hasCat, state.categories || {});
+  const pref = ['today', 'new', 'mylist', 'collections', 'tv', 'clips'];
+  const list = pref.map((id) => all.find((x) => x.id === id)).filter(Boolean).slice(0, 3);
   return h('nav', { class: 'home-sections', 'aria-label': 'Sections' },
     h('div', { class: 'hs-track' },
       list.map((it) => h('a', { class: `hs-tile f hs-${it.id}`, href: it.href },
