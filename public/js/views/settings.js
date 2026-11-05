@@ -395,12 +395,25 @@ export async function render(main, { query } = {}) {
       r.missing.length > 40 ? h('p', { class: 'muted' }, `… et ${r.missing.length - 40} autres.`) : null);
     };
     paintList().catch((e) => list.replaceChildren(h('p', { class: 'error-text' }, e.message)));
+    // Diagnostic : chaque service est interrogé pour un titre connu ; on voit lequel répond, lequel est bloqué
+    const testOut = h('div', { class: 'poster-test' });
+    const testBtn = h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => {
+      testBtn.disabled = true; testOut.replaceChildren(h('p', { class: 'muted' }, 'Test en cours (quelques secondes)…'));
+      try {
+        const [mv, tv] = await Promise.all([api('/api/admin/posters/test?title=Inception&year=2010&type=movie'), api('/api/admin/posters/test?title=Naruto&year=2002&type=anime')]);
+        const rows = (r) => r.results.map((x) => h('div', { class: 'list-row' },
+          x.poster ? h('img', { class: 'pt-img', src: x.poster, alt: '', loading: 'lazy' }) : h('span', { class: `pm-ph ${x.status === 200 ? '' : 'bad'}` }, icon(x.status === 200 ? 'check' : 'close')),
+          h('div', { class: 'grow' }, h('b', {}, x.source), h('span', {}, [x.status === 200 ? 'Répond' : x.status === 'aucun résultat' ? 'Répond, mais ne trouve pas ce titre' : x.status === 'injoignable' ? `Injoignable${x.error ? ` (${x.error})` : ''}` : `Refuse (HTTP ${x.status})`, `${x.ms} ms`].join(' · ')))));
+        testOut.replaceChildren(h('p', { class: 'muted' }, `Film : « ${mv.title} » (${mv.year})${mv.tmdbKey ? ' · clé TMDB présente' : ' · sans clé TMDB'}`), ...rows(mv), h('p', { class: 'muted' }, `Animé : « ${tv.title} » (${tv.year})`), ...rows(tv),
+          mv.results.every((x) => x.status !== 200) && tv.results.every((x) => x.status !== 200) ? h('p', { class: 'error-text' }, 'Aucun service ne répond : le serveur de Venus n’a sans doute pas accès à Internet (pare-feu, DNS du conteneur Docker, proxy).') : null);
+      } catch (e) { testOut.replaceChildren(h('p', { class: 'error-text' }, e.message)); } finally { testBtn.disabled = false; }
+    } }, icon('search'), 'Tester les sources');
     return h('section', { class: 'box', id: 'affiches' },
       h('h2', {}, 'Affiches'),
       h('p', {}, 'Les affiches viennent de TMDB (avec une clé), ou sans clé du site de TMDB, d’IMP Awards, d’iTunes et de TVmaze. Pour un titre précis, vous pouvez choisir parmi plusieurs propositions ou coller l’adresse d’une image trouvée sur n’importe quel site.'),
       h('label', { class: 'switch' }, h('span', {}, 'Chercher les affiches sur les services gratuits (sans clé)'), h('input', { type: 'checkbox', class: 'f', checked: a.settings.postersFree !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { postersFree: e.target.checked } }); toast(e.target.checked ? 'Recherche gratuite activée' : 'Recherche gratuite désactivée'); } })),
       head, list,
-      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, runBtn));
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, runBtn, testBtn), testOut);
   }
 
   function backupBox(a) {

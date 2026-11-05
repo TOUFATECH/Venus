@@ -23,7 +23,7 @@ export function startMini({ video, hls, info, id, offset = 0, subtitle = '', pos
   frame.append(video);
   document.body.append(el);
   requestAnimationFrame(() => el.classList.add('on'));
-  if (video.paused) video.play().catch(() => {});
+  if (video.paused && !video.ended) video.play().catch(() => {});
 
   const duration = () => info.duration || video.duration || 0;
   const pos = () => (position ? position() : offset + (video.currentTime || 0));

@@ -305,8 +305,9 @@ export function subtitleVtt(item, probe, subId) {
 const thumbs = path.join(config.dataDir, 'images');
 let thumbBusy = 0;
 const thumbQueue = [];
-export function thumbnail(item, duration) {
-  const name = `th_${item.id}_${item.mtime}.jpg`;
+// big : image en 1280 px (fond de la fiche et de l'accueil quand il n'y a pas d'image de fond officielle)
+export function thumbnail(item, duration, { big = false } = {}) {
+  const name = `th${big ? 'b' : ''}_${item.id}_${item.mtime}.jpg`;
   const out = path.join(thumbs, name);
   if (fs.existsSync(out)) return Promise.resolve(out);
   return new Promise((resolve, reject) => {
@@ -314,7 +315,7 @@ export function thumbnail(item, duration) {
       thumbBusy++;
       const at = Math.max(1, Math.floor((duration || 600) * 0.2));
       execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', item.path, '-frames:v', '1',
-        '-vf', 'scale=480:-2', '-q:v', '5', '-y', out], { timeout: 60000 }, (err) => {
+        '-vf', big ? 'scale=1280:-2' : 'scale=480:-2', '-q:v', big ? '3' : '5', '-y', out], { timeout: 60000 }, (err) => {
         thumbBusy--;
         const next = thumbQueue.shift(); if (next) next();
         if (err || !fs.existsSync(out)) reject(new HttpError(404, 'Vignette indisponible')); else resolve(out);

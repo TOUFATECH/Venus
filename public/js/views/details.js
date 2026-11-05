@@ -29,7 +29,7 @@ export async function render(main, { id, query }) {
   showPath(d.path, ['ep'], from);
   const cleanups = [];
 
-  const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : frameImage(d.id, d.title, { fade: false }));
+  const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : frameImage(d.id, d.title, { fade: false, big: true }));
   const posterEl = h('div', { class: `details-poster${isClip ? ' wide' : ''}` }, d.poster && !isClip ? picture(img(d.poster), d.title, { lazy: false }) : isClip ? frameImage(d.id, d.title, { fade: false }) : framePoster(d));
   const root = h('div', { class: 'details' });
 
