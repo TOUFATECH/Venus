@@ -219,7 +219,8 @@ export async function render(main) {
   document.addEventListener('visibilitychange', onVis);
 
   main.classList.add('home');
-  main.append(hero, sectionStrip(), data.noPosters ? noPostersNote() : null, rows);
+  main.append(hero, sectionStrip(), elsewhereNote(), data.noPosters ? noPostersNote() : null, rows);
+  todayRow().then((el) => { if (el && rows.isConnected) rows.prepend(el); }).catch(() => {});
   if (data.hero.length) { goTo(0); restart(); }
   else hero.remove();
 
@@ -280,4 +281,22 @@ function noPostersNote() {
   return h('div', { class: 'home-note' }, icon('image'),
     h('div', {}, h('b', {}, 'Vos films n’ont pas encore d’affiches'), h('p', {}, 'Venus les cherche tout seul sur des services gratuits. Pour les résumés complets, les notes et les bandes-annonces, ajoutez une clé TMDB (gratuite).')),
     h('div', { class: 'actions' }, btn, h('button', { class: 'btn btn-small btn-play f', onclick: () => go('/reglages?section=sources') }, 'Ajouter la clé')));
+}
+
+// « Vous regardiez X sur la télé il y a 2 min » : reprise au même endroit sur cet appareil
+function elsewhereNote() {
+  const e = state.status && state.status.elsewhere;
+  if (!e || e.duration < 60) return null;
+  const ago = e.ago < 90000 ? 'à l’instant' : `il y a ${Math.round(e.ago / 60000)} min`;
+  const at = `${Math.floor(e.position / 60)} min`;
+  return h('div', { class: 'home-note elsewhere' }, icon('tv'),
+    h('div', {}, h('b', {}, `Vous regardiez « ${e.title} »${e.sub ? ` (${e.sub})` : ''} sur ${e.device}`), h('p', {}, `${e.paused ? 'En pause' : 'En cours'} ${ago}, à ${at}.`)),
+    h('div', { class: 'actions' }, h('button', { class: 'btn btn-small btn-play f', onclick: () => go(playPath(e.itemId)) }, icon('play'), 'Continuer ici')));
+}
+// « Un jour comme aujourd'hui » : films sortis à la même date, les autres années
+async function todayRow() {
+  const list = await api('/api/today');
+  if (!list.length) return null;
+  const d = new Date().toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' });
+  return row({ id: 'today', title: `Sortis un ${d}`, hint: list.map((x) => `${x.title} : il y a ${x.yearsAgo} an${x.yearsAgo > 1 ? 's' : ''}`).slice(0, 3).join(' · '), items: list });
 }

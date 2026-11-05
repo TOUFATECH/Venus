@@ -261,9 +261,20 @@ export function row(r, opts = {}) {
     } }, icon('shuffle'), 'Mélanger'));
   }
   if (r.more) tools.push(h('button', { class: 'row-link f', onclick: () => go(r.more) }, 'Tout voir'));
-  return h('section', { class: `row${r.style === 'channels' ? ' row-channels' : ''}`, 'aria-label': r.title },
-    h('div', { class: 'row-head' }, h('h2', {}, r.title), tools.length ? h('div', { class: 'row-tools' }, tools) : null),
+  // Rangée « Vous aviez laissé… » : chaque carte a une croix pour l'oublier (la progression est effacée, rien n'est marqué vu)
+  if (r.stale) {
+    for (const el of scroller.querySelectorAll('.card')) {
+      const it = r.items[[...scroller.children].indexOf(el)]; if (!it) continue;
+      el.append(h('span', { class: 'card-x', role: 'button', tabindex: '-1', title: 'Retirer de cette liste', 'aria-label': 'Retirer', onclick: async (e) => {
+        e.stopPropagation(); e.preventDefault();
+        try { await api(`/api/items/${it.showId || it.id}/forget`, { method: 'POST' }); el.remove(); toast('Retiré'); if (!scroller.querySelector('.card')) sec.remove(); } catch (err) { toast(err.message, true); }
+      } }, icon('close')));
+    }
+  }
+  const sec = h('section', { class: `row${r.style === 'channels' ? ' row-channels' : ''}`, 'aria-label': r.title },
+    h('div', { class: 'row-head' }, h('h2', {}, r.title), r.hint ? h('small', { class: 'row-hint' }, r.hint) : null, tools.length ? h('div', { class: 'row-tools' }, tools) : null),
     scrollArrows(scroller));
+  return sec;
 }
 
 export function metaLine(item, extra = []) {
@@ -371,14 +382,14 @@ export function deleteVideo({ id, what, detail = '', onDone }) {
       try {
         const r = await api(`/api/admin/items/${id}/delete`, { method: 'POST' });
         s.close();
-        toast(`${what} supprimé${r.freed ? ` · ${fmtGo(r.freed)} libérés` : ''}${r.errors.length ? ` (${r.errors.length} fichier${r.errors.length > 1 ? 's' : ''} n’a pas pu être effacé)` : ''}`, { type: r.errors.length ? 'info' : 'success', duration: 6000 });
+        toast(`${what} supprimé${r.trashed ? ' · dans la corbeille 7 jours (Réglages → Bibliothèques)' : r.freed ? ` · ${fmtGo(r.freed)} libérés` : ''}${r.errors.length ? ` (${r.errors.length} fichier${r.errors.length > 1 ? 's' : ''} n’a pas pu être effacé)` : ''}`, { type: r.errors.length ? 'info' : 'success', duration: 6000 });
         if (onDone) onDone(r);
         resolve(r);
       } catch (e) { busy = false; go1.disabled = false; go1.replaceChildren(icon('trash'), 'Supprimer définitivement'); toast(e.message, true); }
     } }, icon('trash'), 'Supprimer définitivement');
     const cancel = h('button', { class: 'btn f', type: 'button', 'data-autofocus': true, onclick: () => { s.close(); resolve(null); } }, 'Annuler');
     const s = sheet(`Supprimer ${what} ?`, h('div', { class: 'del-sheet' },
-      h('p', {}, h('b', {}, 'Le fichier vidéo sera effacé du disque'), ', avec ses sous-titres et images à côté. ', detail),
+      h('p', {}, h('b', {}, 'Le fichier vidéo part dans la corbeille'), ' (avec ses sous-titres et images), gardé 7 jours puis effacé du disque. Restaurable depuis Réglages → Bibliothèques → Corbeille. ', detail),
       h('p', { class: 'del-warn' }, icon('lock'), 'C’est définitif : pas de corbeille. Les vus et « Ma liste » de ce titre disparaissent aussi.'),
       h('div', { class: 'form-actions' }, cancel, go1)), { onClose: () => resolve(null) });
   });

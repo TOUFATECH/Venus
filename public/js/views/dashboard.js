@@ -51,6 +51,14 @@ export async function render(main) {
   const head = h('div', { class: 'dash-head' });
   // Mise à jour disponible ? (vérifié au plus toutes les 30 minutes côté serveur)
   const updNote = h('div', { class: 'upd-note', hidden: true });
+  // Journal des changements : ce qui a changé depuis la dernière visite, montré une fois
+  api('/api/admin/changelog').then((c) => {
+    if (!c.items || !c.items.length) return;
+    const box = h('div', { class: 'upd-note changelog' }, icon('spark'),
+      h('div', { class: 'cl-body' }, h('b', {}, `Venus a été mis à jour (${c.items.length} changement${c.items.length > 1 ? 's' : ''})`), h('ul', {}, c.items.slice(0, 6).map((i) => h('li', {}, i.title)))),
+      h('button', { class: 'btn btn-small f', onclick: async () => { box.remove(); await api('/api/admin/changelog/seen', { method: 'POST' }).catch(() => {}); } }, 'Vu'));
+    updNote.before(box);
+  }).catch(() => {});
   api('/api/admin/update').then((u) => { if (u && u.behind) { updNote.hidden = false; updNote.replaceChildren(icon('spark'), h('span', {}, `Mise à jour disponible : ${u.behind}${u.more ? '+' : ''} nouveauté${u.behind > 1 ? 's' : ''}`), h('button', { class: 'btn btn-small btn-play f', onclick: () => go('/serveur?onglet=maj') }, 'Voir')); } }).catch(() => {});
   const kpis = h('div', { class: 'kpis' });
   page.append(head, updNote, kpis,

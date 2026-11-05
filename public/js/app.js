@@ -445,7 +445,11 @@ async function showRoute() {
     import('./remote-screen.js').then((m) => m.startPairing()).catch(() => {});
   }
   if (!state.categories || parseHash().path === '/') await refreshCategories();
-  if (state.profile.dailyLeft != null) api('/api/status').then((st) => { if (st && st.profile && state.profile && st.profile.id === state.profile.id) state.profile.dailyLeft = st.profile.dailyLeft; }).catch(() => {});
+  // Accueil : état frais (lecture en cours ailleurs, temps d'écran restant) avant d'afficher
+  if (parseHash().path === '/' || state.profile.dailyLeft != null) {
+    const upd = api('/api/status').then((st) => { if (!st) return; if (state.status) state.status.elsewhere = st.elsewhere; if (st.profile && state.profile && st.profile.id === state.profile.id) state.profile.dailyLeft = st.profile.dailyLeft; }).catch(() => {});
+    if (parseHash().path === '/') await upd;
+  }
   const { path, query } = parseHash();
   for (const [re, loader, extra] of ROUTES) {
     const m = re.exec(path);

@@ -62,6 +62,15 @@ export async function render(main, { query } = {}) {
       for (const [name, n] of x.p) if (words.every((w) => n.split(' ').some((part) => part.startsWith(w)))) people.set(name, (people.get(name) || 0) + 1);
       return { i: x.i, s };
     }).filter(Boolean).sort((a, b) => b.s - a.s || (b.i.year || 0) - (a.i.year || 0)).map((x) => x.i).filter((i) => kind === 'all' || kindOf(i) === kind);
+    // Demande en français (« un film drôle de moins d'1 h 30 des années 90 ») : comprise à partir des données de la médiathèque
+    const smart = understand(raw, { genres, people: [...new Set(all.flatMap((i) => i.people || []))] });
+    if (smart && smart.terms.length >= 1 && words.length >= 2) {
+      const hits = keep(all.filter(smart.test)).sort((a, b) => (b.vote || 0) - (a.vote || 0) || (b.year || 0) - (a.year || 0));
+      body.replaceChildren(section('Pour cette demande',
+        h('div', { class: 'chips', style: { marginBottom: '10px' } }, smart.terms.map((t) => h('span', { class: 'chip small on' }, t))),
+        hits.length ? h('div', { class: 'grid' }, hits.slice(0, 40).map((i) => card(i, { poster: true }))) : h('p', { class: 'grid-empty' }, 'Rien ne correspond à tout ça. Enlevez un critère.')));
+      return;
+    }
     const genreHits = genres.filter((g) => norm(g).startsWith(q));
     const parts = [];
     if (people.size) {
@@ -112,4 +121,51 @@ export async function render(main, { query } = {}) {
   paint();
   setTimeout(() => input.focus(), 50);
   return { destroy: () => { clearTimeout(onlineTimer); clearTimeout(t); } };
+}
+
+// ---------------------------------------------------------------- compréhension d'une demande en français
+const GENRE_WORDS = [
+  [/\b(drole|rire|rigoler|marrant|comedie|comique|humour)\b/, 'Comédie'], [/\b(peur|frisson|horreur|effrayant|flipper|epouvante)\b/, 'Horreur'],
+  [/\b(thriller|suspense|tendu|haletant)\b/, 'Thriller'], [/\b(action|explosions|baston)\b/, 'Action'], [/\b(aventure)\b/, 'Aventure'],
+  [/\b(romance|amour|romantique|emouvant|pleurer)\b/, 'Romance'], [/\b(drame|dramatique|triste)\b/, 'Drame'], [/\b(science fiction|sf|espace|futur|robots?)\b/, 'Science-Fiction'],
+  [/\b(fantastique|magie|dragons?)\b/, 'Fantastique'], [/\b(policier|enquete|crime|flic|detective)\b/, 'Policier'], [/\b(documentaire|docu|vrai|reel)\b/, 'Documentaire'],
+  [/\b(animation|dessin anime|cartoon)\b/, 'Animation'], [/\b(famille|enfants?|gamins?|petits)\b/, 'Famille'], [/\b(guerre)\b/, 'Guerre'], [/\b(western)\b/, 'Western'], [/\b(histoire|historique)\b/, 'Histoire'], [/\b(musique|musical|comedie musicale)\b/, 'Musique'], [/\b(mystere|mysterieux)\b/, 'Mystère'],
+];
+function understand(raw, { genres, people }) {
+  const q = norm(raw);
+  const tests = [], terms = [];
+  // Type
+  if (/\b(films?|long metrage)\b/.test(q)) { tests.push((i) => i.type === 'movie'); terms.push('Film'); }
+  else if (/\b(series?)\b/.test(q)) { tests.push((i) => i.type === 'show' && i.category !== 'anime'); terms.push('Série'); }
+  else if (/\b(animes?|animation japonaise|manga)\b/.test(q)) { tests.push((i) => i.type === 'show' && i.category === 'anime'); terms.push('Animé'); }
+  // Genres (mots du quotidien → genres de la médiathèque)
+  const g = new Set();
+  for (const [re, name] of GENRE_WORDS) if (re.test(q)) { const real = genres.find((x) => norm(x) === norm(name)) || genres.find((x) => norm(x).startsWith(norm(name).slice(0, 5))); if (real) g.add(real); }
+  for (const x of genres) if (q.includes(` ${norm(x)} `) || q.startsWith(`${norm(x)} `) || q.endsWith(` ${norm(x)}`)) g.add(x);
+  if (g.size) { const keys = new Set([...g].map(norm)); tests.push((i) => (i.genres || []).some((x) => keys.has(norm(x)))); terms.push(...[...g].filter((x, k, arr) => arr.findIndex((y) => norm(y) === norm(x)) === k)); }
+  // Durée : « moins d'1h30 », « moins de 90 min », « court », « long »
+  const dur = /moins d(?:e |')?(\d)\s*h\s*(\d{2})?|moins de (\d{2,3}) ?min|plus d(?:e |')?(\d)\s*h\s*(\d{2})?/.exec(q);
+  if (dur) {
+    const minutes = dur[3] ? Number(dur[3]) : Number(dur[1] || dur[4]) * 60 + Number(dur[2] || dur[5] || 0);
+    const less = !dur[4];
+    tests.push((i) => i.runtime && (less ? i.runtime <= minutes : i.runtime >= minutes)); terms.push(`${less ? 'Moins' : 'Plus'} de ${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}` : `${minutes} min`}`);
+  } else if (/\b(court|rapide|vite fait)\b/.test(q)) { tests.push((i) => i.runtime && i.runtime <= 95); terms.push('Court'); }
+  else if (/\b(long|fleuve)\b/.test(q)) { tests.push((i) => i.runtime && i.runtime >= 150); terms.push('Long'); }
+  // Époque : « années 90 », « des 80s », « de 2015 », « récent », « vieux »
+  const dec = /annees? (\d{2,4})|\b(\d{2})s\b/.exec(q);
+  if (dec) { let d = Number(dec[1] || dec[2]); if (d < 100) d += d < 30 ? 2000 : 1900; d = Math.floor(d / 10) * 10; tests.push((i) => i.year >= d && i.year < d + 10); terms.push(`Années ${String(d).slice(2)}`); }
+  else { const y = /\b(19\d{2}|20\d{2})\b/.exec(q); if (y) { tests.push((i) => i.year === Number(y[1])); terms.push(String(y[1])); } }
+  if (/\b(recent|nouveau|sorti recemment|cette annee)\b/.test(q)) { const y = new Date().getFullYear(); tests.push((i) => i.year >= y - 2); terms.push('Récent'); }
+  if (/\b(vieux|ancien|classique|culte)\b/.test(q)) { tests.push((i) => i.year && i.year <= 2000); terms.push('Classique'); }
+  // Statut : pas vu / déjà vu / pas commencé / en cours
+  if (/\b(pas (encore )?(vu|vus|commence|commencee|regarde)|jamais vu|nouveau pour moi)\b/.test(q)) { tests.push((i) => i.status !== 'seen' && i.status !== 'progress'); terms.push('Pas encore vu'); }
+  else if (/\b(deja vu|revoir|a revoir)\b/.test(q)) { tests.push((i) => i.status === 'seen'); terms.push('Déjà vu'); }
+  else if (/\b(en cours|commence)\b/.test(q)) { tests.push((i) => i.status === 'progress'); terms.push('En cours'); }
+  // Note : « bien noté », « les meilleurs »
+  if (/\b(bien note|meilleurs?|top|excellent)\b/.test(q)) { tests.push((i) => (i.vote || 0) >= 7.5); terms.push('Bien noté'); }
+  // Personne : « avec Omar Sy », « de Nolan »
+  const who = /\b(?:avec|de|par|realise par) ([a-z]+(?: [a-z]+){0,2})$/.exec(q.replace(/ (pas|deja|jamais).*$/, ''));
+  if (who) { const name = people.find((n) => norm(n) === who[1]) || people.find((n) => norm(n).includes(who[1])); if (name) { tests.push((i) => (i.people || []).includes(name)); terms.push(name); } }
+  if (!tests.length) return null;
+  return { terms, test: (i) => tests.every((t) => t(i)) };
 }

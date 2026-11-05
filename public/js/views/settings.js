@@ -163,6 +163,8 @@ export async function render(main, { query } = {}) {
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
         h('button', { class: 'btn btn-small btn-play f', onclick: () => go('/ajouter') }, icon('upload'), 'Envoyer des vidéos'),
         h('button', { class: 'btn btn-small f', onclick: () => openDuplicates() }, icon('grid4'), 'Doublons'),
+        h('button', { class: 'btn btn-small f', onclick: () => openTrash() }, icon('trash'), 'Corbeille'),
+        h('button', { class: 'btn btn-small f', onclick: () => openBroken() }, icon('eye'), 'Fichiers abîmés'),
         h('button', { class: 'btn btn-small f', onclick: () => openRename() }, icon('edit'), 'Renommer les fichiers'),
         h('button', { class: 'btn btn-small f', disabled: s.running, onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: {} }); toast('Recherche des nouveautés lancée'); refresh(); } }, 'Rechercher les nouveautés'),
         h('button', { class: 'btn btn-small btn-ghost f', disabled: s.running, onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: { force: true } }); toast('Analyse complète lancée'); refresh(); } }, 'Tout réanalyser')),
@@ -758,4 +760,33 @@ function importArchive() {
     } catch (e) { toast(e.message, true); }
   } });
   document.body.append(input); input.click(); setTimeout(() => input.remove(), 60000);
+}
+
+// Corbeille : vidéos supprimées depuis Venus, gardées 7 jours, restaurables
+async function openTrash() {
+  const body = h('div', { class: 'dup-list' }, h('p', { class: 'muted' }, 'Chargement…'));
+  const s = sheet('Corbeille', body, { wide: true });
+  const paint = async () => {
+    const r = await api('/api/admin/trash');
+    if (!r.items.length) { body.replaceChildren(h('p', { class: 'muted' }, `La corbeille est vide. Les vidéos supprimées depuis Venus y restent ${r.keepDays} jours avant d’être effacées du disque.`)); return; }
+    const total = r.items.reduce((n, t) => n + t.size, 0);
+    body.replaceChildren(h('p', {}, `${r.items.length} élément${r.items.length > 1 ? 's' : ''} · ${fmtGo(total)}. Effacés automatiquement ${r.keepDays} jours après leur suppression.`),
+      ...r.items.map((t) => h('div', { class: 'dup-v' }, h('div', { class: 'grow' }, h('b', {}, t.title), h('small', {}, `${t.kind === 'episode' ? 'Épisode' : t.kind === 'movie' ? 'Film' : 'Vidéo'} · ${fmtGo(t.size)} · supprimé le ${new Date(t.deleted_at).toLocaleDateString('fr-FR')}${t.by_name ? ` par ${t.by_name}` : ''} · effacé le ${new Date(t.expires).toLocaleDateString('fr-FR')}`)),
+        h('button', { class: 'btn btn-small f', onclick: async (e) => { e.target.disabled = true; try { await api(`/api/admin/trash/${t.id}/restore`, { method: 'POST' }); toast('Restauré : la vidéo réapparaît après l’analyse (quelques secondes)'); await paint(); } catch (err) { toast(err.message, true); e.target.disabled = false; } } }, 'Restaurer'),
+        h('button', { class: 'btn btn-small btn-ghost btn-danger f', onclick: async (e) => { if (!(await confirmSheet(`Effacer « ${t.title} » du disque maintenant ?`, 'Effacer'))) return; e.target.disabled = true; try { await api(`/api/admin/trash/${t.id}`, { method: 'DELETE' }); await paint(); } catch (err) { toast(err.message, true); } } }, 'Effacer'))),
+      h('div', { class: 'form-actions' }, h('button', { class: 'btn btn-small btn-danger f', onclick: async () => { if (!(await confirmSheet(`Vider la corbeille (${fmtGo(total)}) ? Tout est effacé du disque.`, 'Vider'))) return; try { const x = await api('/api/admin/trash', { method: 'DELETE' }); toast(`${fmtGo(x.freed)} libérés`); await paint(); } catch (err) { toast(err.message, true); } } }, 'Vider la corbeille')));
+  };
+  paint().catch((e) => body.replaceChildren(h('p', { class: 'error-text' }, e.message)));
+}
+// Fichiers abîmés repérés par la tâche d'intégrité
+async function openBroken() {
+  const body = h('div', { class: 'dup-list' }, h('p', { class: 'muted' }, 'Chargement…'));
+  const s = sheet('Fichiers abîmés', body, { wide: true });
+  try {
+    const list = await api('/api/admin/broken');
+    if (!list.length) { body.replaceChildren(h('p', { class: 'muted' }, 'Aucun fichier abîmé repéré. La tâche « Fichiers abîmés » (Serveur → Tâches) lit un peu de chaque vidéo, 30 par passage, les nouvelles d’abord.')); return; }
+    body.replaceChildren(h('p', {}, `${list.length} fichier${list.length > 1 ? 's' : ''} ne se lisent pas correctement (téléchargement incomplet, disque abîmé…). Remplacez-les, ou supprimez-les.`),
+      ...list.map((f) => h('div', { class: 'dup-v' }, h('div', { class: 'grow' }, h('b', {}, f.show_title ? `${f.show_title} S${f.season_num} É${f.episode_num}` : f.title), h('small', {}, f.path), h('small', { class: 'warn' }, f.error || 'Erreur de lecture')),
+        h('button', { class: 'btn btn-small f', onclick: () => { s.close(); go(`/titre/${f.item_id}`); } }, 'Fiche'))));
+  } catch (e) { body.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
 }
