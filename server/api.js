@@ -24,6 +24,7 @@ import { checkUpdate, runUpdate, localCommit } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
 import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAYS } from './trash.js';
 import { brokenFiles, weeklyReport } from './reports.js';
+import { setOpinion, opinionOf, genreTaste, tasteScore, storageForecast, logTranscode, transcodeSummary, makeClip, subtitleDrift } from './extras.js';
 import {
   decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot,
 } from './stream.js';
@@ -590,7 +591,9 @@ router.get('/api/home', (ctx) => {
   }
   // Pépites jamais vues : les mieux notées qu'on n'a pas encore commencées
   const scoreOfItem = (i) => { const r = parseJson(i.ratings, null); return (r && r.score) || (i.vote ? i.vote * 10 : 0); };
-  const gems = unseen.filter((i) => scoreOfItem(i) >= 74).sort((a, b) => scoreOfItem(b) - scoreOfItem(a)).slice(0, 18);
+  // Les avis « j'ai aimé / bof » font remonter les genres aimés et descendre les autres
+  const taste = genreTaste(p.id);
+  const gems = unseen.filter((i) => scoreOfItem(i) >= 74).sort((a, b) => (scoreOfItem(b) + 4 * tasteScore(taste, parseJson(b.genres, []))) - (scoreOfItem(a) + 4 * tasteScore(taste, parseJson(a.genres, [])))).slice(0, 18);
   if (gems.length >= 3) rows.push({ id: 'gems', title: 'Pépites que vous n’avez pas vues', items: gems.map((i) => C(i)) });
   // Courts : moins d'1 h 30
   const shorts = unseen.filter((i) => i.type === 'movie' && (i.runtime || (i.duration ? i.duration / 60 : 999)) <= 90).sort((a, b) => scoreOfItem(b) - scoreOfItem(a)).slice(0, 18);
@@ -685,6 +688,19 @@ router.get('/api/items/:id', (ctx) => {
   out.credits = parseJson(item.credits, null);
   out.trailerFull = parseJson(item.trailer, null);
   // Qui l'a déjà vu dans la maison (avatars sur la fiche)
+  out.opinion = opinionOf(p.id, item.id);
+  // Provenance des infos et du visuel (pour l'écran « À propos »)
+  const custom = parseJson(item.custom, null);
+  out.provenance = {
+    info: custom && Object.keys(custom).some((k) => !['poster', 'backdrop', 'logo'].includes(k)) ? 'Modifié à la main' : item.tmdb_id ? 'TMDB' : item.nfo ? 'Fichier .nfo' : 'Nom du fichier',
+    poster: !item.poster ? null : custom && custom.poster ? 'Choisie à la main' : String(item.poster).startsWith('l_') ? 'Image dans le dossier' : String(item.poster).startsWith('k_') ? 'Trakt' : String(item.poster).startsWith('p_') ? 'Service gratuit (site TMDB, IMP Awards, iTunes, TVmaze)' : 'TMDB',
+    file: item.path || null, folder: item.path ? path.dirname(item.path) : null,
+  };
+  // Sous-titres externes dont la durée ne colle pas à la vidéo (probablement pour une autre version)
+  if (item.type !== 'show' && item.probe) {
+    const pr = parseJson(item.probe, null);
+    if (pr && pr.duration) out.subWarnings = (pr.subs || []).filter((x) => x.external && x.path).map((x) => { const d = subtitleDrift(x.path, pr.duration); return d ? { file: path.basename(x.path), lang: x.lang, ratio: d.ratio } : null; }).filter(Boolean);
+  }
   out.watchedBy = item.type === 'show'
     ? all(`SELECT DISTINCT pf.id, pf.name, pf.avatar FROM progress pr JOIN items e ON e.id = pr.item_id JOIN profiles pf ON pf.id = pr.profile_id WHERE e.show_id = ? AND pr.watched = 1 ORDER BY pf.name`, item.id)
     : all('SELECT pf.id, pf.name, pf.avatar FROM progress pr JOIN profiles pf ON pf.id = pr.profile_id WHERE pr.item_id = ? AND pr.watched = 1 ORDER BY pf.name', item.id);
@@ -998,6 +1014,7 @@ router.post('/api/play/:id', async (ctx) => {
   const burnIndex = sub && !sub.text && !sub.external ? sub.index : null;
 
   const decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? 'auto' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
+  if (decision.mode === 'transcode' && !b.preview && !item.stream_url) logTranscode({ device: deviceLabel(ctx.req.headers['user-agent']), reason: decision.reason, itemId: item.id, codec: probe.video && probe.video.codec, container: path.extname(item.path || '').slice(1) });
   decision.burnIndex = b.preview ? null : burnIndex;
   if (!b.preview && dailyLeft(p) === 0) throw new HttpError(403, 'Temps d’écran du jour épuisé pour ce profil. On se retrouve demain !');
   if (decision.mode === 'transcode' && !b.preview && !permsOf(p).transcode) throw new HttpError(403, 'Cette vidéo doit être convertie pour cet appareil, ce qui n’est pas autorisé pour ce profil. Essayez sur un autre appareil ou demandez à l’administrateur.');
@@ -1430,6 +1447,7 @@ router.get('/api/admin/dashboard', (ctx) => {
     totals: { size: tot.size || 0, hours: Math.round((tot.dur || 0) / 3600) },
     playing: live.map((e) => ({ ...e, token: undefined, hls: e.sessionId ? hlsById.get(e.sessionId) || null : null })),
     transcodes: [...hlsById.values()].length,
+    forecast: storageForecast(),
     devices: tokens.map((t) => ({ id: deviceId(t.token), name: deviceLabel(t.device), profile: t.profile, avatar: t.avatar, created: t.created_at, lastSeen: t.last_seen, current: t.token === ctx.auth.token, playing: live.some((e) => e.token === t.token) })),
     tasks: {
       scan: scanState, ratings: ratingsPending(), segments: segmentsPending(),
@@ -2793,3 +2811,31 @@ router.get('/api/admin/changelog', async (ctx) => {
   sendJson(ctx.res, { items, commit: local.slice(0, 7) });
 });
 router.post('/api/admin/changelog/seen', async (ctx) => { requireAdmin(ctx); setSetting('changelog_seen', (await localCommit()) || ''); sendJson(ctx.res, { ok: true }); });
+
+// ---------------------------------------------------------------- avis perso, prévision de stockage, conversions, extraits
+router.post('/api/items/:id/opinion', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = validate(await readBody(ctx.req, 1024), { liked: V.nullable(V.bool()) }, {});
+  if (!get('SELECT 1 FROM items WHERE id = ?', Number(ctx.params.id))) throw new HttpError(404, 'Introuvable');
+  setOpinion(p.id, Number(ctx.params.id), b.liked);
+  sendJson(ctx.res, { ok: true });
+});
+router.get('/api/admin/storage', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, storageForecast()); });
+router.get('/api/admin/transcodes', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, transcodeSummary()); });
+// Extrait de quelques secondes (GIF ou MP4 480p) : fichier temporaire, servi une fois
+const clipLimiter = new Map();
+router.get('/api/items/:id/clip', async (ctx) => {
+  const p = requireProfile(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item || !item.path || item.stream_url) throw new HttpError(404, 'Vidéo introuvable');
+  if (!visible(p, item)) throw new HttpError(403, 'Interdit');
+  const last = clipLimiter.get(p.id) || 0;
+  if (Date.now() - last < 15000) throw new HttpError(429, 'Un extrait à la fois : réessayez dans quelques secondes');
+  clipLimiter.set(p.id, Date.now());
+  const format = ctx.url.searchParams.get('format') === 'gif' ? 'gif' : 'mp4';
+  const file = await makeClip(item.path, { start: Number(ctx.url.searchParams.get('start')) || 0, duration: Number(ctx.url.searchParams.get('duration')) || 8, format });
+  const name = `${String(item.title || 'extrait').replace(/[^\w\s.-]+/g, '').trim().replace(/\s+/g, '_') || 'extrait'}-${Math.floor(Number(ctx.url.searchParams.get('start')) || 0)}s.${format}`;
+  logActivity('edit', `${p.name} a partagé un extrait de « ${item.title} »`);
+  sendFile(ctx.req, ctx.res, file, { type: format === 'gif' ? 'image/gif' : 'video/mp4', download: name, cache: 'no-store' });
+  ctx.res.on('close', () => setTimeout(() => fs.rmSync(file, { force: true }), 5000));
+});

@@ -44,6 +44,35 @@ export async function render(main, { id, query }) {
   let label = 'Lecture';
   if (isShow && target) label = showDone ? 'Revoir depuis le début' : `${resumable ? 'Reprendre' : 'Lecture'} S${target.season} É${target.episode}`;
   else if (resumable) label = `Reprendre (${remaining} min restantes)`;
+  // Temps d'écran : prévenir avant de lancer plutôt que couper au milieu
+  function screenTimeNote() {
+    const left = state.profile.dailyLeft;
+    const need = isShow ? (target && target.runtime) || (d.nextUp && d.nextUp.runtime) || 0 : d.runtime || 0;
+    if (left == null || !need) return null;
+    if (left <= 0) return h('p', { class: 'resume-note warn' }, icon('clock'), ' Temps d’écran du jour épuisé : la lecture reprendra demain.');
+    if (need > left) return h('p', { class: 'resume-note warn' }, icon('clock'), ` Il reste ${left} min de temps d’écran aujourd’hui : ${isShow ? 'cet épisode' : 'ce film'} (${need} min) sera coupé avant la fin.`);
+    const eps = isShow && target ? Math.floor(left / need) : 0;
+    return eps >= 1 && eps < 4 ? h('p', { class: 'resume-note' }, icon('clock'), ` Il reste ${left} min de temps d’écran : ${eps} épisode${eps > 1 ? 's' : ''} possible${eps > 1 ? 's' : ''}.`) : null;
+  }
+  // « J'ai aimé / bof » : un geste, réglable depuis la fiche
+  function opinionBar() {
+    if (isShow && !showDone) return null;
+    if (!isShow && !(d.progress && d.progress.watched)) return null;
+    let cur = d.opinion;
+    const bar = h('div', { class: 'opinion' });
+    const paint = () => bar.replaceChildren(h('span', {}, 'Votre avis'),
+      h('button', { class: `chip small f${cur === 1 ? ' on' : ''}`, onclick: () => set(cur === 1 ? null : true) }, icon('heart'), 'J’ai aimé'),
+      h('button', { class: `chip small f${cur === -1 ? ' on' : ''}`, onclick: () => set(cur === -1 ? null : false) }, 'Bof'));
+    const set = async (liked) => { try { await api(`/api/items/${d.id}/opinion`, { method: 'POST', body: { liked } }); cur = liked == null ? null : liked ? 1 : -1; paint(); } catch (e) { toast(e.message, true); } };
+    paint();
+    return bar;
+  }
+  // Sous-titres externes décalés (durée du fichier très différente de la vidéo)
+  function subNote() {
+    const w = d.subWarnings || [];
+    if (!w.length) return null;
+    return h('p', { class: 'resume-note warn' }, icon('subs'), ` Sous-titres probablement décalés : ${w.map((x) => x.file).join(', ')} (${w[0].ratio > 1 ? 'plus long' : 'plus court'} que la vidéo de ${Math.round(Math.abs(1 - w[0].ratio) * 100)} %). Ils viennent sans doute d’une autre version du film.`);
+  }
   // Qui l'a déjà vu dans la maison : petits avatars (pratique pour choisir un film que personne n'a vu)
   function watchedBy() {
     const list = d.watchedBy || [];
@@ -157,7 +186,7 @@ export async function render(main, { id, query }) {
     ratingChips(d.ratings, d.links),
     d.tagline ? h('p', { class: 'tagline' }, d.tagline) : null,
     overview, more,
-    actions, resumeNote(), watchedBy());
+    actions, screenTimeNote(), resumeNote(), watchedBy(), opinionBar(), subNote());
 
   const content = h('div', { class: 'details-body' }, h('div', { class: 'details-top' }, posterEl, mainInfo));
 
@@ -331,6 +360,12 @@ export async function render(main, { id, query }) {
   if (d.originalTitle && d.originalTitle !== d.title) pairs.push(['Titre original', d.originalTitle]);
   if (isShow && d.totalDuration) pairs.push(['Durée totale', fmtRuntime(Math.round(d.totalDuration / 60))]);
   if (cr.budget) pairs.push(['Budget', `${Math.round(cr.budget / 1e6)} M$`]);
+  // Provenance des infos et du visuel, et fichier sur le disque
+  if (d.provenance) {
+    pairs.push(['Source des infos', d.provenance.info]);
+    if (d.provenance.poster) pairs.push(['Source de l’affiche', d.provenance.poster]);
+    if (d.provenance.file && state.profile.isAdmin) pairs.push(['Fichier', h('span', { class: 'prov-file' }, h('code', {}, d.provenance.file), h('button', { class: 'btn btn-small btn-ghost f', onclick: () => { navigator.clipboard?.writeText(d.provenance.folder).then(() => toast('Chemin du dossier copié'), () => {}); } }, icon('copy'), 'Copier le dossier'))]);
+  }
 
   const m = d.media;
   const tech = [];

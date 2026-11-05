@@ -1,7 +1,7 @@
 // Service worker : l'interface s'ouvre instantanément (cache), les données restent toujours fraîches.
-const VERSION = 'venus-v8';
+const VERSION = 'venus-v9';
 // Les fichiers de l'interface sont servis sous /b/<version>/ : chaque mise à jour a ses propres adresses
-const SHELL = ['/', '/icons/favicon.svg'];
+const SHELL = ['/', '/icons/favicon.svg', '/hors-ligne.html'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -28,7 +28,7 @@ self.addEventListener('fetch', (e) => {
   e.respondWith(fetch(e.request).then((res) => {
     if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(e.request, copy)); }
     return res;
-  }).catch(() => caches.match(e.request).then((r) => r || (e.request.mode === 'navigate' ? caches.match('/') : null)).then((r) => r || Response.error())));
+  }).catch(() => caches.match(e.request).then((r) => r || (e.request.mode === 'navigate' ? caches.match('/hors-ligne.html') : null)).then((r) => r || Response.error())));
 });
 
 // Notifications reçues même appli fermée (Web Push)

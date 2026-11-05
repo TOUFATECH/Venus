@@ -2794,3 +2794,21 @@ html.kids .btn-play { font-size: 1.1rem; min-height: 54px; }
 .changelog .cl-body ul { margin: 6px 0 0; padding-left: 18px; font-weight: 500; font-size: .88rem; color: var(--haze); }
 .changelog .cl-body { flex: 1; }
 .card { position: relative; }
+/* Fiche : avis, avertissements ; Qualité : conversions ; partage d'extrait */
+.resume-note.warn { color: #ffb38a; }
+.resume-note.warn svg { color: #ffb38a; }
+.opinion { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.opinion > span { color: var(--haze); font-size: .9rem; }
+.prov-file { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.prov-file code { font-size: .8rem; overflow-wrap: anywhere; }
+.q-transcodes { margin-top: 20px; }
+.q-transcodes h3 { margin: 10px 0 6px; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+.tc-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.tc-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; border-bottom: 1px solid var(--edge); font-size: .92rem; }
+.tc-row b { font-variant-numeric: tabular-nums; }
+.tc-advice { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.tc-tip { padding: 10px 12px; border-radius: 10px; background: rgba(236, 234, 228, .04); }
+.tc-tip p { margin: 4px 0 8px; color: var(--haze); font-size: .9rem; }
+.tc-tip .cmd { display: block; padding: 8px 10px; border-radius: 8px; background: var(--deep); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; overflow-x: auto; user-select: all; margin-bottom: 8px; }
+.share-box { display: flex; flex-direction: column; gap: 12px; }
+.sys-row b.warn { color: #ffb38a; }

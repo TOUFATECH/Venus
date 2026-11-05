@@ -18,6 +18,7 @@ async function raw(path, { method = 'GET', body, signal } = {}) {
     if (e.name === 'AbortError') throw e;
     throw new ApiError(0, 'Serveur injoignable. Vérifiez que Venus tourne et que vous êtes sur le même réseau.');
   }
+  try { if (res.ok) localStorage.setItem('vn_last_ok', String(Date.now())); } catch { /* */ }
   const data = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     const err = new ApiError(res.status, (data && data.error) || `Erreur ${res.status}`);
