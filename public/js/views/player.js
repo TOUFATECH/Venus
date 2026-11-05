@@ -128,6 +128,7 @@ export async function render(main, { id, query }) {
 
   const ambCanvas = h('canvas', { class: 'amb-canvas', 'aria-hidden': 'true' });
   const reactLayer = h('div', { class: 'react-layer', 'aria-hidden': 'true' });
+  const fitBtn = h('button', { class: 'p-icon f p-fit', 'aria-label': 'Format de l’image', title: 'Format de l’image (touche Z) : ajuster, remplir, zoom, étirer', onclick: () => openFit() }, icon('fit'));
   const ambBtn = h('button', { class: 'p-icon f', 'aria-label': 'Mode Ambiance', 'aria-pressed': 'false', title: 'Ambiance : la lumière du film déborde autour de l’image', onclick: () => setAmbiance(!ambOn) }, icon('glow'));
   const partyBtn = h('button', { class: 'btn btn-ghost btn-small f', title: 'Regarder ensemble, chacun sur son écran', onclick: () => startParty(), 'aria-label': 'Regarder ensemble' }, icon('people'), h('span', { class: 'lbl' }, 'Ensemble'));
   let quietStart = Date.now() - chainedAt < 3000;
@@ -137,7 +138,7 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, shareBtn, ambBtn, castBtn, airBtn, fsBtn)),
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, shareBtn, fitBtn, ambBtn, castBtn, airBtn, fsBtn)),
     nextPanel, overlay, volOsd, skipBtn, chPanel, below, lockLayer);
   main.append(root);
   document.body.style.overflow = 'hidden';
@@ -201,6 +202,7 @@ export async function render(main, { id, query }) {
     } catch (e) { return showError(e.message); }
     if (destroyed) { if (res.sessionId) stopSession(res.sessionId); return; }
     info = res;
+    applyFit(savedFit(), { silent: true });
     audioOrder = info.audioOrder;
     subId = info.subId;
     offset = info.offset || 0;
@@ -616,6 +618,26 @@ export async function render(main, { id, query }) {
     party ? null : h('label', { class: 'switch', style: { marginTop: '10px' } }, h('span', {}, 'Accélérer les silences', h('small', { style: { display: 'block', color: 'var(--dim)', fontWeight: 500 } }, 'Passages sans parole ni musique lus à 1,3×, imperceptible : 5 à 10 min gagnées par film')),
       h('input', { type: 'checkbox', class: 'f', checked: !!prefs.get('skipSilence'), onchange: (e) => { prefs.set('skipSilence', e.target.checked); e.target.checked ? startSilence() : stopSilence(); } }))));
   }
+  // ---------------------------------------------------------------- format de l'image (mémorisé par série / par film, sur cet appareil)
+  // Vidéos 4:3 ou très larges : bandes noires. « Remplir » rogne un peu pour couvrir l'écran, « Zoom » agrandit de 33 %
+  // (4:3 → 16:9 sans bandes), « Étirer » déforme. Le choix est gardé pour toute la série ou pour ce film.
+  const FITS = [{ id: 'contain', label: 'Ajuster', hint: 'Image entière, bandes noires si besoin' }, { id: 'cover', label: 'Remplir', hint: 'Plein écran, bords rognés' }, { id: 'zoom', label: 'Zoom', hint: 'Agrandi de 33 % : les vieux formats 4:3 remplissent l’écran' }, { id: 'fill', label: 'Étirer', hint: 'Déformé pour couvrir l’écran' }];
+  let fit = 'contain';
+  const fitKey = () => `vn_fit_${info && (info.showId || info.itemId)}`;
+  const savedFit = () => { try { return localStorage.getItem(fitKey()) || 'contain'; } catch { return 'contain'; } };
+  function applyFit(id, { silent = false } = {}) {
+    fit = FITS.some((f) => f.id === id) ? id : 'contain';
+    video.style.objectFit = fit === 'zoom' ? 'contain' : fit;
+    video.style.transform = fit === 'zoom' ? 'scale(1.333)' : '';
+    fitBtn.classList.toggle('on', fit !== 'contain');
+    try { if (fit === 'contain') localStorage.removeItem(fitKey()); else localStorage.setItem(fitKey(), fit); } catch { /* */ }
+    if (!silent) toast(`Format : ${FITS.find((f) => f.id === fit).label}${info && info.showId ? ' (gardé pour la série)' : ' (gardé pour ce film)'}`);
+  }
+  function openFit() {
+    const s = sheet('Format de l’image', h('div', {}, FITS.map((f) => h('button', { class: `opt f${f.id === fit ? ' on' : ''}`, onclick: () => { s.close(); applyFit(f.id); } }, icon('check'), f.label, h('small', {}, f.hint))),
+      h('p', { class: 'muted' }, `Mémorisé pour ${info && info.showId ? 'toute la série' : 'ce film'} sur cet appareil. Touche Z pour changer pendant la lecture.`)));
+  }
+
   // ---------------------------------------------------------------- partager un extrait (quelques secondes autour de l'instant courant)
   function openShare() {
     if (!info || info.live || info.type === 'channel') { toast('Pas d’extrait pour le direct', true); return; }
@@ -695,6 +717,7 @@ export async function render(main, { id, query }) {
     if (info && info.live && (k === 'ChannelUp' || k === 'PageUp' || code === 427 || code === 33)) { consume(); zap(-1); return; }
     if (info && info.live && (k === 'ChannelDown' || k === 'PageDown' || code === 428 || code === 34)) { consume(); zap(1); return; }
     if (k === 'f') { consume(); toggleFullscreen(); return; }
+    if (k === 'z' && info && !info.live) { consume(); const i = FITS.findIndex((f) => f.id === fit); applyFit(FITS[(i + 1) % FITS.length].id); return; }
     if ((k === '>' || k === '<') && info && !info.live) { consume(); const i = SPEEDS.indexOf(speed); setSpeed(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (i < 0 ? 2 : i) + (k === '>' ? 1 : -1)))]); return; }
     if ((k === ']' || k === '[') && jumpChapter(k === ']' ? 1 : -1)) { consume(); showUi(); return; }
     if ((k === 'g' || k === 'h') && cues.length) { consume(); setSubDelay(subDelay + (k === 'h' ? 0.1 : -0.1)); return; }
