@@ -14,6 +14,7 @@ import { lang } from './metadata.js';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { isPrivateIp } from './security.js';
+import { traktFind, downloadTraktImage, traktId as traktIdSet } from './trakt.js';
 
 const imagesDir = path.join(config.dataDir, 'images');
 const ITUNES = process.env.VENUS_ITUNES_URL || 'https://itunes.apple.com/search';
@@ -64,7 +65,7 @@ export async function saveRemoteImage(url, { any = false } = {}) {
   let u;
   try { u = new URL(String(url).trim()); } catch { return null; }
   if (u.protocol !== 'https:' && !(process.env.VENUS_ITUNES_URL && u.protocol === 'http:')) return null;
-  if (!any && !process.env.VENUS_ITUNES_URL && !/(^|\.)(mzstatic\.com|tvmaze\.com|tmdb\.org|impawards\.com)$/.test(u.hostname)) return null;
+  if (!any && !process.env.VENUS_ITUNES_URL && !/(^|\.)(mzstatic\.com|tvmaze\.com|tmdb\.org|impawards\.com|wikipedia\.org|wikimedia\.org|media-amazon\.com|trakt\.tv)$/.test(u.hostname)) return null;
   if (any) {
     if (net.isIP(u.hostname) ? isPrivateIp(u.hostname) : /^(localhost|.*\.local|.*\.lan|.*\.internal)$/i.test(u.hostname)) return null;
     try { const addrs = await dns.lookup(u.hostname, { all: true }); if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) return null; } catch { return null; }
@@ -107,8 +108,8 @@ export async function freePosterCandidates(type, title, year) {
   const out = [];
   const push = (r, source) => { if (r && r.poster && !out.some((x) => x.url === r.poster)) out.push({ url: r.poster, source, year: r.year || null }); };
   const jobs = type === 'movie'
-    ? [[() => findTmdbWeb('movie', title, year), 'TMDB (site)'], [() => findImp(title, year), 'IMP Awards'], [() => findMovie(title, year), 'iTunes']]
-    : [[() => findTmdbWeb('tv', title, year), 'TMDB (site)'], [() => findShow(title, year), 'TVmaze']];
+    ? [[() => findTrakt('movie', title, year), 'Trakt'], [() => findTmdbWeb('movie', title, year), 'TMDB (site)'], [() => findImp(title, year), 'IMP Awards'], [() => findWiki('movie', title, year), 'Wikipédia'], [() => findMovie(title, year), 'iTunes'], [() => findOmdb('movie', title, year), 'OMDb']]
+    : [[() => findTrakt('tv', title, year), 'Trakt'], [() => findTmdbWeb('tv', title, year), 'TMDB (site)'], [() => findShow(title, year), 'TVmaze'], [() => findWiki('tv', title, year), 'Wikipédia'], [() => findOmdb('tv', title, year), 'OMDb']];
   await Promise.all(jobs.map(async ([fn, src]) => { try { push(await fn(), src); } catch { /* source muette */ } }));
   return out;
 }
@@ -144,6 +145,52 @@ export async function findImp(title, year) {
   const any = (/posters\/([a-z0-9_]+\.jpg)/i.exec(html) || [])[1];
   const file = big || any;
   return file ? { poster: `${IMP}/${year}/posters/${file}`, year, genres: [], overview: null, releaseDate: null } : null;
+}
+
+// Wikipédia (anglais puis français) : l'image principale de l'article est presque toujours l'affiche.
+// Très fiable (jamais de blocage), fonctionne pour les films comme pour les séries et animés.
+export async function findWiki(kind, title, year) {
+  const base = String(title || '').trim();
+  if (!base) return null;
+  const variants = kind === 'movie'
+    ? [year ? `${base} (${year} film)` : null, `${base} (film)`, base]
+    : [year ? `${base} (${year} TV series)` : null, `${base} (TV series)`, `${base} (anime)`, `${base} (manga)`, base];
+  for (const lg of ['en', 'fr']) {
+    const titles = variants.filter(Boolean).map((v) => lg === 'fr' ? v.replace(/ \((\d{4}) film\)$/, ' (film, $1)').replace(/ \(TV series\)$/, ' (série télévisée)') : v);
+    const q = new URLSearchParams({ action: 'query', prop: 'pageimages', piprop: 'original', redirects: '1', format: 'json', titles: titles.join('|') });
+    const d = await getJson(`https://${lg}.wikipedia.org/w/api.php?${q}`);
+    const pages = d && d.query && d.query.pages ? Object.values(d.query.pages) : [];
+    const ok = pages.filter((pg) => pg && !pg.missing && pg.original && pg.original.source && /\.(jpe?g|png|webp)$/i.test(pg.original.source)
+      && pg.original.height > pg.original.width // portrait : une affiche, pas un logo ni une photo
+      && closeEnough(String(pg.title).replace(/\s*\([^)]*\)\s*$/, ''), base));
+    if (!ok.length) continue;
+    // La page la plus précise d'abord : « (2025 film) », puis « (film) », puis le titre nu
+    const rank = (pg) => (year && new RegExp(`\\(${year}`).test(pg.title) ? 0 : /\((film|TV series|série|anime)/i.test(pg.title) ? 1 : 2);
+    ok.sort((a, b) => rank(a) - rank(b));
+    const best = ok[0];
+    // Titre nu : on vérifie qu'il s'agit bien d'un film/série (image « poster » dans le nom, ou page désambiguïsée)
+    if (rank(best) === 2 && !/poster|affiche|cover|dvd|blu/i.test(best.original.source)) continue;
+    return { poster: best.original.source, year: year || null, genres: [], overview: null, releaseDate: null };
+  }
+  return null;
+}
+
+// Trakt (si un Client ID est renseigné) : affiches officielles en bonne qualité
+export async function findTrakt(kind, title, year) {
+  const r = await traktFind({ type: kind === 'movie' ? 'movie' : 'show', title, year });
+  if (!r || !r.poster) return null;
+  return { poster: r.poster, year: year || null, genres: [], overview: null, releaseDate: null, trakt: true };
+}
+
+// OMDb (si une clé est renseignée) : affiche Amazon/IMDb
+export async function findOmdb(kind, title, year) {
+  const key = getSetting('omdb_key', '') || process.env.OMDB_API_KEY || '';
+  if (!key) return null;
+  const q = new URLSearchParams({ apikey: key, t: title, type: kind === 'movie' ? 'movie' : 'series' });
+  if (year) q.set('y', String(year));
+  const d = await getJson(`https://www.omdbapi.com/?${q}`);
+  if (!d || d.Response !== 'True' || !d.Poster || d.Poster === 'N/A' || !closeEnough(d.Title, title)) return null;
+  return { poster: d.Poster.replace(/_V1_.*\.jpg$/, '_V1_SX600.jpg'), year: Number(d.Year) || year || null, genres: d.Genre ? d.Genre.split(/,\s*/) : [], overview: d.Plot && d.Plot !== 'N/A' ? d.Plot : null, releaseDate: null };
 }
 
 // Film → { poster, overview, year, genres, releaseDate } ou null
@@ -198,9 +245,9 @@ export async function fillMissingPosters(onProgress) {
   for (const it of pending) {
     try {
       const found = await firstOf(it.type === 'movie'
-        ? [() => findTmdbWeb('movie', it.title, it.year), () => findImp(it.title, it.year), () => findMovie(it.title, it.year)]
-        : [() => findTmdbWeb('tv', it.title, it.year), () => findShow(it.title, it.year, { anime: it.category === 'anime' })]);
-      const poster = found ? await saveRemoteImage(found.poster) : null;
+        ? [() => findTrakt('movie', it.title, it.year), () => findTmdbWeb('movie', it.title, it.year), () => findImp(it.title, it.year), () => findWiki('movie', it.title, it.year), () => findMovie(it.title, it.year), () => findOmdb('movie', it.title, it.year)]
+        : [() => findTrakt('tv', it.title, it.year), () => findTmdbWeb('tv', it.title, it.year), () => findShow(it.title, it.year, { anime: it.category === 'anime' }), () => findWiki('tv', it.title, it.year), () => findOmdb('tv', it.title, it.year)]);
+      const poster = found ? (found.trakt ? await downloadTraktImage(found.poster) : await saveRemoteImage(found.poster)) : null;
       if (poster) {
         run(`UPDATE items SET poster = ?, overview = IFNULL(overview, ?), year = IFNULL(year, ?), release_date = IFNULL(release_date, ?),
              genres = CASE WHEN genres IS NULL OR genres IN ('', '[]') THEN ? ELSE genres END, poster_tried = 0 WHERE id = ?`,
@@ -222,12 +269,14 @@ export async function fillMissingPosters(onProgress) {
 // avec le temps de réponse, le code HTTP et ce qu'il a trouvé. Permet de voir quel service est bloqué.
 export async function testSources(title, year, type = 'movie') {
   const jobs = type === 'movie'
-    ? [['Site TMDB', `${TMDB_WEB}/search/movie`, () => findTmdbWeb('movie', title, year)], ['IMP Awards', IMP, () => findImp(title, year)], ['iTunes', ITUNES, () => findMovie(title, year)]]
-    : [['Site TMDB', `${TMDB_WEB}/search/tv`, () => findTmdbWeb('tv', title, year)], ['TVmaze', TVMAZE, () => findShow(title, year, { anime: type === 'anime' })]];
+    ? [['Trakt', 'https://api.trakt.tv', () => findTrakt('movie', title, year)], ['Site TMDB', `${TMDB_WEB}/search/movie`, () => findTmdbWeb('movie', title, year)], ['IMP Awards', IMP, () => findImp(title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('movie', title, year)], ['iTunes', ITUNES, () => findMovie(title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('movie', title, year)]]
+    : [['Trakt', 'https://api.trakt.tv', () => findTrakt('tv', title, year)], ['Site TMDB', `${TMDB_WEB}/search/tv`, () => findTmdbWeb('tv', title, year)], ['TVmaze', TVMAZE, () => findShow(title, year, { anime: type === 'anime' })], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('tv', title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('tv', title, year)]];
   const out = [];
   for (const [name, base, fn] of jobs) {
     const t0 = Date.now(); for (const k of [...lastStatus.keys()]) if (k.startsWith(base)) lastStatus.delete(k);
     const statusOf = () => { const hit = [...lastStatus.entries()].find(([k]) => k.startsWith(base)); return hit ? hit[1] : null; };
+    const unconfigured = (name === 'Trakt' && !traktIdSet()) || (name === 'OMDb' && !(getSetting('omdb_key', '') || process.env.OMDB_API_KEY));
+    if (unconfigured) { out.push({ source: name, ms: 0, status: 'non configuré' }); continue; }
     try { const r = await fn(); out.push({ source: name, ms: Date.now() - t0, status: statusOf() || (r ? 200 : 'aucun résultat'), poster: r ? r.poster : null }); }
     catch (e) { out.push({ source: name, ms: Date.now() - t0, status: 'injoignable', error: e.message }); }
   }
