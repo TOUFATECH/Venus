@@ -3,7 +3,6 @@
 // santé du serveur (processeur, mémoire, disques), activité récente, ajouts récents.
 import { api } from '../api.js';
 import { h, icon, img, toast, sheet, fmtTime, avatar, confirmSheet } from '../ui.js';
-import { row } from '../components.js';
 import { go, state } from '../app.js';
 
 const fmtBytes = (b) => {
@@ -61,47 +60,57 @@ export async function render(main) {
   }).catch(() => {});
   api('/api/admin/update').then((u) => { if (u && u.behind) { updNote.hidden = false; updNote.replaceChildren(icon('spark'), h('span', {}, `Mise à jour disponible : ${u.behind}${u.more ? '+' : ''} nouveauté${u.behind > 1 ? 's' : ''}`), h('button', { class: 'btn btn-small btn-play f', onclick: () => go('/serveur?onglet=maj') }, 'Voir')); } }).catch(() => {});
   const kpis = h('div', { class: 'kpis' });
-  page.append(head, updNote, kpis,
-    h('div', { class: 'dash-grid top' }, slot('playing', 'playing-box'), slot('code', 'code-box')),
-    h('div', { class: 'dash-grid' }, slot('devices'), slot('tasks'), slot('system'), slot('activity'), slot('libs')),
-    slot('recent', 'recent-box'));
+  const kpiMore = h('p', { class: 'kpi-more' });
+  // Deux colonnes : ce qui se passe (lectures, santé, activité) à gauche ; les outils du quotidien à droite.
+  page.append(head, updNote, kpis, kpiMore,
+    h('div', { class: 'dash-cols' },
+      h('div', { class: 'dash-col' }, slot('playing', 'playing-box'), slot('system', 'c-health'), slot('activity', 'c-act')),
+      h('div', { class: 'dash-col side' }, slot('code', 'code-box c-code'), slot('devices', 'c-dev'), slot('tasks', 'c-task'), slot('libs', 'c-libs'))));
 
   // ---------------------------------------------------------------- en-tête et chiffres
   let headSig = null;
   const paintHead = () => {
     const sv = d.server;
-    const sig = JSON.stringify([sv.name, Math.floor(sv.uptime / 60), d.counts, d.totals]);
+    const sig = JSON.stringify([sv.name, Math.floor(sv.uptime / 60), d.counts, d.totals, Math.round((d.system.load[0] / d.system.cpus) * 10), Math.round(d.system.memFree / 1e9), d.system.disks.map((k) => Math.round(k.free / 1e10)), d.libraries.map((l) => [l.exists, l.network && l.network.ok])]);
     if (sig === headSig) return;
     headSig = sig;
+    // État général en un coup d'œil (vert / orange / rouge)
+    const s = d.system, loadPct = (s.load[0] / s.cpus) * 100, memPct = ((s.memTotal - s.memFree) / s.memTotal) * 100;
+    const diskPct = Math.max(0, ...s.disks.map((k) => ((k.total - k.free) / k.total) * 100));
+    const missing = d.libraries.filter((l) => !l.exists || (l.network && l.network.ok === false)).length;
+    const issues = [loadPct > 100 && 'processeur saturé', memPct > 90 && 'mémoire presque pleine', diskPct > 90 && 'disque presque plein', missing && `${missing} médiathèque${missing > 1 ? 's' : ''} introuvable${missing > 1 ? 's' : ''}`].filter(Boolean);
+    const level = diskPct > 95 || missing || loadPct > 150 ? 'bad' : issues.length ? 'warn' : 'good';
+    const more = () => {
+      const go2 = (path) => () => { sh.close(); go(path); };
+      const opt = (ic, label, sub, fn) => h('button', { class: 'opt f', onclick: fn }, icon(ic), h('span', {}, h('b', {}, label), h('small', {}, sub)));
+      const sh = sheet('Administration', h('div', { class: 'dash-menu' },
+        opt('film', 'Qualité', 'Conversions, formats, accélération', go2('/qualite')), opt('lock', 'Sécurité', 'Accès, mots de passe, appareils', go2('/securite')),
+        opt('server', 'Serveur', `Venus ${sv.version} · ${sv.host} (${sv.os}) · Node ${sv.node.replace(/^v/, '')}`, go2('/serveur')), opt('gear', 'Réglages', 'Médiathèques, sources, menu', go2('/reglages'))));
+    };
     head.replaceChildren(
       h('div', {},
-        h('h1', {}, 'Tableau de bord'),
-        h('p', { class: 'dash-sub' }, h('b', {}, sv.name), ` · Venus ${sv.version} · en ligne depuis ${fmtUptime(sv.uptime)} · ${sv.host} (${sv.os}, ${sv.runtime === 'docker' ? 'Docker' : sv.runtime === 'lxc' ? 'conteneur LXC' : sv.platform}) · Node ${sv.node.replace(/^v/, '')}`)),
+        h('div', { class: 'dash-h1' }, h('h1', {}, 'Tableau de bord'), h('span', { class: `status-chip ${level}` }, h('i'), level === 'good' ? 'Tout va bien' : issues.join(' · '))),
+        h('p', { class: 'dash-sub' }, `Venus ${sv.version} · en ligne depuis ${fmtUptime(sv.uptime)}`)),
       h('div', { class: 'dash-actions' },
-        h('button', { class: 'tool f', onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: {} }); toast('Analyse des médiathèques lancée'); refresh(); } }, icon('refresh'), h('span', { class: 'lbl' }, 'Analyser les médiathèques')),
+        h('button', { class: 'tool f', onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: {} }); toast('Analyse des médiathèques lancée'); refresh(); } }, icon('refresh'), h('span', { class: 'lbl' }, 'Analyser')),
         h('button', { class: 'tool f', onclick: () => compose(null) }, icon('chat'), h('span', { class: 'lbl' }, 'Message à tous')),
         sv.canRestart ? h('button', { class: 'tool f', onclick: restart }, icon('power'), h('span', { class: 'lbl' }, 'Redémarrer')) : null,
-        h('button', { class: 'tool f', onclick: () => go('/qualite') }, icon('film'), h('span', { class: 'lbl' }, 'Qualité')),
-        h('button', { class: 'tool f', onclick: () => go('/securite') }, icon('lock'), h('span', { class: 'lbl' }, 'Sécurité')),
-        h('button', { class: 'tool f', onclick: () => go('/serveur') }, icon('server'), h('span', { class: 'lbl' }, 'Serveur')),
-        h('button', { class: 'tool f', onclick: () => go('/reglages') }, icon('gear'), h('span', { class: 'lbl' }, 'Réglages'))));
+        h('button', { class: 'tool f', 'aria-label': 'Plus d\'outils', onclick: more }, icon('more'), h('span', { class: 'lbl' }, 'Plus'))));
     const c = d.counts;
-    const tiles = [
-      ['Films', c.movie, 'film', '/films'], ['Séries', c.show, 'tv', '/series'], ['Animés', c.anime, 'spark', '/animes'],
-      ['Épisodes', c.episode, 'eps', null], ['Clips', c.clip, 'note', '/clips'], ['Chaînes', c.channel, 'live', '/tv'],
-      ['Stockage', fmtBytes(d.totals.size), 'server', null], ['Heures de vidéo', nf.format(d.totals.hours), 'cal', null],
-    ].filter(([, v], i) => i >= 6 || v);
-    kpis.replaceChildren(...tiles.map(([label, v, ic, href]) => h(href ? 'button' : 'div', { class: `kpi${href ? ' f' : ''}`, onclick: href ? () => go(href) : undefined },
+    // Quatre chiffres en couleur ; le reste en une ligne discrète
+    const tiles = [['Films', c.movie, 'film', '/films', 'k-blue'], ['Séries', c.show, 'tv', '/series', 'k-violet'], ['Animés', c.anime, 'spark', '/animes', 'k-pink'], ['Stockage', fmtBytes(d.totals.size), 'server', null, 'k-amber']].filter(([, v], i) => i === 3 || v);
+    kpis.replaceChildren(...tiles.map(([label, v, ic, href, col]) => h(href ? 'button' : 'div', { class: `kpi ${col}${href ? ' f' : ''}`, onclick: href ? () => go(href) : undefined },
       h('span', { class: 'kpi-ic' }, icon(ic)), h('b', {}, typeof v === 'number' ? nf.format(v) : v), h('span', {}, label))));
+    kpiMore.textContent = [c.episode && `${nf.format(c.episode)} épisodes`, c.clip && `${nf.format(c.clip)} clips`, c.channel && `${nf.format(c.channel)} chaînes`, d.totals.hours && `${nf.format(d.totals.hours)} h de vidéo`].filter(Boolean).join(' · ');
   };
 
   // ---------------------------------------------------------------- lectures en cours
   const paintPlaying = () => paintSlot('playing', d.playing.map((p) => ({ ...p, position: Math.round(p.position / 5), seen: 0 })), () => {
     const list = d.playing;
     return [
-      h('div', { class: 'dash-title' }, h('h2', {}, 'En cours de lecture'), h('span', { class: 'pill' }, list.length ? `${list.length} en cours` : 'Personne'),
+      h('div', { class: 'dash-title' }, h('h2', {}, 'En ce moment'), list.length ? h('span', { class: 'pill live' }, `${list.length} en cours`) : null,
         d.transcodes ? h('span', { class: 'pill warm' }, `${d.transcodes} conversion${d.transcodes > 1 ? 's' : ''}`) : null),
-      list.length ? h('div', { class: 'np-list' }, list.map(npCard)) : h('p', { class: 'dash-empty' }, 'Personne ne regarde quoi que ce soit en ce moment. Les lectures apparaissent ici en direct, avec de quoi les mettre en pause, les arrêter ou envoyer un message.'),
+      list.length ? h('div', { class: 'np-list' }, list.map(npCard)) : h('p', { class: 'dash-empty calm' }, icon('moon'), 'Personne ne regarde en ce moment.'),
     ];
   });
   const npCard = (p) => {
@@ -154,7 +163,7 @@ export async function render(main) {
     codeEl.textContent = `${d.loginCode.code.slice(0, 3)} ${d.loginCode.code.slice(3)}`;
     return [
       h('div', { class: 'dash-title' }, h('h2', {}, 'Code de connexion'), d.loginCode.uses ? h('span', { class: 'pill' }, `${d.loginCode.uses} connexion${d.loginCode.uses > 1 ? 's' : ''}`) : null),
-      h('p', { class: 'muted' }, 'Pour connecter un nouvel appareil sans donner le mot de passe : « Se connecter avec un code à 6 chiffres ». Le code ne sert qu’une fois, il change à chaque connexion.'),
+      h('p', { class: 'muted small' }, 'Pour connecter un appareil sans mot de passe. Valable une fois.'),
       h('div', { class: 'code-wrap' }, codeEl, h('button', { class: 'btn btn-ghost btn-icon f', 'data-k': 'copy', 'aria-label': 'Copier le code', title: 'Copier', onclick: () => { navigator.clipboard?.writeText(d.loginCode.code).then(() => toast('Code copié'), () => {}); } }, icon('copy'))),
       codeBar, codeLeft,
       h('button', { class: 'btn btn-small btn-ghost f', 'data-k': 'renew', onclick: async () => { d.loginCode = await api('/api/admin/login-code', { method: 'POST' }); paintCode(); tick(); toast('Nouveau code créé'); } }, icon('refresh'), 'Nouveau code'),
@@ -171,7 +180,7 @@ export async function render(main) {
   let allDevices = false;
   const paintDevices = () => paintSlot('devices', [allDevices, d.devices.map((x) => ({ ...x, lastSeen: Math.round(x.lastSeen / 60000) }))], () => [
     h('div', { class: 'dash-title' }, h('h2', {}, 'Appareils'), h('span', { class: 'pill' }, String(d.devices.length))),
-    h('div', { class: 'dev-list' }, d.devices.slice(0, allDevices ? 40 : 7).map((x) => h('div', { class: 'dev' },
+    h('div', { class: 'dev-list' }, d.devices.slice(0, allDevices ? 40 : 5).map((x) => h('div', { class: 'dev' },
       h('span', { class: `dev-dot${Date.now() - x.lastSeen < 5 * 60000 ? ' on' : ''}`, title: Date.now() - x.lastSeen < 5 * 60000 ? 'Actif' : 'Inactif' }),
       h('div', { class: 'grow' }, h('b', {}, x.name, x.current ? h('em', {}, ' (cet appareil)') : null, x.playing ? h('span', { class: 'pill tiny' }, 'en lecture') : null),
         h('span', {}, `${x.profile || 'Aucun profil'} · ${ago(x.lastSeen)}`)),
@@ -180,7 +189,7 @@ export async function render(main) {
         if (!(await confirmSheet(`Déconnecter « ${x.name} » ? Il faudra le mot de passe ou un code pour revenir.`, 'Déconnecter'))) return;
         try { await api(`/api/admin/devices/${x.id}`, { method: 'DELETE' }); toast('Appareil déconnecté'); refresh(); } catch (e) { toast(e.message, true); }
       } }, icon('exit'))))),
-    d.devices.length > 7 ? h('button', { class: 'linkish dash-more f', 'data-k': 'alldev', onclick: () => { allDevices = !allDevices; paintDevices(); } }, allDevices ? 'Afficher moins' : `Afficher les ${d.devices.length} appareils`) : null,
+    d.devices.length > 5 ? h('button', { class: 'linkish dash-more f', 'data-k': 'alldev', onclick: () => { allDevices = !allDevices; paintDevices(); } }, allDevices ? 'Afficher moins' : `Afficher les ${d.devices.length} appareils`) : null,
   ]);
 
   // ---------------------------------------------------------------- tâches de fond
@@ -188,13 +197,17 @@ export async function render(main) {
     const t = d.tasks;
     const sc = t.scan;
     const item = (ic, title, text, extra) => h('div', { class: 'task' }, h('span', { class: 'task-ic' }, icon(ic)), h('div', { class: 'grow' }, h('b', {}, title), h('span', {}, text), extra || null));
+    const pending = [
+      sc.running && item('refresh', 'Analyse des médiathèques', `${sc.phase || 'En cours'}${sc.total ? ` · ${sc.done} / ${sc.total}` : ''}`, sc.total ? meter((sc.done / sc.total) * 100) : null),
+      sc.error && item('info', 'Dernière analyse', `Erreur : ${sc.error}`),
+      t.ratings && item('spark', 'Notes et distribution', `${t.ratings} titre${t.ratings > 1 ? 's' : ''} en file d’attente`),
+      t.segments && item('skip', 'Génériques (début et fin)', `${t.segments} saison${t.segments > 1 ? 's' : ''} à analyser`),
+      t.unmatched && item('info', 'Titres non reconnus', `${t.unmatched} à identifier`, h('button', { class: 'linkish f', 'data-k': 'unm', onclick: () => go('/reglages?section=sources') }, 'Corriger')),
+    ].filter(Boolean);
+    // Rien en cours : une seule ligne
     return [
-      h('div', { class: 'dash-title' }, h('h2', {}, 'Tâches de fond')),
-      item('refresh', 'Analyse des médiathèques', sc.running ? `${sc.phase || 'En cours'}${sc.total ? ` · ${sc.done} / ${sc.total}` : ''}` : sc.lastScan ? `Terminée ${ago(sc.lastScan)}${sc.error ? ` · erreur : ${sc.error}` : ''}` : 'Pas encore lancée',
-        sc.running && sc.total ? meter((sc.done / sc.total) * 100) : null),
-      item('spark', 'Notes et distribution', t.ratings ? `${t.ratings} titre${t.ratings > 1 ? 's' : ''} en file d’attente` : t.noRatings ? `${t.noRatings} titre${t.noRatings > 1 ? 's' : ''} pas encore traités` : 'À jour'),
-      item('skip', 'Génériques (début et fin)', t.segments ? `${t.segments} saison${t.segments > 1 ? 's' : ''} à analyser` : 'À jour'),
-      t.unmatched ? item('info', 'Titres non reconnus', `${t.unmatched} à identifier`, h('button', { class: 'linkish f', 'data-k': 'unm', onclick: () => go('/reglages?section=sources') }, 'Corriger')) : null,
+      h('div', { class: 'dash-title' }, h('h2', {}, 'Tâches de fond'), pending.length ? h('span', { class: 'pill warm' }, String(pending.length)) : null),
+      ...(pending.length ? pending : [h('p', { class: 'dash-empty ok' }, icon('check'), `Tout est à jour${sc.lastScan ? ` · dernière analyse ${ago(sc.lastScan)}` : ''}`)]),
     ];
   });
 
@@ -203,37 +216,45 @@ export async function render(main) {
     const s = d.system;
     const memUsed = s.memTotal - s.memFree;
     const loadPct = (s.load[0] / s.cpus) * 100;
+    const diskUsed = s.disks.reduce((a, k) => a + k.total - k.free, 0), diskTotal = s.disks.reduce((a, k) => a + k.total, 0);
+    const gauge = (label, pct, value, sub) => h('div', { class: `gauge ${pct > 90 ? 'hot' : pct > 75 ? 'warm' : 'ok'}` },
+      h('div', { class: 'g-ring', style: { '--p': `${Math.min(100, Math.round(pct))}` } }, h('b', {}, pct > 100 ? '100 %+' : `${Math.round(pct)} %`)),
+      h('div', { class: 'g-txt' }, h('span', {}, label), h('small', {}, value), sub ? h('small', { class: 'dim' }, sub) : null));
     return [
-      h('div', { class: 'dash-title' }, h('h2', {}, 'Serveur')),
-      h('div', { class: 'sys' },
-        h('div', { class: 'sys-row' }, h('span', {}, 'Processeur'), h('b', {}, loadPct > 100 ? 'Saturé' : `${Math.round(loadPct)} %`), meter(loadPct), h('small', {}, `${s.cpus} cœurs · ${s.cpuModel.replace(/\(R\)|\(TM\)|CPU|@.*$/g, '').trim()}`)),
-        h('div', { class: 'sys-row' }, h('span', {}, 'Mémoire'), h('b', {}, `${fmtBytes(memUsed)} / ${fmtBytes(s.memTotal)}`), meter((memUsed / s.memTotal) * 100), h('small', {}, `Venus utilise ${fmtBytes(s.rss)}`)),
-        h('div', { class: 'sys-row' }, h('span', {}, 'Accélération'), h('b', {}, d.server.hw.label || 'Processeur seul'), null, h('small', {}, d.server.hw.type && d.server.hw.type !== 'none' ? (d.server.hw.tested ? 'Testée et fonctionnelle' : 'Détectée') : 'Aucune carte graphique utilisable : conversions plus lentes')),
-        d.forecast && d.forecast.fullIn != null ? h('div', { class: 'sys-row' }, h('span', {}, 'Prévision'), h('b', { class: d.forecast.fullIn < 60 ? 'warn' : '' }, d.forecast.fullIn > 730 ? 'Plus de 2 ans' : d.forecast.fullIn > 60 ? `Plein dans ${Math.round(d.forecast.fullIn / 30)} mois` : `Plein dans ${d.forecast.fullIn} jours`), null, h('small', {}, `+${fmtBytes(d.forecast.perMonth)} par mois en moyenne (${d.forecast.days} jours de relevés)`))
-          : d.forecast ? h('div', { class: 'sys-row' }, h('span', {}, 'Prévision'), h('b', {}, d.forecast.days < 3 ? 'Bientôt' : 'Stable'), null, h('small', {}, d.forecast.days < 3 ? 'Venus relève la taille des médiathèques chaque jour ; prévision après 3 jours' : 'La médiathèque ne grossit pas assez pour remplir le disque')) : null,
-        ...s.disks.map((k) => h('div', { class: 'sys-row' }, h('span', {}, 'Disque'), h('b', {}, `${fmtBytes(k.total - k.free)} / ${fmtBytes(k.total)}`), meter(((k.total - k.free) / k.total) * 100), h('small', {}, `${fmtBytes(k.free)} libres · ${k.names.join(', ')}`)))),
+      h('div', { class: 'dash-title' }, h('h2', {}, 'Santé du serveur')),
+      h('div', { class: 'gauges' },
+        gauge('Processeur', loadPct, loadPct > 100 ? 'Saturé' : 'Charge', `${s.cpus} cœurs`),
+        gauge('Mémoire', (memUsed / s.memTotal) * 100, `${fmtBytes(memUsed)} / ${fmtBytes(s.memTotal)}`),
+        diskTotal ? gauge('Disques', (diskUsed / diskTotal) * 100, `${fmtBytes(diskTotal - diskUsed)} libres`, d.forecast && d.forecast.fullIn != null && d.forecast.fullIn < 365 ? `plein dans ${d.forecast.fullIn > 60 ? `${Math.round(d.forecast.fullIn / 30)} mois` : `${d.forecast.fullIn} j`}` : null) : null),
+      h('details', { class: 'sys-more' }, h('summary', { class: 'f' }, 'Détails'),
+        h('div', { class: 'sys' },
+          h('div', { class: 'sys-row' }, h('span', {}, 'Processeur'), h('b', {}, s.cpuModel.replace(/\(R\)|\(TM\)|CPU|@.*$/g, '').trim())),
+          h('div', { class: 'sys-row' }, h('span', {}, 'Venus utilise'), h('b', {}, fmtBytes(s.rss))),
+          h('div', { class: 'sys-row' }, h('span', {}, 'Accélération'), h('b', {}, d.server.hw.label || 'Processeur seul'), null, h('small', {}, d.server.hw.type && d.server.hw.type !== 'none' ? (d.server.hw.tested ? 'Testée et fonctionnelle' : 'Détectée') : 'Aucune carte graphique : conversions plus lentes')),
+          ...s.disks.map((k) => h('div', { class: 'sys-row' }, h('span', {}, 'Disque'), h('b', {}, `${fmtBytes(k.total - k.free)} / ${fmtBytes(k.total)}`), meter(((k.total - k.free) / k.total) * 100), h('small', {}, `${fmtBytes(k.free)} libres · ${k.names.join(', ')}`))))),
     ];
   });
 
   // ---------------------------------------------------------------- activité
   const paintActivity = () => paintSlot('activity', d.activity.map((a) => a.at), () => [
     h('div', { class: 'dash-title' }, h('h2', {}, 'Activité récente')),
-    d.activity.length ? h('ol', { class: 'timeline' }, d.activity.slice(0, 14).map((a) => h('li', { class: `act-${a.kind}` }, h('span', { class: 'tl-ic' }, icon(ACT_ICON[a.kind] || 'info')), h('div', {}, h('p', {}, a.text), h('small', {}, ago(a.at))))))
+    d.activity.length ? h('ol', { class: 'timeline' }, d.activity.slice(0, 6).map((a) => h('li', { class: `act-${a.kind}` }, h('span', { class: 'tl-ic' }, icon(ACT_ICON[a.kind] || 'info')), h('div', {}, h('p', {}, a.text), h('small', {}, ago(a.at))))))
       : h('p', { class: 'dash-empty' }, 'Rien depuis le démarrage du serveur. Lectures, connexions et messages s’afficheront ici.'),
   ]);
 
   // ---------------------------------------------------------------- médiathèques
-  const paintLibs = () => paintSlot('libs', d.libraries.map((l) => [l.id, l.items, l.exists, l.network && l.network.ok]), () => [
-    h('div', { class: 'dash-title' }, h('h2', {}, 'Médiathèques'), h('button', { class: 'linkish f', 'data-k': 'libs', onclick: () => go('/reglages') }, 'Gérer')),
-    d.libraries.length ? h('div', { class: 'dev-list' }, d.libraries.map((l) => h('div', { class: 'dev' },
+  // Médiathèques : affichées seulement quand l'une pose problème (sinon : Plus → Réglages)
+  const badLibs = () => d.libraries.filter((l) => !l.exists || (l.network && l.network.ok === false));
+  const paintLibs = () => paintSlot('libs', badLibs().map((l) => [l.id, l.items, l.exists, l.network && l.network.ok]), () => (!badLibs().length ? [] : [
+    h('div', { class: 'dash-title' }, h('h2', {}, 'Médiathèques à vérifier'), h('button', { class: 'linkish f', 'data-k': 'libs', onclick: () => go('/reglages') }, 'Gérer')),
+    h('div', { class: 'dev-list' }, badLibs().map((l) => h('div', { class: 'dev' },
       h('span', { class: `dev-dot${!l.exists || (l.network && l.network.ok === false) ? ' bad' : ' on'}`, title: !l.exists ? 'Dossier introuvable' : 'Disponible' }),
-      h('div', { class: 'grow' }, h('b', {}, l.name), h('span', {}, `${nf.format(l.items)} élément${l.items > 1 ? 's' : ''} · ${l.network ? l.network.address : l.path}`))))) : h('p', { class: 'dash-empty' }, 'Aucune médiathèque.'),
-  ]);
+      h('div', { class: 'grow' }, h('b', {}, l.name), h('span', {}, `${!l.exists ? 'Dossier introuvable' : 'Partage réseau injoignable'} · ${l.network ? l.network.address : l.path}`))))),
+  ]));
 
   // ---------------------------------------------------------------- ajouts récents
-  const paintRecent = () => paintSlot('recent', d.recent.map((i) => i.id), () => (d.recent.length ? [row({ title: 'Ajouts récents', items: d.recent })] : []));
 
-  const paintAll = () => { paintHead(); paintPlaying(); paintCode(); paintDevices(); paintTasks(); paintSystem(); paintActivity(); paintLibs(); paintRecent(); };
+  const paintAll = () => { paintHead(); paintPlaying(); paintCode(); paintDevices(); paintTasks(); paintSystem(); paintActivity(); paintLibs(); };
   paintAll();
   tick();
 
