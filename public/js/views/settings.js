@@ -162,6 +162,8 @@ export async function render(main, { query } = {}) {
         h('ul', {}, last.map((x) => h('li', {}, h('b', {}, x.title), h('small', {}, new Date(x.at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })))))) : null,
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
         h('button', { class: 'btn btn-small btn-play f', onclick: () => go('/ajouter') }, icon('upload'), 'Envoyer des vidéos'),
+        h('button', { class: 'btn btn-small f', onclick: () => openDuplicates() }, icon('grid4'), 'Doublons'),
+        h('button', { class: 'btn btn-small f', onclick: () => openRename() }, icon('edit'), 'Renommer les fichiers'),
         h('button', { class: 'btn btn-small f', disabled: s.running, onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: {} }); toast('Recherche des nouveautés lancée'); refresh(); } }, 'Rechercher les nouveautés'),
         h('button', { class: 'btn btn-small btn-ghost f', disabled: s.running, onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: { force: true } }); toast('Analyse complète lancée'); refresh(); } }, 'Tout réanalyser')),
       s.lastScan ? h('p', { class: 'lib-foot' }, `Dernière vérification : ${new Date(s.lastScan).toLocaleString('fr-FR')}. Les dossiers du serveur sont surveillés en continu, les partages réseau vérifiés toutes les 10 minutes.`) : null);
@@ -187,6 +189,11 @@ export async function render(main, { query } = {}) {
       field('Vignettes d’aperçu de la barre de lecture', select([['auto', 'Préparées en arrière-plan pour toute la médiathèque'], ['play', 'Préparées à la première lecture seulement'], ['off', 'Désactivées']], a.settings.trickplay || 'auto',
         { onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { trickplay: e.target.value } }); toast('Réglage enregistré'); } }),
         'Une image toutes les 10 secondes, au survol de la barre. Environ 1 Mo par heure de vidéo.'),
+      h('div', { class: 'field', style: { marginTop: '8px' } }, h('label', {}, 'Changer de machine'),
+        h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+          h('a', { class: 'btn btn-small f', href: `/api/admin/export?token=${encodeURIComponent(auth.token || '')}`, download: '' }, icon('down'), 'Exporter tout (base + images)'),
+          h('button', { class: 'btn btn-small btn-ghost f', onclick: () => importArchive() }, icon('upload'), 'Importer une archive')),
+        h('small', {}, 'L’export contient profils, vus, listes, réglages et affiches choisies, jamais les vidéos. Sur la nouvelle machine : installez Venus, puis « Importer ».')),
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small f', onclick: async (e) => {
         e.target.disabled = true; e.target.textContent = 'Test du matériel…';
         try { await api('/api/admin/settings', { method: 'PUT', body: { hwaccel: hwSel.value, maxSessions: Number(maxS.value) } }); toast('Réglages enregistrés'); }
@@ -688,4 +695,67 @@ export function choosePoster(it, onDone) {
       h('label', { class: 'img-url-label' }, 'Ou collez l’adresse d’une image'), h('div', { class: 'img-url-row' }, urlIn, h('button', { class: 'btn btn-small btn-play f', type: 'submit' }, icon('down'), 'Utiliser')),
       h('small', { class: 'muted' }, 'Depuis IMP Awards, MoviePosterDB, CineMaterial, TMDB… (clic droit sur l’image → « Copier l’adresse de l’image »).'))), { wide: true });
   search();
+}
+
+const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
+// Doublons : films présents plusieurs fois ; on garde la meilleure version d'un clic
+async function openDuplicates() {
+  const body = h('div', { class: 'dup-list' }, h('p', { class: 'muted' }, 'Recherche…'));
+  const s = sheet('Doublons', body, { wide: true });
+  const paint = async () => {
+    const r = await api('/api/admin/duplicates');
+    if (!r.groups.length) { body.replaceChildren(h('p', { class: 'muted' }, 'Aucun film en double. Les versions voulues (4K et 1080p d’un même film) apparaissent ici aussi : ne supprimez que ce qui est de trop.')); return; }
+    body.replaceChildren(h('p', {}, `${r.groups.length} film${r.groups.length > 1 ? 's' : ''} en plusieurs exemplaires · ${fmtGo(r.recoverable)} récupérables en ne gardant que la meilleure version.`),
+      ...r.groups.map((g) => h('div', { class: 'dup' },
+        h('div', { class: 'dup-head' }, h('b', {}, `${g.title}${g.year ? ` (${g.year})` : ''}`), h('small', {}, `${g.versions.length} fichiers`)),
+        h('div', { class: 'dup-versions' }, g.versions.map((v) => h('div', { class: `dup-v${v.primary ? ' best' : ''}` },
+          h('div', { class: 'grow' }, h('b', {}, [v.quality || 'Qualité inconnue', v.detail].filter(Boolean).join(' · ')), h('small', {}, v.file)),
+          v.primary ? h('span', { class: 'pill' }, 'Meilleure') : h('button', { class: 'btn btn-small btn-danger f', onclick: async (e) => {
+            if (!(await confirmSheet(`Supprimer le fichier « ${v.file} » (${fmtGo(v.size)}) ? Il est effacé du disque.`, 'Supprimer'))) return;
+            e.target.disabled = true;
+            try { await api(`/api/admin/items/${v.id}/delete`, { method: 'POST' }); toast(`${fmtGo(v.size)} libérés`); await paint(); } catch (err) { toast(err.message, true); e.target.disabled = false; }
+          } }, 'Supprimer')))))));
+  };
+  paint().catch((e) => body.replaceChildren(h('p', { class: 'error-text' }, e.message)));
+}
+
+// Renommage façon Plex / Jellyfin : propositions cochables, puis renommage (la base suit)
+async function openRename() {
+  const body = h('div', { class: 'ren-list' }, h('p', { class: 'muted' }, 'Analyse des noms…'));
+  const s = sheet('Renommer les fichiers', body, { wide: true });
+  try {
+    const { plan } = await api('/api/admin/rename');
+    if (!plan.length) { body.replaceChildren(h('p', { class: 'muted' }, 'Tous les fichiers identifiés ont déjà un nom propre (« Film (Année)/Film (Année).mkv », « Série/Saison 01/Série - S01E02.mkv »). Les titres non identifiés n’apparaissent pas : identifiez-les d’abord depuis leur fiche.')); return; }
+    const checks = new Map();
+    const row = (p) => { const c = h('input', { type: 'checkbox', class: 'f', checked: !p.exists, disabled: p.exists }); checks.set(p.id, c);
+      return h('label', { class: `ren${p.exists ? ' blocked' : ''}` }, c, h('div', { class: 'grow' }, h('small', {}, p.from), h('b', {}, p.to), p.exists ? h('small', { class: 'warn' }, 'Un fichier porte déjà ce nom') : null)); };
+    const apply = h('button', { class: 'btn btn-play f', onclick: async () => {
+      const ids = [...checks].filter(([, c]) => c.checked && !c.disabled).map(([id]) => id);
+      if (!ids.length) return;
+      if (!(await confirmSheet(`Renommer ${ids.length} fichier${ids.length > 1 ? 's' : ''} (et leurs sous-titres) ? Les dossiers vides sont retirés. Venus continue de les reconnaître.`, 'Renommer'))) return;
+      apply.disabled = true; apply.textContent = 'Renommage…';
+      try { const r = await api('/api/admin/rename', { method: 'POST', body: { ids } }); toast(`${r.done} fichier${r.done > 1 ? 's' : ''} renommé${r.done > 1 ? 's' : ''}${r.errors.length ? `, ${r.errors.length} échec(s)` : ''}`, r.errors.length ? true : { type: 'success' }); if (r.errors.length) console.warn(r.errors); s.close(); }
+      catch (e) { toast(e.message, true); apply.disabled = false; apply.textContent = 'Renommer la sélection'; }
+    } }, 'Renommer la sélection');
+    body.replaceChildren(h('p', {}, `${plan.length} fichier${plan.length > 1 ? 's' : ''} à renommer. Modèle : « Film (Année)/Film (Année).ext », « Série (Année)/Saison 01/Série (Année) - S01E02 - Titre.ext ».`),
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small btn-ghost f', onclick: () => checks.forEach((c) => { if (!c.disabled) c.checked = true; }) }, 'Tout cocher'), h('button', { class: 'btn btn-small btn-ghost f', onclick: () => checks.forEach((c) => { c.checked = false; }) }, 'Tout décocher')),
+      h('div', { class: 'ren-rows' }, plan.map(row)), h('div', { class: 'form-actions' }, apply));
+  } catch (e) { body.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
+}
+
+// Import d'une archive d'export (changement de machine) : la base est restaurée au redémarrage
+function importArchive() {
+  const input = h('input', { type: 'file', accept: '.tar.gz,.tgz,application/gzip', hidden: true, onchange: async () => {
+    const f = input.files[0]; if (!f) return;
+    if (!(await confirmSheet(`Importer « ${f.name} » ? Profils, vus, listes et réglages actuels seront remplacés par ceux de l’archive (une sauvegarde est faite avant). Venus redémarre ensuite.`, 'Importer'))) return;
+    toast('Envoi de l’archive…');
+    try {
+      const r = await fetch('/api/admin/import', { method: 'POST', headers: { Authorization: `Bearer ${auth.token || ''}`, 'Content-Type': 'application/gzip' }, body: f });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error || 'Import impossible');
+      toast(d.restarting ? 'Import prêt : Venus redémarre…' : 'Import prêt : redémarrez Venus pour l’appliquer', { type: 'success', duration: 8000 });
+      if (d.restarting) setTimeout(() => location.reload(), 8000);
+    } catch (e) { toast(e.message, true); }
+  } });
+  document.body.append(input); input.click(); setTimeout(() => input.remove(), 60000);
 }

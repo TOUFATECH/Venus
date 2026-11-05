@@ -68,7 +68,18 @@ export async function saveRemoteImage(url, { any = false } = {}) {
   const dest = path.join(imagesDir, name);
   if (fs.existsSync(dest)) return name;
   try {
-    const res = await fetch(u, { headers: { ...UA, Accept: 'image/*' }, signal: AbortSignal.timeout(20000), redirect: 'follow' });
+    // Redirections suivies à la main (3 au plus) : chaque étape repasse par les mêmes vérifications d'adresse
+    let res = null, cur = u;
+    for (let hop = 0; hop < 4; hop++) {
+      res = await fetch(cur, { headers: { ...UA, Accept: 'image/*' }, signal: AbortSignal.timeout(20000), redirect: 'manual' });
+      if (![301, 302, 303, 307, 308].includes(res.status)) break;
+      const loc = res.headers.get('location'); if (!loc) return null;
+      cur = new URL(loc, cur);
+      if (cur.protocol !== 'https:') return null;
+      if (any) { if (net.isIP(cur.hostname) ? isPrivateIp(cur.hostname) : /^(localhost|.*\.local|.*\.lan|.*\.internal)$/i.test(cur.hostname)) return null; try { const addrs = await dns.lookup(cur.hostname, { all: true }); if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) return null; } catch { return null; } }
+      res = null;
+    }
+    if (!res) return null;
     const type = res.headers.get('content-type') || '';
     if (!res.ok || !/^image\/(jpeg|png|webp)/.test(type)) return null;
     const len = Number(res.headers.get('content-length') || 0);
