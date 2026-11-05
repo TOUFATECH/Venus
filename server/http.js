@@ -96,7 +96,7 @@ export function sendJson(res, data, status = 200) {
 }
 
 // Envoi d'un fichier avec prise en charge des requêtes Range (lecture directe + avance rapide)
-export function sendFile(req, res, filePath, { cache = 'no-cache', type } = {}) {
+export function sendFile(req, res, filePath, { cache = 'no-cache', type, download } = {}) {
   let stat;
   try { stat = fs.statSync(filePath); } catch { throw new HttpError(404, 'Fichier introuvable'); }
   const size = stat.size;
@@ -108,6 +108,7 @@ export function sendFile(req, res, filePath, { cache = 'no-cache', type } = {}) 
   };
   const etag = `"${stat.size.toString(36)}-${Math.floor(stat.mtimeMs).toString(36)}"`;
   headers.ETag = etag;
+  if (download) headers['Content-Disposition'] = `attachment; filename="${String(download).replace(/[^\w.\-]+/g, '_')}"`;
   if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
 
   const range = req.headers.range;

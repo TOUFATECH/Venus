@@ -30,6 +30,7 @@ import { startSecurityAudit } from './audit.js';
 import { fillMissingPosters } from './posters.js';
 import { purgeTrash, KEEP_DAYS } from './trash.js';
 import { sendWeeklyReport, checkFiles } from './reports.js';
+import { recordSize } from './extras.js';
 import { defineTask } from './tasks.js';
 import { trickplayBackfill } from './trickplay.js';
 import { refreshRatings as ratingsAll } from './ratings.js';
@@ -155,6 +156,7 @@ async function main() {
   defineTask('integrity', { label: 'Fichiers abîmés', description: 'Lit un peu de chaque vidéo avec ffmpeg pour repérer les fichiers corrompus ou incomplets (30 par passage, les nouveaux d’abord).', when: 'Toutes les 12 heures', every: 12 * 3600e3, firstDelay: 20 * 60000, run: () => checkFiles(30) });
   defineTask('trash', { label: 'Corbeille', description: `Efface pour de bon les vidéos supprimées depuis plus de ${KEEP_DAYS} jours (Réglages → Corbeille pour les restaurer avant).`, when: 'Chaque nuit', every: 86400e3, firstDelay: 300000, run: async () => { const r = purgeTrash(); return r.count ? `${r.count} élément(s) effacé(s), ${(r.freed / 1e9).toFixed(1)} Go libérés` : 'Rien à effacer'; } });
   defineTask('disk', { label: 'Espace disque', description: 'Prévient l’administrateur quand un disque (données, conversion, médiathèques) est presque plein (moins de 5 % ou 10 Go).', when: 'Toutes les 6 heures', every: 6 * 3600e3, firstDelay: 90000, run: async () => {
+    recordSize(); // relevé quotidien pour la prévision « disque plein dans N mois »
     const checked = new Set(); const warn = [];
     for (const [name, dir] of [['Données de Venus', config.dataDir], ['Conversion', config.transcodeDir], ...all('SELECT name, path FROM libraries').map((l) => [l.name, l.path])]) {
       let st; try { st = fs.statfsSync(dir); } catch { continue; }

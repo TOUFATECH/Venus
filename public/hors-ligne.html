@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Venus — serveur injoignable</title>
+<style>
+  html { background: #0d1016; color: #eceae4; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; text-align: center; }
+  .box { max-width: 420px; }
+  .planet { width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 22px; background: radial-gradient(circle at 36% 32%, #fff3d6 0%, #f6d9a4 26%, #e8b878 52%, #c98a4e 76%, #94582e 100%); box-shadow: 0 0 40px rgba(246, 210, 160, .25), inset -14px -10px 30px rgba(20, 8, 2, .45); }
+  h1 { font-size: 1.5rem; margin: 0 0 8px; }
+  p { color: #b9b4aa; line-height: 1.5; margin: 0 0 10px; }
+  button { margin-top: 14px; padding: 12px 22px; border-radius: 999px; border: 0; background: #eceae4; color: #0d1016; font: inherit; font-weight: 700; cursor: pointer; }
+  small { display: block; margin-top: 18px; color: #7d786f; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <div class="planet"></div>
+    <h1>Venus ne répond pas</h1>
+    <p id="last">Le serveur est peut-être éteint, ou votre appareil n’est plus sur le même réseau.</p>
+    <p>Vérifiez que la machine qui héberge Venus est allumée, puis réessayez.</p>
+    <button onclick="location.reload()">Réessayer</button>
+    <small id="auto">Nouvel essai automatique dans 20 s.</small>
+  </div>
+  <script>
+    try {
+      var t = Number(localStorage.getItem('vn_last_ok') || 0);
+      if (t) {
+        var m = Math.round((Date.now() - t) / 60000);
+        document.getElementById('last').textContent = 'Dernier contact avec le serveur : ' + (m < 1 ? 'il y a moins d’une minute' : m < 60 ? 'il y a ' + m + ' min' : 'le ' + new Date(t).toLocaleString('fr-FR')) + '.';
+      }
+    } catch (e) {}
+    var left = 20, el = document.getElementById('auto');
+    setInterval(function () { left--; if (left <= 0) location.reload(); el.textContent = 'Nouvel essai automatique dans ' + left + ' s.'; }, 1000);
+  </script>
+</body>
+</html>

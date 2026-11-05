@@ -55,6 +55,7 @@ export async function render(main, { id, query }) {
   const caps = deviceCaps();
   let info = null, hls = null, offset = 0, forceCompat = false, quality = preferredQuality();
   let audioOrder, subId, cues = [], destroyed = false, uiTimer = null, saveTimer = null, subsTimer = null;
+  let postShown = false;
   let recoveries = [], mediaRecover = 0, nextShown = false, nextDismissed = false, nextTimer = null, wakeLock = null, casting = null;
   let pendingSeek = null, seekTimer = null;
 
@@ -97,6 +98,7 @@ export async function render(main, { id, query }) {
   const castBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Diffuser sur un Chromecast', onclick: () => startCast() }, icon('cast'));
   const airBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'AirPlay', onclick: () => video.webkitShowPlaybackTargetPicker && video.webkitShowPlaybackTargetPicker() }, icon('airplay'));
   const fsBtn = h('button', { class: 'p-icon f', 'aria-label': 'Plein écran', onclick: () => toggleFullscreen() }, icon('fs'));
+  const shareBtn = h('button', { class: 'p-icon f p-share', 'aria-label': 'Partager un extrait', title: 'Partager un extrait (GIF ou vidéo de quelques secondes)', onclick: () => openShare() }, icon('send'));
   const sleepBtn = h('button', { class: 'p-icon f p-sleep', 'aria-label': 'Minuterie de sommeil', title: 'Minuterie de sommeil', onclick: () => openSleep() }, icon('moon'), h('small', { class: 'p-sleep-left', hidden: true }));
   const lockBtn = h('button', { class: 'p-icon f p-lockbtn', 'aria-label': 'Verrouiller l’écran tactile', title: 'Verrouiller l’écran', onclick: () => setLocked(true) }, icon('lock'));
   const lockLayer = h('div', { class: 'p-lock', hidden: true });
@@ -135,7 +137,7 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, ambBtn, castBtn, airBtn, fsBtn)),
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, shareBtn, ambBtn, castBtn, airBtn, fsBtn)),
     nextPanel, overlay, volOsd, skipBtn, chPanel, below, lockLayer);
   main.append(root);
   document.body.style.overflow = 'hidden';
@@ -610,8 +612,48 @@ export async function render(main, { id, query }) {
     const s = sheet('Vitesse de lecture', h('div', {}, h('div', { class: 'speed-grid' }, SPEEDS.map((v) => h('button', {
       class: `chip f${v === speed ? ' on' : ''}`, onclick: () => { s.close(); setSpeed(v); },
     }, v === 1 ? 'Normale' : fmtSpeed(v)))),
-    h('p', { class: 'muted' }, party ? 'En séance, la vitesse ne change que pour vous.' : 'Le ton des voix est conservé. Touches < et > pendant la lecture.')));
+    h('p', { class: 'muted' }, party ? 'En séance, la vitesse ne change que pour vous.' : 'Le ton des voix est conservé. Touches < et > pendant la lecture.'),
+    party ? null : h('label', { class: 'switch', style: { marginTop: '10px' } }, h('span', {}, 'Accélérer les silences', h('small', { style: { display: 'block', color: 'var(--dim)', fontWeight: 500 } }, 'Passages sans parole ni musique lus à 1,3×, imperceptible : 5 à 10 min gagnées par film')),
+      h('input', { type: 'checkbox', class: 'f', checked: !!prefs.get('skipSilence'), onchange: (e) => { prefs.set('skipSilence', e.target.checked); e.target.checked ? startSilence() : stopSilence(); } }))));
   }
+  // ---------------------------------------------------------------- partager un extrait (quelques secondes autour de l'instant courant)
+  function openShare() {
+    if (!info || info.live || info.type === 'channel') { toast('Pas d’extrait pour le direct', true); return; }
+    video.pause();
+    const at = Math.max(0, position() - 4);
+    let len = 8, fmt = 'mp4';
+    const mk = () => `/api/items/${info.itemId}/clip?start=${Math.floor(at)}&duration=${len}&format=${fmt}&token=${encodeURIComponent(auth.token || '')}`;
+    const go2 = h('a', { class: 'btn btn-play f', href: mk(), download: '' }, icon('down'), 'Créer l’extrait');
+    const upd = () => { go2.href = mk(); };
+    const s = sheet('Partager un extrait', h('div', { class: 'share-box' },
+      h('p', { class: 'muted' }, `À partir de ${fmtTime(at)}. L’extrait est fabriqué sur le serveur (quelques secondes), puis se télécharge : à envoyer sur WhatsApp, Messages…`),
+      h('div', { class: 'look-row' }, h('span', {}, 'Durée'), h('div', { class: 'seg' }, [4, 8, 12, 15].map((v) => h('button', { class: `seg-b f${len === v ? ' on' : ''}`, onclick: (e) => { len = v; upd(); e.currentTarget.parentNode.querySelectorAll('.seg-b').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, `${v} s`)))),
+      h('div', { class: 'look-row' }, h('span', {}, 'Format'), h('div', { class: 'seg' }, [['mp4', 'Vidéo (MP4, avec le son)'], ['gif', 'GIF animé (sans son)']].map(([v, l]) => h('button', { class: `seg-b f${fmt === v ? ' on' : ''}`, onclick: (e) => { fmt = v; upd(); e.currentTarget.parentNode.querySelectorAll('.seg-b').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, l)))),
+      h('div', { class: 'form-actions' }, go2)));
+    go2.addEventListener('click', () => { toast('Extrait en préparation…'); setTimeout(() => s.close(), 800); });
+  }
+  // ---------------------------------------------------------------- silences accélérés (analyse du son dans le navigateur)
+  let silNode = null, silTimer = null, silOn = false, silSince = 0;
+  function startSilence() {
+    if (silTimer || !window.AudioContext || info?.live) return;
+    try {
+      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+      if (!silNode) { silNode = audioCtx.createMediaElementSource(video); const an = audioCtx.createAnalyser(); an.fftSize = 1024; silNode.connect(an); an.connect(audioCtx.destination); silNode.analyser = an; }
+      const buf = new Uint8Array(silNode.analyser.fftSize);
+      silTimer = setInterval(() => {
+        if (video.paused || audioCtx.state !== 'running') return;
+        silNode.analyser.getByteTimeDomainData(buf);
+        let sum = 0; for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v; }
+        const rms = Math.sqrt(sum / buf.length);
+        const quiet = rms < 0.012;
+        if (quiet && !silOn) { if (!silSince) silSince = Date.now(); else if (Date.now() - silSince > 700) { silOn = true; video.playbackRate = Math.min(2, speed * 1.3); } }
+        else if (!quiet) { silSince = 0; if (silOn) { silOn = false; video.playbackRate = speed; } }
+      }, 100);
+      if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    } catch { stopSilence(); }
+  }
+  function stopSilence() { clearInterval(silTimer); silTimer = null; silSince = 0; if (silOn) { silOn = false; video.playbackRate = speed; } }
+  if (prefs.get('skipSilence')) video.addEventListener('playing', () => startSilence(), { once: true });
 
   // Souris et tactile
   // Seul un vrai mouvement de la souris affiche les commandes (le navigateur envoie aussi des « mouvements »
@@ -694,6 +736,7 @@ export async function render(main, { id, query }) {
     saveProgress(true);
     if (sleep && sleep.mode === 'end') { goodnight(); return; }
     if (info && info.next) playNext();
+    else if (info && info.type === 'movie' && !party) askOpinion();
     else setTimeout(() => exit(), 1200);
   });
   subsTimer = setInterval(() => { if (cues.length) paintSubs(); }, 120);
@@ -771,6 +814,8 @@ export async function render(main, { id, query }) {
     if (seg.intro && t >= seg.intro.start && t < seg.intro.end - 1.5) kind = 'intro';
     else if (seg.credits && t >= seg.credits.start && t < seg.credits.end - 1.5) kind = 'credits';
     if (kind === 'credits' && info.next) { kind = null; maybeShowNext(true); } // le générique de fin enchaîne sur l'épisode suivant
+    // Scène après le générique (détectée : le générique s'arrête bien avant la fin de la vidéo) : on prévient au lieu de quitter
+    if (kind === 'credits' && !postShown && seg.credits.end < duration() - 25) { postShown = true; toast('Il y a une scène après le générique', { duration: 6000 }); }
     if (kind && prefs.get('autoSkip') && !skipState[kind] && !party) { skipState[kind] = true; doSkip(kind); toast(kind === 'intro' ? 'Générique de début passé' : 'Générique de fin passé'); return; }
     if (kind !== skipKind) {
       skipKind = kind;
@@ -828,8 +873,24 @@ export async function render(main, { id, query }) {
       if (left <= 0) { clearInterval(nextTimer); playNext(); }
     }, 1000);
   }
-  function playNext() {
+  // Enchaînements automatiques sans aucun geste : au 3e, on demande « Toujours là ? » (statistiques et temps d'écran justes)
+  const autoKey = () => `vn_auto_${info && (info.showId || info.itemId)}`;
+  function autoCount(reset = false) { try { if (reset) { sessionStorage.removeItem(autoKey()); return 0; } const n = Number(sessionStorage.getItem(autoKey()) || 0); return n; } catch { return 0; } }
+  function bumpAuto() { try { sessionStorage.setItem(autoKey(), String(autoCount() + 1)); } catch { /* */ } }
+  function askStillThere() {
+    video.pause(); saveProgress();
+    const box = h('div', { class: 'p-night' }, h('div', {}, h('span', { class: 'p-night-moon' }, icon('eye')), h('h2', {}, 'Toujours là ?'),
+      h('p', {}, 'Trois épisodes se sont enchaînés sans que vous touchiez à rien. La lecture est en pause, votre progression est enregistrée.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn btn-play f', onclick: () => { box.remove(); autoCount(true); playNext(true); } }, icon('play'), 'Oui, épisode suivant'),
+        h('button', { class: 'btn btn-ghost f', onclick: () => { box.remove(); exit(); } }, 'Arrêter'))));
+    root.append(box);
+    focusEl(box.querySelector('.btn-play'));
+  }
+  function playNext(confirmed = false) {
     if (!info || !info.next) return;
+    const auto = Date.now() - userActAt > 60000 && !confirmed; // enchaînement sans geste depuis plus d'une minute
+    if (auto && !info.next.queue && autoCount() >= 2 && !party) { askStillThere(); return; }
+    if (auto) bumpAuto(); else autoCount(true);
     saveProgress(true);
     if (party) party.send('item', { itemId: info.next.id });
     go(`/lecture/${info.next.id}?t=0${roomCode ? `&salle=${roomCode}` : ''}`, { replace: true });
@@ -1187,6 +1248,17 @@ export async function render(main, { id, query }) {
         toast(v == null ? 'Minuterie désactivée' : v === 'end' ? 'Pause à la fin de cette vidéo' : `Pause dans ${label}`, { type: 'success' });
       } }, icon('check'), label))));
   }
+  // Fin d'un film : « Vous avez aimé ? » en un geste (nourrit les suggestions), puis retour
+  function askOpinion() {
+    const done = async (liked) => { box.remove(); if (liked != null) { try { await api(`/api/items/${info.itemId}/opinion`, { method: 'POST', body: { liked } }); } catch { /* */ } } exit(); };
+    const box = h('div', { class: 'p-night' }, h('div', {}, h('h2', {}, 'Vous avez aimé ?'),
+      h('p', {}, 'Un geste suffit : Venus s’en souvient pour vos suggestions.'),
+      h('div', { class: 'actions' }, h('button', { class: 'btn btn-play f', onclick: () => done(true) }, icon('heart'), 'J’ai aimé'), h('button', { class: 'btn btn-ghost f', onclick: () => done(false) }, 'Bof'),
+        h('button', { class: 'btn btn-ghost f', onclick: () => done(null) }, 'Passer'))));
+    root.append(box);
+    focusEl(box.querySelector('.btn-play'));
+    setTimeout(() => { if (box.isConnected) done(null); }, 30000);
+  }
   function goodnight() {
     video.pause();
     if (fadeFrom != null) { video.volume = fadeFrom; fadeFrom = null; }
@@ -1310,7 +1382,7 @@ export async function render(main, { id, query }) {
     if (!handedOff) chainedAt = Date.now();
     saveProgress();
     clearApiCache(); // « Reprendre la lecture » et les vus sont à jour au retour
-    clearInterval(beatTimer); clearTimeout(beatSoon); window.removeEventListener('vn:control', onControl); beat(true);
+    clearInterval(beatTimer); clearTimeout(beatSoon); window.removeEventListener('vn:control', onControl); beat(true); stopSilence();
     clearInterval(saveTimer); clearInterval(subsTimer); clearInterval(nextTimer); clearTimeout(uiTimer); clearTimeout(seekTimer);
     document.removeEventListener('keydown', onKey, true);
     if (zapper) { zapper.stop(); document.removeEventListener('keydown', zapper.onKey, true); }

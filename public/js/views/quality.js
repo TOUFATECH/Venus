@@ -40,6 +40,17 @@ export async function render(main) {
     }
   };
   const bar = (label, n) => h('div', { class: 'q-bar' }, h('span', {}, label), h('div', { class: 'meter' }, h('i', { style: { width: `${s.total ? (n / s.total) * 100 : 0}%` } })), h('b', {}, String(n)));
+  // Conversions évitables : quels appareils forcent des conversions, pourquoi, et quoi faire (commande ffmpeg prête)
+  const tc = h('section', { class: 'dash-box q-transcodes' }, h('div', { class: 'dash-title' }, h('h2', {}, 'Conversions évitables')), h('p', { class: 'muted' }, 'Chargement…'));
+  api('/api/admin/transcodes').then((t) => {
+    if (!t.byReason.length) { tc.replaceChildren(h('div', { class: 'dash-title' }, h('h2', {}, 'Conversions évitables')), h('p', { class: 'dash-empty' }, 'Aucune conversion ces 30 derniers jours : tous les appareils lisent les fichiers tels quels.')); return; }
+    tc.replaceChildren(h('div', { class: 'dash-title' }, h('h2', {}, 'Conversions évitables'), h('span', { class: 'pill' }, '30 jours')),
+      h('div', { class: 'tc-cols' },
+        h('div', {}, h('h3', {}, 'Par appareil'), t.byDevice.map((d) => h('div', { class: 'tc-row' }, h('span', {}, d.device || 'inconnu'), h('b', {}, d.n)))),
+        h('div', {}, h('h3', {}, 'Par cause'), t.byReason.map((r) => h('div', { class: 'tc-row' }, h('span', {}, [r.reason, r.codec ? r.codec.toUpperCase() : null, r.container ? r.container.toUpperCase() : null].filter(Boolean).join(' · ')), h('b', {}, r.n))))),
+      t.advice.length ? h('div', { class: 'tc-advice' }, t.advice.map((a) => h('div', { class: 'tc-tip' }, h('b', {}, a.reason), h('p', {}, a.tip), h('code', { class: 'cmd' }, a.cmd), h('button', { class: 'btn btn-small btn-ghost f', onclick: () => { navigator.clipboard?.writeText(a.cmd).then(() => toast('Commande copiée'), () => {}); } }, 'Copier')))) : null,
+      t.files.length ? h('div', {}, h('h3', {}, 'Fichiers les plus convertis'), t.files.map((f) => h('div', { class: 'tc-row' }, h('button', { class: 'linkish f', onclick: () => go(`/titre/${f.id}`) }, f.title), h('b', {}, `${f.n}×`)))) : null);
+  }).catch((e) => tc.replaceChildren(h('p', { class: 'error-text' }, e.message)));
   main.append(h('div', { class: 'page' },
     h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, 'Qualité'), h('p', { class: 'count' }, `${s.total} titres · ${fmtBytes(s.size)}`))),
     h('div', { class: 'q-summary' },
@@ -49,4 +60,5 @@ export async function render(main) {
         d.seerr ? null : h('small', { class: 'muted' }, 'Reliez Seerr pour demander une meilleure version en un clic.'))),
     h('div', { class: 'toolbar' }, chips), list));
   paint();
+  main.querySelector('.page').append(tc);
 }
