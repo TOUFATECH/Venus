@@ -102,7 +102,7 @@ export async function render(main, { query } = {}) {
   const body = h('div', { class: 'admin-grid' });
   const groups = {};
   const paintTabs = () => tabBar.replaceChildren(...TABS.map(([k, label, ic]) => h('button', { class: `set-tab f${k === tab ? ' on' : ''}`, role: 'tab', 'aria-selected': String(k === tab), onclick: () => { tab = k; try { sessionStorage.setItem('vn_settings_tab', k); } catch { /* */ } paintTabs(); paintBody(); scrollTo({ top: 0 }); } }, icon(ic), h('span', {}, label))));
-  const paintBody = () => body.replaceChildren(...(groups[tab] || []).filter(Boolean));
+  const paintBody = () => { body.replaceChildren(...(groups[tab] || []).filter(Boolean)); body.classList.remove('swap'); void body.offsetWidth; body.classList.add('swap'); };
   const toMenu = () => {
     const sec = query && query.get('section');
     if (!sec) return;

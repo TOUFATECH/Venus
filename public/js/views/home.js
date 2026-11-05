@@ -120,7 +120,7 @@ export async function render(main) {
     if (!layer) {
       layer = item.backdrop ? picture(img(item.backdrop), item.title, { lazy: false })
         : item.type === 'channel' ? h('img', { src: `/api/channels/${item.id}/preview.jpg`, alt: '', class: 'ch-snap' })
-          : frameImage(item.id, item.title, { fade: false, big: true });
+          : frameImage(item.id, item.title, { fade: false, big: true, fallback: item.poster ? () => h('img', { src: img(item.poster), alt: '', class: 'poster-fill' }) : null });
       layers.set(key, layer);
       bg.append(layer);
     }
