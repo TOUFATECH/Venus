@@ -87,8 +87,9 @@ export async function render(main, { id, query }) {
     if (!last || !last.updated) return null;
     const when = daysSince(new Date(last.updated).toISOString()) === 0 ? `à ${new Date(last.updated).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : daysSince(new Date(last.updated).toISOString()) === 1 ? 'hier' : `le ${fmtDate(new Date(last.updated).toISOString().slice(0, 10), false)}`;
     const where = last.device ? ` sur ${/^(la |l’)/.test(last.device) ? last.device : last.device.replace(/^(Chrome|Firefox|Safari|Edge|Opera)/, 'l’ordinateur ($1')}${/^(Chrome|Firefox|Safari|Edge|Opera)/.test(last.device) ? ')' : ''}` : '';
-    const upTo = !isShow && d.progress ? `jusqu’à ${Math.round(d.progress.position / 60)} min` : isShow && d.nextUp && d.nextUp.progress && d.nextUp.progress.position > 20 ? `S${d.nextUp.season} É${d.nextUp.episode}, ${Math.round(d.nextUp.progress.position / 60)} min` : null;
-    return h('p', { class: 'resume-note' }, icon('clock'), ` ${upTo ? `Vu ${upTo}` : 'Dernière lecture'}${where}, ${when}.`);
+    const mins = (sec) => `${Math.max(1, Math.round(sec / 60))} min`;
+    const upTo = !isShow && d.progress ? `jusqu’à ${mins(d.progress.position)}` : isShow && d.nextUp && d.nextUp.progress && d.nextUp.progress.position > 20 ? `S${d.nextUp.season} É${d.nextUp.episode}, ${mins(d.nextUp.progress.position)}` : null;
+    return h('p', { class: 'resume-note' }, icon('clock'), ` ${upTo ? `Vu ${upTo}` : 'Dernière lecture'}${where}, ${when}`.replace(/\.$/, ''));
   }
   // Plusieurs versions du film (4K, 1080p, version longue) : choix mémorisé sur cet appareil
   const vKey = `vn_version_${d.id}`;

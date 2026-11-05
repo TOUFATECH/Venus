@@ -922,8 +922,7 @@ router.post('/api/progress', async (ctx) => {
   if (!id) throw new HttpError(400, 'itemId requis');
   const watched = dur > 0 && pos / dur > 0.92 ? 1 : 0;
   // Temps réellement regardé (pour la limite quotidienne) : l'écart depuis la dernière position, borné à 2 min par envoi
-  const prev = get('SELECT position, updated_at FROM progress WHERE profile_id = ? AND item_id = ?', p.id, id);
-  if (prev && pos > prev.position) addWatchTime(p.id, Math.min(120, pos - prev.position));
+  try { const prev = get('SELECT position, updated_at FROM progress WHERE profile_id = ? AND item_id = ?', p.id, id); if (prev && pos > prev.position) addWatchTime(p.id, Math.min(120, pos - prev.position)); } catch (e) { console.warn('[progression] temps d’écran :', e.message); }
   run(`INSERT INTO progress(profile_id, item_id, position, duration, watched, updated_at, device) VALUES(?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(profile_id, item_id) DO UPDATE SET position=excluded.position, duration=excluded.duration,
        watched=excluded.watched, updated_at=excluded.updated_at, device=excluded.device`,
@@ -1003,18 +1002,18 @@ router.post('/api/play/:id', async (ctx) => {
     subId = pick ? pick.id : null;
   }
   // Choix explicite de l'utilisateur : mémorisé pour la série
-  if (showKey && !b.preview && (Number.isInteger(b.audio) || b.sub !== undefined)) {
+  if (showKey && !b.preview && (Number.isInteger(b.audio) || b.sub !== undefined)) try {
     const a = Number.isInteger(b.audio) ? probe.audio.find((x) => x.order === b.audio) : null;
     const sb = b.sub ? probe.subs.find((x) => x.id === b.sub) : null;
     run(`INSERT INTO track_prefs(profile_id, show_id, audio_lang, sub_lang, sub_mode, updated_at) VALUES(?, ?, ?, ?, ?, ?)
          ON CONFLICT(profile_id, show_id) DO UPDATE SET audio_lang = COALESCE(excluded.audio_lang, audio_lang), sub_lang = CASE WHEN excluded.sub_mode IS NULL THEN sub_lang ELSE excluded.sub_lang END, sub_mode = COALESCE(excluded.sub_mode, sub_mode), updated_at = excluded.updated_at`,
     p.id, showKey, a ? a.lang || null : null, sb ? sb.lang || null : null, b.sub === undefined ? null : b.sub === null ? 'none' : sb && sb.forced ? 'forced' : 'full', Date.now());
-  }
+  } catch (e) { console.warn('[lecture] mémoire des pistes :', e.message); }
   const sub = subId ? probe.subs.find((s) => s.id === subId) : null;
   const burnIndex = sub && !sub.text && !sub.external ? sub.index : null;
 
   const decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? 'auto' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
-  if (decision.mode === 'transcode' && !b.preview && !item.stream_url) logTranscode({ device: deviceLabel(ctx.req.headers['user-agent']), reason: decision.reason, itemId: item.id, codec: probe.video && probe.video.codec, container: path.extname(item.path || '').slice(1) });
+  if (decision.mode === 'transcode' && !b.preview && !item.stream_url) { try { logTranscode({ device: deviceLabel(ctx.req.headers['user-agent']), reason: decision.reason, itemId: item.id, codec: probe.video && probe.video.codec, container: path.extname(item.path || '').slice(1) }); } catch (e) { console.warn('[lecture] journal des conversions :', e.message); } }
   decision.burnIndex = b.preview ? null : burnIndex;
   if (!b.preview && dailyLeft(p) === 0) throw new HttpError(403, 'Temps d’écran du jour épuisé pour ce profil. On se retrouve demain !');
   if (decision.mode === 'transcode' && !b.preview && !permsOf(p).transcode) throw new HttpError(403, 'Cette vidéo doit être convertie pour cet appareil, ce qui n’est pas autorisé pour ce profil. Essayez sur un autre appareil ou demandez à l’administrateur.');
