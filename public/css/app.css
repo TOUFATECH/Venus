@@ -591,16 +591,6 @@ html:not(.touch) .tile:hover .tile-img { transform: scale(1.03); }
 .two-cols { display: flex; gap: 12px; }
 .two-cols > :first-child { flex: 1; min-width: 0; }
 .two-cols > :last-child { flex: 0 0 110px; }
-.drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 34px 16px; margin: 6px 0 14px; border: 2px dashed rgba(236,234,228,.22); border-radius: 10px; text-align: center; cursor: pointer; color: var(--haze); transition: border-color .2s, background .2s; }
-.drop svg { width: 36px; height: 36px; color: var(--sulfur); }
-.drop b { color: var(--paper); font-size: 1.1rem; font-weight: 750; font-stretch: 112%; }
-.drop.over, .drop:hover { border-color: var(--sulfur); background: rgb(var(--sulfur-rgb) / .06); }
-.queue { display: flex; flex-direction: column; gap: 2px; }
-.q-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--edge); }
-.q-row .grow { flex: 1; min-width: 0; }
-.q-row b { display: block; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.q-row small { color: var(--haze); font-size: .82rem; font-variant-numeric: tabular-nums; }
-.q-row.failed small { color: var(--alarm); }
 .notice { padding: 12px 14px; border-radius: var(--r); background: rgb(var(--sulfur-rgb) / .08); border: 1px solid rgb(var(--sulfur-rgb) / .25); color: var(--paper) !important; }
 .guide { padding: 12px 0; border-top: 1px solid var(--edge); }
 .guide-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 12px; }
@@ -1941,7 +1931,6 @@ html:not(.touch) .p-lockbtn { display: none; }
 .q-improve b { font-size: 2.6rem; font-weight: 850; font-stretch: var(--wide); color: var(--sulfur); line-height: 1; }
 .q-improve span { color: var(--haze); }
 .q-list { display: flex; flex-direction: column; max-width: 1180px; }
-.q-row { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--edge); padding: 4px 0; flex-wrap: wrap; }
 .q-main { flex: 1; min-width: 220px; display: flex; align-items: center; gap: 12px; padding: 6px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .q-main:hover, .q-main:focus-visible { background: var(--deep); }
 .q-pic { width: 40px; aspect-ratio: 2 / 3; border-radius: 4px; overflow: hidden; background: var(--raise); flex: none; }

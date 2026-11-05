@@ -152,7 +152,7 @@ export async function render(main, { query } = {}) {
             l.network ? h('span', { class: 'net-line' }, icon('wifi'), l.network.address) : h('span', {}, l.path),
             l.network && l.network.error ? h('small', { class: 'warn' }, l.network.error)
               : !l.exists ? h('small', { class: 'warn' }, l.network ? 'Partage injoignable' : 'Dossier introuvable')
-                : type !== 'iptv' && !l.writable ? h('small', { class: 'muted' }, l.network ? 'Lecture seule' : 'Lecture seule : envoi depuis l’application impossible') : null),
+                : type !== 'iptv' && !l.writable ? h('small', { class: 'muted' }, 'Lecture seule') : null),
           l.network && !l.exists ? h('button', { class: 'btn btn-small f', onclick: async (e) => {
             e.target.disabled = true;
             try { await api(`/api/admin/libraries/${l.id}/reconnect`, { method: 'POST' }); toast('Partage reconnecté'); } catch (e2) { toast(e2.message, true); }
@@ -178,7 +178,6 @@ export async function render(main, { query } = {}) {
       last.length ? h('div', { class: 'last-added' }, h('h3', {}, 'Derniers médias détectés'),
         h('ul', {}, last.map((x) => h('li', {}, h('b', {}, x.title), h('small', {}, new Date(x.at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })))))) : null,
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
-        h('button', { class: 'btn btn-small btn-play f', onclick: () => go('/ajouter') }, icon('upload'), 'Envoyer des vidéos'),
         h('button', { class: 'btn btn-small f', onclick: () => openDuplicates() }, icon('grid4'), 'Doublons'),
         h('button', { class: 'btn btn-small f', onclick: () => openTrash() }, icon('trash'), 'Corbeille'),
         h('button', { class: 'btn btn-small f', onclick: () => openBroken() }, icon('eye'), 'Fichiers abîmés'),
