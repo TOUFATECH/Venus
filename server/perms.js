@@ -2,7 +2,7 @@
 // accès depuis l'extérieur et horaires autorisés. Les administrateurs ont toujours tous les droits.
 import { isPrivateIp } from './security.js';
 
-export const DEFAULT_PERMS = { libraries: null, download: true, transcode: true, remote: true, schedule: [] };
+export const DEFAULT_PERMS = { libraries: null, download: true, transcode: true, remote: true, schedule: [], dailyMinutes: 0 };
 const DAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 
 export function permsOf(p) {
@@ -55,7 +55,8 @@ const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function validPerms(v) {
   const bad = (m) => { const e = new Error(`Droits : ${m}`); e.status = 400; throw e; };
   if (!v || typeof v !== 'object' || Array.isArray(v)) bad('format invalide');
-  const out = { libraries: null, download: true, transcode: true, remote: true, schedule: [] };
+  const out = { libraries: null, download: true, transcode: true, remote: true, schedule: [], dailyMinutes: 0 };
+  if (v.dailyMinutes != null) { if (!Number.isInteger(v.dailyMinutes) || v.dailyMinutes < 0 || v.dailyMinutes > 1440) bad('limite quotidienne invalide (minutes)'); out.dailyMinutes = v.dailyMinutes; }
   if (v.libraries != null) {
     if (!Array.isArray(v.libraries) || v.libraries.length > 200 || !v.libraries.every((x) => Number.isInteger(x) && x > 0)) bad('bibliothèques invalides');
     out.libraries = [...new Set(v.libraries)];

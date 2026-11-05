@@ -174,12 +174,14 @@ function shell(path) {
     h('a', { href: '/', class: 'home-link f', 'aria-label': 'Venus, accueil' }, logoMark()),
     // Sections : la liste défile si elle dépasse la hauteur de l'écran ; Réglages et profil restent en bas
     h('div', { class: 'rail-scroll' }, shown.map((it) => itemLink(it, path)), more.length ? moreBtn('rail-item f') : null),
-    navLink('/reglages', 'Réglages', 'gear', path),
+    p.dailyLeft != null ? h('span', { class: `rail-item time-left${p.dailyLeft <= 10 ? ' low' : ''}`, title: 'Temps d’écran restant aujourd’hui' }, icon('clock'), h('span', {}, p.dailyLeft ? `${p.dailyLeft} min` : 'Fini')) : null,
+    p.isKids ? null : navLink('/reglages', 'Réglages', 'gear', path),
     h('button', { class: 'rail-item f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'), h('span', {}, p.name)));
   const top = h('header', { class: 'mobile-top' },
     h('a', { href: '/', class: 'f', 'aria-label': 'Accueil' }, brand()),
     h('div', { style: { display: 'flex', gap: '4px' } },
-      h('a', { href: '/reglages', class: 'icon-btn f', 'aria-label': 'Réglages' }, icon('gear')),
+      p.dailyLeft != null ? h('span', { class: `time-left pill${p.dailyLeft <= 10 ? ' low' : ''}` }, icon('clock'), p.dailyLeft ? `${p.dailyLeft} min` : 'Fini') : null,
+      p.isKids ? null : h('a', { href: '/reglages', class: 'icon-btn f', 'aria-label': 'Réglages' }, icon('gear')),
       h('button', { class: 'icon-btn f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'))));
   // Mobile : Accueil, les deux premières sections du menu, Recherche, et « Tout » (toutes les sections en tuiles)
   const all = [...shown, ...more];
@@ -195,7 +197,7 @@ function shell(path) {
 
 // La coque (menu) reste en place d'une page à l'autre : seul le contenu change, sans clignotement
 let chrome = null;
-const shellSig = () => JSON.stringify([currentPlanet(), state.profile.id, state.profile.isAdmin, state.profile.name, state.profile.avatar, state.categories, menuPrefs(state.profile.id), dayPart()]);
+const shellSig = () => JSON.stringify([currentPlanet(), state.profile.id, state.profile.isAdmin, state.profile.name, state.profile.avatar, state.profile.dailyLeft, state.profile.isKids, state.categories, menuPrefs(state.profile.id), dayPart()]);
 function ensureShell(path) {
   const sig = shellSig();
   if (!chrome || chrome.sig !== sig || !app.contains(chrome.rail)) {
@@ -418,6 +420,8 @@ async function repairAndReload() {
 }
 async function showRoute() {
   if (!state.profile) return;
+  // Profil enfant : interface simplifiée (grandes tuiles, menu réduit) ; temps d'écran restant affiché
+  document.documentElement.classList.toggle('kids', !!state.profile.isKids);
   listenEvents();
   // Sur une TV, la télécommande-téléphone est prête dès l'ouverture
   if (document.documentElement.classList.contains('tv') && !window.__vnPairing) {
@@ -425,6 +429,7 @@ async function showRoute() {
     import('./remote-screen.js').then((m) => m.startPairing()).catch(() => {});
   }
   if (!state.categories || parseHash().path === '/') await refreshCategories();
+  if (state.profile.dailyLeft != null) api('/api/status').then((st) => { if (st && st.profile && state.profile && st.profile.id === state.profile.id) state.profile.dailyLeft = st.profile.dailyLeft; }).catch(() => {});
   const { path, query } = parseHash();
   for (const [re, loader, extra] of ROUTES) {
     const m = re.exec(path);

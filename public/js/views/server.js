@@ -5,7 +5,7 @@ import { go, state, setTitle } from '../app.js';
 
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'jamais');
 const dur = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60000)} min`);
-const TABS = [['taches', 'Tâches planifiées'], ['journal', 'Journal du serveur'], ['cles', 'Clés API'], ['webhooks', 'Webhooks'], ['perso', 'Personnalisation']];
+const TABS = [['maj', 'Mise à jour'], ['taches', 'Tâches planifiées'], ['journal', 'Journal du serveur'], ['cles', 'Clés API'], ['webhooks', 'Webhooks'], ['perso', 'Personnalisation']];
 
 export async function render(main, { query } = {}) {
   if (!state.profile.isAdmin) { main.append(h('div', { class: 'empty' }, h('h2', {}, 'Réservé à l’administrateur'))); return; }
@@ -20,7 +20,7 @@ export async function render(main, { query } = {}) {
   const show = async () => {
     clearTimeout(timer);
     body.replaceChildren(h('p', { class: 'muted' }, h('span', { class: 'mini-spin' }), ' Chargement…'));
-    try { await ({ taches: tasksTab, journal: logsTab, cles: keysTab, webhooks: hooksTab, perso: brandTab })[tab](body, (fn, ms) => { timer = setTimeout(fn, ms); }); }
+    try { await ({ maj: updateTab, taches: tasksTab, journal: logsTab, cles: keysTab, webhooks: hooksTab, perso: brandTab })[tab](body, (fn, ms) => { timer = setTimeout(fn, ms); }); }
     catch (e) { body.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
   };
   page.append(h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, 'Serveur')),
@@ -132,4 +132,34 @@ async function brandTab(body) {
   h('div', { class: 'field' }, h('label', {}, 'Message sur la page de connexion'), msg, h('small', {}, 'Visible par tous, avant la connexion : n’y mettez pas le mot de passe.')),
   h('div', { class: 'field' }, h('label', {}, 'CSS personnalisé'), css, h('small', {}, 'Appliqué à toutes les pages, sur tous les appareils. Videz le champ pour revenir à l’apparence d’origine.')),
   err, h('div', { class: 'form-actions' }, h('button', { class: 'btn btn-play f', type: 'submit' }, 'Enregistrer'))));
+}
+
+// Mise à jour : version installée, nouveautés disponibles sur GitHub, installation (ou commande à lancer sous Docker)
+async function updateTab(body) {
+  const u = await api('/api/admin/update');
+  const fmtD = (d) => (d ? new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '');
+  const cmd = h('code', { class: 'cmd' }, u.command);
+  const copy = h('button', { class: 'btn btn-small f', onclick: async () => { try { await navigator.clipboard.writeText(u.command); toast('Commande copiée'); } catch { toast('Sélectionnez la commande et copiez-la', true); } } }, icon('copy'), 'Copier la commande');
+  const status = u.error ? h('p', { class: 'error-text' }, u.error)
+    : u.behind ? h('p', { class: 'upd-new' }, icon('spark'), ` ${u.behind}${u.more ? '+' : ''} nouveauté${u.behind > 1 ? 's' : ''} depuis votre version.`)
+      : h('p', { class: 'upd-ok' }, icon('check'), ' Venus est à jour.');
+  const doUpdate = h('button', { class: 'btn btn-play f', onclick: async () => {
+    if (!(await confirmSheet('Installer la mise à jour maintenant ? Venus redémarre ensuite (quelques secondes), les lectures en cours sont coupées.', 'Mettre à jour'))) return;
+    doUpdate.disabled = true; doUpdate.textContent = 'Mise à jour…';
+    try {
+      const r = await api('/api/admin/update', { method: 'POST' });
+      if (r.ok) { toast(r.message, { type: 'success', duration: 8000 }); setTimeout(() => location.reload(), 9000); }
+      else { toast(r.message, true); doUpdate.disabled = false; doUpdate.replaceChildren(icon('refresh'), 'Mettre à jour maintenant'); }
+    } catch (e) { toast(e.message, true); doUpdate.disabled = false; doUpdate.replaceChildren(icon('refresh'), 'Mettre à jour maintenant'); }
+  } }, icon('refresh'), 'Mettre à jour maintenant');
+  const recheck = h('button', { class: 'btn btn-ghost btn-small f', onclick: async () => { recheck.disabled = true; try { await api('/api/admin/update?force=1'); } catch { /* */ } window.dispatchEvent(new HashChangeEvent('hashchange')); } }, icon('refresh'), 'Vérifier à nouveau');
+  body.replaceChildren(
+    h('section', { class: 'box upd-box' },
+      h('h2', {}, 'Mise à jour de Venus'),
+      h('p', {}, `Version installée : ${u.local ? `commit ${u.local}` : 'inconnue'}${u.remote ? ` · dernière publiée : ${u.remote}` : ''}.`),
+      status,
+      u.commits && u.commits.length ? h('ul', { class: 'upd-list' }, u.commits.slice(0, 15).map((c) => h('li', {}, h('b', {}, c.title), h('small', {}, ` ${fmtD(c.date)}`)))) : null,
+      u.behind && u.canSelfUpdate ? h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, doUpdate, recheck)
+        : u.behind ? h('div', { class: 'upd-docker' }, h('p', {}, 'Venus tourne sous Docker : la mise à jour se lance depuis la machine qui l’héberge (SSH ou terminal), avec cette commande :'), cmd, h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, copy, recheck))
+          : h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, recheck)));
 }

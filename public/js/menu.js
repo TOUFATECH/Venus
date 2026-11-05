@@ -69,7 +69,9 @@ export function resetMenuPrefs(pid) {
 // Éléments à afficher : ceux du menu, et ceux rangés dans « Plus »
 export function menuItems(profile, hasCat) {
   const p = menuPrefs(profile.id);
-  const usable = (it) => (!it.admin || profile.isAdmin) && (!it.cat || hasCat(it.cat));
+  // Profil enfant : seulement le contenu (pas d'outils, pas de nouveautés à venir, pas de téléchargements)
+  const KIDS_HIDE = new Set(['new', 'seance', 'remote', 'add', 'dashboard', 'stats', 'downloads', 'collections', 'tv']);
+  const usable = (it) => (!it.admin || profile.isAdmin) && (!it.cat || hasCat(it.cat)) && !(profile.isKids && KIDS_HIDE.has(it.id));
   const byId = new Map(NAV_ITEMS.map((i) => [i.id, i]));
   const list = p.order.map((id) => byId.get(id)).filter(usable);
   return { shown: list.filter((i) => !p.hidden.includes(i.id)), more: list.filter((i) => p.hidden.includes(i.id)), prefs: p };

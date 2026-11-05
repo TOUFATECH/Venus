@@ -134,6 +134,9 @@ for (const [col, def] of [['category', 'TEXT'], ['release_date', 'TEXT'], ['popu
   if (!cols('items').includes(col)) db.exec(`ALTER TABLE items ADD COLUMN ${col} ${def}`);
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_items_version ON items(version_of)');
+if (!cols('progress').includes('device')) db.exec('ALTER TABLE progress ADD COLUMN device TEXT');
+// Temps de visionnage par profil et par jour (limite quotidienne des profils enfants)
+db.exec('CREATE TABLE IF NOT EXISTS watch_time (profile_id INTEGER, day TEXT, seconds REAL DEFAULT 0, PRIMARY KEY(profile_id, day))');
 if (!cols('profiles').includes('perms')) db.exec('ALTER TABLE profiles ADD COLUMN perms TEXT');
 if (!cols('libraries').includes('remote')) db.exec('ALTER TABLE libraries ADD COLUMN remote TEXT');
 const libSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'libraries'").get();

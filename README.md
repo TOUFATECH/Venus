@@ -11,11 +11,13 @@ Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec un
 - **Sous-titres** SRT / ASS / VTT, intégrés ou externes (`Film.fr.srt`, `Film.forced.fr.srt`), encodage Windows détecté. Les sous-titres image (PGS Blu-ray) sont incrustés à la volée.
 - **TV** : navigation complète aux flèches de la télécommande (Android TV, Fire TV, Samsung, LG…).
 - **Chromecast** et **AirPlay**, contrôles sur l'écran verrouillé du téléphone, application installable (PWA).
-- **Affiches et résumés en français** via TMDB (gratuit) et [Trakt](https://app.trakt.tv) (en secours ou en premier), ou vos propres `poster.jpg` / `fanart.jpg`. Sans aucune clé, Venus trouve quand même les affiches : site de TMDB (en français), IMP Awards et iTunes pour les films, TMDB et TVmaze pour les séries et animés.
+- **Affiches et résumés en français** via TMDB (gratuit) et [Trakt](https://app.trakt.tv) (en secours ou en premier), ou vos propres `poster.jpg` / `fanart.jpg`. Sans aucune clé, Venus trouve quand même les affiches : site de TMDB (en français), IMP Awards et iTunes pour les films, TMDB et TVmaze pour les séries et animés. Réglages → Affiches liste les titres sans affiche ; pour chacun, plusieurs propositions ou l'adresse d'une image de votre choix (IMP Awards, MoviePosterDB, CineMaterial…).
 
 ## Notes, nouveautés, Seerr, thèmes
 
 - **Notes des sites** sur chaque fiche, et tri par note : TMDB, IMDb, Rotten Tomatoes, Metacritic (clé gratuite [OMDb](https://www.omdbapi.com/apikey.aspx)), AniList et MyAnimeList (sans clé), Simkl (identifiant gratuit), Trakt (identifiant gratuit, qui fournit aussi des affiches, fonds et logos : en secours de TMDB ou en premier, au choix). SensCritique n'a pas d'API publique : un lien vers sa page est proposé. Clés à coller dans **Réglages → Notes des sites**.
+- **Profils enfants** : menu réduit aux contenus, grandes tuiles, temps d'écran par jour (la lecture s'arrête une fois le temps écoulé), horaires autorisés.
+- **Mise à jour depuis l'interface** (Serveur → Mise à jour) : nouveautés disponibles, installation en un clic hors Docker, commande à copier sous Docker. Alerte quand un disque est presque plein ; sauvegardes copiées en plus vers un NAS si vous indiquez un dossier.
 - **Nouveautés** : films au cinéma et à venir, séries de la semaine, animés de la saison (TMDB et AniList), avec une grande affiche qui suit le titre survolé et sa bande-annonce.
 - **Seerr** (Overseerr / Jellyseerr) : **Réglages → Seerr**. Le plus simple : l'adresse de Seerr et un compte administrateur Seerr (e-mail, ou compte Jellyfin / Emby) ; Venus récupère la clé API tout seul, le mot de passe n'est pas gardé. On peut aussi coller la clé API.
   - **Mes envies** : le ♡ des Nouveautés ajoute un film, une série ou un animé (sorti ou à venir) à « Ma liste → Mes envies ». Il est demandé à Seerr aussitôt : Radarr / Sonarr le téléchargent dès sa sortie, puis il passe tout seul dans « Ma liste ».

@@ -23,6 +23,15 @@ export function makeBackup({ manual = false } = {}) {
   try { fs.unlinkSync(file); } catch { /* */ }
   db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
   setSetting('last_backup', Date.now());
+  // Copie vers un second emplacement (NAS, disque externe), si réglé : une copie ratée n'empêche pas la sauvegarde
+  const copyDir = String(getSetting('backup_copy_dir', '') || '').trim();
+  if (copyDir) {
+    try {
+      fs.copyFileSync(file, path.join(copyDir, path.basename(file)));
+      const old = fs.readdirSync(copyDir).filter((n) => /^venus-.*\.db$/.test(n)).sort().reverse().slice(KEEP);
+      for (const n of old) { try { fs.unlinkSync(path.join(copyDir, n)); } catch { /* */ } }
+    } catch (e) { console.warn(`[sauvegarde] copie vers ${copyDir} impossible : ${e.message}`); }
+  }
   // Les plus anciennes sont supprimées
   for (const b of listBackups().slice(KEEP)) { try { fs.unlinkSync(path.join(backupsDir, b.name)); } catch { /* */ } }
   return listBackups()[0];

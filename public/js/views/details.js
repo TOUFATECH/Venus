@@ -44,6 +44,15 @@ export async function render(main, { id, query }) {
   let label = 'Lecture';
   if (isShow && target) label = showDone ? 'Revoir depuis le début' : `${resumable ? 'Reprendre' : 'Lecture'} S${target.season} É${target.episode}`;
   else if (resumable) label = `Reprendre (${remaining} min restantes)`;
+  // « Vu jusqu'à 42 min sur l'iPhone, hier » : où et quand on s'est arrêté (le même profil, sur n'importe quel appareil)
+  function resumeNote() {
+    const last = isShow ? d.lastWatch : (d.progress && d.progress.position > 20 && !d.progress.watched ? d.progress : null);
+    if (!last || !last.updated) return null;
+    const when = daysSince(new Date(last.updated).toISOString()) === 0 ? `à ${new Date(last.updated).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : daysSince(new Date(last.updated).toISOString()) === 1 ? 'hier' : `le ${fmtDate(new Date(last.updated).toISOString().slice(0, 10), false)}`;
+    const where = last.device ? ` sur ${/^(la |l’)/.test(last.device) ? last.device : last.device.replace(/^(Chrome|Firefox|Safari|Edge|Opera)/, 'l’ordinateur ($1')}${/^(Chrome|Firefox|Safari|Edge|Opera)/.test(last.device) ? ')' : ''}` : '';
+    const upTo = !isShow && d.progress ? `jusqu’à ${Math.round(d.progress.position / 60)} min` : isShow && d.nextUp && d.nextUp.progress && d.nextUp.progress.position > 20 ? `S${d.nextUp.season} É${d.nextUp.episode}, ${Math.round(d.nextUp.progress.position / 60)} min` : null;
+    return h('p', { class: 'resume-note' }, icon('clock'), ` ${upTo ? `Vu ${upTo}` : 'Dernière lecture'}${where}, ${when}.`);
+  }
   // Plusieurs versions du film (4K, 1080p, version longue) : choix mémorisé sur cet appareil
   const vKey = `vn_version_${d.id}`;
   let versionId = target && target.id;
@@ -138,7 +147,7 @@ export async function render(main, { id, query }) {
     ratingChips(d.ratings, d.links),
     d.tagline ? h('p', { class: 'tagline' }, d.tagline) : null,
     overview, more,
-    actions);
+    actions, resumeNote());
 
   const content = h('div', { class: 'details-body' }, h('div', { class: 'details-top' }, posterEl, mainInfo));
 
@@ -532,19 +541,30 @@ async function chooseImages(d) {
   const tabs = h('div', { class: 'seg' });
   const grid = h('div', { class: 'img-grid' });
   const NAMES = { poster: 'Affiches', backdrop: 'Fonds', logo: 'Logos' };
+  const SRC = { trakt: 'Trakt', tmdb: 'TMDB', free: '' };
+  const apply = async (btn, src, ref) => {
+    if (btn) btn.classList.add('busy');
+    try { await api(`/api/admin/items/${d.id}/image`, { method: 'POST', body: { kind, src, ref } }); s.close(); toast(`${NAMES[kind].slice(0, -1)} changé${kind === 'poster' ? 'e' : ''}`, { type: 'success' }); window.dispatchEvent(new HashChangeEvent('hashchange')); }
+    catch (err) { if (btn) btn.classList.remove('busy'); toast(err.message, true); }
+  };
+  // Adresse d'une image sur internet (n'importe quel site : IMP Awards, MoviePosterDB, CineMaterial…)
+  const urlIn = h('input', { class: 'input', type: 'url', placeholder: 'https://… adresse d’une image (JPEG, PNG ou WebP)', autocomplete: 'off', inputmode: 'url' });
+  const urlBtn = h('button', { class: 'btn btn-small btn-play f', type: 'submit' }, icon('down'), 'Utiliser cette image');
+  const urlForm = h('form', { class: 'img-url', onsubmit: (e) => { e.preventDefault(); const u = urlIn.value.trim(); if (!/^https:\/\//i.test(u)) { toast('Collez une adresse qui commence par https://', true); return; } urlBtn.disabled = true; apply(urlBtn, 'url', u).finally(() => { urlBtn.disabled = false; }); } },
+    h('label', { class: 'img-url-label' }, 'Ou collez l’adresse d’une image'), h('div', { class: 'img-url-row' }, urlIn, urlBtn),
+    h('small', { class: 'muted' }, 'Copiez l’adresse de l’image (clic droit → « Copier l’adresse de l’image ») depuis IMP Awards, MoviePosterDB, CineMaterial, TMDB… Venus la vérifie et la garde chez lui.'));
   const paint = () => {
     tabs.replaceChildren(...Object.keys(NAMES).map((k) => h('button', { class: `seg-b f${k === kind ? ' on' : ''}`, onclick: () => { kind = k; paint(); } }, `${NAMES[k]} (${r.images[k].length})`)));
     grid.className = `img-grid ${kind}`;
     const list = r.images[kind];
-    grid.replaceChildren(...(list.length ? list.map((x) => h('button', { class: 'img-opt f', title: [x.src === 'trakt' ? 'Trakt' : 'TMDB', x.lang ? x.lang.toUpperCase() : null, x.w ? `${x.w}×${x.h}` : null].filter(Boolean).join(' · '), onclick: async (e) => {
-      const b = e.currentTarget; b.classList.add('busy');
-      try { await api(`/api/admin/items/${d.id}/image`, { method: 'POST', body: { kind, src: x.src, ref: x.ref } }); s.close(); toast(`${NAMES[kind].slice(0, -1)} changé${kind === 'poster' ? 'e' : ''}`, { type: 'success' }); window.dispatchEvent(new HashChangeEvent('hashchange')); }
-      catch (err) { b.classList.remove('busy'); toast(err.message, true); }
-    } }, h('img', { src: x.preview, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }), h('span', { class: 'img-src' }, [x.src === 'trakt' ? 'Trakt' : 'TMDB', x.lang ? x.lang.toUpperCase() : null].filter(Boolean).join(' · '))))
-      : [h('p', { class: 'muted' }, 'Aucune image proposée. Ajoutez une clé TMDB ou un identifiant Trakt dans Réglages, ou placez poster.jpg / fanart.jpg dans le dossier.')]));
+    const tag = (x) => [x.label || SRC[x.src] || x.src, x.lang ? x.lang.toUpperCase() : null].filter(Boolean).join(' · ');
+    grid.replaceChildren(...(list.length ? list.map((x) => h('button', { class: 'img-opt f', title: [tag(x), x.w ? `${x.w}×${x.h}` : null].filter(Boolean).join(' · '), onclick: (e) => apply(e.currentTarget, x.src, x.ref) },
+      h('img', { src: x.preview, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }), h('span', { class: 'img-src' }, tag(x))))
+      : [h('p', { class: 'muted' }, 'Aucune image proposée pour l’instant. Collez une adresse ci-dessous, ajoutez une clé TMDB ou un identifiant Trakt dans Réglages, ou placez poster.jpg / fanart.jpg dans le dossier.')]));
   };
-  body.replaceChildren(tabs, grid);
+  body.replaceChildren(tabs, grid, urlForm);
   paint();
+  // Séries : le fond et le logo peuvent aussi venir d'une adresse, l'onglet courant décide
 }
 
 export function fixMatch(item) {

@@ -106,7 +106,7 @@ export async function render(main, { query } = {}) {
     let a;
     try { a = await api('/api/admin'); } catch (e) { grid.replaceChildren(h('p', { class: 'error-text' }, e.message)); return; }
     const first = !grid.children.length;
-    grid.replaceChildren(libraryBox(a), myBox, themeBox, menuBox, playbackBox(a), profilesBox(a), metadataBox(a), ratingsBox(a), seerrBox(a), subtitlesBox(a), notifyBox(a), backupBox(a), serverBox(a), devicesBox(a));
+    grid.replaceChildren(libraryBox(a), myBox, themeBox, menuBox, playbackBox(a), profilesBox(a), metadataBox(a), postersBox(a), ratingsBox(a), seerrBox(a), subtitlesBox(a), notifyBox(a), backupBox(a), serverBox(a), devicesBox(a));
     if (first) toMenu();
     clearTimeout(timer);
     const delay = a.scan.running || a.sessions.length ? 3000 : 15000;
@@ -349,6 +349,34 @@ export async function render(main, { query } = {}) {
         } }, 'Envoyer un test')));
   }
 
+  // Affiches : titres sans affiche, recherche sur les services gratuits, choix d'une affiche (propositions ou adresse)
+  function postersBox(a) {
+    const list = h('div', { class: 'poster-missing' }, h('p', { class: 'muted' }, 'Chargement…'));
+    const head = h('p', {});
+    const runBtn = h('button', { class: 'btn btn-small btn-play f', onclick: async () => {
+      runBtn.disabled = true; runBtn.textContent = 'Recherche en cours…';
+      try { const r = await api('/api/admin/posters/run', { method: 'POST' }); toast(r.found ? `${r.found} affiche${r.found > 1 ? 's' : ''} trouvée${r.found > 1 ? 's' : ''}` : 'Rien de nouveau trouvé'); await paintList(); }
+      catch (e) { toast(e.message, true); } finally { runBtn.disabled = false; runBtn.replaceChildren(icon('refresh'), 'Chercher les affiches manquantes'); }
+    } }, icon('refresh'), 'Chercher les affiches manquantes');
+    const paintList = async () => {
+      const r = await api('/api/admin/posters');
+      head.textContent = r.missing.length ? `${r.missing.length} titre${r.missing.length > 1 ? 's' : ''} sans affiche sur ${r.total}.` : `Tous vos ${r.total} titres ont une affiche.`;
+      list.replaceChildren(...r.missing.slice(0, 40).map((it) => h('div', { class: 'list-row' },
+        h('span', { class: 'pm-ph' }, icon(it.type === 'movie' ? 'film' : 'tv')),
+        h('div', { class: 'grow' }, h('b', {}, it.title), h('span', {}, [it.year, it.type === 'movie' ? 'Film' : it.category === 'anime' ? 'Animé' : 'Série', it.poster_tried ? `${it.poster_tried} recherche${it.poster_tried > 1 ? 's' : ''} sans résultat` : null].filter(Boolean).join(' · '))),
+        h('button', { class: 'btn btn-small f', onclick: () => choosePoster(it, paintList) }, icon('image'), 'Choisir une affiche'),
+        h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go(it.path) }, 'Fiche'))),
+      r.missing.length > 40 ? h('p', { class: 'muted' }, `… et ${r.missing.length - 40} autres.`) : null);
+    };
+    paintList().catch((e) => list.replaceChildren(h('p', { class: 'error-text' }, e.message)));
+    return h('section', { class: 'box', id: 'affiches' },
+      h('h2', {}, 'Affiches'),
+      h('p', {}, 'Les affiches viennent de TMDB (avec une clé), ou sans clé du site de TMDB, d’IMP Awards, d’iTunes et de TVmaze. Pour un titre précis, vous pouvez choisir parmi plusieurs propositions ou coller l’adresse d’une image trouvée sur n’importe quel site.'),
+      h('label', { class: 'switch' }, h('span', {}, 'Chercher les affiches sur les services gratuits (sans clé)'), h('input', { type: 'checkbox', class: 'f', checked: a.settings.postersFree !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { postersFree: e.target.checked } }); toast(e.target.checked ? 'Recherche gratuite activée' : 'Recherche gratuite désactivée'); } })),
+      head, list,
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, runBtn));
+  }
+
   function backupBox(a) {
     const list = h('div', { class: 'backup-list' }, h('p', { class: 'muted' }, 'Chargement…'));
     const paintList = async () => {
@@ -369,6 +397,13 @@ export async function render(main, { query } = {}) {
       h('p', {}, 'Profils, vus, listes, envies et réglages sont sauvegardés chaque nuit (les 10 dernières sont gardées). Vos vidéos ne sont pas concernées.'),
       h('label', { class: 'switch' }, h('span', {}, 'Sauvegarde automatique chaque nuit'), h('input', { type: 'checkbox', class: 'f', checked: a.settings.autoBackup !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { autoBackup: e.target.checked } }); toast('Préférence enregistrée'); } })),
       list,
+      // Second emplacement (NAS, disque externe) : chaque sauvegarde y est aussi copiée
+      (() => {
+        const inp = h('input', { class: 'input', value: a.settings.backupCopyDir || '', placeholder: '/mnt/nas/sauvegardes-venus (vide : aucune copie)', autocomplete: 'off' });
+        return h('form', { class: 'field', style: { marginTop: '8px' }, onsubmit: async (e) => { e.preventDefault(); try { await api('/api/admin/settings', { method: 'PUT', body: { backupCopyDir: inp.value.trim() } }); toast(inp.value.trim() ? 'Les sauvegardes seront aussi copiées là' : 'Copie désactivée'); } catch (err) { toast(err.message, true); } } },
+          h('label', {}, 'Copier aussi les sauvegardes dans un autre dossier'), h('div', { style: { display: 'flex', gap: '8px' } }, inp, h('button', { class: 'btn btn-small f', type: 'submit' }, 'Enregistrer')),
+          h('small', {}, 'Un dossier d’un NAS ou d’un disque externe monté sur le serveur (sous Docker : un dossier partagé dans docker-compose.yml). Les 10 dernières y sont gardées.'));
+      })(),
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small f', onclick: async (e) => {
         e.currentTarget.disabled = true;
         await api('/api/admin/backups', { method: 'POST' }); toast('Sauvegarde faite', { type: 'success' }); await paintList(); e.currentTarget.disabled = false;
@@ -459,7 +494,7 @@ function editProfile(p, self, onDone) {
   const adminSw = !self && (!p || p.id !== state.profile.id) ? h('label', { class: 'switch' }, h('span', {}, 'Administrateur (accès aux réglages du serveur)'), h('input', { type: 'checkbox', class: 'f', checked: p ? p.isAdmin : false })) : null;
   const err = h('p', { class: 'error-text' });
   // Droits (comme Jellyfin) : seulement pour les profils non administrateurs, réglés par un administrateur
-  const perms = { libraries: null, download: true, transcode: true, remote: true, schedule: [], ...(p && p.perms ? JSON.parse(JSON.stringify(p.perms)) : {}) };
+  const perms = { libraries: null, download: true, transcode: true, remote: true, schedule: [], dailyMinutes: 0, ...(p && p.perms ? JSON.parse(JSON.stringify(p.perms)) : {}) };
   const permsBox = !self && !isNew ? h('div', { class: 'perms' }) : null;
   const DAYS = [[1, 'L'], [2, 'M'], [3, 'M'], [4, 'J'], [5, 'V'], [6, 'S'], [0, 'D']];
   const DAY_NAMES = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
@@ -483,7 +518,11 @@ function editProfile(p, self, onDone) {
       sw('Accès depuis l’extérieur de la maison', 'remote', 'Sinon, seulement sur le réseau local'),
       h('div', { class: 'field' }, h('label', {}, 'Horaires autorisés'), perms.schedule.length ? slots : h('small', {}, 'À toute heure.'),
         perms.schedule.length < 7 ? h('button', { type: 'button', class: 'btn btn-small btn-ghost f', onclick: () => { perms.schedule.push({ days: [1, 2, 3, 4, 5], from: '17:00', to: '20:00' }); paintPerms(libs); } }, icon('plus'), 'Ajouter un créneau') : null,
-        perms.schedule.length ? h('small', {}, 'Heure du serveur. En dehors de ces créneaux, le profil ne s’ouvre pas.') : null));
+        perms.schedule.length ? h('small', {}, 'Heure du serveur. En dehors de ces créneaux, le profil ne s’ouvre pas.') : null),
+      h('div', { class: 'field' }, h('label', {}, 'Temps d’écran par jour'),
+        h('select', { class: 'input', style: { maxWidth: '220px' }, onchange: (e) => { perms.dailyMinutes = Number(e.target.value); } },
+          [[0, 'Sans limite'], [30, '30 minutes'], [45, '45 minutes'], [60, '1 heure'], [90, '1 h 30'], [120, '2 heures'], [180, '3 heures']].map(([v, l]) => h('option', { value: v, selected: Number(perms.dailyMinutes || 0) === v }, l))),
+        h('small', {}, 'Compte le temps réellement regardé. Une fois la limite atteinte, la lecture s’arrête jusqu’au lendemain ; le profil reste ouvert pour parcourir.')));
   };
   if (permsBox) api('/api/admin').then((a) => paintPerms(a.libraries.filter((l) => l.type !== 'iptv' || true))).catch(() => permsBox.remove());
   const s = sheet(isNew ? 'Nouveau profil' : `Modifier ${p.name}`, h('form', { onsubmit: async (e) => {
@@ -621,4 +660,32 @@ function themeEditor() {
   };
   paint();
   return box;
+}
+
+// Choisir l'affiche d'un titre : propositions de toutes les sources, recherche avec un autre nom, ou adresse d'une image
+export function choosePoster(it, onDone) {
+  const q = h('input', { class: 'input', value: it.title, 'aria-label': 'Titre à chercher' });
+  const y = h('input', { class: 'input', value: it.year || '', inputmode: 'numeric', placeholder: 'Année', style: { maxWidth: '100px' } });
+  const grid = h('div', { class: 'img-grid poster' });
+  const urlIn = h('input', { class: 'input', type: 'url', placeholder: 'https://… adresse d’une image', inputmode: 'url', autocomplete: 'off' });
+  const use = async (btn, src, ref) => {
+    btn.disabled = true;
+    try { await api(`/api/admin/items/${it.id}/image`, { method: 'POST', body: { kind: 'poster', src, ref } }); toast('Affiche enregistrée', { type: 'success' }); s.close(); onDone && onDone(); }
+    catch (e) { toast(e.message, true); btn.disabled = false; }
+  };
+  const search = async () => {
+    grid.replaceChildren(h('p', { class: 'muted' }, h('span', { class: 'mini-spin' }), ' Recherche…'));
+    try {
+      const r = await api(`/api/admin/posters/${it.id}/candidates?q=${encodeURIComponent(q.value.trim())}&year=${encodeURIComponent(y.value.trim())}`);
+      grid.replaceChildren(...(r.length ? r.map((c) => h('button', { class: 'img-opt f', title: `${c.source}${c.year ? ` · ${c.year}` : ''}`, onclick: (e) => use(e.currentTarget, c.source === 'TMDB' ? 'url' : 'free', c.url) },
+        h('img', { src: c.url, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }), h('span', { class: 'img-src' }, c.source))) : [h('p', { class: 'muted' }, 'Aucune proposition. Essayez le titre original ou en anglais, ou collez une adresse ci-dessous.')]));
+    } catch (e) { grid.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
+  };
+  const s = sheet(`Affiche de « ${it.title} »`, h('div', { class: 'img-pick' },
+    h('form', { class: 'img-url-row', onsubmit: (e) => { e.preventDefault(); search(); } }, q, y, h('button', { class: 'btn btn-small f', type: 'submit' }, icon('search'), 'Chercher')),
+    grid,
+    h('form', { class: 'img-url', onsubmit: (e) => { e.preventDefault(); const u = urlIn.value.trim(); if (!/^https:\/\//i.test(u)) { toast('Collez une adresse qui commence par https://', true); return; } use(e.submitter || urlIn, 'url', u); } },
+      h('label', { class: 'img-url-label' }, 'Ou collez l’adresse d’une image'), h('div', { class: 'img-url-row' }, urlIn, h('button', { class: 'btn btn-small btn-play f', type: 'submit' }, icon('down'), 'Utiliser')),
+      h('small', { class: 'muted' }, 'Depuis IMP Awards, MoviePosterDB, CineMaterial, TMDB… (clic droit sur l’image → « Copier l’adresse de l’image »).'))), { wide: true });
+  search();
 }
