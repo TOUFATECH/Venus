@@ -122,8 +122,9 @@ export function brand(cls = '') { return h('span', { class: `brand ${cls}` }, lo
 export const img = (name, w) => (!name ? null : /^(data:|blob:|https?:)/.test(name) ? name : `/img/${encodeURIComponent(name)}${w ? `?w=${w}` : ''}`);
 export const hueOf = (s) => { let x = 0; for (const c of String(s)) x = (x * 31 + c.charCodeAt(0)) % 360; return x; };
 
-export function placeholder(title, cls = 'ph') {
-  return h('div', { class: cls, style: { '--h': hueOf(title) } }, title);
+// Image absente : fond coloré (couleur tirée du titre), sans texte quand le nom est déjà écrit à côté
+export function placeholder(title, cls = 'ph', { text = false } = {}) {
+  return h('div', { class: cls, style: { '--h': hueOf(title) } }, text ? title : null);
 }
 
 // Image avec repli élégant si absente ou en erreur
