@@ -2782,3 +2782,15 @@ html.kids .btn-play { font-size: 1.1rem; min-height: 54px; }
 .live-badge { color: var(--sulfur) !important; }
 .live-badge.top { width: auto !important; padding: 0 10px !important; gap: 6px; font-size: .8rem; font-weight: 700; border-radius: 999px !important; background: rgb(var(--night-rgb) / .6) !important; }
 .live-badge.top svg { width: 16px !important; height: 16px !important; }
+/* Déjà vu par…, rangée « vous aviez laissé », lecture ailleurs, journal des changements */
+.watched-by { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; color: var(--haze); font-size: .9rem; }
+.wb-avatars { display: inline-flex; }
+.wb-avatars .avatar { margin-right: -6px; border: 2px solid var(--night); }
+.row-hint { color: var(--dim); font-size: .8rem; margin-left: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 50vw; }
+.card .card-x { position: absolute; top: 6px; right: 6px; z-index: 3; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .6); color: #fff; opacity: 0; transition: opacity .15s; }
+.card .card-x svg { width: 14px; height: 14px; }
+.card:hover .card-x, .card:focus-within .card-x, html.touch .card .card-x { opacity: 1; }
+.home-note.elsewhere svg { color: var(--sulfur); }
+.changelog .cl-body ul { margin: 6px 0 0; padding-left: 18px; font-weight: 500; font-size: .88rem; color: var(--haze); }
+.changelog .cl-body { flex: 1; }
+.card { position: relative; }

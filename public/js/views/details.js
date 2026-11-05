@@ -1,7 +1,7 @@
 // Fiche d'un film, d'une série, d'un animé ou d'un clip
 // Bande-annonce en fond (son et vidéo désactivables), distribution et équipe, fiche technique, épisodes.
 import { api, prefs, detailsTrailers } from '../api.js';
-import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince, hueOf } from '../ui.js';
+import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince, hueOf, avatar } from '../ui.js';
 import { sendTo, row, card, playPath, metaLine, frameImage, framePoster, ratingChips, scrollArrows, deleteVideo } from '../components.js';
 import { trailerUrl, trailerPlayer } from '../trailer.js';
 import { go, state, setTitle, showPath, currentUrl } from '../app.js';
@@ -44,6 +44,14 @@ export async function render(main, { id, query }) {
   let label = 'Lecture';
   if (isShow && target) label = showDone ? 'Revoir depuis le début' : `${resumable ? 'Reprendre' : 'Lecture'} S${target.season} É${target.episode}`;
   else if (resumable) label = `Reprendre (${remaining} min restantes)`;
+  // Qui l'a déjà vu dans la maison : petits avatars (pratique pour choisir un film que personne n'a vu)
+  function watchedBy() {
+    const list = d.watchedBy || [];
+    if (!list.length) return null;
+    const names = list.map((x) => x.name);
+    return h('p', { class: 'watched-by' }, h('span', { class: 'wb-avatars' }, list.slice(0, 6).map((x) => avatar(x, 'tiny'))),
+      h('span', {}, `Déjà vu par ${names.length <= 3 ? names.join(', ').replace(/, ([^,]*)$/, ' et $1') : `${names.slice(0, 2).join(', ')} et ${names.length - 2} autres`}`));
+  }
   // « Vu jusqu'à 42 min sur l'iPhone, hier » : où et quand on s'est arrêté (le même profil, sur n'importe quel appareil)
   function resumeNote() {
     const last = isShow ? d.lastWatch : (d.progress && d.progress.position > 20 && !d.progress.watched ? d.progress : null);
@@ -149,7 +157,7 @@ export async function render(main, { id, query }) {
     ratingChips(d.ratings, d.links),
     d.tagline ? h('p', { class: 'tagline' }, d.tagline) : null,
     overview, more,
-    actions, resumeNote());
+    actions, resumeNote(), watchedBy());
 
   const content = h('div', { class: 'details-body' }, h('div', { class: 'details-top' }, posterEl, mainInfo));
 

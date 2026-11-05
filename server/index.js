@@ -28,6 +28,8 @@ import { tlsOptions } from './tls.js';
 import { notify } from './notify.js';
 import { startSecurityAudit } from './audit.js';
 import { fillMissingPosters } from './posters.js';
+import { purgeTrash, KEEP_DAYS } from './trash.js';
+import { sendWeeklyReport, checkFiles } from './reports.js';
 import { defineTask } from './tasks.js';
 import { trickplayBackfill } from './trickplay.js';
 import { refreshRatings as ratingsAll } from './ratings.js';
@@ -149,6 +151,9 @@ async function main() {
   defineTask('ratings', { label: 'Notes, distribution et bandes-annonces', description: 'Notes des sites, épisodes manquants, affiches Trakt : titres nouveaux ou vus il y a plus de 10 jours.', when: 'Toutes les 6 heures', run: async () => `${ratingsAll()} titre(s) mis en file` });
   defineTask('segments', { label: 'Repérage des génériques', description: 'Analyse audio des épisodes pour « Passer l’intro » et « Passer le générique ».', when: 'Toutes les 30 minutes', run: async () => { schedulePending(); return 'Épisodes en attente ajoutés à la file'; } });
   defineTask('backup', { label: 'Sauvegarde de la base', description: 'Profils, vus, listes, envies et réglages (10 dernières gardées).', when: 'Chaque nuit', run: async () => { makeBackup(); return 'Sauvegarde faite'; } });
+  defineTask('report', { label: 'Rapport de la semaine', description: 'Nouveautés, temps regardé par profil, espace disque, tâches en échec : envoyé à l’administrateur (notification, et e-mail si réglé).', when: 'Chaque semaine', every: 7 * 86400e3, firstDelay: 3 * 86400e3, run: sendWeeklyReport });
+  defineTask('integrity', { label: 'Fichiers abîmés', description: 'Lit un peu de chaque vidéo avec ffmpeg pour repérer les fichiers corrompus ou incomplets (30 par passage, les nouveaux d’abord).', when: 'Toutes les 12 heures', every: 12 * 3600e3, firstDelay: 20 * 60000, run: () => checkFiles(30) });
+  defineTask('trash', { label: 'Corbeille', description: `Efface pour de bon les vidéos supprimées depuis plus de ${KEEP_DAYS} jours (Réglages → Corbeille pour les restaurer avant).`, when: 'Chaque nuit', every: 86400e3, firstDelay: 300000, run: async () => { const r = purgeTrash(); return r.count ? `${r.count} élément(s) effacé(s), ${(r.freed / 1e9).toFixed(1)} Go libérés` : 'Rien à effacer'; } });
   defineTask('disk', { label: 'Espace disque', description: 'Prévient l’administrateur quand un disque (données, conversion, médiathèques) est presque plein (moins de 5 % ou 10 Go).', when: 'Toutes les 6 heures', every: 6 * 3600e3, firstDelay: 90000, run: async () => {
     const checked = new Set(); const warn = [];
     for (const [name, dir] of [['Données de Venus', config.dataDir], ['Conversion', config.transcodeDir], ...all('SELECT name, path FROM libraries').map((l) => [l.name, l.path])]) {

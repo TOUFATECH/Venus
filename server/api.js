@@ -20,8 +20,10 @@ import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scan
 import { pipeline } from 'node:stream/promises';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
 import { saveRemoteImage, freePosterCandidates, fillMissingPosters } from './posters.js';
-import { checkUpdate, runUpdate } from './update.js';
+import { checkUpdate, runUpdate, localCommit } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
+import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAYS } from './trash.js';
+import { brokenFiles, weeklyReport } from './reports.js';
 import {
   decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot,
 } from './stream.js';
@@ -212,12 +214,21 @@ function setCookie(ctx, token) {
 }
 
 // ------------------------------------------------------------------ installation & connexion
+function elsewhereOf(auth) {
+  if (!auth || !auth.profile || !auth.token) return null;
+  const me = deviceId(auth.token);
+  const e = nowPlaying().filter((x) => x.profile === auth.profile.name && x.device !== me && !x.live && x.duration > 0).sort((a, b) => b.seen - a.seen)[0];
+  if (!e) return null;
+  return { itemId: e.itemId, title: e.showTitle || e.title, sub: e.showTitle ? `S${e.season} É${e.episode}` : null, device: e.deviceName, position: e.position, duration: e.duration, ago: Date.now() - e.seen, paused: !!e.paused };
+}
 router.get('/api/status', (ctx) => {
   if (ctx.auth && ctx.auth.via === 'header') setCookie(ctx, ctx.auth.token);
   sendJson(ctx.res, {
     setup: isSetup(), name: getSetting('server_name', 'Venus'), version: config.version,
     loginMessage: String(getSetting('login_message', '') || '') || null, customCss: !!getSetting('custom_css', ''),
     authenticated: !!ctx.auth, profile: publicProfile(ctx.auth?.profile),
+    // Lecture en cours de ce profil sur un autre appareil (« Vous regardiez X sur la télé il y a 2 min »)
+    elsewhere: elsewhereOf(ctx.auth),
   });
 });
 
@@ -474,7 +485,7 @@ router.get('/api/home', (ctx) => {
   // 1. Reprendre la lecture, là où on s'est arrêté (+ épisode suivant d'une série en cours)
   const prog = all(`SELECT pr.*, i.type, i.show_id FROM progress pr JOIN items i ON i.id = pr.item_id
                     WHERE pr.profile_id = ? ORDER BY pr.updated_at DESC LIMIT 200`, p.id);
-  const cont = []; const seenShows = new Set();
+  const cont = [], stale = []; const seenShows = new Set(); const STALE_MS = 21 * 864e5; // au-delà de 3 semaines : « vous aviez laissé »
   for (const pr of prog) {
     if (cont.length >= 20) break;
     let it = get(`SELECT i.*, s.title AS show_title, s.backdrop AS show_backdrop, s.logo AS show_logo, s.poster AS show_poster
@@ -494,12 +505,13 @@ router.get('/api/home', (ctx) => {
       } else if (pr.position < 15) continue;
       const c = card(it, progRow);
       c.backdrop = it.show_backdrop; c.logo = it.show_logo; c.poster = it.show_poster; c.next = !!pr.watched;
-      cont.push(c);
+      (Date.now() - pr.updated_at > STALE_MS ? stale : cont).push(c);
     } else if (!pr.watched && pr.position > 15) {
-      cont.push(card(it, pr));
+      (Date.now() - pr.updated_at > STALE_MS ? stale : cont).push(card(it, pr));
     }
   }
   if (cont.length) rows.push({ id: 'continue', title: 'Reprendre la lecture', items: cont });
+  if (stale.length) rows.push({ id: 'stale', title: 'Vous aviez laissé…', hint: 'Reprendre, ou retirer d’un clic', items: stale.slice(0, 12), stale: true });
   // Tête d'affiche : ce qu'on regardait en dernier (épisode, film ou chaîne de TV)
   let heroResume = null;
   if (cont.length) {
@@ -672,6 +684,10 @@ router.get('/api/items/:id', (ctx) => {
   out.imdbId = item.imdb_id;
   out.credits = parseJson(item.credits, null);
   out.trailerFull = parseJson(item.trailer, null);
+  // Qui l'a déjà vu dans la maison (avatars sur la fiche)
+  out.watchedBy = item.type === 'show'
+    ? all(`SELECT DISTINCT pf.id, pf.name, pf.avatar FROM progress pr JOIN items e ON e.id = pr.item_id JOIN profiles pf ON pf.id = pr.profile_id WHERE e.show_id = ? AND pr.watched = 1 ORDER BY pf.name`, item.id)
+    : all('SELECT pf.id, pf.name, pf.avatar FROM progress pr JOIN profiles pf ON pf.id = pr.profile_id WHERE pr.item_id = ? AND pr.watched = 1 ORDER BY pf.name', item.id);
   // Notes jamais récupérées (ou anciennes), ou distribution manquante : on les demande tout de suite,
   // elles seront là à la prochaine visite
   if (['movie', 'show'].includes(item.type) && (!item.ratings_at || Date.now() - item.ratings_at > 10 * 86400000 || (!item.credits && item.tmdb_id && tmdbKey()))) scheduleRatings([item.id], true);
@@ -948,12 +964,20 @@ router.post('/api/play/:id', async (ctx) => {
 
   // Choix des pistes par défaut selon les préférences du profil
   const langMatch = (l, pref) => l && pref && (l.startsWith(pref) || ({ fr: ['fre', 'fra'], en: ['eng'] }[pref] || []).includes(l));
+  // Choix mémorisé pour cette série (VO sous-titrée choisie sur l'épisode 1 : gardée pour les suivants, par profil)
+  const showKey = item.show_id || (item.type === 'show' ? item.id : null);
+  const remembered = showKey && !b.preview ? get('SELECT * FROM track_prefs WHERE profile_id = ? AND show_id = ?', p.id, showKey) : null;
   let audioOrder = Number.isInteger(b.audio) ? b.audio : null;
+  if (audioOrder == null && remembered && remembered.audio_lang) { const m = probe.audio.find((a) => langMatch(a.lang, remembered.audio_lang)); if (m) audioOrder = m.order; }
   if (audioOrder == null) {
     const pref = probe.audio.find((a) => langMatch(a.lang, p.audio_lang));
     audioOrder = pref ? pref.order : (probe.audio.find((a) => a.isDefault) || probe.audio[0] || { order: 0 }).order;
   }
   let subId = b.sub === undefined ? undefined : b.sub;
+  if (subId === undefined && remembered && remembered.sub_mode) {
+    if (remembered.sub_mode === 'none') subId = null;
+    else { const m = probe.subs.find((x) => x.text && langMatch(x.lang, remembered.sub_lang) && (remembered.sub_mode === 'forced' ? x.forced : !x.forced)) || probe.subs.find((x) => langMatch(x.lang, remembered.sub_lang)); if (m) subId = m.id; }
+  }
   if (subId === undefined) {
     const audio = probe.audio[audioOrder];
     const audioIsPref = audio && langMatch(audio.lang, p.audio_lang);
@@ -961,6 +985,14 @@ router.post('/api/play/:id', async (ctx) => {
     const textSubs = probe.subs.filter((s) => s.text && langMatch(s.lang, p.subtitle_lang));
     const pick = audioIsPref ? textSubs.find((s) => s.forced) : textSubs.find((s) => !s.forced) || textSubs[0];
     subId = pick ? pick.id : null;
+  }
+  // Choix explicite de l'utilisateur : mémorisé pour la série
+  if (showKey && !b.preview && (Number.isInteger(b.audio) || b.sub !== undefined)) {
+    const a = Number.isInteger(b.audio) ? probe.audio.find((x) => x.order === b.audio) : null;
+    const sb = b.sub ? probe.subs.find((x) => x.id === b.sub) : null;
+    run(`INSERT INTO track_prefs(profile_id, show_id, audio_lang, sub_lang, sub_mode, updated_at) VALUES(?, ?, ?, ?, ?, ?)
+         ON CONFLICT(profile_id, show_id) DO UPDATE SET audio_lang = COALESCE(excluded.audio_lang, audio_lang), sub_lang = CASE WHEN excluded.sub_mode IS NULL THEN sub_lang ELSE excluded.sub_lang END, sub_mode = COALESCE(excluded.sub_mode, sub_mode), updated_at = excluded.updated_at`,
+    p.id, showKey, a ? a.lang || null : null, sb ? sb.lang || null : null, b.sub === undefined ? null : b.sub === null ? 'none' : sb && sb.forced ? 'forced' : 'full', Date.now());
   }
   const sub = subId ? probe.subs.find((s) => s.id === subId) : null;
   const burnIndex = sub && !sub.text && !sub.external ? sub.index : null;
@@ -1476,12 +1508,18 @@ router.post('/api/admin/items/:id/delete', async (ctx) => {
   if (!it) throw new HttpError(404, 'Vidéo introuvable');
   if (it.type === 'channel') throw new HttpError(400, 'Les chaînes se retirent avec leur liste M3U (Réglages, Bibliothèques)');
   const files = filesOfItem(it);
+  let b = {}; try { b = await readBody(ctx.req, 2048); } catch { b = {}; }
   let freed = 0, deleted = 0;
-  const errors = [];
+  const errors = [], trashed = [];
   for (const f of files) {
     const lib = get('SELECT * FROM libraries WHERE id = ?', f.library_id);
     try {
-      freed += removeFileWithSides(f.path, lib && lib.path);
+      // Corbeille (7 jours) plutôt qu'effacement immédiat ; « définitif » ou fichier hors bibliothèque : suppression directe
+      if (!b.permanent && lib && lib.path && path.resolve(f.path).startsWith(path.resolve(lib.path) + path.sep)) {
+        const moved = moveToTrash(f.path, lib.path);
+        freed += moved.reduce((n, m) => n + m.size, 0);
+        trashed.push(...moved);
+      } else freed += removeFileWithSides(f.path, lib && lib.path);
       run('DELETE FROM items WHERE id = ?', f.id); removeTrickplay(f.id);
       deleted++;
     } catch (e) {
@@ -1492,12 +1530,13 @@ router.post('/api/admin/items/:id/delete', async (ctx) => {
   run("DELETE FROM items WHERE type='season' AND NOT EXISTS (SELECT 1 FROM items e WHERE e.parent_id = items.id)");
   run("DELETE FROM items WHERE type='show' AND NOT EXISTS (SELECT 1 FROM items s WHERE s.parent_id = items.id)");
   if (!files.length && it.type !== 'show' && it.type !== 'season') { run('DELETE FROM items WHERE id = ?', it.id); deleted++; }
+  if (trashed.length) recordTrash({ libraryId: files[0] && files[0].library_id, title: it.type === 'episode' ? `${it.title}` : it.title, kind: it.type, files: trashed, byName: p.name });
   if (deleted) {
     logActivity('delete', `${p.name} a supprimé ${it.type === 'show' ? `la série « ${it.title} »` : it.type === 'season' ? `une saison (${deleted} épisodes)` : `« ${it.title} »`}`);
     events.emit('library', { added: [] });
   }
   if (!deleted && errors.length) throw new HttpError(403, errors[0]);
-  sendJson(ctx.res, { deleted, freed, errors, gone: !get('SELECT 1 FROM items WHERE id = ?', it.id) });
+  sendJson(ctx.res, { deleted, freed, errors, trashed: trashed.length > 0, gone: !get('SELECT 1 FROM items WHERE id = ?', it.id) });
 });
 
 // ------------------------------------------------------------------ sécurité (administrateur)
@@ -2703,3 +2742,54 @@ router.get('/api/health', (ctx) => {
 });
 // Nombre de lectures en cours (badge de l'administrateur)
 router.get('/api/admin/live', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { playing: nowPlaying().length, devices: connected.size }); });
+
+// ---------------------------------------------------------------- corbeille
+router.get('/api/admin/trash', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { items: listTrash(), keepDays: KEEP_DAYS }); });
+router.post('/api/admin/trash/:id/restore', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const n = restoreTrash(ctx.params.id);
+  logActivity('edit', `${me.name} a restauré une vidéo depuis la corbeille`);
+  scanAll().catch(() => {});
+  sendJson(ctx.res, { restored: n });
+});
+router.del('/api/admin/trash/:id', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, purgeTrash(ctx.params.id)); });
+router.del('/api/admin/trash', (ctx) => { const me = requireAdmin(ctx); let count = 0, freed = 0; for (const t of listTrash()) { const r = purgeTrash(t.id); count += r.count; freed += r.freed; } logActivity('delete', `${me.name} a vidé la corbeille`); sendJson(ctx.res, { count, freed }); });
+
+// « Retirer de Reprendre » : oublie la progression (le film ou la série ne sont pas marqués vus)
+router.post('/api/items/:id/forget', (ctx) => {
+  const p = requireProfile(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item) throw new HttpError(404, 'Introuvable');
+  if (item.type === 'show') run("DELETE FROM progress WHERE profile_id = ? AND item_id IN (SELECT id FROM items WHERE show_id = ?) AND watched = 0", p.id, item.id);
+  else if (item.type === 'episode') run("DELETE FROM progress WHERE profile_id = ? AND item_id IN (SELECT id FROM items WHERE show_id = ?) AND watched = 0", p.id, item.show_id);
+  else run('DELETE FROM progress WHERE profile_id = ? AND item_id = ? AND watched = 0', p.id, item.id);
+  sendJson(ctx.res, { ok: true });
+});
+
+// ---------------------------------------------------------------- « un jour comme aujourd'hui » : films sortis à la même date
+router.get('/api/today', (ctx) => {
+  const p = requireProfile(ctx);
+  const age = ageClause(p);
+  const md = new Date().toISOString().slice(5, 10);
+  const rows = all(`SELECT i.* FROM items i WHERE i.type = 'movie' AND i.version_of IS NULL AND i.release_date IS NOT NULL AND substr(i.release_date, 6, 5) = ? AND ${age.sql} ORDER BY i.release_date LIMIT 12`, md, ...age.args);
+  const y = new Date().getFullYear();
+  sendJson(ctx.res, rows.filter((i) => visible(p, i)).map((i) => ({ ...card(i), yearsAgo: y - Number(i.release_date.slice(0, 4)) })));
+});
+
+router.get('/api/admin/broken', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, brokenFiles()); });
+router.get('/api/admin/report', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, weeklyReport()); });
+// Nouveautés depuis la dernière visite de l'administrateur (journal des changements, montré une fois)
+router.get('/api/admin/changelog', async (ctx) => {
+  requireAdmin(ctx);
+  const seen = String(getSetting('changelog_seen', '') || '');
+  const local = (await localCommit()) || '';
+  if (!local || seen === local) return sendJson(ctx.res, { items: [], commit: local.slice(0, 7) });
+  // Messages des commits installés depuis le dernier vu (via GitHub, résultat en cache)
+  let items = [];
+  try {
+    const r = await fetch(`https://api.github.com/repos/${process.env.VENUS_REPO || 'TOUFATECH/Venus'}/commits?sha=${encodeURIComponent(local)}&per_page=30`, { headers: { 'User-Agent': 'Venus/1.0', Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(10000) });
+    if (r.ok) { const list = await r.json(); const idx = seen ? list.findIndex((c) => c.sha === seen || c.sha.startsWith(seen)) : Math.min(list.length, 8); items = (idx === -1 ? list.slice(0, 8) : list.slice(0, idx)).map((c) => ({ title: String(c.commit.message || '').split('\n')[0], body: String(c.commit.message || '').split('\n').slice(2).join('\n').trim(), date: c.commit.author?.date })); }
+  } catch { /* hors ligne : rien à montrer */ }
+  sendJson(ctx.res, { items, commit: local.slice(0, 7) });
+});
+router.post('/api/admin/changelog/seen', async (ctx) => { requireAdmin(ctx); setSetting('changelog_seen', (await localCommit()) || ''); sendJson(ctx.res, { ok: true }); });
