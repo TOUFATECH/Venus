@@ -49,8 +49,11 @@ export async function render(main) {
   };
 
   const head = h('div', { class: 'dash-head' });
+  // Mise à jour disponible ? (vérifié au plus toutes les 30 minutes côté serveur)
+  const updNote = h('div', { class: 'upd-note', hidden: true });
+  api('/api/admin/update').then((u) => { if (u && u.behind) { updNote.hidden = false; updNote.replaceChildren(icon('spark'), h('span', {}, `Mise à jour disponible : ${u.behind}${u.more ? '+' : ''} nouveauté${u.behind > 1 ? 's' : ''}`), h('button', { class: 'btn btn-small btn-play f', onclick: () => go('/serveur?onglet=maj') }, 'Voir')); } }).catch(() => {});
   const kpis = h('div', { class: 'kpis' });
-  page.append(head, kpis,
+  page.append(head, updNote, kpis,
     h('div', { class: 'dash-grid top' }, slot('playing', 'playing-box'), slot('code', 'code-box')),
     h('div', { class: 'dash-grid' }, slot('devices'), slot('tasks'), slot('system'), slot('activity'), slot('libs')),
     slot('recent', 'recent-box'));

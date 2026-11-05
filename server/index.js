@@ -21,7 +21,8 @@ import { startBackups } from './backup.js';
 import { stopAllSessions } from './stream.js';
 import { mountAll, watchMounts } from './netshare.js';
 import { runtime } from './env.js';
-import { getSetting, all } from './db.js';
+import { getSetting, setSetting, all } from './db.js';
+import fs from 'node:fs';
 import { clientIp, isSecure, inspectRequest, isBanned, applyHeaders, handlePreflight, checkCsrf, checkHpp, rateLimit, requireHttps, publicError, suspicious, logSecurity, onSecurityAlert } from './security.js';
 import { tlsOptions } from './tls.js';
 import { notify } from './notify.js';
@@ -148,6 +149,20 @@ async function main() {
   defineTask('ratings', { label: 'Notes, distribution et bandes-annonces', description: 'Notes des sites, épisodes manquants, affiches Trakt : titres nouveaux ou vus il y a plus de 10 jours.', when: 'Toutes les 6 heures', run: async () => `${ratingsAll()} titre(s) mis en file` });
   defineTask('segments', { label: 'Repérage des génériques', description: 'Analyse audio des épisodes pour « Passer l’intro » et « Passer le générique ».', when: 'Toutes les 30 minutes', run: async () => { schedulePending(); return 'Épisodes en attente ajoutés à la file'; } });
   defineTask('backup', { label: 'Sauvegarde de la base', description: 'Profils, vus, listes, envies et réglages (10 dernières gardées).', when: 'Chaque nuit', run: async () => { makeBackup(); return 'Sauvegarde faite'; } });
+  defineTask('disk', { label: 'Espace disque', description: 'Prévient l’administrateur quand un disque (données, conversion, médiathèques) est presque plein (moins de 5 % ou 10 Go).', when: 'Toutes les 6 heures', every: 6 * 3600e3, firstDelay: 90000, run: async () => {
+    const checked = new Set(); const warn = [];
+    for (const [name, dir] of [['Données de Venus', config.dataDir], ['Conversion', config.transcodeDir], ...all('SELECT name, path FROM libraries').map((l) => [l.name, l.path])]) {
+      let st; try { st = fs.statfsSync(dir); } catch { continue; }
+      const total = st.blocks * st.bsize, free = st.bavail * st.bsize, key = `${total}:${free}`;
+      if (!total || checked.has(key)) continue; checked.add(key);
+      if (free < Math.min(total * 0.05, 10 * 1024 ** 3)) warn.push(`${name} : ${(free / 1024 ** 3).toFixed(1)} Go libres`);
+    }
+    if (warn.length && getSetting('disk_warned', '') !== warn.join('|')) {
+      setSetting('disk_warned', warn.join('|'));
+      notify({ title: 'Disque presque plein', body: warn.join(' · '), url: '/tableau-de-bord', tag: 'disk' }, { adminOnly: true });
+    } else if (!warn.length) setSetting('disk_warned', '');
+    return warn.length ? `Attention : ${warn.join(' · ')}` : 'Assez de place partout';
+  } });
   defineTask('audit', { label: 'Audit de sécurité', description: 'Vérifie les réglages de sécurité et prévient en cas de problème.', when: 'Chaque semaine', run: async () => { const r = await runSecurityAudit(); return `Note : ${r.score} %`; } });
   defineTask('seerr', { label: 'Séries suivies (Seerr)', description: 'Demande à Seerr les nouvelles saisons des séries suivies.', when: 'Toutes les 6 heures', run: async () => { await runWatch(); return 'Vérification faite'; } });
   defineTask('epg', { label: 'Guide des programmes TV', description: 'Télécharge le guide XMLTV des chaînes et programme les enregistrements des émissions suivies.', every: 12 * 3600e3, firstDelay: 60e3,

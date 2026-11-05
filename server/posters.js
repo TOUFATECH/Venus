@@ -11,6 +11,9 @@ import crypto from 'node:crypto';
 import { config } from './config.js';
 import { all, run, getSetting } from './db.js';
 import { lang } from './metadata.js';
+import dns from 'node:dns/promises';
+import net from 'node:net';
+import { isPrivateIp } from './security.js';
 
 const imagesDir = path.join(config.dataDir, 'images');
 const ITUNES = process.env.VENUS_ITUNES_URL || 'https://itunes.apple.com/search';
@@ -47,22 +50,34 @@ async function getJson(url) {
   return res.json();
 }
 
-// Copie une image distante dans le dossier des images (nom stable : même adresse, même fichier)
-export async function saveRemoteImage(url) {
+// Copie une image distante dans le dossier des images (nom stable : même adresse, même fichier).
+// any = adresse donnée par l'administrateur : HTTPS obligatoire, jamais une adresse du réseau local (pas de SSRF),
+// type et taille vérifiés, image réencodée telle quelle (JPEG, PNG ou WebP).
+export async function saveRemoteImage(url, { any = false } = {}) {
   if (!url) return null;
   let u;
-  try { u = new URL(url); } catch { return null; }
-  if (u.protocol !== 'https:') return null;
-  // Seules les images des services interrogés (jamais une adresse arbitraire renvoyée par un tiers)
-  if (!process.env.VENUS_ITUNES_URL && !/(^|\.)(mzstatic\.com|tvmaze\.com|tmdb\.org|impawards\.com)$/.test(u.hostname)) return null;
+  try { u = new URL(String(url).trim()); } catch { return null; }
+  if (u.protocol !== 'https:' && !(process.env.VENUS_ITUNES_URL && u.protocol === 'http:')) return null;
+  if (!any && !process.env.VENUS_ITUNES_URL && !/(^|\.)(mzstatic\.com|tvmaze\.com|tmdb\.org|impawards\.com)$/.test(u.hostname)) return null;
+  if (any) {
+    if (net.isIP(u.hostname) ? isPrivateIp(u.hostname) : /^(localhost|.*\.local|.*\.lan|.*\.internal)$/i.test(u.hostname)) return null;
+    try { const addrs = await dns.lookup(u.hostname, { all: true }); if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) return null; } catch { return null; }
+    if (u.username || u.password) return null;
+  }
   const name = `p_${crypto.createHash('sha1').update(u.href).digest('hex').slice(0, 20)}.jpg`;
   const dest = path.join(imagesDir, name);
   if (fs.existsSync(dest)) return name;
   try {
-    const res = await fetch(u, { headers: UA, signal: AbortSignal.timeout(20000) });
-    if (!res.ok || !/^image\//.test(res.headers.get('content-type') || '')) return null;
+    const res = await fetch(u, { headers: { ...UA, Accept: 'image/*' }, signal: AbortSignal.timeout(20000), redirect: 'follow' });
+    const type = res.headers.get('content-type') || '';
+    if (!res.ok || !/^image\/(jpeg|png|webp)/.test(type)) return null;
+    const len = Number(res.headers.get('content-length') || 0);
+    if (len > 8 * 1024 * 1024) return null;
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length < 1000 || buf.length > 8 * 1024 * 1024) return null;
+    // Signature du fichier : on ne garde que de vraies images
+    const jpg = buf[0] === 0xff && buf[1] === 0xd8, png = buf.toString('ascii', 1, 4) === 'PNG', webp = buf.toString('ascii', 8, 12) === 'WEBP';
+    if (!jpg && !png && !webp) return null;
     fs.mkdirSync(imagesDir, { recursive: true });
     fs.writeFileSync(dest + '.tmp', buf);
     fs.renameSync(dest + '.tmp', dest);
@@ -70,37 +85,15 @@ export async function saveRemoteImage(url) {
   } catch { return null; }
 }
 
-const decode = (t) => String(t || '').replace(/&amp;/g, '&').replace(/&#39;|&#x27;/g, '’').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/<[^>]+>/g, '').trim();
-
-// Site de TMDB (sans clé) : la page de recherche contient l'affiche et la date de chaque résultat
-export async function findTmdbWeb(kind, title, year) {
-  const lg = lang();
-  const html = await getText(`${TMDB_WEB}/search/${kind === 'movie' ? 'movie' : 'tv'}?query=${encodeURIComponent(title)}&language=${encodeURIComponent(lg)}`, BROWSER_UA);
-  if (!html) return null;
-  // Chaque résultat : une image /t/p/<taille>/<fichier>, un lien /movie/<id>-… ou /tv/<id>-…, un titre <h2>, une date
-  const re = /\/t\/p\/[^/"']+\/([A-Za-z0-9_-]+\.(?:jpg|png))[\s\S]{0,1500}?href="\/(?:movie|tv)\/(\d+)[^"]*"[^>]*>\s*<h2>([^<]+)<\/h2>(?:[\s\S]{0,400}?<span class="release_date">([^<]*)<\/span>)?/g;
-  const cands = [];
-  for (const m of html.matchAll(re)) cands.push({ file: m[1], id: Number(m[2]), name: decode(m[3]), year: Number((/(\d{4})/.exec(m[4] || '') || [])[1]) || null });
-  const ok = cands.filter((c) => closeEnough(c.name, title));
-  if (!ok.length) return null;
-  const best = (year && ok.find((c) => c.year === year)) || (year && ok.find((c) => c.year && Math.abs(c.year - year) <= 1)) || (!year || ok.every((c) => !c.year) ? ok[0] : null);
-  if (!best) return null;
-  return { poster: `https://image.tmdb.org/t/p/w500/${best.file}`, year: best.year, genres: [], overview: null, releaseDate: null };
-}
-
-// IMP Awards : adresses prévisibles (année + titre), affiches en haute qualité (anglais)
-export async function findImp(title, year) {
-  if (!year) return null;
-  const slug = norm(title).replace(/^(the|a|an|le|la|les|un|une|des) /, '').replace(/\s+/g, '_');
-  if (!slug) return null;
-  const html = await getText(`${IMP}/${year}/${slug}.html`, BROWSER_UA);
-  if (!html || !/imp ?awards/i.test(html)) return null;
-  const name = decode((/<title>([^<]*)<\/title>/i.exec(html) || [])[1]).replace(/\s*(Movie Poster|\(#\d+ of \d+\)).*$/i, '').replace(/\s*\(\d{4}\).*$/, '');
-  if (name && !closeEnough(name, title)) return null;
-  const big = (/posters\/([a-z0-9_]+_xlg\.jpg)/i.exec(html) || [])[1];
-  const any = (/posters\/([a-z0-9_]+\.jpg)/i.exec(html) || [])[1];
-  const file = big || any;
-  return file ? { poster: `${IMP}/${year}/posters/${file}`, year, genres: [], overview: null, releaseDate: null } : null;
+// Plusieurs propositions d'affiches pour un titre, toutes sources gratuites confondues (pour « Choisir une affiche »)
+export async function freePosterCandidates(type, title, year) {
+  const out = [];
+  const push = (r, source) => { if (r && r.poster && !out.some((x) => x.url === r.poster)) out.push({ url: r.poster, source, year: r.year || null }); };
+  const jobs = type === 'movie'
+    ? [[() => findTmdbWeb('movie', title, year), 'TMDB (site)'], [() => findImp(title, year), 'IMP Awards'], [() => findMovie(title, year), 'iTunes']]
+    : [[() => findTmdbWeb('tv', title, year), 'TMDB (site)'], [() => findShow(title, year), 'TVmaze']];
+  await Promise.all(jobs.map(async ([fn, src]) => { try { push(await fn(), src); } catch { /* source muette */ } }));
+  return out;
 }
 
 // Film → { poster, overview, year, genres, releaseDate } ou null

@@ -19,6 +19,8 @@ import {
 import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scanner.js';
 import { pipeline } from 'node:stream/promises';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
+import { saveRemoteImage, freePosterCandidates, fillMissingPosters } from './posters.js';
+import { checkUpdate, runUpdate } from './update.js';
 import {
   decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot,
 } from './stream.js';
@@ -97,6 +99,19 @@ function mediaSummary(probeJson) {
 }
 const CODEC = { hevc: 'HEVC', h264: 'H.264', av1: 'AV1', vp9: 'VP9', mpeg2video: 'MPEG-2', mpeg4: 'MPEG-4', eac3: 'E-AC3', ac3: 'AC3', dts: 'DTS', truehd: 'TrueHD', aac: 'AAC', flac: 'FLAC', opus: 'Opus', mp3: 'MP3', vorbis: 'Vorbis',
   subrip: 'SRT', ass: 'ASS', ssa: 'SSA', webvtt: 'VTT', vtt: 'VTT', hdmv_pgs_subtitle: 'PGS', dvd_subtitle: 'VobSub', mov_text: 'TX3G', srt: 'SRT' };
+
+const today = () => new Date().toISOString().slice(0, 10);
+export function addWatchTime(pid, seconds) {
+  if (!(seconds > 0)) return;
+  run('INSERT INTO watch_time(profile_id, day, seconds) VALUES(?, ?, ?) ON CONFLICT(profile_id, day) DO UPDATE SET seconds = seconds + excluded.seconds', pid, today(), seconds);
+}
+export const watchedToday = (pid) => Number((get('SELECT seconds FROM watch_time WHERE profile_id = ? AND day = ?', pid, today()) || {}).seconds || 0);
+// Limite quotidienne (profils enfants) : minutes restantes, ou null si pas de limite
+export function dailyLeft(p) {
+  const r = permsOf(p);
+  if (r.admin || !r.dailyMinutes) return null;
+  return Math.max(0, Math.round(r.dailyMinutes - watchedToday(p.id) / 60));
+}
 
 function card(i, prog) {
   return {
@@ -658,7 +673,7 @@ router.get('/api/items/:id', (ctx) => {
     out.media = mediaSummary(item.probe);
     out.duration = item.duration;
     out.file = { name: path.basename(item.path || ''), size: item.size || null, container: out.media && out.media.container };
-    out.progress = get('SELECT position, duration, watched FROM progress WHERE profile_id=? AND item_id=?', p.id, item.id) || null;
+    out.progress = get('SELECT position, duration, watched, updated_at AS updated, device FROM progress WHERE profile_id=? AND item_id=?', p.id, item.id) || null;
   } else {
     const seasons = all("SELECT * FROM items WHERE type='season' AND show_id=? ORDER BY season_num = 0, season_num", item.id);
     const eps = all("SELECT * FROM items WHERE type='episode' AND show_id=? ORDER BY season_num, episode_num", item.id);
@@ -692,6 +707,8 @@ router.get('/api/items/:id', (ctx) => {
       next = lp.watched ? nextEpisode(last) || last : last;
     }
     if (next) { const c = card(next, pm.get(next.id)); c.duration = next.duration; out.nextUp = c; }
+    const lastP = get('SELECT pr.updated_at AS updated, pr.device FROM progress pr JOIN items e ON e.id = pr.item_id WHERE pr.profile_id = ? AND e.show_id = ? ORDER BY pr.updated_at DESC LIMIT 1', p.id, item.id);
+    if (lastP) out.lastWatch = lastP;
     const firstEp = eps.find((e) => e.probe);
     out.media = firstEp ? mediaSummary(firstEp.probe) : null;
     out.totalDuration = eps.reduce((n, e) => n + (e.duration || 0), 0);
@@ -846,10 +863,13 @@ router.post('/api/progress', async (ctx) => {
   const dur = Math.max(0, Number(b.duration) || 0);
   if (!id) throw new HttpError(400, 'itemId requis');
   const watched = dur > 0 && pos / dur > 0.92 ? 1 : 0;
-  run(`INSERT INTO progress(profile_id, item_id, position, duration, watched, updated_at) VALUES(?, ?, ?, ?, ?, ?)
+  // Temps réellement regardé (pour la limite quotidienne) : l'écart depuis la dernière position, borné à 2 min par envoi
+  const prev = get('SELECT position, updated_at FROM progress WHERE profile_id = ? AND item_id = ?', p.id, id);
+  if (prev && pos > prev.position) addWatchTime(p.id, Math.min(120, pos - prev.position));
+  run(`INSERT INTO progress(profile_id, item_id, position, duration, watched, updated_at, device) VALUES(?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(profile_id, item_id) DO UPDATE SET position=excluded.position, duration=excluded.duration,
-       watched=excluded.watched, updated_at=excluded.updated_at`,
-  p.id, id, watched ? 0 : pos, dur, watched, Date.now());
+       watched=excluded.watched, updated_at=excluded.updated_at, device=excluded.device`,
+  p.id, id, watched ? 0 : pos, dur, watched, Date.now(), deviceLabel(ctx.auth && ctx.auth.device));
   if (b.sessionId) sessions.get(b.sessionId)?.touch();
   sendJson(ctx.res, { watched: !!watched });
 });
@@ -921,6 +941,7 @@ router.post('/api/play/:id', async (ctx) => {
 
   const decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? 'auto' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
   decision.burnIndex = b.preview ? null : burnIndex;
+  if (!b.preview && dailyLeft(p) === 0) throw new HttpError(403, 'Temps d’écran du jour épuisé pour ce profil. On se retrouve demain !');
   if (decision.mode === 'transcode' && !b.preview && !permsOf(p).transcode) throw new HttpError(403, 'Cette vidéo doit être convertie pour cet appareil, ce qui n’est pas autorisé pour ce profil. Essayez sur un autre appareil ou demandez à l’administrateur.');
   // Aperçu (affiche d'accueil) : lecture directe quand c'est possible ; sinon petite conversion légère
   if (b.preview && decision.mode === 'transcode') Object.assign(decision, { limitHeight: 480, limitBitrate: 1.2e6 });
@@ -1311,7 +1332,7 @@ router.get('/api/admin', (ctx) => {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
       maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0', trickplay: trickplayMode(),
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
-      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
+      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', backupCopyDir: getSetting('backup_copy_dir', ''), postersFree: getSetting('posters_free', '1') !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
   });
@@ -1653,6 +1674,13 @@ router.get('/api/admin/items/:id/edit', async (ctx) => {
       }
     } catch { /* */ }
   }
+  // Sources gratuites (sans clé) : site de TMDB, IMP Awards, iTunes / TVmaze
+  if (['movie', 'show'].includes(it.type) && out.images.poster.length < 4) {
+    try {
+      const free = await freePosterCandidates(it.type, it.title, it.year);
+      for (const c of free) if (!out.images.poster.some((x) => x.ref === c.url)) out.images.poster.push({ src: 'free', ref: c.url, preview: c.url, label: c.source });
+    } catch { /* */ }
+  }
   sendJson(ctx.res, out);
 });
 router.put('/api/admin/items/:id/edit', async (ctx) => {
@@ -1669,9 +1697,13 @@ router.put('/api/admin/items/:id/edit', async (ctx) => {
 router.post('/api/admin/items/:id/image', async (ctx) => {
   requireAdmin(ctx);
   const it = editable(ctx.params.id);
-  const b = validate(await readBody(ctx.req, 8192), { kind: V.oneOf(['poster', 'backdrop', 'logo']), src: V.oneOf(['tmdb', 'trakt', 'none']), ref: V.str({ max: 600 }) }, { required: ['kind', 'src'] });
+  const b = validate(await readBody(ctx.req, 8192), { kind: V.oneOf(['poster', 'backdrop', 'logo']), src: V.oneOf(['tmdb', 'trakt', 'url', 'free', 'none']), ref: V.str({ max: 2000 }) }, { required: ['kind', 'src'] });
   let name = null;
-  if (b.src === 'tmdb') {
+  if (b.src === 'url' || b.src === 'free') {
+    // Adresse donnée par l'administrateur (ou proposée par une source gratuite) : image vérifiée avant copie
+    name = await saveRemoteImage(b.ref, { any: b.src === 'url' });
+    if (!name) throw new HttpError(400, 'Cette adresse ne donne pas une image lisible (JPEG, PNG ou WebP, HTTPS, 8 Mo au plus)');
+  } else if (b.src === 'tmdb') {
     if (!/^\/[\w.-]+\.(jpg|png|svg|webp)$/i.test(b.ref || '')) throw new HttpError(400, 'Image invalide');
     name = await downloadImage(b.ref, b.kind === 'backdrop' ? 'w1280' : b.kind === 'logo' ? 'w500' : 'w500');
   } else if (b.src === 'trakt') name = await downloadTraktImage(b.ref);
@@ -1698,7 +1730,7 @@ const SETTINGS_SCHEMA = {
   ntfyServer: V.url({ label: 'Serveur ntfy' }), ntfyTopic: V.str({ max: 100, pattern: /^[\w-]+$/, label: 'Sujet ntfy' }),
   discordWebhook: V.url({ https: true, label: 'Webhook Discord' }), telegramToken: V.str({ max: 100, pattern: /^\d+:[\w-]+$/, label: 'Jeton Telegram' }),
   telegramChat: V.str({ max: 40, pattern: /^-?\d+$|^@\w+$/, label: 'Discussion Telegram' }), publicUrl: V.url({ label: 'Adresse publique' }),
-  notifyNew: V.bool(), autoBackup: V.bool(), detectSegments: V.bool(), kidsAllowUnrated: V.bool(),
+  notifyNew: V.bool(), autoBackup: V.bool(), backupCopyDir: V.str({ max: 1000 }), postersFree: V.bool(), detectSegments: V.bool(), kidsAllowUnrated: V.bool(),
   opensubtitlesKey: V.str({ max: 200 }), opensubtitlesUser: V.str({ max: 100 }), opensubtitlesPass: V.str({ max: 200, trim: false }),
   seerrUrl: V.str({ max: 500 }), seerrKey: V.str({ max: 300 }),
   serverName: V.str({ max: 40 }), maxSessions: V.int({ min: 1, max: 20 }), scanInterval: V.int({ min: 5, max: 10080 }),
@@ -1746,6 +1778,13 @@ router.put('/api/admin/settings', async (ctx) => {
   }
   if (typeof b.notifyNew === 'boolean') setSetting('notify_new', b.notifyNew ? '1' : '0');
   if (typeof b.autoBackup === 'boolean') setSetting('auto_backup', b.autoBackup ? '1' : '0');
+  if (typeof b.postersFree === 'boolean') setSetting('posters_free', b.postersFree ? '1' : '0');
+  if (b.backupCopyDir !== undefined) {
+    // Second emplacement des sauvegardes (NAS, disque externe) : doit exister et être accessible en écriture
+    const dir = String(b.backupCopyDir || '').trim();
+    if (dir) { try { fs.accessSync(dir, fs.constants.W_OK); if (!fs.statSync(dir).isDirectory()) throw new Error(); } catch { throw new HttpError(400, `Dossier de copie des sauvegardes introuvable ou non modifiable : ${dir}`); } }
+    setSetting('backup_copy_dir', dir);
+  }
   if (b.opensubtitlesKey !== undefined) setSetting('opensubtitles_key', String(b.opensubtitlesKey || '').trim());
   if (b.opensubtitlesUser !== undefined) { setSetting('opensubtitles_user', String(b.opensubtitlesUser || '').trim()); resetOsLogin(); }
   if (b.opensubtitlesPass !== undefined && b.opensubtitlesPass !== '') { setSetting('opensubtitles_pass', String(b.opensubtitlesPass)); resetOsLogin(); }
@@ -2538,4 +2577,42 @@ router.get('/api/books/:id/res/*', (ctx) => {
   if (!data) throw new HttpError(404, 'Introuvable dans le livre');
   bookHeaders(ctx.res, MIME[path.extname(name).toLowerCase()] || 'application/octet-stream');
   ctx.res.end(data);
+});
+
+// ---------------------------------------------------------------- affiches manquantes (Réglages → Affiches)
+router.get('/api/admin/posters', (ctx) => {
+  requireAdmin(ctx);
+  const missing = all("SELECT id, type, title, year, category, matched, poster_tried FROM items WHERE type IN ('movie','show') AND version_of IS NULL AND poster IS NULL ORDER BY added_at DESC LIMIT 500");
+  const total = get("SELECT COUNT(*) n FROM items WHERE type IN ('movie','show') AND version_of IS NULL").n;
+  sendJson(ctx.res, { total, missing: missing.map((i) => ({ ...i, slug: slugFor(i.id), path: pathFor(i.id) })), tmdb: !!tmdbKey(), free: getSetting('posters_free', '1') !== '0' });
+});
+router.post('/api/admin/posters/run', async (ctx) => {
+  requireAdmin(ctx);
+  const n = await fillMissingPosters();
+  sendJson(ctx.res, { found: n });
+});
+// Propositions d'affiches pour un titre (sources gratuites + TMDB si clé), pour « Choisir une affiche »
+router.get('/api/admin/posters/:id/candidates', async (ctx) => {
+  requireAdmin(ctx);
+  const it = editable(ctx.params.id);
+  const q = String(ctx.url.searchParams.get('q') || it.title).slice(0, 200);
+  const year = Number(ctx.url.searchParams.get('year')) || it.year || null;
+  const out = [];
+  if (tmdbKey()) {
+    try {
+      const r = await searchTmdb(it.type === 'movie' ? 'movie' : 'tv', q, year);
+      for (const x of (r || []).slice(0, 6)) if (x.poster) out.push({ url: x.poster.replace(/\/w\d+\//, '/w500/'), source: 'TMDB', title: x.title, year: x.year });
+    } catch { /* */ }
+  }
+  try { for (const c of await freePosterCandidates(it.type, q, year)) out.push(c); } catch { /* */ }
+  sendJson(ctx.res, out);
+});
+
+// ---------------------------------------------------------------- mise à jour de Venus
+router.get('/api/admin/update', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await checkUpdate(ctx.url.searchParams.get('force') === '1')); });
+router.post('/api/admin/update', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const r = await runUpdate();
+  logActivity('server', `${me.name} a lancé la mise à jour de Venus`);
+  sendJson(ctx.res, r);
 });

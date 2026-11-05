@@ -94,7 +94,7 @@ export function authenticate(req, url, ip) {
   const last = seenThrottle.get(key) || 0;
   if (now - last > 60000) { seenThrottle.set(key, now); run('UPDATE tokens SET last_seen = ? WHERE token = ?', now, key); }
   const profile = row.profile_id ? get('SELECT * FROM profiles WHERE id = ?', row.profile_id) : null;
-  return { token, key, profile, via: found.via };
+  return { token, key, profile, via: found.via, device: row.device || '' };
 }
 
 export function requireDevice(ctx) {
@@ -123,6 +123,14 @@ export function checkRate(kind, ip) { guardAttempt(kind, ip); }
 export function failRate(kind, ip, detail) { failAttempt(kind, ip, detail); }
 export function resetRate(kind, ip) { okAttempt(kind, ip); }
 
+// Minutes d'écran restantes aujourd'hui (profils avec une limite quotidienne), sinon null
+function dailyLeftOf(p) {
+  const r = permsOf(p);
+  if (r.admin || !r.dailyMinutes) return null;
+  const day = new Date().toISOString().slice(0, 10);
+  const row = get('SELECT seconds FROM watch_time WHERE profile_id = ? AND day = ?', p.id, day);
+  return Math.max(0, Math.round(r.dailyMinutes - Number(row ? row.seconds : 0) / 60));
+}
 export function publicProfile(p) {
   if (!p) return null;
   return {
@@ -130,6 +138,7 @@ export function publicProfile(p) {
     maxAge: p.max_age, isKids: p.max_age != null && p.max_age <= 12,
     subtitleLang: p.subtitle_lang, audioLang: p.audio_lang,
     perms: (({ admin, ...rest }) => rest)(permsOf(p)),
+    dailyLeft: dailyLeftOf(p),
   };
 }
 
