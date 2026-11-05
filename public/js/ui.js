@@ -217,10 +217,11 @@ export function toast(msg, opt = false) {
 // En plein écran, seul l'élément plein écran est visible : les fenêtres et messages s'y affichent
 export const overlayHost = () => { const f = document.fullscreenElement || document.webkitFullscreenElement; return f && f !== document.documentElement ? f : document.body; };
 
-export function sheet(title, content, { onClose, keepBackspace = false, wide = false } = {}) {
+// side : volet qui glisse depuis la droite (liste d'épisodes pendant la lecture), la vidéo reste visible
+export function sheet(title, content, { onClose, keepBackspace = false, wide = false, side = false } = {}) {
   const prevFocus = document.activeElement;
-  const box = h('div', { class: `sheet${wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, title ? h('h2', {}, title) : null, content);
-  const wrap = h('div', { class: 'sheet-wrap' }, box);
+  const box = h('div', { class: `sheet${wide ? ' wide' : ''}${side ? ' side' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, title ? h('h2', {}, title) : null, content);
+  const wrap = h('div', { class: `sheet-wrap${side ? ' side' : ''}` }, box);
   const close = () => {
     wrap.remove(); document.removeEventListener('keydown', onKey, true);
     onClose && onClose(); prevFocus && prevFocus.focus && prevFocus.focus();

@@ -502,6 +502,8 @@ async function startApp() {
   if (!state.status.profile) return showGate('profiles');
   state.profile = state.status.profile;
   route();
+  // Mini-lecteur laissé ouvert avant un rechargement : il reprend
+  if (!/^\/(lecture|films|clips|series|animes)\//.test(location.pathname) || !/\/(lecture|S\d+E\d+)$/i.test(location.pathname)) import('./mini.js').then((m) => m.resumeMini()).catch(() => {});
 }
 
 window.addEventListener('hashchange', () => { ss.set('vn_nav', '1'); route(); });

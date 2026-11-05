@@ -125,9 +125,10 @@ export function card(item, { poster = false, rank = null, onFocus, queue = null 
 
 // Image tirée de la vidéo quand il n'y a pas d'affiche (pas de clé TMDB, titre inconnu…)
 // big : image en 1280 px pour les grands fonds (accueil, fiche) au lieu de la vignette de 480 px qui serait floue
-export function frameImage(id, title, { fade = true, big = false } = {}) {
+// fallback : élément à montrer si l'image n'existe pas (par défaut : l'aplat de couleur)
+export function frameImage(id, title, { fade = true, big = false, fallback = null } = {}) {
   const el = h('img', { src: `/api/items/${id}/thumb${big ? '?size=big' : ''}`, alt: '', loading: fade ? 'lazy' : 'eager', decoding: 'async', class: fade ? 'fade' : '' });
-  el.addEventListener('error', () => el.replaceWith(placeholder(title)), { once: true });
+  el.addEventListener('error', () => el.replaceWith((fallback && fallback()) || placeholder(title)), { once: true });
   if (fade) fadeIn(el);
   return el;
 }

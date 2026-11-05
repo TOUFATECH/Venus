@@ -61,6 +61,9 @@ export async function render(main, { id, query }) {
 
   // ---------------------------------------------------------------- éléments
   const video = h('video', { playsinline: true, 'webkit-playsinline': true, 'x-webkit-airplay': 'allow', preload: 'auto' });
+  // Les écouteurs du lecteur se taisent dès qu'il est fermé : la vidéo peut continuer dans le mini-lecteur sans
+  // que l'ancien lecteur ne la pilote encore (fin d'épisode, sauvegarde, enchaînement)
+  const onVideo = (ev, fn, opts) => video.addEventListener(ev, (e) => { if (!destroyed) fn(e); }, opts);
   const subsLayer = h('div', { class: 'p-subs', 'aria-live': 'off' });
   const spinner = h('div', { class: 'p-loading' });
   // Le nom du titre ramène à sa fiche (film, clip) ou à la liste des épisodes (série, animé)
@@ -237,7 +240,7 @@ export async function render(main, { id, query }) {
     const startAt = info.mode === 'direct' ? info.startAt || 0 : 0;
     if (info.mode === 'direct' || caps.nativeHls && (isSafari || isIOS)) {
       video.src = info.url;
-      if (startAt) video.addEventListener('loadedmetadata', () => { video.currentTime = startAt; }, { once: true });
+      if (startAt) onVideo('loadedmetadata', () => { video.currentTime = startAt; }, { once: true });
     } else {
       const Hls = await loadHls();
       if (destroyed) return;
@@ -317,7 +320,7 @@ export async function render(main, { id, query }) {
     load(t, { reason: msg });
   }
 
-  video.addEventListener('error', () => {
+  onVideo('error', () => {
     if (destroyed || !info || hls || !video.currentSrc) return;
     if (info.mode === 'direct' && !forceCompat) { forceCompat = true; load(position(), { reason: 'Conversion pour cet appareil…' }); return; }
     if (info.mode !== 'direct') { reloadAt(position()); return; }
@@ -463,33 +466,49 @@ export async function render(main, { id, query }) {
     volOsd.hidden = false;
     clearTimeout(osdTimer); osdTimer = setTimeout(() => { volOsd.hidden = true; }, 1200);
   }
-  video.addEventListener('volumechange', paintVolume);
+  onVideo('volumechange', paintVolume);
 
   // ---------------------------------------------------------------- liste des épisodes (sans quitter la vidéo)
+  // Volet des épisodes : liste verticale à droite, la vidéo continue. Saisons en haut, épisode en cours
+  // mis en avant et centré, flèches haut/bas au clavier et à la télécommande.
   async function openEpisodes() {
     if (!info || !info.showId) return;
     let d;
     try { d = await api(`/api/items/${info.showId}`); } catch (e) { toast(e.message, true); return; }
-    const strip = h('div', { class: 'ep-strip' });
-    const tabs = h('div', { class: 'chips' });
+    const list = h('div', { class: 'ep-list', role: 'list' });
+    const tabs = h('div', { class: 'chips ep-seasons' });
+    const count = h('span', { class: 'ep-count' });
     const paint = (season) => {
       [...tabs.children].forEach((t) => t.classList.toggle('on', t.dataset.n === String(season.number)));
-      strip.replaceChildren(...season.episodes.map((e) => {
+      const seen = season.episodes.filter((e) => e.progress && e.progress.watched).length;
+      count.textContent = `${season.episodes.length} épisode${season.episodes.length > 1 ? 's' : ''}${seen ? ` · ${seen} vu${seen > 1 ? 's' : ''}` : ''}`;
+      list.replaceChildren(...season.episodes.map((e) => {
         const cur = e.id === Number(id);
         const p = e.progress, pct = p && p.duration ? Math.min(100, (p.position / p.duration) * 100) : 0;
         const im = h('img', { src: e.still ? img(e.still) : `/api/items/${e.id}/thumb`, alt: '', loading: 'lazy' });
-        return h('button', { class: `ep-tile f${cur ? ' current' : ''}`, onclick: () => { s.close(); if (!cur) go(`/lecture/${e.id}${roomCode ? `?salle=${roomCode}` : ''}`, { replace: true }); } },
-          h('div', { class: 'ep-shot' }, im, cur ? h('span', { class: 'ep-now' }, 'En cours') : null,
-            pct > 0 && !(p && p.watched) ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
-            p && p.watched ? h('span', { class: 'check' }, icon('check')) : null),
-          h('b', {}, `${e.episode}. ${e.title}`),
-          e.overview ? h('small', {}, e.overview) : null);
+        const mins = e.runtime || (p && p.duration ? Math.round(p.duration / 60) : null);
+        return h('button', { class: `ep-row f${cur ? ' current' : ''}${p && p.watched ? ' seen' : ''}`, role: 'listitem', onclick: () => { s.close(); if (!cur) go(`/lecture/${e.id}${roomCode ? `?salle=${roomCode}` : ''}`, { replace: true }); } },
+          h('div', { class: 'ep-shot' }, im, cur ? h('span', { class: 'ep-now' }, icon('play')) : p && p.watched ? h('span', { class: 'check' }, icon('check')) : null,
+            pct > 0 && !(p && p.watched) ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null),
+          h('div', { class: 'ep-text' },
+            h('b', {}, `${e.episode}. ${e.title}`),
+            h('small', {}, [cur ? 'En cours' : pct > 0 && !(p && p.watched) ? `Reste ${Math.max(1, Math.round((p.duration - p.position) / 60))} min` : p && p.watched ? 'Vu' : null, mins ? `${mins} min` : null].filter(Boolean).join(' · ')),
+            e.overview ? h('span', { class: 'ep-sum' }, e.overview) : null));
       }));
-      const cur = strip.querySelector('.current');
-      requestAnimationFrame(() => { if (cur) cur.scrollIntoView({ inline: 'center', block: 'nearest' }); focusEl(cur || strip.firstChild, { scroll: false }); });
+      const cur = list.querySelector('.current');
+      requestAnimationFrame(() => { if (cur) cur.scrollIntoView({ block: 'center' }); focusEl(cur || list.firstChild, { scroll: false }); });
     };
     d.seasons.forEach((se) => tabs.append(h('button', { class: 'chip f', 'data-n': se.number, onclick: () => paint(se) }, se.title || (se.number === 0 ? 'Bonus' : `Saison ${se.number}`))));
-    const s = sheet(d.title, h('div', { class: 'ep-panel' }, d.seasons.length > 1 ? tabs : null, scrollArrows(strip)), { wide: true });
+    const panel = h('div', { class: 'ep-panel' }, h('div', { class: 'ep-head' }, d.seasons.length > 1 ? tabs : null, count), list);
+    // Haut / bas : d'un épisode à l'autre sans quitter le volet
+    panel.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      const rows = [...list.children], i = rows.indexOf(document.activeElement);
+      if (i < 0) return;
+      const nx = rows[i + (e.key === 'ArrowDown' ? 1 : -1)];
+      if (nx) { e.preventDefault(); e.stopPropagation(); nx.focus(); nx.scrollIntoView({ block: 'nearest' }); }
+    });
+    const s = sheet(d.title, panel, { side: true });
     paint(d.seasons.find((se) => se.number === info.season) || d.seasons[0]);
   }
 
@@ -675,7 +694,7 @@ export async function render(main, { id, query }) {
     } catch { stopSilence(); }
   }
   function stopSilence() { clearInterval(silTimer); silTimer = null; silSince = 0; if (silOn) { silOn = false; video.playbackRate = speed; } }
-  if (prefs.get('skipSilence')) video.addEventListener('playing', () => startSilence(), { once: true });
+  if (prefs.get('skipSilence')) onVideo('playing', () => startSilence(), { once: true });
 
   // Souris et tactile
   // Seul un vrai mouvement de la souris affiche les commandes (le navigateur envoie aussi des « mouvements »
@@ -683,7 +702,7 @@ export async function render(main, { id, query }) {
   root.addEventListener('mousemove', (e) => { if (!e.movementX && !e.movementY) return; quietStart = false; showUi(); });
   root.addEventListener('pointerdown', () => { quietStart = false; }, true);
   let lastTap = 0, tapTimer = null;
-  video.addEventListener('click', (e) => {
+  onVideo('click', (e) => {
     const now = Date.now();
     const touch = document.documentElement.classList.contains('touch');
     if (touch && now - lastTap < 300) {
@@ -696,7 +715,7 @@ export async function render(main, { id, query }) {
     if (touch) tapTimer = setTimeout(() => (root.classList.contains('ui-on') ? hideUi() : showUi()), 280);
     else togglePlay();
   });
-  video.addEventListener('dblclick', () => { if (!document.documentElement.classList.contains('touch')) toggleFullscreen(); });
+  onVideo('dblclick', () => { if (!document.documentElement.classList.contains('touch')) toggleFullscreen(); });
 
   // Télécommande / clavier — prioritaire sur la navigation générale
   const onKey = (e) => {
@@ -742,18 +761,18 @@ export async function render(main, { id, query }) {
   document.addEventListener('keydown', onKey, true);
 
   // ---------------------------------------------------------------- évènements vidéo
-  video.addEventListener('waiting', () => { spinner.hidden = false; });
-  video.addEventListener('playing', () => { spinner.hidden = true; mediaRecover = 0; if (!quietStart) showUi(); requestWakeLock(); });
-  video.addEventListener('canplay', () => { spinner.hidden = true; });
-  video.addEventListener('play', () => { playBtn.replaceChildren(icon('pause')); if (!quietStart) showUi(); shareState('play'); });
-  video.addEventListener('seeked', () => shareState('seek'));
-  video.addEventListener('pause', () => { playBtn.replaceChildren(icon('play')); showUi(true); saveProgress(); releaseWakeLock(); shareState('pause'); });
-  video.addEventListener('timeupdate', () => {
+  onVideo('waiting', () => { spinner.hidden = false; });
+  onVideo('playing', () => { spinner.hidden = true; mediaRecover = 0; if (!quietStart) showUi(); requestWakeLock(); });
+  onVideo('canplay', () => { spinner.hidden = true; });
+  onVideo('play', () => { playBtn.replaceChildren(icon('pause')); if (!quietStart) showUi(); shareState('play'); });
+  onVideo('seeked', () => shareState('seek'));
+  onVideo('pause', () => { playBtn.replaceChildren(icon('play')); showUi(true); saveProgress(); releaseWakeLock(); shareState('pause'); });
+  onVideo('timeupdate', () => {
     if (!dragging && pendingSeek == null) paintTimeline();
     maybeShowNext();
     checkSegments(position());
   });
-  video.addEventListener('ended', () => {
+  onVideo('ended', () => {
     if (info && info.live) { reloadAt(0, 'Reconnexion à la chaîne…'); return; }
     if (info && info.mode !== 'direct' && offset + video.currentTime < duration() - 5) return; // fin de playlist provisoire
     saveProgress(true);
@@ -785,8 +804,8 @@ export async function render(main, { id, query }) {
   const beatTimer = setInterval(() => beat(), 10000);
   let beatSoon = null;
   const beatLater = () => { clearTimeout(beatSoon); beatSoon = setTimeout(() => beat(), 800); };
-  video.addEventListener('playing', beatLater);
-  video.addEventListener('pause', beatLater);
+  onVideo('playing', beatLater);
+  onVideo('pause', beatLater);
   const onControl = (e) => {
     const d = e.detail || {};
     if (d.cmd === 'pause') { video.pause(); toast(`${d.from || 'L’administrateur'} a mis la lecture en pause`); }
@@ -1003,7 +1022,7 @@ export async function render(main, { id, query }) {
   // ---------------------------------------------------------------- Chromecast & AirPlay
   if (castSupported()) loadCast().then((ok) => { if (ok && !destroyed) castBtn.hidden = false; });
   if (window.WebKitPlaybackTargetAvailabilityEvent) {
-    video.addEventListener('webkitplaybacktargetavailabilitychanged', (e) => { airBtn.hidden = e.availability !== 'available'; });
+    onVideo('webkitplaybacktargetavailabilitychanged', (e) => { airBtn.hidden = e.availability !== 'available'; });
   }
 
   async function startCast() {
@@ -1110,8 +1129,8 @@ export async function render(main, { id, query }) {
     if (!ambOn) return;
     const W = root.clientWidth, H = root.clientHeight;
     const ar = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9;
-    // L'image prend tout l'écran moins 6 px de marge : la lumière floue ne déborde que dans cette marge
-    const PAD = 6;
+    // L'image prend tout l'écran moins 15 px de marge : la lumière floue ne déborde que dans cette marge
+    const PAD = 15;
     let w = W - PAD * 2, hh = w / ar;
     if (hh > H - PAD * 2) { hh = H - PAD * 2; w = hh * ar; }
     root.style.setProperty('--amb-w', `${Math.round(w)}px`);
@@ -1119,8 +1138,8 @@ export async function render(main, { id, query }) {
   }
   const ambRo = new ResizeObserver(() => fitAmb());
   ambRo.observe(root);
-  video.addEventListener('loadedmetadata', fitAmb);
-  video.addEventListener('resize', fitAmb);
+  onVideo('loadedmetadata', fitAmb);
+  onVideo('resize', fitAmb);
   function setAmbiance(on) {
     ambOn = on; ambianceOn.set(on);
     fitAmb();
