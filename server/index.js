@@ -1,5 +1,11 @@
 // Venus — point d'entrée du serveur
 import './logbuf.js'; // journal du serveur (tableau de bord) : chargé en premier
+// Une erreur imprévue dans une tâche de fond ou un flux ne doit pas éteindre tout Venus : elle est notée dans le
+// journal (Serveur → Journal) et le serveur continue. Les erreurs de démarrage, elles, arrêtent bien le processus.
+let started = false;
+process.on('unhandledRejection', (e) => { console.error('[erreur non gérée]', e && e.stack ? e.stack : e); });
+process.on('uncaughtException', (e) => { console.error('[erreur fatale évitée]', e && e.stack ? e.stack : e); if (!started) process.exit(1); });
+export const markStarted = () => { started = true; };
 import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
@@ -105,6 +111,7 @@ async function main() {
   migrateTokens();
   await detectHardware();
   server.listen(config.port, config.host, () => {
+    markStarted();
     console.log(`\n  ✨ Venus ${config.version} est prêt`);
     console.log(`     http://localhost:${config.port}`);
     for (const ip of lanAddresses()) console.log(`     http://${ip}:${config.port}`);
