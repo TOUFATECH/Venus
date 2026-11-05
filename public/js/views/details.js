@@ -2,7 +2,7 @@
 // Bande-annonce en fond (son et vidéo désactivables), distribution et équipe, fiche technique, épisodes.
 import { api, prefs, detailsTrailers } from '../api.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince, hueOf } from '../ui.js';
-import { row, card, playPath, metaLine, frameImage, framePoster, ratingChips, scrollArrows, deleteVideo } from '../components.js';
+import { sendTo, row, card, playPath, metaLine, frameImage, framePoster, ratingChips, scrollArrows, deleteVideo } from '../components.js';
 import { trailerUrl, trailerPlayer } from '../trailer.js';
 import { go, state, setTitle, showPath, currentUrl } from '../app.js';
 import { focusEl } from '../nav.js';
@@ -63,6 +63,8 @@ export async function render(main, { id, query }) {
     actions.append(h('button', { class: 'btn btn-play f', 'data-autofocus': true, onclick: () => go(playPath(isShow ? target.id : versionId)) }, icon('play'), label));
     if (resumable) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Recommencer depuis le début', title: 'Recommencer', onclick: () => go(playPath(isShow ? target.id : versionId, 0)) }, icon('restart')));
   }
+  // Envoyer la vidéo vers un autre écran où Venus est ouvert (la télé)
+  if (target) actions.append(h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': 'Envoyer vers un autre écran', title: 'Envoyer vers la télé', onclick: () => sendTo({ id: isShow ? target.id : versionId, title: d.title }) }, icon('cast')));
   if (!isShow && d.versions && d.versions.length > 1) {
     const cur = () => d.versions.find((x) => x.id === versionId) || d.versions[0];
     const vBtn = h('button', { class: 'btn btn-ghost f', title: 'Choisir la version', onclick: () => {

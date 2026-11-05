@@ -356,6 +356,7 @@ export function quickMenu(item) {
       const frame = h('iframe', { class: 'trailer-frame', src: trailerUrl(item.trailer), title: `Bande-annonce de ${item.title}`, allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true });
       sheet(`Bande-annonce : ${item.title}`, h('div', { class: 'trailer-box' }, frame), { wide: true, onClose: () => frame.remove() });
     }) : null,
+    item.type !== 'channel' ? opt('cast', 'Envoyer vers un autre écran…', () => sendTo(item)) : null,
     (item.type === 'movie' || isEp) && !(state.profile && state.profile.perms && state.profile.perms.download === false) ? opt('down', 'Télécharger', async () => { const m = await import('./views/downloads.js'); m.openDownload({ id: item.id, title: item.title, duration: (item.runtime || 0) * 60 }); }) : null,
     state.profile && state.profile.isAdmin && item.type !== 'channel' ? opt('trash', item.type === 'show' ? 'Supprimer la série' : 'Supprimer la vidéo', () => deleteVideo({ id: item.id, what: isEp ? `l’épisode S${item.season} É${item.episode}` : item.type === 'show' ? `la série « ${item.title} »` : `« ${item.title} »`, onDone: () => window.dispatchEvent(new HashChangeEvent('hashchange')) })) : null));
 }
@@ -381,4 +382,14 @@ export function deleteVideo({ id, what, detail = '', onDone }) {
       h('p', { class: 'del-warn' }, icon('lock'), 'C’est définitif : pas de corbeille. Les vus et « Ma liste » de ce titre disparaissent aussi.'),
       h('div', { class: 'form-actions' }, cancel, go1)), { onClose: () => resolve(null) });
   });
+}
+
+// « Envoyer vers » : la vidéo s'ouvre sur un autre appareil où Venus est ouvert avec ce profil (la télé du salon, par exemple)
+export async function sendTo(item) {
+  let list = [];
+  try { list = await api('/api/devices/open'); } catch (e) { toast(e.message, true); return; }
+  if (!list.length) { toast('Aucun autre écran n’a Venus ouvert avec ce profil. Ouvrez Venus sur la télé, puis réessayez.', true); return; }
+  const s = sheet(`Envoyer « ${item.title} » vers`, h('div', { class: 'more-list' }, list.map((d) => h('button', { class: 'opt f', onclick: async () => {
+    try { await api(`/api/devices/${encodeURIComponent(d.id)}/open`, { method: 'POST', body: { itemId: item.id } }); s.close(); toast(`Envoyé vers ${d.name}`, { type: 'success' }); } catch (e) { toast(e.message, true); }
+  } }, icon(d.tv ? 'tv' : 'remote'), d.name, d.playing ? h('small', {}, 'lecture en cours') : null))));
 }

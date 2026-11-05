@@ -165,6 +165,18 @@ function openAll(extra = []) {
 }
 export { openAll, hasCat };
 
+// Badge de l'administrateur : lectures en cours sur le serveur, rafraîchi toutes les 30 s (caché quand personne ne regarde)
+let liveTimer = null;
+function liveBadge(cls) {
+  const el = h('a', { href: '/tableau-de-bord', class: `${cls} f`, hidden: true, title: 'Lectures en cours' }, icon('play'), h('span', {}, ''));
+  const tick = async () => {
+    if (!el.isConnected) { clearInterval(liveTimer); liveTimer = null; return; }
+    try { const r = await api('/api/admin/live'); const n = r.playing || 0; el.hidden = !n; el.querySelector('span').textContent = n === 1 ? '1 lecture' : `${n} lectures`; } catch { /* */ }
+  };
+  clearInterval(liveTimer); liveTimer = setInterval(tick, 30000); setTimeout(tick, 1500);
+  return el;
+}
+
 // Rail à gauche (ordinateur, TV) + barre du haut et onglets en bas (mobile)
 function shell(path) {
   const p = state.profile;
@@ -174,12 +186,14 @@ function shell(path) {
     h('a', { href: '/', class: 'home-link f', 'aria-label': 'Venus, accueil' }, logoMark()),
     // Sections : la liste défile si elle dépasse la hauteur de l'écran ; Réglages et profil restent en bas
     h('div', { class: 'rail-scroll' }, shown.map((it) => itemLink(it, path)), more.length ? moreBtn('rail-item f') : null),
+    p.isAdmin ? liveBadge('rail-item live-badge') : null,
     p.dailyLeft != null ? h('span', { class: `rail-item time-left${p.dailyLeft <= 10 ? ' low' : ''}`, title: 'Temps d’écran restant aujourd’hui' }, icon('clock'), h('span', {}, p.dailyLeft ? `${p.dailyLeft} min` : 'Fini')) : null,
     p.isKids ? null : navLink('/reglages', 'Réglages', 'gear', path),
     h('button', { class: 'rail-item f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'), h('span', {}, p.name)));
   const top = h('header', { class: 'mobile-top' },
     h('a', { href: '/', class: 'f', 'aria-label': 'Accueil' }, brand()),
     h('div', { style: { display: 'flex', gap: '4px' } },
+      p.isAdmin ? liveBadge('icon-btn live-badge top') : null,
       p.dailyLeft != null ? h('span', { class: `time-left pill${p.dailyLeft <= 10 ? ' low' : ''}` }, icon('clock'), p.dailyLeft ? `${p.dailyLeft} min` : 'Fini') : null,
       p.isKids ? null : h('a', { href: '/reglages', class: 'icon-btn f', 'aria-label': 'Réglages' }, icon('gear')),
       h('button', { class: 'icon-btn f', 'aria-label': `Changer de profil (${p.name})`, onclick: switchProfile }, avatar(p, 'sm'))));
@@ -281,6 +295,8 @@ function listenEvents() {
   events.addEventListener('control', (e) => {
     let d; try { d = JSON.parse(e.data); } catch { return; }
     if (d.cmd === 'message') adminMessage(d);
+    // Vidéo envoyée depuis un autre appareil (« Envoyer vers la télé ») : elle s'ouvre ici tout de suite
+    if (d.cmd === 'open' && d.url) { toast(`${d.from || 'Quelqu’un'} vous envoie ${d.text ? `« ${d.text} »` : 'une vidéo'}`, { type: 'success' }); if (/^\/[a-z]/i.test(d.url)) go(d.url); return; }
     if (d.cmd === 'notify') toast(`${d.title} : ${d.text}`, { type: 'success', duration: 7000, action: d.url ? { label: 'Voir', onClick: () => go(d.url) } : null });
     window.dispatchEvent(new CustomEvent('vn:control', { detail: d }));
   });
@@ -569,6 +585,16 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:' && !memory) {
   if (isIOS && document.documentElement.classList.contains('touch')) setTimeout(show, 25000);
 })();
 
+// Aide des raccourcis clavier : touche « ? » (hors champs de saisie)
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '?' || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '') || document.activeElement?.isContentEditable) return;
+  e.preventDefault();
+  const row = (k, l) => h('div', { class: 'kb-row' }, h('span', { class: 'kb' }, ...k.map((x) => h('kbd', {}, x))), h('span', {}, l));
+  sheet('Raccourcis clavier', h('div', { class: 'kb-list' },
+    h('h3', {}, 'Partout'), row(['/'], 'Rechercher'), row(['?'], 'Cette aide'), row(['Échap'], 'Retour, fermer'), row(['Flèches', 'Entrée'], 'Se déplacer et ouvrir (télécommande)'),
+    h('h3', {}, 'Lecteur'), row(['Espace', 'K'], 'Lecture / pause'), row(['←', '→'], '10 s en arrière / en avant'), row(['J', 'L'], '10 s (ou 1 min avec Maj)'), row(['↑', '↓'], 'Volume'), row(['M'], 'Couper le son'), row(['F'], 'Plein écran'), row(['C'], 'Sous-titres'), row(['<', '>'], 'Vitesse'), row(['N'], 'Épisode suivant'), row(['S'], 'Passer l’intro'), row(['P'], 'Mini-lecteur')));
+});
 window.addEventListener('unhandledrejection', (e) => {
   if (e.reason && e.reason.status === 401) return;
   console.error(e.reason);

@@ -5,7 +5,7 @@ import { execFile, spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { Router, HttpError, readBody, sendJson, sendFile } from './http.js';
-import { all, get, run, tx, getSetting, setSetting } from './db.js';
+import { db, all, get, run, tx, getSetting, setSetting } from './db.js';
 import { slugFor, resolveSlug, cleanName, pathFor, resolveEpisode } from './slugs.js';
 import { V, validate, passwordProblem, logSecurity, securityLog, listBans, unbanIp, banIp, attemptStats, isSecure, safeJoin, safeFileName, httpsMode } from './security.js';
 import { twofaOn, startChallenge, verifyChallenge, resendChallenge, twofaEmail, twofaStats, maskEmail } from './twofa.js';
@@ -21,6 +21,7 @@ import { pipeline } from 'node:stream/promises';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
 import { saveRemoteImage, freePosterCandidates, fillMissingPosters } from './posters.js';
 import { checkUpdate, runUpdate } from './update.js';
+import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
 import {
   decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot,
 } from './stream.js';
@@ -418,10 +419,35 @@ router.get('/api/events', (ctx) => {
   events.on('library', onLib);
   // Commandes de l'administrateur pour cet appareil (pause, arrêt, message)
   const mine = ctx.auth.token, myProfile = ctx.auth.profile && ctx.auth.profile.id;
+  // Appareils connectés en ce moment (pour « Envoyer vers la télé ») : un par appareil, avec son nom et son profil
+  const connKey = deviceId(mine);
+  connected.set(connKey, { token: mine, profileId: myProfile, name: deviceLabel(ctx.auth.device), tv: /TV|Tizen|WebOS|BRAVIA|Silk|CrKey/i.test(ctx.auth.device || ''), since: Date.now() });
   const onCtl = (d) => { if (d.all || (d.token && deviceId(d.token) === deviceId(mine)) || (d.profileId && d.profileId === myProfile)) res.write(`event: control\ndata: ${JSON.stringify({ cmd: d.cmd, text: d.text, from: d.from, title: d.title, url: d.url })}\n\n`); };
   control.on('cmd', onCtl);
   const ping = setInterval(() => res.write(': ping\n\n'), 25000);
-  ctx.req.on('close', () => { clearInterval(ping); events.off('library', onLib); control.off('cmd', onCtl); });
+  ctx.req.on('close', () => { clearInterval(ping); events.off('library', onLib); control.off('cmd', onCtl); if (connected.get(connKey)?.token === mine) connected.delete(connKey); });
+});
+const connected = new Map(); // deviceId → appareil avec l'application ouverte
+// Autres appareils ouverts avec le même profil (ou n'importe quel profil pour l'administrateur) : « Envoyer vers »
+router.get('/api/devices/open', (ctx) => {
+  const p = requireProfile(ctx);
+  const me = deviceId(ctx.auth.token);
+  const list = [...connected.entries()].filter(([k, d]) => k !== me && (p.is_admin || d.profileId === p.id))
+    .map(([k, d]) => ({ id: k, name: d.name, tv: d.tv, playing: nowPlaying().some((e) => deviceId(e.token) === k) }));
+  sendJson(ctx.res, list.sort((a, b) => Number(b.tv) - Number(a.tv)));
+});
+// Lancer une vidéo sur un autre appareil (la télé du salon depuis le téléphone)
+router.post('/api/devices/:id/open', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = validate(await readBody(ctx.req, 2048), { itemId: V.int({ min: 1 }), path: V.str({ max: 300 }) }, {});
+  const d = connected.get(String(ctx.params.id));
+  if (!d) throw new HttpError(404, 'Cet appareil n’est plus ouvert');
+  if (!p.is_admin && d.profileId !== p.id) throw new HttpError(403, 'Interdit');
+  const url = b.itemId ? pathFor(Number(b.itemId), { play: true }) : String(b.path || '/');
+  if (!/^\/(?!\/)[\w.%/-]*(\?[\w=&%.-]*)?$/.test(url)) throw new HttpError(400, 'Adresse invalide');
+  control.emit('cmd', { token: d.token, cmd: 'open', url, from: p.name, text: b.itemId ? (get('SELECT title FROM items WHERE id = ?', Number(b.itemId)) || {}).title : '' });
+  logActivity('control', `${p.name} a envoyé une vidéo vers ${d.name}`);
+  sendJson(ctx.res, { ok: true });
 });
 
 router.get('/api/categories', (ctx) => {
@@ -2616,3 +2642,64 @@ router.post('/api/admin/update', async (ctx) => {
   logActivity('server', `${me.name} a lancé la mise à jour de Venus`);
   sendJson(ctx.res, r);
 });
+
+// ---------------------------------------------------------------- médiathèque : doublons et renommage
+router.get('/api/admin/duplicates', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, duplicateGroups()); });
+router.get('/api/admin/rename', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { plan: renamePlan() }); });
+router.post('/api/admin/rename', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 64 * 1024), { ids: (v) => { if (!Array.isArray(v) || v.length > 2000 || !v.every((x) => Number.isInteger(x) && x > 0)) throw new HttpError(400, 'Liste invalide'); return v; } }, { required: ['ids'] });
+  const r = applyRenames(b.ids);
+  for (const l of all('SELECT path FROM libraries WHERE type IN (\'movies\',\'shows\',\'anime\')')) { try { removeEmptyDirs(l.path); } catch { /* */ } }
+  logActivity('edit', `${me.name} a renommé ${r.done} fichier(s)`);
+  sendJson(ctx.res, r);
+});
+
+// ---------------------------------------------------------------- export / import complet (base + images), pour changer de machine
+router.get('/api/admin/export', (ctx) => {
+  requireAdmin(ctx);
+  const dir = config.dataDir;
+  const snap = path.join(dir, 'backups', 'export-tmp.db');
+  fs.mkdirSync(path.dirname(snap), { recursive: true });
+  try { fs.unlinkSync(snap); } catch { /* */ }
+  db.exec(`VACUUM INTO '${snap.replace(/'/g, "''")}'`);
+  const stamp = new Date().toISOString().slice(0, 10);
+  ctx.res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="venus-export-${stamp}.tar.gz"`, 'Cache-Control': 'no-store' });
+  // tar : base (sous le nom venus.db), images, sous-titres récupérés, CSS perso. Jamais les vidéos ni les clés TLS.
+  const args = ['-czf', '-', '-C', dir, '--transform', 's|^backups/export-tmp.db$|venus.db|', 'backups/export-tmp.db', ...['images', 'subs'].filter((d) => fs.existsSync(path.join(dir, d)))];
+  const t = spawn('tar', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  t.stdout.pipe(ctx.res);
+  t.on('close', () => { try { fs.unlinkSync(snap); } catch { /* */ } });
+  ctx.req.on('close', () => { try { t.kill(); } catch { /* */ } });
+});
+router.post('/api/admin/import', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const dir = config.dataDir, tmp = path.join(dir, 'backups', `import-${Date.now()}`);
+  fs.mkdirSync(tmp, { recursive: true });
+  const file = path.join(tmp, 'import.tar.gz');
+  await new Promise((resolve, reject) => { let n = 0; const w = fs.createWriteStream(file); ctx.req.on('data', (c) => { n += c.length; if (n > 4 * 1024 ** 3) { w.destroy(); reject(new HttpError(413, 'Archive trop grosse (4 Go au plus)')); } }); ctx.req.pipe(w); w.on('finish', resolve); w.on('error', reject); });
+  const r = await new Promise((resolve) => { const t = spawn('tar', ['-xzf', file, '-C', tmp, '--no-same-owner', '--no-same-permissions'], { stdio: 'ignore' }); t.on('close', (code) => resolve(code)); });
+  if (r !== 0 || !fs.existsSync(path.join(tmp, 'venus.db'))) { fs.rmSync(tmp, { recursive: true, force: true }); throw new HttpError(400, 'Archive illisible : attendu un export Venus (.tar.gz)'); }
+  // Images et sous-titres : ajoutés sans écraser ; base : restaurée au prochain démarrage (comme une sauvegarde)
+  for (const sub of ['images', 'subs']) {
+    const src = path.join(tmp, sub); if (!fs.existsSync(src)) continue;
+    fs.mkdirSync(path.join(dir, sub), { recursive: true });
+    for (const f of fs.readdirSync(src)) { try { if (!fs.lstatSync(path.join(src, f)).isFile() || !/^[\w.-]+$/.test(f)) continue; fs.copyFileSync(path.join(src, f), path.join(dir, sub, f), fs.constants.COPYFILE_EXCL); } catch { /* déjà là */ } }
+  }
+  const name = `venus-import-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.db`;
+  fs.copyFileSync(path.join(tmp, 'venus.db'), path.join(dir, 'backups', name));
+  fs.rmSync(tmp, { recursive: true, force: true });
+  makeBackup({ manual: true });
+  scheduleRestore(name);
+  logActivity('server', `${me.name} a importé une archive Venus`);
+  sendJson(ctx.res, { ok: true, restarting: supervised() });
+});
+
+// ---------------------------------------------------------------- état public (box domotique, outil de surveillance) : rien de personnel
+router.get('/api/health', (ctx) => {
+  let disk = null;
+  try { const st = fs.statfsSync(config.dataDir); disk = { free: st.bavail * st.bsize, total: st.blocks * st.bsize }; } catch { /* */ }
+  sendJson(ctx.res, { ok: true, name: getSetting('server_name', 'Venus'), version: config.version, uptime: Math.round(process.uptime()), scanning: scanState.running, lastScan: scanState.lastScan || null, playing: nowPlaying().length, disk });
+});
+// Nombre de lectures en cours (badge de l'administrateur)
+router.get('/api/admin/live', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { playing: nowPlaying().length, devices: connected.size }); });
