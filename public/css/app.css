@@ -2812,3 +2812,5 @@ html.kids .btn-play { font-size: 1.1rem; min-height: 54px; }
 .tc-tip .cmd { display: block; padding: 8px 10px; border-radius: 8px; background: var(--deep); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; overflow-x: auto; user-select: all; margin-bottom: 8px; }
 .share-box { display: flex; flex-direction: column; gap: 12px; }
 .sys-row b.warn { color: #ffb38a; }
+.player video { transform-origin: center; transition: transform .25s ease; }
+.p-fit.on { color: var(--sulfur); }
