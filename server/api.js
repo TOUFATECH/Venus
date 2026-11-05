@@ -1904,27 +1904,7 @@ router.put('/api/admin/settings', async (ctx) => {
   sendJson(ctx.res, { ok: true });
 });
 
-// ------------------------------------------------------------------ envoi de vidéos depuis l'application
-const UPLOAD_EXT = new Set(['.mkv', '.mp4', '.m4v', '.avi', '.mov', '.webm', '.ts', '.m2ts', '.wmv', '.mpg', '.mpeg', '.srt', '.ass', '.ssa', '.vtt', '.jpg', '.jpeg', '.png']);
-// Vérifie les premiers octets du fichier envoyé selon son extension
-function uploadContentProblem(file, ext) {
-  const fd = fs.openSync(file, 'r');
-  const head = Buffer.alloc(4096);
-  const n = fs.readSync(fd, head, 0, 4096, 0);
-  fs.closeSync(fd);
-  const b = head.subarray(0, n);
-  if (!n) return 'fichier vide';
-  if (b.subarray(0, 2).toString('latin1') === 'MZ' || b.subarray(0, 4).equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) || b.subarray(0, 2).toString() === '#!' || /^\s*<(\?php|script|html|!doctype)/i.test(b.toString('latin1', 0, 64))) return 'contenu exécutable ou page web';
-  if (['.jpg', '.jpeg'].includes(ext)) return b[0] === 0xff && b[1] === 0xd8 ? null : 'ce n’est pas une image JPEG';
-  if (ext === '.png') return b.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47])) ? null : 'ce n’est pas une image PNG';
-  if (['.srt', '.ass', '.ssa', '.vtt'].includes(ext)) return b.includes(0) && !(b[0] === 0xff || b[0] === 0xfe) ? 'ce n’est pas un fichier texte de sous-titres' : null;
-  // Vidéos : conteneurs connus (Matroska/WebM, MP4/MOV, AVI, MPEG-TS/PS, ASF)
-  const sig = b.subarray(0, 12);
-  const ok = sig.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])) || sig.toString('latin1', 4, 8) === 'ftyp' || ['moov', 'mdat', 'free', 'wide', 'skip'].includes(sig.toString('latin1', 4, 8))
-    || sig.toString('latin1', 0, 4) === 'RIFF' || b[0] === 0x47 || (b[4] === 0x47 && b[0] !== 0x47) || sig.subarray(0, 4).equals(Buffer.from([0x00, 0x00, 0x01, 0xba])) || sig.subarray(0, 4).equals(Buffer.from([0x30, 0x26, 0xb2, 0x75]));
-  return ok ? null : 'format vidéo non reconnu';
-}
-
+// Espace libre et droits d'écriture d'une bibliothèque (affichés dans Réglages)
 function diskInfo(l) {
   if (l.type === 'iptv') return { writable: false, free: null };
   let writable = false, free = null;
@@ -1932,45 +1912,6 @@ function diskInfo(l) {
   try { const st = fs.statfsSync(l.path); free = st.bavail * st.bsize; } catch { /* inconnu */ }
   return { writable, free };
 }
-
-router.post('/api/admin/upload', async (ctx) => {
-  requireAdmin(ctx);
-  const q = ctx.url.searchParams;
-  const lib = get('SELECT * FROM libraries WHERE id = ?', Number(q.get('library')));
-  if (!lib || lib.type === 'iptv') throw new HttpError(400, 'Choisissez une source de vidéos');
-  const name = safeFileName(q.get('name'));
-  if (!name || !UPLOAD_EXT.has(path.extname(name).toLowerCase())) throw new HttpError(415, 'Type de fichier non pris en charge (vidéo, sous-titres ou image)');
-  const root = path.resolve(lib.path);
-  const folder = String(q.get('folder') || '').split('/').map((x) => safeFileName(x)).filter(Boolean).slice(0, 4).join(path.sep);
-  const dir = safeJoin(root, folder);
-  try { fs.mkdirSync(dir, { recursive: true }); fs.accessSync(dir, fs.constants.W_OK); }
-  catch { throw new HttpError(403, 'Ce dossier est en lecture seule. Avec Docker, retirez « :ro » sur le volume de cette source.'); }
-  const size = Number(ctx.req.headers['content-length'] || 0);
-  try {
-    const st = fs.statfsSync(dir);
-    if (size && st.bavail * st.bsize < size + 256 * 1024 * 1024) throw new HttpError(507, 'Espace disque insuffisant sur le serveur');
-  } catch (e) { if (e instanceof HttpError) throw e; }
-  const target = path.join(dir, name);
-  if (fs.existsSync(target) && q.get('overwrite') !== '1') throw new HttpError(409, `« ${name} » existe déjà dans ce dossier`);
-  const tmp = `${target}.venus-part`;
-  let received = 0;
-  ctx.req.on('data', (c) => { received += c.length; });
-  try {
-    await pipeline(ctx.req, fs.createWriteStream(tmp, { mode: 0o644 }));
-    if (size && received !== size) throw new Error('incomplet');
-    // Le contenu doit correspondre au type annoncé (pas de programme déguisé en vidéo)
-    const why = uploadContentProblem(tmp, path.extname(name).toLowerCase());
-    if (why) { logSecurity('envoi-refuse', ctx.ip, `Fichier « ${name} » refusé : ${why}`, 'warn'); throw new HttpError(415, `Fichier refusé : ${why}`); }
-    fs.renameSync(tmp, target);
-  } catch (e) {
-    fs.rmSync(tmp, { force: true });
-    if (e instanceof HttpError) throw e;
-    throw new HttpError(499, 'Envoi interrompu');
-  }
-  logSecurity('envoi', ctx.ip, `Fichier envoyé : ${path.relative(root, target)} (${Math.round(received / 1e6)} Mo)`, 'info');
-  scheduleScan(4000);
-  sendJson(ctx.res, { ok: true, file: path.relative(root, target) });
-});
 
 // Ne jamais renvoyer de mot de passe à l'interface
 const maskUrl = (u) => String(u).replace(/(password=)[^&]*/i, '$1••••').replace(/\/\/([^:/@]+):[^@/]+@/, '//$1:••••@');

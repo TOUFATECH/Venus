@@ -26,7 +26,7 @@ export const NAV_ITEMS = [
   { id: 'search', href: '/recherche', label: 'Recherche', icon: 'search' },
   { id: 'seance', href: '/seance', label: 'Séance', icon: 'people', hint: 'Regarder ensemble, chacun sur son écran' },
   { id: 'remote', action: 'remote', label: 'Télécommande', icon: 'remote', hint: 'Piloter Venus avec votre téléphone' },
-  { id: 'add', href: '/ajouter', label: 'Ajouter', icon: 'add', admin: true, hint: 'Envoyer des vidéos sur le serveur' },
+  { id: 'add', href: '/ajouter', label: 'Ajouter', icon: 'add', admin: true, hint: 'Où ranger vos fichiers, liste IPTV' },
   { id: 'stats', href: '/stats', label: 'Statistiques', icon: 'gauge', hint: 'Vos heures, genres et séries préférées' },
   { id: 'downloads', href: '/telechargements', label: 'Téléchargements', icon: 'down', hint: 'Vos vidéos pour regarder sans réseau' },
   { id: 'dashboard', href: '/tableau-de-bord', label: 'Tableau de bord', icon: 'gauge', admin: true, hint: 'Lectures en cours, appareils, code de connexion' },
