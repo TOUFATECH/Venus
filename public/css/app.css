@@ -671,7 +671,7 @@ body { position: relative; z-index: 0; }
 /* ------------------------------------------------ Mode Ambiance */
 .amb-canvas { position: absolute; inset: -12%; width: 124%; height: 124%; filter: blur(60px) saturate(1.6) brightness(1.05); opacity: 0; transition: opacity .8s; pointer-events: none; }
 .player.amb-on .amb-canvas { opacity: .95; }
-.player.amb-on video { inset: 7% 8%; width: 84%; height: 86%; border-radius: 10px; box-shadow: 0 30px 120px rgba(0,0,0,.6); transition: inset .6s var(--ease), width .6s var(--ease), height .6s var(--ease); }
+.player.amb-on video { inset: 6px; width: calc(100% - 12px); height: calc(100% - 12px); border-radius: 6px; box-shadow: 0 30px 120px rgba(0,0,0,.6); transition: inset .6s var(--ease), width .6s var(--ease), height .6s var(--ease); }
 .player video { transition: inset .6s var(--ease), width .6s var(--ease), height .6s var(--ease); }
 .p-icon.on { background: color-mix(in srgb, var(--sulfur) 30%, transparent); color: var(--sulfur); }
 
@@ -2105,14 +2105,14 @@ html:not(.touch) .card:not(.channel) .cap:hover b { text-decoration: underline; 
 .hero-bg > img:not(.on) { transform: scale(1.06); }
 @media (prefers-reduced-motion: reduce) { .hero-body.swap > * { animation: none; } }
 
-/* Ambiance : pas de cadre. La vidéo a la forme exacte de l'image et ses bords se fondent dans la lumière */
+/* Ambiance : pas de cadre. La vidéo garde tout l'écran moins 6 px ; la lumière floue n'apparaît que dans cette marge et aux bords fondus */
 @media (orientation: landscape), (min-width: 821px) {
   .player.amb-on video, .player.amb-on.in-party:not(.chat-hidden) video {
     inset: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); width: var(--amb-w, 74%); height: var(--amb-h, 76%);
     object-fit: cover; background: transparent; border-radius: 0; box-shadow: none;
-    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 2.5%, #000 97.5%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 3.5%, #000 96.5%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 6px, #000 calc(100% - 6px), transparent 100%), linear-gradient(to bottom, transparent 0, #000 6px, #000 calc(100% - 6px), transparent 100%);
     -webkit-mask-composite: source-in;
-    mask-image: linear-gradient(to right, transparent 0, #000 2.5%, #000 97.5%, transparent 100%), linear-gradient(to bottom, transparent 0, #000 3.5%, #000 96.5%, transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 6px, #000 calc(100% - 6px), transparent 100%), linear-gradient(to bottom, transparent 0, #000 6px, #000 calc(100% - 6px), transparent 100%);
     mask-composite: intersect;
   }
   .player.amb-on .amb-canvas { opacity: 1; }
@@ -2864,3 +2864,8 @@ html.kids .btn-play { font-size: 1.1rem; min-height: 54px; }
 .set-tab svg { width: 17px; height: 17px; }
 .set-tab:hover { color: var(--paper); }
 .set-tab.on { background: var(--sulfur); color: var(--night); border-color: transparent; }
+
+/* Réglages → Affiches → test des sources */
+.poster-test { margin-top: 10px; }
+.poster-test .pt-img { width: 36px; height: 54px; object-fit: cover; border-radius: 4px; flex: none; }
+.poster-test .pm-ph.bad { color: var(--danger, #e5484d); }

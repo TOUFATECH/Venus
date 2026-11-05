@@ -1110,8 +1110,10 @@ export async function render(main, { id, query }) {
     if (!ambOn) return;
     const W = root.clientWidth, H = root.clientHeight;
     const ar = video.videoWidth && video.videoHeight ? video.videoWidth / video.videoHeight : 16 / 9;
-    let w = W * 0.74, hh = w / ar;
-    if (hh > H * 0.76) { hh = H * 0.76; w = hh * ar; }
+    // L'image prend tout l'écran moins 6 px de marge : la lumière floue ne déborde que dans cette marge
+    const PAD = 6;
+    let w = W - PAD * 2, hh = w / ar;
+    if (hh > H - PAD * 2) { hh = H - PAD * 2; w = hh * ar; }
     root.style.setProperty('--amb-w', `${Math.round(w)}px`);
     root.style.setProperty('--amb-h', `${Math.round(hh)}px`);
   }
@@ -1329,9 +1331,11 @@ export async function render(main, { id, query }) {
   // ---------------------------------------------------------------- mini-lecteur
   // En quittant le lecteur (bouton retour), la vidéo continue dans une petite fenêtre en bas de l'écran.
   let handedOff = false;
+  // Quitter une vidéo (retour, Échap, clic sur le menu…) : elle continue dans le mini-lecteur en bas à droite,
+  // jusqu'à ce qu'on le ferme. Sauf : casting, séance, vidéo terminée, ou option désactivée dans Réglages.
   function canMini() {
-    return prefs.get('miniPlayer') !== false && info && !info.live && !casting && !party && !destroyed && info.type !== 'clip'
-      && !video.paused && !video.ended && (duration() - position() > 30);
+    return prefs.get('miniPlayer') !== false && info && !casting && !party && !destroyed && !handedOff
+      && !video.ended && video.readyState > 0 && (info.live || duration() - position() > 5);
   }
   function toMini() {
     handedOff = true;
@@ -1401,6 +1405,9 @@ export async function render(main, { id, query }) {
   }
 
   function destroy() {
+    // Quelle que soit la façon de quitter la page, sauf quand on enchaîne directement sur une autre vidéo
+    const toAnotherPlayer = !window.__VN_MEMORY_ROUTER && (/^\/lecture\//.test(location.pathname) || /\/S\d{1,3}E\d{1,4}$/i.test(location.pathname) || (history.state && history.state.vnPlay));
+    if (!toAnotherPlayer && canMini()) toMini();
     destroyed = true;
     if (!handedOff) chainedAt = Date.now();
     saveProgress();

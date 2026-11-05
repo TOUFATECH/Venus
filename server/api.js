@@ -19,7 +19,7 @@ import {
 import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scanner.js';
 import { pipeline } from 'node:stream/promises';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
-import { saveRemoteImage, freePosterCandidates, fillMissingPosters } from './posters.js';
+import { saveRemoteImage, freePosterCandidates, fillMissingPosters, testSources } from './posters.js';
 import { checkUpdate, runUpdate, localCommit } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
 import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAYS } from './trash.js';
@@ -1153,7 +1153,7 @@ router.get('/api/items/:id/thumb', async (ctx) => {
   requireDevice(ctx); // images et aperçus réservés aux appareils connectés (cookie de session)
   const item = playableOf(get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)));
   if (!item) throw new HttpError(404, 'Introuvable');
-  const file = await thumbnail(item, item.duration);
+  const file = await thumbnail(item, item.duration, { big: ctx.url.searchParams.get('size') === 'big' });
   sendFile(ctx.req, ctx.res, file, { cache: 'public, max-age=2592000, immutable' });
 });
 
@@ -2670,8 +2670,17 @@ router.get('/api/admin/posters', (ctx) => {
 });
 router.post('/api/admin/posters/run', async (ctx) => {
   requireAdmin(ctx);
+  // Lancement à la main : on redonne leur chance aux titres déjà cherchés sans succès
+  run("UPDATE items SET poster_tried = 0 WHERE poster IS NULL AND type IN ('movie','show')");
   const n = await fillMissingPosters();
   sendJson(ctx.res, { found: n });
+});
+router.get('/api/admin/posters/test', async (ctx) => {
+  requireAdmin(ctx);
+  const title = String(ctx.url.searchParams.get('title') || 'Inception').slice(0, 120);
+  const year = Number(ctx.url.searchParams.get('year')) || null;
+  const type = ['movie', 'show', 'anime'].includes(ctx.url.searchParams.get('type')) ? ctx.url.searchParams.get('type') : 'movie';
+  sendJson(ctx.res, { title, year, type, tmdbKey: !!tmdbKey(), results: await testSources(title, year, type) });
 });
 // Propositions d'affiches pour un titre (sources gratuites + TMDB si clé), pour « Choisir une affiche »
 router.get('/api/admin/posters/:id/candidates', async (ctx) => {

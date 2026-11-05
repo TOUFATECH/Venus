@@ -1,28 +1,32 @@
 // Noms lisibles dans l'adresse, sur le modèle du rangement des fichiers :
-//   films    Inception.2010            séries   Breaking.Bad
-//   saisons  Breaking.Bad.S01          épisodes Breaking.Bad.S01E02
-//   clips    Daft.Punk.Around.The.World chaînes  France.24
-// Deux titres identiques : le second reçoit son numéro (Dune.2021~851).
+//   films    inception-2010            séries   breaking-bad
+//   saisons  breaking-bad/S01          épisodes breaking-bad/S01E02
+//   clips    daft-punk-around-the-world chaînes  france-24
+// Deux titres identiques : le second reçoit son numéro (dune-2021~851).
+// Les anciennes adresses en Majuscules.Avec.Des.Points restent comprises (comparaison sans casse ni ponctuation).
 import { all } from './db.js';
 
 const pad = (n) => String(n ?? 0).padStart(2, '0');
+// Un titre devient une adresse lisible : minuscules, sans accents, mots séparés par des tirets
+//   « Sword of the Demon Hunter - Kijin Gentosho » → sword-of-the-demon-hunter-kijin-gentosho
 export function cleanName(s) {
   return String(s || '')
-    .normalize('NFC')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
     .replace(/['’`´"]/g, '')
     .replace(/&/g, ' and ')
-    .replace(/[^\p{L}\p{N}]+/gu, '.')
-    .replace(/^\.+|\.+$/g, '');
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 function baseSlug(i, showTitles) {
   const show = i.show_id ? showTitles.get(i.show_id) : null;
   switch (i.type) {
     case 'movie': return cleanName(`${i.title}${i.year ? ` ${i.year}` : ''}`);
-    case 'season': return `${cleanName(show || i.title)}.S${pad(i.season_num)}`;
-    case 'episode': return `${cleanName(show || i.title)}.S${pad(i.season_num)}E${pad(i.episode_num)}${i.episode_end ? `-E${pad(i.episode_end)}` : ''}`;
+    case 'season': return `${cleanName(show || i.title)}-s${pad(i.season_num)}`;
+    case 'episode': return `${cleanName(show || i.title)}-s${pad(i.season_num)}e${pad(i.episode_num)}${i.episode_end ? `-e${pad(i.episode_end)}` : ''}`;
     case 'clip': return cleanName(i.original_title ? `${i.original_title} ${i.title}` : i.title);
-    case 'extra': return cleanName(`Bonus ${i.title}`);
+    case 'extra': return cleanName(`bonus ${i.title}`);
     case 'track': return cleanName(`${i.original_title || ''} ${i.title}`);
     default: return cleanName(i.title);
   }
@@ -85,7 +89,9 @@ export function resolveSlug(slug) {
   if (/^\d+$/.test(s)) return Number(s);
   ensure();
   const tilde = /~(\d+)$/.exec(s);
-  return bySlug.get(s.toLowerCase()) || (tilde ? Number(tilde[1]) : null);
+  // Les anciennes adresses (Breaking.Bad.S01E02) et les liens recopiés à la main passent par le même nettoyage
+  const base = tilde ? s.slice(0, tilde.index) : s;
+  return bySlug.get(s.toLowerCase()) || bySlug.get(cleanName(base)) || (tilde ? Number(tilde[1]) : null);
 }
 // Après une modification du titre (correction d'identification, nouvel épisode…)
 export function refreshSlugs() { sig = ''; builtAt = 0; }
