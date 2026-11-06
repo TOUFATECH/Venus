@@ -13,6 +13,7 @@ import { anilist } from './ratings.js';
 import { tmdb, tmdbKey, lang } from './metadata.js';
 import { arrOn, call as arrCall, arrKnown, arrGrab } from './arr.js';
 import { logActivity } from './activity.js';
+import { notify } from './notify.js';
 
 const TVMAZE = process.env.VENUS_TVMAZE_API || 'https://api.tvmaze.com';
 const DAY = 864e5;
@@ -40,6 +41,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS wanted (
   added_at INTEGER, sent_at INTEGER, error TEXT,
   PRIMARY KEY (profile_id, key)
 )`);
+try { db.exec('ALTER TABLE wanted ADD COLUMN notified_at INTEGER'); } catch { /* déjà là */ }
+// Un favori est arrivé sur le NAS : notification (téléphone, application ouverte) à la personne qui l'a demandé
+export async function wantedArrivals() {
+  const lib = libIndex();
+  const byImdb = new Map(all("SELECT id, imdb_id FROM items WHERE imdb_id IS NOT NULL AND type IN ('movie','show')").map((r) => [r.imdb_id, r.id]));
+  let n = 0;
+  for (const w of all('SELECT * FROM wanted WHERE notified_at IS NULL')) {
+    const id = (/^imdb:/.test(w.key) && byImdb.get(w.key.slice(5))) || (w.kind === 'movie' ? lib.movie : lib.show).get(norm(w.title));
+    if (!id) continue;
+    run('UPDATE wanted SET notified_at = ? WHERE profile_id = ? AND key = ?', Date.now(), w.profile_id, w.key);
+    await notify({ title: 'Votre favori est arrivé', body: `« ${w.title} » est maintenant sur le NAS`, url: `/titre/${id}`, tag: `wanted-${id}` }, { profileId: w.profile_id }).catch(() => {});
+    n++;
+  }
+  return n ? `${n} favori(s) arrivé(s), notification envoyée` : 'Aucun nouveau favori arrivé';
+}
+
 export const wantedKeys = (profileId) => new Set(all('SELECT key FROM wanted WHERE profile_id = ?', profileId).map((r) => r.key));
 export function wantedOf(profileId) {
   const lib = libIndex();
@@ -54,7 +71,7 @@ const appOf = (kind) => (kind === 'movie' ? 'radarr' : 'sonarr');
 async function send(profile, w) {
   if (profile.max_age != null || !arrOn(appOf(w.kind))) return null;
   try {
-    const r = await arrGrab({ kind: w.kind, tmdb: w.tmdb, tvdb: w.tvdb, title: w.title, year: w.year });
+    const r = await arrGrab({ kind: w.kind, tmdb: w.tmdb, tvdb: w.tvdb, imdb: /^imdb:/.test(w.key) ? w.key.slice(5) : null, title: w.title, year: w.year });
     run('UPDATE wanted SET sent_at = ?, error = NULL WHERE profile_id = ? AND key = ?', Date.now(), profile.id, w.key);
     logActivity('request', `${profile.name} a demandé « ${r.title} »${r.already ? ' (déjà demandé)' : ''}`);
     return r;
@@ -73,7 +90,7 @@ export async function addWanted(profile, w, { download = true } = {}) {
 export function removeWanted(profileId, key) { run('DELETE FROM wanted WHERE profile_id = ? AND key = ?', profileId, key); return { wanted: false }; }
 export async function grab(profile, w) {
   if (!arrOn(appOf(w.kind))) throw Object.assign(new Error(`${w.kind === 'movie' ? 'Radarr' : 'Sonarr'} n’est pas relié (Réglages → Demandes)`), { status: 400 });
-  const r = await arrGrab({ kind: w.kind, tmdb: w.tmdb, tvdb: w.tvdb, title: w.title, year: w.year });
+  const r = await arrGrab({ kind: w.kind, tmdb: w.tmdb, tvdb: w.tvdb, imdb: /^imdb:/.test(w.key) ? w.key.slice(5) : null, title: w.title, year: w.year });
   logActivity('request', `${profile.name} a demandé « ${r.title} »${r.already ? ' (déjà demandé)' : ''}`);
   return r;
 }

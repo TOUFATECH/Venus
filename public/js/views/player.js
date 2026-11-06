@@ -776,7 +776,18 @@ export async function render(main, { id, query }) {
     if (!dragging && pendingSeek == null) paintTimeline();
     maybeShowNext();
     checkSegments(position());
+    prepareNext();
   });
+  // 3 minutes avant la fin : le serveur prépare l'épisode suivant (fichier lu à l'avance sur le NAS,
+  // analyse faite), pour qu'il démarre tout de suite
+  let preparedFor = null;
+  function prepareNext() {
+    if (!info || !info.next || casting || preparedFor === info.next.id) return;
+    const d = duration(), t = position();
+    if (!d || d - t > 180) return;
+    preparedFor = info.next.id;
+    api(`/api/items/${info.next.id}/prepare`, { method: 'POST' }).catch(() => {});
+  }
   onVideo('ended', () => {
     if (info && info.live) { reloadAt(0, 'Reconnexion à la chaîne…'); return; }
     if (info && info.mode !== 'direct' && offset + video.currentTime < duration() - 5) return; // fin de playlist provisoire

@@ -81,7 +81,7 @@ cd Venus
 
 Le script demande le dossier de vos films et celui de vos séries (laissez vide si tout est sur un NAS), détecte votre carte graphique, puis démarre Venus. Sans Docker sur la machine, il propose de l'installer ou d'installer Venus directement. `./install.sh --docker` ou `./install.sh --native` forcent un mode.
 
-Mise à jour : `cd Venus && git pull && ./install.sh --docker`
+Mise à jour : `cd Venus && bash update.sh` (récupère la dernière version, active la carte graphique et les conversions en mémoire si la machine le permet, puis redémarre)
 
 À la main : modifiez les chemins dans `docker-compose.yml`, ajoutez votre GPU si besoin (voir `docker-compose.override.example.yml`), puis `docker compose up -d --build`.
 

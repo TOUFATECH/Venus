@@ -6,6 +6,7 @@
 // Les images sont copiées dans le dossier des images, comme celles de TMDB. Dès qu'une clé TMDB est
 // ajoutée, TMDB reprend la main (ses fiches sont plus complètes) et remplace ces affiches.
 import fs from 'node:fs';
+import { arrOn, call as arrCall } from './arr.js';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
@@ -108,8 +109,8 @@ export async function freePosterCandidates(type, title, year) {
   const out = [];
   const push = (r, source) => { if (r && r.poster && !out.some((x) => x.url === r.poster)) out.push({ url: r.poster, source, year: r.year || null }); };
   const jobs = type === 'movie'
-    ? [[() => findTrakt('movie', title, year), 'Trakt'], [() => findImdb('movie', title, year), 'IMDb'], [() => findCinemeta('movie', title, year), 'Cinemeta'], [() => findTmdbWeb('movie', title, year), 'TMDB (site)'], [() => findImp(title, year), 'IMP Awards'], [() => findWiki('movie', title, year), 'Wikipédia'], [() => findMovie(title, year), 'iTunes'], [() => findOmdb('movie', title, year), 'OMDb']]
-    : [[() => findTrakt('tv', title, year), 'Trakt'], [() => findTmdbWeb('tv', title, year), 'TMDB (site)'], [() => findShow(title, year), 'TVmaze'], [() => findImdb('tv', title, year), 'IMDb'], [() => findCinemeta('tv', title, year), 'Cinemeta'], [() => findWiki('tv', title, year), 'Wikipédia'], [() => findOmdb('tv', title, year), 'OMDb']];
+    ? [[() => findArr('movie', title, year), 'Radarr'], [() => findTrakt('movie', title, year), 'Trakt'], [() => findImdb('movie', title, year), 'IMDb'], [() => findCinemeta('movie', title, year), 'Cinemeta'], [() => findTmdbWeb('movie', title, year), 'TMDB (site)'], [() => findImp(title, year), 'IMP Awards'], [() => findWiki('movie', title, year), 'Wikipédia'], [() => findMovie(title, year), 'iTunes'], [() => findOmdb('movie', title, year), 'OMDb']]
+    : [[() => findArr('tv', title, year), 'Sonarr'], [() => findTrakt('tv', title, year), 'Trakt'], [() => findTmdbWeb('tv', title, year), 'TMDB (site)'], [() => findShow(title, year), 'TVmaze'], [() => findImdb('tv', title, year), 'IMDb'], [() => findCinemeta('tv', title, year), 'Cinemeta'], [() => findWiki('tv', title, year), 'Wikipédia'], [() => findOmdb('tv', title, year), 'OMDb']];
   await Promise.all(jobs.map(async ([fn, src]) => { try { push(await fn(), src); } catch { /* source muette */ } }));
   return out;
 }
@@ -175,6 +176,25 @@ export async function findWiki(kind, title, year) {
   return null;
 }
 
+// Radarr / Sonarr (quand ils sont reliés) : leur recherche passe par la base TMDB, sans clé, et donne l'affiche,
+// l'image de fond, le résumé et les genres. La meilleure source pour les films récents.
+export async function findArr(kind, title, year) {
+  const app = kind === 'movie' ? 'radarr' : 'sonarr';
+  if (!arrOn(app)) return null;
+  const q = `${String(title || '').trim()}${year && kind === 'movie' ? ` ${year}` : ''}`;
+  let list = await arrCall(app, `/api/v3/${kind === 'movie' ? 'movie' : 'series'}/lookup?term=${encodeURIComponent(q)}`);
+  if ((!Array.isArray(list) || !list.length) && year) list = await arrCall(app, `/api/v3/${kind === 'movie' ? 'movie' : 'series'}/lookup?term=${encodeURIComponent(title)}`);
+  const img = (x, t) => ((x.images || []).find((i) => i.coverType === t) || {}).remoteUrl || null;
+  const ok = (Array.isArray(list) ? list : []).filter((x) => x && (x.remotePoster || img(x, 'poster')) && (closeEnough(x.title, title) || closeEnough(x.originalTitle || '', title) || (x.alternateTitles || []).some((a) => closeEnough(a.title, title))));
+  if (!ok.length) return null;
+  const best = (year && (ok.find((x) => x.year === year) || ok.find((x) => Math.abs((x.year || 0) - year) <= 1))) || (year ? null : ok[0]);
+  if (!best) return null;
+  const poster = (best.remotePoster || img(best, 'poster')).replace('/t/p/original/', '/t/p/w780/');
+  const fanart = img(best, 'fanart');
+  return { poster, backdrop: fanart ? fanart.replace('/t/p/original/', '/t/p/w1280/') : null, year: best.year || year || null, genres: best.genres || [], overview: best.overview || null,
+    releaseDate: (best.inCinemas || best.firstAired || '').slice(0, 10) || null, tmdbId: best.tmdbId || null };
+}
+
 // Trakt (si un Client ID est renseigné) : affiches officielles en bonne qualité
 export async function findTrakt(kind, title, year) {
   const r = await traktFind({ type: kind === 'movie' ? 'movie' : 'show', title, year });
@@ -202,7 +222,7 @@ export async function findImdb(kind, title, year) {
 }
 
 // Cinemeta (catalogue public de Stremio, sans clé) : affiches IMDb via metahub, autre chemin si IMDb bloque
-const CINEMETA = process.env.VENUS_CINEMETA_URL || 'https://v3-cinemeta.strem.io';
+export const CINEMETA = process.env.VENUS_CINEMETA_URL || 'https://v3-cinemeta.strem.io';
 export async function findCinemeta(kind, title, year) {
   const t = kind === 'movie' ? 'movie' : 'series';
   const d = await getJson(`${CINEMETA}/catalog/${t}/top/search=${encodeURIComponent(String(title || '').trim())}.json`);
@@ -313,9 +333,9 @@ export function redoFreePosters() {
   return Number(r.changes || 0);
 }
 export async function fillMissingPosters(onProgress) {
-  if (Number(getSetting('poster_sources_v', 0)) < 3) {
+  if (Number(getSetting('poster_sources_v', 0)) < 4) {
     run("UPDATE items SET poster_tried = 0 WHERE poster IS NULL AND type IN ('movie','show')");
-    setSetting('poster_sources_v', 3);
+    setSetting('poster_sources_v', 4);
   }
   if (getSetting('posters_free', '1') === '0') return 0;
   const pending = all("SELECT id, type, title, year, category, overview, genres, release_date FROM items WHERE type IN ('movie','show') AND poster IS NULL AND (matched <= 0 OR tmdb_id IS NULL) AND IFNULL(poster_tried, 0) < 3 ORDER BY added_at DESC LIMIT 300");
@@ -323,12 +343,13 @@ export async function fillMissingPosters(onProgress) {
   for (const it of pending) {
     try {
       const chain = (year) => (it.type === 'movie'
-        ? [() => findTrakt('movie', it.title, year), () => findImdb('movie', it.title, year), () => findCinemeta('movie', it.title, year), () => findTmdbWeb('movie', it.title, year), () => findImp(it.title, year), () => findWiki('movie', it.title, year), () => findMovie(it.title, year), () => findOmdb('movie', it.title, year)]
-        : [() => findTrakt('tv', it.title, year), () => findTmdbWeb('tv', it.title, year), () => findShow(it.title, year, { anime: it.category === 'anime' }), () => findImdb('tv', it.title, year), () => findCinemeta('tv', it.title, year), () => findWiki('tv', it.title, year), () => findOmdb('tv', it.title, year)]);
+        ? [() => findArr('movie', it.title, year), () => findTrakt('movie', it.title, year), () => findImdb('movie', it.title, year), () => findCinemeta('movie', it.title, year), () => findTmdbWeb('movie', it.title, year), () => findImp(it.title, year), () => findWiki('movie', it.title, year), () => findMovie(it.title, year), () => findOmdb('movie', it.title, year)]
+        : [() => findArr('tv', it.title, year), () => findTrakt('tv', it.title, year), () => findTmdbWeb('tv', it.title, year), () => findShow(it.title, year, { anime: it.category === 'anime' }), () => findImdb('tv', it.title, year), () => findCinemeta('tv', it.title, year), () => findWiki('tv', it.title, year), () => findOmdb('tv', it.title, year)]);
       // L'année tirée du nom du fichier est parfois fausse (date de la copie) : second essai sans l'année
       const found = (await firstOf(chain(it.year))) || (it.year ? await firstOf(chain(null)) : null);
       const poster = found ? (found.trakt ? await downloadTraktImage(found.poster) : await saveRemoteImage(found.poster)) : null;
       if (poster) {
+        if (found.backdrop) { const bgFile = await saveRemoteImage(found.backdrop); if (bgFile) run('UPDATE items SET backdrop = ? WHERE id = ? AND backdrop IS NULL', bgFile, it.id); }
         if (it.type === 'show' && found.tvmazeId) {
           try {
             const imgs = await getJson(`https://api.tvmaze.com/shows/${found.tvmazeId}/images`);
@@ -357,13 +378,13 @@ export async function fillMissingPosters(onProgress) {
 // avec le temps de réponse, le code HTTP et ce qu'il a trouvé. Permet de voir quel service est bloqué.
 export async function testSources(title, year, type = 'movie') {
   const jobs = type === 'movie'
-    ? [['Trakt', 'https://api.trakt.tv', () => findTrakt('movie', title, year)], ['IMDb', IMDB, () => findImdb('movie', title, year)], ['Cinemeta (Stremio)', CINEMETA, () => findCinemeta('movie', title, year)], ['Site TMDB', `${TMDB_WEB}/search/movie`, () => findTmdbWeb('movie', title, year)], ['IMP Awards', IMP, () => findImp(title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('movie', title, year)], ['iTunes', ITUNES, () => findMovie(title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('movie', title, year)]]
-    : [['Trakt', 'https://api.trakt.tv', () => findTrakt('tv', title, year)], ['Site TMDB', `${TMDB_WEB}/search/tv`, () => findTmdbWeb('tv', title, year)], ['TVmaze', TVMAZE, () => findShow(title, year, { anime: type === 'anime' })], ['IMDb', IMDB, () => findImdb('tv', title, year)], ['Cinemeta (Stremio)', CINEMETA, () => findCinemeta('tv', title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('tv', title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('tv', title, year)]];
+    ? [['Radarr', 'radarr', () => findArr('movie', title, year)], ['Trakt', 'https://api.trakt.tv', () => findTrakt('movie', title, year)], ['IMDb', IMDB, () => findImdb('movie', title, year)], ['Cinemeta (Stremio)', CINEMETA, () => findCinemeta('movie', title, year)], ['Site TMDB', `${TMDB_WEB}/search/movie`, () => findTmdbWeb('movie', title, year)], ['IMP Awards', IMP, () => findImp(title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('movie', title, year)], ['iTunes', ITUNES, () => findMovie(title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('movie', title, year)]]
+    : [['Sonarr', 'sonarr', () => findArr('tv', title, year)], ['Trakt', 'https://api.trakt.tv', () => findTrakt('tv', title, year)], ['Site TMDB', `${TMDB_WEB}/search/tv`, () => findTmdbWeb('tv', title, year)], ['TVmaze', TVMAZE, () => findShow(title, year, { anime: type === 'anime' })], ['IMDb', IMDB, () => findImdb('tv', title, year)], ['Cinemeta (Stremio)', CINEMETA, () => findCinemeta('tv', title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('tv', title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('tv', title, year)]];
   const out = [];
   for (const [name, base, fn] of jobs) {
     const t0 = Date.now(); for (const k of [...lastStatus.keys()]) if (k.startsWith(base)) lastStatus.delete(k);
     const statusOf = () => { const hit = [...lastStatus.entries()].find(([k]) => k.startsWith(base)); return hit ? hit[1] : null; };
-    const unconfigured = (name === 'Trakt' && !traktIdSet()) || (name === 'OMDb' && !(getSetting('omdb_key', '') || process.env.OMDB_API_KEY));
+    const unconfigured = (name === 'Radarr' && !arrOn('radarr')) || (name === 'Sonarr' && !arrOn('sonarr')) || (name === 'Trakt' && !traktIdSet()) || (name === 'OMDb' && !(getSetting('omdb_key', '') || process.env.OMDB_API_KEY));
     if (unconfigured) { out.push({ source: name, ms: 0, status: 'non configuré' }); continue; }
     try { const r = await fn(); out.push({ source: name, ms: Date.now() - t0, status: statusOf() || (r ? 200 : 'aucun résultat'), poster: r ? r.poster : null }); }
     catch (e) { out.push({ source: name, ms: Date.now() - t0, status: 'injoignable', error: e.message }); }

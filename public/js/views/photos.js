@@ -12,7 +12,7 @@ export async function render(main, { view = 'albums', name } = {}) {
   if (view === 'album') {
     const a = await api(`/api/photos/album?slug=${encodeURIComponent(name || '')}`);
     setTitle(a.name);
-    page.append(h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, a.name), h('p', { class: 'count' }, `${a.photos.length} photo${a.photos.length > 1 ? 's' : ''}`)),
+    page.append(h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, a.name), h('p', { class: 'count' }, `${a.photos.length} photo${a.photos.length > 1 ? 's' : ''}`), a.folder ? h('p', { class: 'muted small album-path', title: 'Emplacement sur le NAS' }, icon('folder'), ' ', a.folder) : null),
       h('div', { class: 'head-tools' }, h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go('/photos') }, icon('back'), 'Albums'),
         h('button', { class: 'btn btn-play btn-small f', onclick: () => viewer(a.photos, 0, true) }, icon('play'), 'Diaporama'))),
     h('div', { class: 'ph-grid' }, a.photos.map((p, i) => h('button', { class: 'ph-cell f', 'aria-label': p.title, onclick: () => viewer(a.photos, i) }, h('img', { src: `/api/photo/${p.id}?w=320`, alt: '', loading: 'lazy' })))));
@@ -43,7 +43,7 @@ function viewer(list, start, slideshow = false) {
     i = (n + list.length) % list.length;
     const p = list[i];
     im.src = `/api/photo/${p.id}?w=${Math.min(2048, Math.round(innerWidth * (devicePixelRatio || 1)))}`;
-    cap.textContent = `${p.title} · ${dateOf(p.date)} · ${i + 1} / ${list.length}`;
+    cap.replaceChildren(`${p.title} · ${dateOf(p.date)} · ${i + 1} / ${list.length}`, p.path ? h('small', { class: 'pv-path' }, p.path) : '');
     // Préchargement de la suivante
     const nx = list[(i + 1) % list.length]; if (nx) { const pre = new Image(); pre.src = `/api/photo/${nx.id}?w=${Math.min(2048, Math.round(innerWidth * (devicePixelRatio || 1)))}`; }
   };

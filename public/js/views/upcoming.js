@@ -185,10 +185,26 @@ export async function renderUpcoming(page, kind, tabs) {
     sug.replaceChildren(h('h2', { class: 'section-title' }, kind === 'movie' ? 'Films à découvrir' : kind === 'anime' ? 'Animés à découvrir' : 'Séries à découvrir',
       h('small', {}, 'pas encore sur le NAS')), h('div', { class: 'up-sug-row' }, sugs.map(sugCard)));
   }
+  // Abonnement iCal : le calendrier du téléphone affiche les épisodes et sorties qui vous concernent
+  async function subscribe() {
+    let url;
+    try { url = (await api('/api/calendar/link')).url; } catch (e) { toast(e.message, true); return; }
+    const webcal = url.replace(/^https?:/, 'webcal:');
+    const field = h('input', { class: 'input', readonly: true, value: url, onfocus: (e) => e.target.select() });
+    sheet('Ajouter à mon calendrier', h('div', { class: 'cal-sheet' },
+      h('p', {}, 'Les épisodes de vos séries, les sorties de films demandées et vos favoris apparaissent dans le calendrier de votre téléphone ou de votre ordinateur, mis à jour tout seuls.'),
+      h('div', { class: 'btn-row' },
+        h('a', { class: 'btn btn-play f', href: webcal }, icon('cal'), 'S’abonner (iPhone, Mac, Outlook)'),
+        h('button', { class: 'btn f', onclick: () => navigator.clipboard?.writeText(url).then(() => toast('Lien copié'), () => {}) }, icon('copy'), 'Copier le lien')),
+      field,
+      h('p', { class: 'muted small' }, 'Google Agenda : Paramètres → Ajouter un agenda → À partir de l’URL, puis collez le lien. Ce lien est personnel : ne le partagez pas. Il ne fonctionne que sur le réseau de la maison (ou à distance si Venus est accessible depuis Internet).')));
+  }
   paintChips(); paintBody();
   const count = d.entries.length;
   page.append(h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, TITLES[kind]),
     h('p', { class: 'count' }, `${count} ${kind === 'movie' ? `sortie${count > 1 ? 's' : ''}` : `épisode${count > 1 ? 's' : ''}`}`)), tabs),
-  h('div', { class: 'up-bar' }, chips, !kids && d.arr ? h('span', { class: 'muted small' }, icon('heart'), ` Favori = téléchargé automatiquement par ${d.app}`) : null),
+  h('div', { class: 'up-bar' }, chips, h('div', { class: 'up-bar-right' },
+    !kids && d.arr ? h('span', { class: 'muted small' }, icon('heart'), ` Favori = téléchargé automatiquement par ${d.app}`) : null,
+    h('button', { class: 'btn btn-small btn-ghost f', title: 'Les sorties de vos séries, films et favoris dans le calendrier de votre téléphone', onclick: subscribe }, icon('cal'), 'Ajouter à mon calendrier'))),
   sug, body);
 }

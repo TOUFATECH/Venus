@@ -67,6 +67,27 @@ function targetBitrate(probe, height, limit) {
   return Math.max(400e3, Math.round(b));
 }
 
+// ---------------------------------------------------------------- dossier des conversions
+// En mémoire vive quand c'est possible (plus rapide, n'use pas le disque), sinon sur le disque.
+// La mémoire est utilisée seulement s'il y reste au moins 1,5 Go de libre.
+// need : place estimée pour toute la lecture (débit × durée restante)
+export function sessionRoot(need = 0) {
+  const fast = config.fastTranscodeDir;
+  if (fast) {
+    try {
+      const st = fs.statfsSync(fast);
+      if (st.bavail * st.bsize >= Math.max(1.5 * 1024 ** 3, need + 0.5 * 1024 ** 3)) { fs.mkdirSync(fast, { recursive: true }); return fast; }
+    } catch { /* absent : disque */ }
+  }
+  return config.transcodeDir;
+}
+export function transcodePlace() {
+  const fast = config.fastTranscodeDir;
+  let ram = null;
+  if (fast) { try { const st = fs.statfsSync(fast); ram = { total: st.blocks * st.bsize, free: st.bavail * st.bsize }; } catch { /* */ } }
+  return { ram, using: sessionRoot() === fast ? 'ram' : 'disk' };
+}
+
 // ---------------------------------------------------------------- sessions HLS
 export const sessions = new Map();
 const MAX_AHEAD = 40;  // segments d'avance avant de mettre ffmpeg en pause (≈ 2 min 40)
@@ -80,7 +101,10 @@ class HlsSession {
     this.item = item; this.probe = probe; this.decision = decision; this.quality = quality;
     this.offset = Math.max(0, Math.floor(start || 0));
     this.profileId = profileId;
-    this.dir = path.join(config.transcodeDir, this.id);
+    // Place nécessaire : débit de sortie × durée restante (les directs : 30 min glissantes)
+    const outRate = decision.copyVideo ? (probe.bitrate || 20e6) : targetBitrate(probe, targetSize(probe.video || { width: 1280, height: 720 }, decision.limitHeight).height, decision.limitBitrate) + 2e5;
+    const secs = live ? 1800 : Math.max(60, (probe.duration || 7200) - this.offset);
+    this.dir = path.join(sessionRoot((outRate / 8) * secs * 1.15), this.id);
     fs.mkdirSync(this.dir, { recursive: true });
     this.lastAccess = Date.now();
     this.lastSeg = 0;

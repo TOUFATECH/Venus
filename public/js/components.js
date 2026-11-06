@@ -91,6 +91,9 @@ export function card(item, opts = {}) {
   const seen = item.status === 'seen' || (p && p.watched && !resume);
   const el = h('button', {
     class: `card f${poster ? ' poster' : ''}`,
+    // Préchargement au survol (app.js) : la fiche s'ouvre ensuite instantanément
+    'data-pre': !isClip ? String(isEp ? item.showId || '' : item.id) : null,
+    'data-bg': !isClip && !isEp && item.backdrop ? item.backdrop : null,
     'aria-label': [title, sub, seen ? 'déjà vu' : null].filter(Boolean).join(', '),
     // Le nom ouvre la fiche (film, série, animé) ; l'image lance la lecture quand c'est le plus utile
     onclick: (e) => {
