@@ -27,6 +27,7 @@ import { canRelay, startRelay, stopRelay, holdRelay, servePlaylistRelay, serveSe
 import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue } from './arr.js';
 import { filmography } from './credits-free.js';
 import { checkNas, nasHealth } from './nas-health.js';
+import { sendSample } from './telegram-media.js';
 import { describe as describeShare } from './netshare.js';
 import { optimizedFor, markUsed, pauseForPlayback, optStatus, runOptimize, clearAll as clearOptimized } from './optimize.js';
 import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
@@ -1136,6 +1137,10 @@ router.post('/api/admin/perf/optimize', async (ctx) => {
   if (b.run) runOptimize().catch(() => {});
   sendJson(ctx.res, optStatus());
 });
+router.post('/api/admin/notify/telegram-sample', async (ctx) => {
+  requireAdmin(ctx);
+  try { sendJson(ctx.res, await sendSample()); } catch (e) { throw new HttpError(400, `Telegram : ${e.message}`); }
+});
 router.post('/api/admin/perf/nas', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await checkNas()); });
 
 router.get('/api/admin/arr', (ctx) => {
@@ -1764,7 +1769,7 @@ router.get('/api/admin', (ctx) => {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
       maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0', trickplay: trickplayMode(),
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
-      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', notifyEpisodes: String(getSetting('notify_episodes', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', backupCopyDir: getSetting('backup_copy_dir', ''), postersFree: getSetting('posters_free', '1') !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
+      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', tgMedia: String(getSetting('tg_media', '1')) !== '0', tgDownloads: String(getSetting('tg_downloads', '1')) !== '0', notifyEpisodes: String(getSetting('notify_episodes', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', backupCopyDir: getSetting('backup_copy_dir', ''), postersFree: getSetting('posters_free', '1') !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
   });
@@ -2172,7 +2177,7 @@ const SETTINGS_SCHEMA = {
   ntfyServer: V.url({ label: 'Serveur ntfy' }), ntfyTopic: V.str({ max: 100, pattern: /^[\w-]+$/, label: 'Sujet ntfy' }),
   discordWebhook: V.url({ https: true, label: 'Webhook Discord' }), telegramToken: V.str({ max: 100, pattern: /^\d+:[\w-]+$/, label: 'Jeton Telegram' }),
   telegramChat: V.str({ max: 40, pattern: /^-?\d+$|^@\w+$/, label: 'Discussion Telegram' }), publicUrl: V.url({ label: 'Adresse publique' }),
-  notifyNew: V.bool(), notifyEpisodes: V.bool(), autoBackup: V.bool(), backupCopyDir: V.str({ max: 1000 }), postersFree: V.bool(), detectSegments: V.bool(), kidsAllowUnrated: V.bool(),
+  notifyNew: V.bool(), tgMedia: V.bool(), tgDownloads: V.bool(), notifyEpisodes: V.bool(), autoBackup: V.bool(), backupCopyDir: V.str({ max: 1000 }), postersFree: V.bool(), detectSegments: V.bool(), kidsAllowUnrated: V.bool(),
   opensubtitlesKey: V.str({ max: 200 }), opensubtitlesUser: V.str({ max: 100 }), opensubtitlesPass: V.str({ max: 200, trim: false }),
   seerrUrl: V.str({ max: 500 }), seerrKey: V.str({ max: 300 }),
   serverName: V.str({ max: 40 }), maxSessions: V.int({ min: 1, max: 20 }), scanInterval: V.int({ min: 5, max: 10080 }),
@@ -2219,6 +2224,8 @@ router.put('/api/admin/settings', async (ctx) => {
     if (b[k] !== undefined) setSetting(key, String(b[k] || '').trim());
   }
   if (typeof b.notifyNew === 'boolean') setSetting('notify_new', b.notifyNew ? '1' : '0');
+  if (typeof b.tgMedia === 'boolean') setSetting('tg_media', b.tgMedia ? '1' : '0');
+  if (typeof b.tgDownloads === 'boolean') setSetting('tg_downloads', b.tgDownloads ? '1' : '0');
   if (typeof b.notifyEpisodes === 'boolean') setSetting('notify_episodes', b.notifyEpisodes ? '1' : '0');
   if (typeof b.autoBackup === 'boolean') setSetting('auto_backup', b.autoBackup ? '1' : '0');
   if (typeof b.postersFree === 'boolean') setSetting('posters_free', b.postersFree ? '1' : '0');

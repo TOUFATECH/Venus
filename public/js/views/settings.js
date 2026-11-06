@@ -558,6 +558,8 @@ export async function render(main, { query } = {}) {
       h('h3', { class: 'box-sub' }, 'Discord et Telegram'),
       field('Webhook Discord', discord),
       h('div', { class: 'two-cols' }, field('Bot Telegram', tgToken), field('Discussion', tgChat)),
+      h('label', { class: 'switch' }, h('span', {}, 'Telegram : une fiche par nouveauté (affiche, résumé, date de sortie, disponible)'), h('input', { type: 'checkbox', class: 'f', checked: n.tgMedia !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { tgMedia: e.target.checked } }); toast('Préférence enregistrée'); } })),
+      h('label', { class: 'switch' }, h('span', {}, 'Telegram : suivre aussi les téléchargements de Radarr et Sonarr (la fiche passe de « en cours » à « téléchargé » puis « disponible »)'), h('input', { type: 'checkbox', class: 'f', checked: n.tgDownloads !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { tgDownloads: e.target.checked } }); toast('Préférence enregistrée'); } })),
       field('Adresse publique de Venus', pub, 'Pour que les liens des notifications ouvrent Venus.'),
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
         h('button', { class: 'btn btn-small f', onclick: async () => {
@@ -568,7 +570,12 @@ export async function render(main, { query } = {}) {
         h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => {
           const r = await api('/api/admin/notify/test', { method: 'POST' });
           toast(r.errors.length ? `Erreur : ${r.errors.join(' ; ')}` : 'Notification de test envoyée', r.errors.length ? true : { type: 'success' });
-        } }, 'Envoyer un test')));
+        } }, 'Envoyer un test'),
+        h('button', { class: 'btn btn-small btn-ghost f', onclick: async (e) => {
+          const b = e.currentTarget; b.disabled = true;
+          try { const r = await api('/api/admin/notify/telegram-sample', { method: 'POST' }); toast(`Fiche de « ${r.title} » envoyée sur Telegram`, { type: 'success' }); } catch (err) { toast(err.message, true); }
+          b.disabled = false;
+        } }, 'Fiche Telegram d’exemple')));
   }
 
   // Affiches : titres sans affiche, recherche sur les services gratuits, choix d'une affiche (propositions ou adresse)

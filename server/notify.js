@@ -105,6 +105,8 @@ async function toDiscord(msg) {
 async function toTelegram(msg) {
   const c = channels();
   if (!c.telegramToken || !c.telegramChat) return;
+  // Nouveautés : déjà annoncées sur Telegram par une fiche avec l'affiche (telegram-media.js)
+  if (msg.tag === 'new' && String(getSetting('tg_media', '1')) !== '0') return;
   const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const url = link(msg.url);
   await fetch(`https://api.telegram.org/bot${c.telegramToken}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000),

@@ -3,6 +3,7 @@ import './logbuf.js'; // journal du serveur (tableau de bord) : chargé en premi
 import { warmUpcoming, wantedArrivals } from './upcoming.js';
 import { runOptimize } from './optimize.js';
 import { checkNas } from './nas-health.js';
+import { pollDownloads, announceArrivals, pruneTgPosts } from './telegram-media.js';
 // Une erreur imprévue dans une tâche de fond ou un flux ne doit pas éteindre tout Venus : elle est notée dans le
 // journal (Serveur → Journal) et le serveur continue. Les erreurs de démarrage, elles, arrêtent bien le processus.
 let started = false;
@@ -152,10 +153,12 @@ async function main() {
   setTimeout(() => warmUpcoming().catch(() => {}), 45000).unref();
   setInterval(() => warmUpcoming().catch(() => {}), 5.5 * 3600e3).unref();
   // Nouveautés : notification, et les envies arrivées passent dans « Ma liste » (avec notification à la personne)
-  let watchSoon = null;
+  let watchSoon = null, tgSoon = null;
   events.on('library', (d) => {
     if (d && d.added && d.added.length) {
       libraryAdded(d.added);
+      // Fiches Telegram (affiche, résumé, date, état) : quelques minutes après, le temps que l'affiche arrive
+      clearTimeout(tgSoon); tgSoon = setTimeout(() => announceArrivals().catch((e) => console.warn('[telegram]', e.message)), 4 * 60e3);
       announceNewEpisodes().catch((e) => console.warn('[nouveaux épisodes]', e.message));
       emitHook('library.added', { titles: d.added.slice(0, 50), count: d.added.length });
       clearTimeout(watchSoon); watchSoon = setTimeout(() => runWatch().catch(() => {}), 90000);
@@ -204,6 +207,7 @@ async function main() {
   defineTask('optimize', { label: 'Versions optimisées', description: 'Prépare une copie H.264 + AAC des vidéos qui doivent être converties à chaque lecture (HEVC, 10 bits, son DTS…), pour qu’elles démarrent tout de suite. Automatique s’il y a de la place, avec la carte graphique (ou la nuit avec le processeur), jamais pendant une lecture.', when: 'Toutes les 30 minutes', every: 30 * 60e3, firstDelay: 10 * 60e3, run: () => runOptimize() });
   defineTask('nas-health', { label: 'Santé du NAS', description: 'Mesure la vitesse de lecture de chaque bibliothèque et prévient si le partage est trop lent ou injoignable.', when: 'Toutes les 6 heures', every: 6 * 3600e3, firstDelay: 8 * 60e3, run: async () => { const r = await checkNas(); const bad = r.libraries.filter((x) => !x.ok); return bad.length ? `À surveiller : ${bad.map((x) => x.name).join(', ')}` : `${r.libraries.length} bibliothèque(s) en forme`; } });
   defineTask('wanted', { label: 'Favoris arrivés', description: 'Prévient chaque profil quand un favori pris dans « À venir » arrive sur le NAS.', when: 'Toutes les 20 minutes', every: 20 * 60e3, firstDelay: 5 * 60e3, run: wantedArrivals });
+  defineTask('telegram', { label: 'Fiches Telegram', description: 'Envoie sur Telegram une fiche par film, série ou animé (affiche, résumé, date de sortie), mise à jour au fil du téléchargement puis de l’arrivée dans Venus.', when: 'Toutes les 2 minutes', every: 2 * 60e3, firstDelay: 90e3, run: async () => { const a = await pollDownloads(); const b = await announceArrivals(); pruneTgPosts(); return `${a} · ${b}`; } });
   defineTask('trickplay', { label: 'Vignettes de la barre de lecture', description: 'Une image toutes les 10 secondes pour chaque film, épisode et clip, montrée au survol de la barre.', every: 6 * 3600e3, firstDelay: 5 * 60e3, run: trickplayBackfill });
   setInterval(() => refreshRatings(), 6 * 3600000).unref();
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)
