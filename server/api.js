@@ -25,6 +25,10 @@ import { guideFor, ensureGuide } from './guide.js';
 import { checkChannels, checkState, channelHealth, FREE_TV, reportChannelFailure } from './free-tv.js';
 import { canRelay, startRelay, stopRelay, holdRelay, servePlaylistRelay, serveSegmentRelay } from './relay.js';
 import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue } from './arr.js';
+import { filmography } from './credits-free.js';
+import { checkNas, nasHealth } from './nas-health.js';
+import { describe as describeShare } from './netshare.js';
+import { optimizedFor, markUsed, pauseForPlayback, optStatus, runOptimize, clearAll as clearOptimized } from './optimize.js';
 import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
 import { checkUpdate, runUpdate, localCommit } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
@@ -32,7 +36,7 @@ import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAY
 import { brokenFiles, weeklyReport } from './reports.js';
 import { setOpinion, opinionOf, genreTaste, tasteScore, storageForecast, logTranscode, transcodeSummary, makeClip, subtitleDrift } from './extras.js';
 import {
-  decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot, warmSnapshots,
+  decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot, warmSnapshots, transcodePlace,
 } from './stream.js';
 import { detectHardware } from './hw.js';
 import { probeLive, readChapters, cachedProbe } from './probe.js';
@@ -733,6 +737,45 @@ router.get('/api/items/:id', async (ctx) => {
     poster: !item.poster ? null : custom && custom.poster ? 'Choisie à la main' : String(item.poster).startsWith('l_') ? 'Image dans le dossier' : String(item.poster).startsWith('k_') ? 'Trakt' : String(item.poster).startsWith('p_') ? 'Service gratuit (IMDb, Cinemeta, site TMDB, IMP Awards, Wikipédia, iTunes, TVmaze)' : 'TMDB',
     file: item.path || null, folder: item.path ? path.dirname(item.path) : null,
   };
+  // Emplacement sur le NAS (administrateurs) : dossier de la série / de chaque saison, ou fichier du film, clip, épisode.
+  // Pour un partage réseau, le chemin est aussi donné comme sur le NAS (\\192.168.1.20\Séries\…).
+  if (p.is_admin) {
+    const lib = item.library_id ? get('SELECT name, path, remote FROM libraries WHERE id = ?', item.library_id) : null;
+    const nasPath = (x) => {
+      if (!x || !lib || !lib.remote) return null;
+      const r = parseJson(lib.remote, null);
+      const base = r ? describeShare(r) : null;
+      if (!base || !x.startsWith(lib.path)) return null;
+      const rest = x.slice(lib.path.length).replace(/^[\\/]+/, '');
+      return r.proto === 'nfs' ? `${base}/${rest}` : `${base}\\${rest.replace(/\//g, '\\')}`;
+    };
+    const common = (list) => {
+      if (!list.length) return null;
+      let pre = path.dirname(list[0]);
+      for (const f of list) while (pre && !(`${f}`.startsWith(pre + path.sep) || f === pre)) { const up = path.dirname(pre); if (up === pre) { pre = ''; break; } pre = up; }
+      return pre || null;
+    };
+    const loc = { library: lib ? lib.name : null, items: [] };
+    if (item.type === 'show') {
+      const eps = all("SELECT path, season_num FROM items WHERE show_id = ? AND type = 'episode' AND path IS NOT NULL", item.id);
+      const dir = common(eps.map((e) => e.path));
+      if (dir) {
+        // Le dossier commun est celui d'une saison quand il n'y en a qu'une : on remonte au dossier de la série
+        const showDir = /^(saison|season|s)\s*\d+$/i.test(path.basename(dir)) ? path.dirname(dir) : dir;
+        loc.items.push({ label: 'Dossier de la série', path: showDir, nas: nasPath(showDir) });
+        const seasons = new Map();
+        for (const e of eps) { const k = e.season_num; if (!seasons.has(k)) seasons.set(k, []); seasons.get(k).push(e.path); }
+        for (const [n, files] of [...seasons.entries()].sort((a, b) => a[0] - b[0])) {
+          const sd = common(files) || path.dirname(files[0]);
+          if (sd !== showDir) loc.items.push({ label: n === 0 ? 'Bonus' : `Saison ${n}`, path: sd, nas: nasPath(sd), count: files.length });
+        }
+      }
+    } else if (item.path) {
+      loc.items.push({ label: 'Fichier', path: item.path, nas: nasPath(item.path), size: item.size || null });
+      loc.items.push({ label: 'Dossier', path: path.dirname(item.path), nas: nasPath(path.dirname(item.path)) });
+    }
+    if (loc.items.length) out.location = loc;
+  }
   // Sous-titres externes dont la durée ne colle pas à la vidéo (probablement pour une autre version)
   if (item.type !== 'show' && item.probe) {
     const pr = parseJson(item.probe, null);
@@ -743,7 +786,7 @@ router.get('/api/items/:id', async (ctx) => {
     : all('SELECT pf.id, pf.name, pf.avatar FROM progress pr JOIN profiles pf ON pf.id = pr.profile_id WHERE pr.item_id = ? AND pr.watched = 1 ORDER BY pf.name', item.id);
   // Notes jamais récupérées (ou anciennes), ou distribution manquante : on les demande tout de suite,
   // elles seront là à la prochaine visite
-  if (['movie', 'show'].includes(item.type) && (!item.ratings_at || Date.now() - item.ratings_at > 10 * 86400000 || (!item.credits && item.tmdb_id && tmdbKey()))) scheduleRatings([item.id], true);
+  if (['movie', 'show'].includes(item.type) && (!item.ratings_at || Date.now() - item.ratings_at > 10 * 86400000 || (!item.credits && (tmdbKey() ? item.tmdb_id : Date.now() - item.ratings_at > 864e5)))) scheduleRatings([item.id], true);
   out.links = {
     senscritique: `https://www.senscritique.com/search?query=${encodeURIComponent(item.title)}`,
     imdb: item.imdb_id ? `https://www.imdb.com/fr/title/${item.imdb_id}/` : null,
@@ -845,12 +888,26 @@ router.get('/api/items/:id', async (ctx) => {
     const dir = path.dirname(item.path || '');
     out.similar = all(`SELECT * FROM items WHERE type = ? AND id != ? ORDER BY added_at DESC LIMIT 200`, item.type, item.id)
       .sort((a, b) => (path.dirname(b.path || '') === dir) - (path.dirname(a.path || '') === dir)).slice(0, 18).map((x) => card(x));
-  } else if (genres.length) {
+  } else {
+    // Plus de ce genre : genres communs, mêmes acteurs, même réalisation, même catégorie (animé / série / film)
+    const cr = parseJson(item.credits, {}) || {};
+    const castNames = (cr.cast || []).slice(0, 10).map((x) => x.name);
+    const dirNames = [...(cr.directors || []), ...(cr.creators || [])].map((x) => x.name);
     const cands = all(`SELECT i.* FROM items i WHERE i.type IN ('movie','show') AND i.id != ? AND ${age.sql}`, item.id, ...age.args);
-    out.similar = cands
-      .map((c) => ({ c, s: parseJson(c.genres, []).filter((g) => genres.includes(g)).length + (c.type === item.type ? 0.5 : 0) }))
-      .filter((x) => x.s >= 1).sort((a, b) => b.s - a.s).slice(0, 18).map((x) => card(x.c));
-  } else out.similar = [];
+    const scored = cands.map((c) => {
+      const g = parseJson(c.genres, []).filter((x) => genres.includes(x)).length;
+      const cc = parseJson(c.credits, {}) || {};
+      const shared = (cc.cast || []).filter((x) => castNames.includes(x.name)).length;
+      const sameDir = [...(cc.directors || []), ...(cc.creators || [])].some((x) => dirNames.includes(x.name));
+      return { c, s: g + shared * 1.5 + (sameDir ? 2 : 0) + (c.type === item.type ? 0.5 : 0) + ((c.category === 'anime') === (item.category === 'anime') ? 0.5 : -1), g, shared, cc };
+    });
+    out.similar = scored.filter((x) => x.g >= 1 || x.shared >= 1).sort((a, b) => b.s - a.s).slice(0, 18).map((x) => card(x.c));
+    // Avec les mêmes acteurs : une rangée par acteur principal présent dans d'autres titres de la médiathèque
+    out.withCast = castNames.slice(0, 5).map((name) => ({
+      name, role: ((cr.cast || []).find((x) => x.name === name) || {}).role || '', photo: ((cr.cast || []).find((x) => x.name === name) || {}).photo || null,
+      items: scored.filter((x) => (x.cc.cast || []).some((p) => p.name === name) || (x.cc.directors || []).some((p) => p.name === name)).sort((a, b) => (b.c.year || 0) - (a.c.year || 0)).slice(0, 18).map((x) => card(x.c)),
+    })).filter((r) => r.items.length).slice(0, 3);
+  }
   sendJson(ctx.res, out);
 });
 
@@ -869,6 +926,45 @@ router.get('/api/upcoming', async (ctx) => {
   }
   sendJson(ctx.res, out);
 });
+// Calendrier « À venir » à ajouter au téléphone (abonnement iCal) : lien secret par profil, sans connexion
+const icalTokens = () => { const m = getSetting('ical_tokens', {}); return m && typeof m === 'object' ? m : {}; };
+function icalTokenFor(pid, reset = false) {
+  const m = icalTokens();
+  let tok = Object.keys(m).find((k) => m[k] === pid);
+  if (tok && reset) { delete m[tok]; tok = null; }
+  if (!tok) { tok = crypto.randomBytes(18).toString('base64url'); m[tok] = pid; setSetting('ical_tokens', m); }
+  return tok;
+}
+const calLink = (ctx, tok) => `${ctx.req.headers['x-forwarded-proto'] === 'https' || ctx.req.socket.encrypted ? 'https' : 'http'}://${String(ctx.req.headers.host || 'localhost').replace(/[^\w.:[\]-]/g, '')}/cal/${tok}.ics`;
+router.get('/api/calendar/link', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, { url: calLink(ctx, icalTokenFor(p.id)) }); });
+router.post('/api/calendar/link/reset', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, { url: calLink(ctx, icalTokenFor(p.id, true)) }); });
+router.get('/cal/:file', async (ctx) => {
+  const tok = String(ctx.params.file || '').replace(/\.ics$/, '');
+  const pid = icalTokens()[tok];
+  const p = pid ? get('SELECT * FROM profiles WHERE id = ?', pid) : null;
+  if (!p) throw new HttpError(404, 'Calendrier introuvable');
+  const parts = await Promise.all([upcomingShows(p, 'show', ageClause(p, 's')), upcomingShows(p, 'anime', ageClause(p, 's')), upcomingMovies(p)].map((x) => x.catch((e) => { console.warn('[calendrier]', e.message); return { entries: [] }; })));
+  const esc = (t) => String(t || '').replace(/\\/g, '\\\\').replace(/[,;]/g, (c) => `\\${c}`).replace(/\r?\n/g, '\\n');
+  const d8 = (iso) => iso.replace(/-/g, '');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Venus//A venir//FR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', `X-WR-CALNAME:${esc(`${getSetting('server_name', 'Venus')} — À venir`)}`, 'X-PUBLISHED-TTL:PT6H', 'REFRESH-INTERVAL;VALUE=DURATION:PT6H'];
+  const seen = new Set();
+  for (const e of parts.flatMap((x) => x.entries || [])) {
+    if (!(e.nas || e.arr || e.wanted)) continue; // seulement ce qui vous concerne : NAS, demandé, favori
+    const title = e.kind === 'movie' ? `${e.title}${e.release ? ` (${e.release.toLowerCase()})` : ''}` : `${e.show} ${e.season != null ? `S${e.season}É${e.episode}` : `épisode ${e.episode}`}`;
+    const uid = `${e.key}-${e.season ?? ''}-${e.episode ?? ''}-${e.date}@venus`;
+    if (seen.has(uid)) continue; seen.add(uid);
+    lines.push('BEGIN:VEVENT', `UID:${esc(uid)}`, `DTSTAMP:${stamp}`);
+    if (e.at) { const t = new Date(e.at).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''); lines.push(`DTSTART:${t}`, 'DURATION:PT1H'); }
+    else { const next = new Date(`${e.date}T00:00:00Z`); next.setUTCDate(next.getUTCDate() + 1); lines.push(`DTSTART;VALUE=DATE:${d8(e.date)}`, `DTEND;VALUE=DATE:${d8(next.toISOString().slice(0, 10))}`); }
+    lines.push(`SUMMARY:${esc(title)}`, `DESCRIPTION:${esc([e.epTitle, e.nas ? 'Sur le NAS' : e.arr ? 'Demandé : téléchargé dès sa sortie' : 'Favori', e.overview].filter(Boolean).join(' — ').slice(0, 600))}`, 'END:VEVENT');
+  }
+  lines.push('END:VCALENDAR');
+  const body = lines.map((l) => (l.length > 74 ? l.match(/.{1,73}/gu).join('\r\n ') : l)).join('\r\n');
+  ctx.res.writeHead(200, { 'Content-Type': 'text/calendar; charset=utf-8', 'Cache-Control': 'private, max-age=1800', 'Content-Disposition': 'inline; filename="venus-a-venir.ics"' });
+  ctx.res.end(body);
+});
+
 // Favori d'un titre pas encore sur le NAS (envoyé à Radarr / Sonarr pour le téléchargement), ou téléchargement direct
 const wantedBody = async (ctx) => {
   const b = validate(await readBody(ctx.req, 16384), {
@@ -956,6 +1052,22 @@ router.get('/api/people', (ctx) => {
   sendJson(ctx.res, rows.map((i) => withStatus(card(i), idx)));
 });
 
+// Filmographie d'une personne hors de la médiathèque (Wikidata), avec ce qui est déjà sur le NAS et les favoris
+router.get('/api/people/films', async (ctx) => {
+  const p = requireProfile(ctx);
+  const name = String(ctx.url.searchParams.get('name') || '').trim().slice(0, 120);
+  if (!name) return sendJson(ctx.res, { items: [] });
+  let list = [];
+  try { list = await filmography(name); } catch (e) { return sendJson(ctx.res, { items: [], error: `Filmographie indisponible pour l’instant (Wikidata ne répond pas : ${e.message})` }); }
+  const byImdb = new Map(all("SELECT id, imdb_id FROM items WHERE imdb_id IS NOT NULL AND type IN ('movie','show')").map((r) => [r.imdb_id, r.id]));
+  const byTitle = new Map(all("SELECT id, type, title, year FROM items WHERE type IN ('movie','show')").map((r) => [`${r.type}|${String(r.title).toLowerCase()}|${r.year || ''}`, r.id]));
+  const wanted = new Set(all('SELECT key FROM wanted WHERE profile_id = ?', p.id).map((r) => r.key));
+  const kids = p.max_age != null;
+  const items = list.map((x) => ({ ...x, key: `imdb:${x.imdb}`, nas: byImdb.get(x.imdb) || byTitle.get(`${x.kind}|${String(x.title).toLowerCase()}|${x.year || ''}`) || null, wanted: wanted.has(`imdb:${x.imdb}`) }))
+    .filter((x) => !kids || x.nas);
+  sendJson(ctx.res, { items, radarr: arrOn('radarr'), sonarr: arrOn('sonarr'), kids });
+});
+
 router.get('/api/mylist', (ctx) => {
   const p = requireProfile(ctx);
   const age = ageClause(p);
@@ -998,6 +1110,34 @@ router.post('/api/arr/add', async (ctx) => {
   sendJson(ctx.res, r);
 });
 router.get('/api/arr/queue', async (ctx) => { arrUser(ctx); sendJson(ctx.res, await arrQueue()); });
+// ------------------------------------------------------------------ performances : carte graphique, mémoire, versions optimisées, NAS
+function hostGpuHint() {
+  // /sys est visible dans le conteneur : une carte présente sur la machine mais pas transmise à Docker se voit ici
+  if (hw.type !== 'none') return null;
+  try {
+    const cards = fs.readdirSync('/sys/class/drm').filter((n) => /^card\d+$/.test(n));
+    for (const c of cards) {
+      const v = fs.readFileSync(`/sys/class/drm/${c}/device/vendor`, 'utf8').trim();
+      const name = { '0x8086': 'Intel', '0x1002': 'AMD', '0x10de': 'NVIDIA' }[v];
+      if (name) return `Une carte graphique ${name} est présente sur la machine mais n’est pas transmise à Venus : lancez « bash update.sh » dans le dossier de Venus pour l’activer.`;
+    }
+  } catch { /* pas de /sys */ }
+  return null;
+}
+router.get('/api/admin/perf', (ctx) => {
+  requireAdmin(ctx);
+  sendJson(ctx.res, { hw: { type: hw.type, label: hw.label, tested: hw.tested, hint: hostGpuHint() }, transcode: transcodePlace(), optimize: optStatus(), nas: nasHealth() });
+});
+router.post('/api/admin/perf/optimize', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req);
+  if (['auto', 'on', 'off'].includes(b.mode)) setSetting('optimize_mode', b.mode);
+  if (b.clear) clearOptimized();
+  if (b.run) runOptimize().catch(() => {});
+  sendJson(ctx.res, optStatus());
+});
+router.post('/api/admin/perf/nas', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await checkNas()); });
+
 router.get('/api/admin/arr', (ctx) => {
   requireAdmin(ctx);
   const view = (app) => { const c = arrConf(app); return { url: c.url, keySet: !!c.key, profile: c.profile, root: c.root, animeRoot: c.animeRoot, on: arrOn(app) }; };
@@ -1162,7 +1302,17 @@ router.post('/api/play/:id', async (ctx) => {
   const sub = subId ? probe.subs.find((s) => s.id === subId) : null;
   const burnIndex = sub && !sub.text && !sub.external ? sub.index : null;
 
-  const decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? 'auto' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
+  let decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? 'auto' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
+  // Version optimisée prête (H.264 + AAC) : lue telle quelle au lieu d'être convertie
+  let playItem = item, playProbe = probe, optimized = false;
+  if (decision.mode === 'transcode' && burnIndex == null && (b.preview || !b.quality || b.quality === 'auto') && audioOrder < 4) {
+    const o = optimizedFor(item);
+    if (o && o.probe) {
+      const d2 = decide(o.probe, { caps: b.caps, audioOrder, quality: 'auto', maxBitrate: Number(b.maxBitrate) || 0 });
+      if (d2.mode !== 'transcode') { decision = { ...d2, reason: 'Version optimisée' }; playItem = { ...item, path: o.path }; playProbe = o.probe; optimized = true; markUsed(item.id); }
+    }
+  }
+  if (!b.preview) pauseForPlayback(); // la préparation des versions optimisées laisse la place à la lecture
   if (decision.mode === 'transcode' && !b.preview && !item.stream_url) { try { logTranscode({ device: deviceLabel(ctx.req.headers['user-agent']), reason: decision.reason, itemId: item.id, codec: probe.video && probe.video.codec, container: path.extname(item.path || '').slice(1) }); } catch (e) { console.warn('[lecture] journal des conversions :', e.message); } }
   decision.burnIndex = b.preview ? null : burnIndex;
   if (!b.preview && dailyLeft(p) === 0) throw new HttpError(403, 'Temps d’écran du jour épuisé pour ce profil. On se retrouve demain !');
@@ -1177,9 +1327,9 @@ router.post('/api/play/:id', async (ctx) => {
   let url, sessionId = null, offset = 0;
   if (b.replace) sessions.get(b.replace)?.stop();
   if (decision.mode === 'direct') {
-    url = `/api/stream/${item.id}/file?token=${encodeURIComponent(token)}`;
+    url = `/api/stream/${item.id}/file?token=${encodeURIComponent(token)}${optimized ? '&v=opt' : ''}`;
   } else {
-    const s = startSession({ item, probe, decision, start, profileId: p.id, quality: b.quality || 'auto' });
+    const s = startSession({ item: playItem, probe: playProbe, decision, start, profileId: p.id, quality: b.quality || 'auto' });
     sessionId = s.id; offset = s.offset;
     url = `/api/hls/${s.id}/index.m3u8`;
   }
@@ -1295,7 +1445,30 @@ router.get('/api/stream/:id/file', (ctx) => {
   const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
   if (!item || !item.path) throw new HttpError(404, 'Introuvable');
   if (!visible(p, item)) throw new HttpError(403, 'Interdit');
-  sendFile(ctx.req, ctx.res, item.path, { cache: 'private, max-age=3600' });
+  const o = ctx.url.searchParams.get('v') === 'opt' ? optimizedFor(item) : null;
+  sendFile(ctx.req, ctx.res, o ? o.path : item.path, { cache: 'private, max-age=3600' });
+});
+
+// Épisode suivant préparé à l'avance : début du fichier lu (le NAS se réveille et le garde en cache), chapitres lus
+const prepared = new Map();
+router.post('/api/items/:id/prepare', async (ctx) => {
+  const p = requireProfile(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item || !item.path || !visible(p, item)) throw new HttpError(404, 'Introuvable');
+  if (Date.now() - (prepared.get(item.id) || 0) < 600000) return sendJson(ctx.res, { ok: true, cached: true });
+  prepared.set(item.id, Date.now());
+  const o = optimizedFor(item);
+  const warm = (file, bytes) => new Promise((resolve) => {
+    let n = 0;
+    const st = fs.createReadStream(file, { start: 0, end: bytes - 1, highWaterMark: 1 << 20 });
+    st.on('data', (c) => { n += c.length; }); st.on('end', () => resolve(n)); st.on('error', () => resolve(0));
+  });
+  const read = await warm(o ? o.path : item.path, 24 * 1024 * 1024);
+  const probe = parseJson(item.probe, null);
+  if (probe && !probe.chaptersChecked) {
+    try { probe.chapters = await readChapters(item.path, probe.duration); probe.chaptersChecked = true; run('UPDATE items SET probe = ? WHERE id = ?', JSON.stringify(probe), item.id); } catch { /* */ }
+  }
+  sendJson(ctx.res, { ok: true, read, optimized: !!o });
 });
 
 // Relais des chaînes (voir relay.js)
@@ -1358,10 +1531,13 @@ router.get('/img/:name', async (ctx) => {
   const src = path.join(imagesDir, name);
   // Version réduite (affiches des grilles, vignettes) : faite une fois par ffmpeg, puis gardée
   const w = Number(ctx.url.searchParams.get('w'));
-  if ([185, 342, 500, 780].includes(w) && /\.(jpe?g|png|webp)$/i.test(name) && fs.existsSync(src)) {
-    const out = path.join(imagesDir, 'w', `${w}_${name.replace(/\.(png|webp)$/i, '.jpg')}`);
+  if ([185, 342, 500, 780, 1280].includes(w) && /\.(jpe?g|png|webp)$/i.test(name) && fs.existsSync(src)) {
+    // WebP quand le navigateur le prend (30 à 50 % plus léger) et que ffmpeg sait le faire
+    const webp = /image\/webp/.test(ctx.req.headers.accept || '') && await webpOk();
+    ctx.res.setHeader('Vary', 'Accept');
+    const out = path.join(imagesDir, 'w', `${w}_${name.replace(/\.(jpe?g|png|webp)$/i, webp ? '.webp' : '.jpg')}`);
     if (!fs.existsSync(out)) {
-      if (!resizing.has(out)) resizing.set(out, resizeImage(src, out, w).finally(() => resizing.delete(out)));
+      if (!resizing.has(out)) resizing.set(out, resizeImage(src, out, w, webp).finally(() => resizing.delete(out)));
       const ok = await resizing.get(out);
       if (!ok) return sendFile(ctx.req, ctx.res, src, { cache: 'public, max-age=2592000, immutable' });
     }
@@ -1370,12 +1546,15 @@ router.get('/img/:name', async (ctx) => {
   sendFile(ctx.req, ctx.res, src, { cache: 'public, max-age=2592000, immutable' });
 });
 const resizing = new Map();
-function resizeImage(src, out, w) {
+let webpCheck = null;
+const webpOk = () => (webpCheck ||= new Promise((resolve) => execFile(config.ffmpeg, ['-hide_banner', '-encoders'], { timeout: 10000 }, (e, out) => resolve(!e && /libwebp/.test(String(out))))));
+function resizeImage(src, out, w, webp = false) {
   return new Promise((resolve) => {
     fs.mkdirSync(path.dirname(out), { recursive: true });
-    execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', src, '-vf', `scale='min(${w},iw)':-2`, '-q:v', '4', '-y', `${out}.tmp.jpg`], { timeout: 20000 }, (err) => {
-      if (err) { try { fs.unlinkSync(`${out}.tmp.jpg`); } catch { /* */ } return resolve(false); }
-      try { fs.renameSync(`${out}.tmp.jpg`, out); resolve(true); } catch { resolve(false); }
+    const tmp = `${out}.tmp.${webp ? 'webp' : 'jpg'}`;
+    execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', src, '-vf', `scale='min(${w},iw)':-2`, ...(webp ? ['-c:v', 'libwebp', '-quality', '78', '-compression_level', '4'] : ['-q:v', '4']), '-y', tmp], { timeout: 20000 }, (err) => {
+      if (err) { try { fs.unlinkSync(tmp); } catch { /* */ } return resolve(false); }
+      try { fs.renameSync(tmp, out); resolve(true); } catch { resolve(false); }
     });
   });
 }
@@ -2674,9 +2853,12 @@ router.get('/api/photos/album', (ctx) => {
   let key = String(ctx.url.searchParams.get('key') || '').slice(0, 1000);
   const slug = String(ctx.url.searchParams.get('slug') || '').toLowerCase();
   if (slug) { const hit = all("SELECT DISTINCT key FROM items WHERE type = 'photo'").find((r) => cleanName(r.key).toLowerCase() === slug); key = hit ? hit.key : ''; }
-  const list = all(`SELECT i.id, i.title, i.release_date, i.size FROM items i WHERE i.type = 'photo' AND i.key = ? AND ${lib.sql} ORDER BY i.release_date, i.sort_title`, key, ...lib.args);
+  const list = all(`SELECT i.id, i.title, i.release_date, i.size, i.path FROM items i WHERE i.type = 'photo' AND i.key = ? AND ${lib.sql} ORDER BY i.release_date, i.sort_title`, key, ...lib.args);
   if (!list.length) throw new HttpError(404, 'Album introuvable');
-  sendJson(ctx.res, { key, slug: cleanName(key), name: path.basename(key) || key, photos: list.map((x) => ({ id: x.id, title: x.title, date: x.release_date, size: x.size })) });
+  // Administrateurs : emplacement de l'album et de chaque photo sur le NAS
+  const admin = !!p.is_admin;
+  sendJson(ctx.res, { key, slug: cleanName(key), name: path.basename(key) || key, folder: admin && list[0].path ? path.dirname(list[0].path) : null,
+    photos: list.map((x) => ({ id: x.id, title: x.title, date: x.release_date, size: x.size, path: admin ? x.path : undefined })) });
 });
 const photoCache = path.join(config.dataDir, 'cache', 'photos');
 router.get('/api/photo/:id', async (ctx) => {

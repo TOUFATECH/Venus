@@ -122,7 +122,10 @@ export function logoMark() { const t = document.createElement('template'); t.inn
 export function brand(cls = '') { return h('span', { class: `brand ${cls}` }, logoMark(), h('span', { class: 'brand-name' }, brandName())); }
 
 // Image du serveur ; w = largeur voulue (342 affiches, 780 vignettes) : le serveur l'envoie déjà réduite, bien plus légère
-export const img = (name, w) => (!name ? null : /^(data:|blob:|https?:)/.test(name) ? name : `/img/${encodeURIComponent(name)}${w ? `?w=${w}` : ''}`);
+// Écrans haute densité (iPhone, Mac Retina) : l'image réduite d'un cran au-dessus, pour rester nette
+const HIDPI = { 185: 342, 342: 500, 500: 780, 780: 1280 };
+const sharp = (w) => (w && typeof devicePixelRatio === 'number' && devicePixelRatio >= 1.5 && HIDPI[w] ? HIDPI[w] : w);
+export const img = (name, w) => (!name ? null : /^(data:|blob:|https?:)/.test(name) ? name : `/img/${encodeURIComponent(name)}${w ? `?w=${sharp(w)}` : ''}`);
 export const hueOf = (s) => { let x = 0; for (const c of String(s)) x = (x * 31 + c.charCodeAt(0)) % 360; return x; };
 
 // Image absente : fond coloré (couleur tirée du titre), sans texte quand le nom est déjà écrit à côté

@@ -1,7 +1,7 @@
 // Réglages : mon profil (tous) + administration du serveur (administrateur)
 import { api, auth, preferredQuality, setPreferredQuality, prefs, hoverMode, heroTrailers, detailsTrailers } from '../api.js';
 import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet, passwordProblem, passwordMeter } from '../ui.js';
-import { state, switchProfile, go } from '../app.js';
+import { state, switchProfile, go, liteSetting, applyLite } from '../app.js';
 import { openSourceWizard } from './source-wizard.js';
 import { NAV_ITEMS, menuPrefs, saveMenuPrefs, resetMenuPrefs, labelOf, iconOf } from '../menu.js';
 import { PLANETS, currentPlanet, setPlanet, planetMarkup, glassMode, setGlassMode, sunInfo, LAYOUTS, layoutOf } from '../themes.js';
@@ -92,6 +92,23 @@ export async function render(main, { query } = {}) {
 
   const menuBox = menuEditor(me);
   const themeBox = themeEditor();
+  // Fluidité : effets complets, mode léger (sans flou ni animations lourdes) ou choix automatique selon l'appareil
+  const fluidBox = (() => {
+    const box = h('section', { class: 'box' });
+    const paint = () => {
+      const cur = liteSetting();
+      const on = document.documentElement.classList.contains('lite');
+      box.replaceChildren(h('h2', {}, 'Fluidité'),
+        h('p', { class: 'muted' }, 'Le mode léger coupe les flous et les effets lourds : utile sur une télé, une box ou un vieux téléphone. En automatique, Venus le choisit selon l’appareil et la fluidité mesurée.'),
+        h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Fluidité' }, [['auto', 'Automatique'], ['off', 'Effets complets'], ['on', 'Mode léger']].map(([k, label]) => h('button', {
+          class: `seg-b f${k === cur ? ' on' : ''}`, role: 'radio', 'aria-checked': String(k === cur),
+          onclick: () => { try { localStorage.setItem('vn_lite', k); if (k === 'auto') localStorage.removeItem('vn_lite_auto'); } catch { /* */ } applyLite(); paint(); },
+        }, label))),
+        h('p', { class: 'muted small' }, `Sur cet appareil : ${on ? 'mode léger' : 'effets complets'}.`));
+    };
+    paint();
+    return box;
+  })();
   page.append(h('div', { class: 'page-head' }, h('h1', {}, 'Réglages'),
     me.isAdmin ? h('button', { class: 'tool f', onclick: () => go('/dashboard') }, icon('gauge'), 'Tableau de bord') : null));
   // Une rubrique à la fois : onglets en haut, seuls les blocs de la rubrique choisie sont affichés.
@@ -102,7 +119,7 @@ export async function render(main, { query } = {}) {
     ...(me.isAdmin ? [
       ['Médias', [['medias', 'Médiathèques', 'folder'], ['tv', 'TV en direct', 'live'], ['infos', 'Infos et affiches', 'spark'], ['notes', 'Notes des sites', 'heart'], ['demandes', 'Demandes', 'download']]],
       ['Foyer', [['famille', 'Profils et appareils', 'people'], ['alertes', 'Notifications', 'chat']]],
-      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['serveur', 'Serveur', 'server'], ['sauvegardes', 'Sauvegardes', 'copy']]],
+      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['perf', 'Performances', 'spark'], ['serveur', 'Serveur', 'server'], ['sauvegardes', 'Sauvegardes', 'copy']]],
     ] : []),
   ];
   const TABS = NAV.flatMap(([, items]) => items);
@@ -141,7 +158,7 @@ export async function render(main, { query } = {}) {
   };
   page.append(h('div', { class: 'set-layout' }, tabBar, h('div', { class: 'set-main' }, bodyHead, body)));
   paintTabs();
-  if (!me.isAdmin) { groups.profil = [myBox]; groups.appareil = [deviceBox]; groups.affichage = [themeBox, menuBox]; paintBody(); toMenu(); return; }
+  if (!me.isAdmin) { groups.profil = [myBox]; groups.appareil = [deviceBox]; groups.affichage = [themeBox, fluidBox, menuBox]; paintBody(); toMenu(); return; }
 
   // ----------------------------------------------------------- administration
   const grid = body;
@@ -152,6 +169,7 @@ export async function render(main, { query } = {}) {
     infos: (a) => [metadataBox(a), postersBox(a)], notes: (a) => [ratingsBox(a)], demandes: (a) => [arrBox(a), seerrBox(a)],
     famille: (a) => [profilesBox(a), devicesBox(a)], alertes: (a) => [notifyBox(a)],
     lecture: (a) => [playbackBox(a), subtitlesBox(a)], serveur: (a) => [serverBox(a)], sauvegardes: (a) => [backupBox(a)],
+    perf: () => perfBoxes(),
   });
   // Données dont dépend chaque rubrique ; l'état des lectures en cours et l'usage système bougent sans cesse :
   // on les arrondit pour ne pas reconstruire la rubrique à chaque seconde
@@ -167,10 +185,11 @@ export async function render(main, { query } = {}) {
     infos: (a) => pick(a, ['settings', 'unmatched']),
     alertes: (a) => pick(a, ['settings']),
     serveur: (a) => JSON.stringify([a.settings, a.version, roughSys(a)]),
+    perf: () => 'auto', // la rubrique se rafraîchit toute seule
   });
   groups.profil = [myBox];
   groups.appareil = [deviceBox];
-  groups.affichage = [themeBox, menuBox];
+  groups.affichage = [themeBox, fluidBox, menuBox];
 
   // L'utilisateur est en train de se servir de la rubrique : on ne touche à rien
   let lastUse = 0;
@@ -280,6 +299,50 @@ export async function render(main, { query } = {}) {
         h('button', { class: 'btn btn-small f', disabled: s.running, onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: {} }); toast('Recherche des nouveautés lancée'); refresh(); } }, 'Rechercher les nouveautés'),
         h('button', { class: 'btn btn-small btn-ghost f', disabled: s.running, onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: { force: true } }); toast('Analyse complète lancée'); refresh(); } }, 'Tout réanalyser')),
       s.lastScan ? h('p', { class: 'lib-foot' }, `Dernière vérification : ${new Date(s.lastScan).toLocaleString('fr-FR')}. Les dossiers du serveur sont surveillés en continu, les partages réseau vérifiés toutes les 10 minutes.`) : null);
+  }
+
+  // ----------------------------------------------------------- performances (s'active tout seul selon le matériel et la place)
+  let perfCache = null;
+  function perfBoxes() {
+    const hwBox = h('section', { class: 'box' }), optBox = h('section', { class: 'box' }), nasBox = h('section', { class: 'box' });
+    const GB = 1024 ** 3, go1 = (n) => `${(n / GB).toFixed(n >= 10 * GB ? 0 : 1).replace('.', ',')} Go`;
+    const paint = (d) => {
+      const o = d.optimize, t = d.transcode;
+      hwBox.replaceChildren(h('h2', {}, 'Carte graphique et mémoire'),
+        h('dl', { class: 'kv' },
+          h('dt', {}, 'Conversion vidéo'), h('dd', {}, d.hw.type !== 'none' ? h('span', { class: 'ok-text' }, `${d.hw.label} : activée`) : 'Processeur (aucune carte graphique disponible)'),
+          h('dt', {}, 'Fichiers de conversion'), h('dd', {}, t.ram ? `En mémoire vive (${go1(t.ram.free)} libres sur ${go1(t.ram.total)})${t.using === 'ram' ? '' : ' — pleine pour l’instant, le disque prend le relais'}` : 'Sur le disque')),
+        d.hw.hint ? h('p', { class: 'warn-text' }, d.hw.hint) : null,
+        !t.ram ? h('p', { class: 'muted small' }, 'Pour convertir en mémoire vive (plus rapide), lancez « bash update.sh » dans le dossier de Venus : il l’active tout seul si la machine a au moins 6 Go de mémoire, et ajoute la carte graphique si elle existe.') : null);
+      const STATE = { ready: 'Prête', waiting: 'En attente', off: 'Désactivée' };
+      optBox.replaceChildren(h('h2', {}, 'Versions optimisées'),
+        h('p', { class: 'muted' }, 'Pour les vidéos que vos appareils ne lisent pas tels quels (HEVC, 10 bits, son DTS…), Venus prépare une copie H.264 + AAC : elles démarrent tout de suite, sans conversion. Automatique quand il y a de la place (50 Go et 15 % libres) ; avec la carte graphique dès que personne ne regarde, sinon la nuit.'),
+        h('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Versions optimisées' }, [['auto', 'Automatique'], ['on', 'Toujours'], ['off', 'Jamais']].map(([k, label]) => h('button', {
+          class: `seg-b f${o.mode === k ? ' on' : ''}`, role: 'radio', 'aria-checked': String(o.mode === k),
+          onclick: async () => { try { perfCache.optimize = await api('/api/admin/perf/optimize', { method: 'POST', body: { mode: k } }); paint(perfCache); } catch (e) { toast(e.message, true); } },
+        }, label))),
+        h('dl', { class: 'kv' },
+          h('dt', {}, 'État'), h('dd', {}, `${STATE[o.state] || o.state} : ${o.why}`),
+          h('dt', {}, 'Copies prêtes'), h('dd', {}, `${o.count} (${go1(o.used)} sur ${go1(o.budget)} réservés)`),
+          o.current ? h('dt', {}, 'En cours') : null, o.current ? h('dd', {}, `${o.current.title} — ${o.current.pct} %`) : null,
+          o.queue ? h('dt', {}, 'En attente') : null, o.queue ? h('dd', {}, `${o.queue} vidéo(s)`) : null),
+        h('div', { class: 'btn-row' },
+          h('button', { class: 'btn btn-small f', onclick: async () => { await api('/api/admin/perf/optimize', { method: 'POST', body: { run: true } }); toast('Préparation lancée (si les conditions le permettent)'); setTimeout(load, 1500); } }, icon('play'), 'Préparer maintenant'),
+          o.count ? h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { if (!(await confirmSheet(`Effacer les ${o.count} copies (${go1(o.used)}) ?`, 'Effacer'))) return; await api('/api/admin/perf/optimize', { method: 'POST', body: { clear: true } }); load(); } }, icon('trash'), 'Effacer les copies') : null));
+      const n = d.nas;
+      nasBox.replaceChildren(h('h2', {}, 'Santé du NAS'),
+        h('p', { class: 'muted' }, 'Vitesse de lecture réelle de chaque bibliothèque, comparée aux vidéos les plus lourdes. Mesurée toutes les 6 heures ; vous êtes prévenu si le partage devient trop lent ou injoignable.'),
+        n && n.libraries.length ? h('div', { class: 'nas-list' }, n.libraries.map((l) => h('div', { class: `nas-row${l.ok ? '' : ' bad'}` },
+          h('span', { class: 'nas-dot', 'aria-hidden': 'true' }), h('div', {}, h('b', {}, l.name), h('small', {}, l.error || l.verdict), h('code', {}, l.path)),
+          l.readMbps != null ? h('span', { class: 'nas-speed' }, `${String(l.readMbps).replace('.', ',')} Mo/s`) : null))) : h('p', { class: 'muted' }, 'Pas encore mesuré.'),
+        n ? h('p', { class: 'muted small' }, `Dernière mesure : ${new Date(n.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`) : null,
+        h('button', { class: 'btn btn-small f', onclick: async (e) => { const b = e.currentTarget; b.disabled = true; b.replaceChildren(icon('refresh'), 'Mesure en cours…'); try { perfCache.nas = await api('/api/admin/perf/nas', { method: 'POST' }); paint(perfCache); } catch (err) { toast(err.message, true); b.disabled = false; } } }, icon('refresh'), 'Mesurer maintenant'));
+    };
+    const load = async () => { try { perfCache = await api('/api/admin/perf'); if (!inUse()) paint(perfCache); } catch (e) { hwBox.replaceChildren(h('p', { class: 'error-text' }, e.message)); } };
+    if (perfCache) paint(perfCache); else hwBox.append(h('p', { class: 'muted' }, 'Chargement…'));
+    load();
+    const iv = setInterval(() => { if (!hwBox.isConnected) return clearInterval(iv); load(); }, 10000);
+    return [hwBox, optBox, nasBox];
   }
 
   function playbackBox(a) {

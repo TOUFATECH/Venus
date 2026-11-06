@@ -3478,3 +3478,45 @@ html:not(.touch) .up-card:hover .up-pic, .up-card .up-pic:focus-visible, html:no
 @media (max-width: 760px) { .pv-c.pv-rec { display: none; } }
 .tvx-tools .chips > * { white-space: nowrap; flex: none; }
 .tvx > * { min-width: 0; }
+/* =====================================================================
+   Fluidité : les rangées et les jours hors de l'écran ne sont pas dessinés tant qu'on n'arrive pas dessus
+   ===================================================================== */
+.rows > .row:nth-child(n+4), .upcoming > .up-day:nth-child(n+4) { content-visibility: auto; contain-intrinsic-size: auto 360px; }
+
+/* Mode léger (télé, box, petits appareils, ou réglage) : pas de flou ni d'effets coûteux */
+html.lite *, html.lite *::before, html.lite *::after { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+html.lite .card .shot, html.lite .card .shot::before, html.lite .card .shot::after, html.lite .up-pic, html.lite .up-sug-pic { animation: none !important; }
+html.lite .card .shot::after { display: none; }
+html.lite .page, html.lite .page-in, html.lite .rail a, html.lite .card .shot { transition-duration: .12s !important; }
+html.lite .rail, html.lite .mobile-top, html.lite .tabbar, html.lite .sheet, html.lite .mini-player, html.lite .toast { background-color: rgb(var(--deep-rgb)) !important; }
+html.lite .hero-bg img, html.lite .details-bg img { filter: none !important; }
+html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, html.lite .card.is-focus .shot { box-shadow: 0 0 0 3px rgb(var(--sulfur-rgb)) !important; }
+
+/* Fiche d'une personne : photo, médiathèque, puis toute sa filmographie */
+.person-head { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+.person-photo { width: 84px; height: 84px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 2px var(--edge); }
+.person-sub { margin: 22px 0 10px; font-size: 1.05rem; }
+.person-out { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 16px 12px; }
+.person-out .up-sug { width: auto; }
+.d-withcast .linkish, .linkish { cursor: pointer; }
+.d-withcast .linkish:hover { color: var(--sulfur); text-decoration: underline; text-underline-offset: 4px; }
+.prov-file.loc { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.prov-file.loc code { word-break: break-all; white-space: normal; font-size: .82rem; }
+.prov-file.loc small { word-break: break-all; }
+.pv-cap .pv-path { display: block; opacity: .7; font-size: .76rem; margin-top: 2px; word-break: break-all; }
+.album-path { display: flex; align-items: center; gap: 4px; word-break: break-all; }
+.album-path svg { width: 15px; height: 15px; flex: none; }
+
+/* Réglages → Performances */
+.nas-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.nas-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: rgb(var(--raise-rgb) / .5); }
+.nas-row > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.nas-row small { color: var(--haze); }
+.nas-row code { font-size: .74rem; color: var(--dim); word-break: break-all; }
+.nas-dot { width: 10px; height: 10px; border-radius: 50%; background: #1f9d55; box-shadow: 0 0 0 4px rgb(31 157 85 / .18); }
+.nas-row.bad .nas-dot { background: #e8364f; box-shadow: 0 0 0 4px rgb(232 54 79 / .2); }
+.nas-speed { font-weight: 800; font-variant-numeric: tabular-nums; }
+.warn-text { color: #f0b429; font-weight: 600; }
+.up-bar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.cal-sheet { display: flex; flex-direction: column; gap: 12px; }
+.cal-sheet .input { font-size: .8rem; }

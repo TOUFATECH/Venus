@@ -10,7 +10,8 @@
 // SensCritique n'a pas d'API publique : l'interface propose un lien vers sa recherche.
 //
 // Tout est récupéré en arrière-plan, un titre à la fois, et rafraîchi tous les 10 jours.
-import { all, get, run, getSetting } from './db.js';
+import { all, get, run, getSetting, setSetting } from './db.js';
+import { freeCredits } from './credits-free.js';
 import { tmdb, tmdbKey, lang, downloadImage, refreshSeasonLists } from './metadata.js';
 import { traktId, traktFind, downloadTraktImage, posterSource } from './trakt.js';
 
@@ -117,6 +118,18 @@ export async function enrich(item) {
       trailer = pickTrailer(d.videos && d.videos.results) || trailer;
       if (kind === 'tv') await refreshSeasonLists(item, d);
     } catch { /* TMDB injoignable : on garde le reste */ }
+  }
+
+  // Sans clé TMDB : distribution et équipe depuis Cinemeta (IMDb) ou TVmaze, et la note IMDb
+  if (!credits) {
+    try {
+      const fc = await freeCredits(item, imdb);
+      if (fc) {
+        if (fc.credits) { credits = fc.credits; ok = true; }
+        imdb = imdb || fc.imdb;
+        if (fc.rating && !r.imdb) r.imdb = fc.rating;
+      }
+    } catch { /* services injoignables : on réessaiera */ }
   }
 
   if (isAnime(item, d)) {
@@ -239,6 +252,11 @@ async function pump() {
 }
 // Titres jamais notés, ou notés il y a plus de 10 jours
 export function refreshRatings({ force = false } = {}) {
+  // Une fois : les titres sans distribution sont repris (distribution désormais trouvée sans clé TMDB)
+  if (Number(getSetting('credits_free_v', 0)) < 1) {
+    run("UPDATE items SET ratings_at = NULL WHERE type IN ('movie','show') AND credits IS NULL");
+    setSetting('credits_free_v', 1);
+  }
   const rows = all(`SELECT id FROM items WHERE type IN ('movie','show') AND (? OR ratings_at IS NULL OR ratings_at < ?)
     ORDER BY ratings_at IS NOT NULL, added_at DESC`, force ? 1 : 0, Date.now() - 10 * DAY);
   scheduleRatings(rows.map((r) => r.id));

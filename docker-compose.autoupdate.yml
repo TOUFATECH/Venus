@@ -25,7 +25,7 @@ services:
             git fetch -q origin main
             if [ "$$(git rev-parse HEAD)" != "$$(git rev-parse origin/main)" ]; then
               echo "[autoupdate] nouvelle version : mise à jour…"
-              git pull -q --ff-only && docker compose -f "$$VENUS_DIR/docker-compose.yml" up -d --build venus && echo "[autoupdate] Venus mis à jour"
+              git pull -q --ff-only && docker compose --project-directory "$$VENUS_DIR" up -d --build venus && echo "[autoupdate] Venus mis à jour"
             fi
             sleep 3600
           fi

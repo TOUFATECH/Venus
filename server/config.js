@@ -43,6 +43,8 @@ export const config = {
   host: env.HOST || '0.0.0.0',
   dataDir: path.resolve(defaultDataDir()),
   transcodeDir: path.resolve(env.TRANSCODE_DIR || path.join(os.tmpdir(), 'venus-transcode')),
+  // Dossier de conversion en mémoire vive (tmpfs, ajouté par update.sh quand la machine a assez de RAM)
+  fastTranscodeDir: env.VENUS_FAST_TRANSCODE ? path.resolve(env.VENUS_FAST_TRANSCODE) : null,
   ffmpeg: findFfmpeg('ffmpeg'),
   ffprobe: findFfmpeg('ffprobe'),
   // Bibliothèques par défaut (montées par Docker)

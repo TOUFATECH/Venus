@@ -151,9 +151,10 @@ export async function arrKnown() {
 export const forgetKnown = () => { known.at = 0; };
 
 // Ajout à partir de ce qu'on sait du titre : identifiant TMDB (film), TVDB (série), sinon recherche par nom
-export async function arrGrab({ kind, tmdb = null, tvdb = null, title = '', year = null }) {
+export async function arrGrab({ kind, tmdb = null, tvdb = null, imdb = null, title = '', year = null }) {
   if (kind === 'movie') {
     let id = tmdb;
+    if (!id && imdb) { const l = await call('radarr', `/api/v3/movie/lookup?term=${encodeURIComponent(`imdb:${imdb}`)}`) || []; id = l[0] && l[0].tmdbId; }
     if (!id && title) {
       const list = await call('radarr', `/api/v3/movie/lookup?term=${encodeURIComponent(title)}`) || [];
       const hit = list.find((m) => norm(m.title) === norm(title) && (!year || Math.abs((m.year || 0) - year) <= 1)) || list[0];
@@ -163,6 +164,7 @@ export async function arrGrab({ kind, tmdb = null, tvdb = null, title = '', year
     const r = await arrAdd('movie', id); forgetKnown(); return r;
   }
   let id = tvdb;
+  if (!id && imdb) { const l = await call('sonarr', `/api/v3/series/lookup?term=${encodeURIComponent(`imdb:${imdb}`)}`).catch(() => []) || []; id = l[0] && l[0].tvdbId; }
   if (!id && title) {
     const list = await call('sonarr', `/api/v3/series/lookup?term=${encodeURIComponent(title)}`) || [];
     const anime = (x) => x.seriesType === 'anime' || (x.genres || []).includes('Anime');

@@ -243,6 +243,60 @@ export function setTitle(prefix) {
   document.title = prefix ? `${prefix} — ${custom}` : custom;
 }
 // Menu en haut (thème Cinéma) : transparent en haut de page, fond plein dès qu'on fait défiler
+// ---------------------------------------------------------------- préchargement au survol
+// La souris s'arrête sur une affiche : la fiche (données et image de fond) est chargée tout de suite,
+// pour s'ouvrir instantanément au clic. Rien sur écran tactile (pas de survol) ni en économie de données.
+let preTimer = 0;
+const preDone = new Set();
+document.addEventListener('pointerover', (e) => {
+  if (e.pointerType !== 'mouse') return;
+  const c = e.target.closest && e.target.closest('[data-pre]');
+  if (!c || preDone.has(c.dataset.pre) || (navigator.connection && navigator.connection.saveData)) return;
+  clearTimeout(preTimer);
+  preTimer = setTimeout(() => {
+    const id = c.dataset.pre;
+    if (!id || preDone.has(id) || !c.matches(':hover')) return;
+    preDone.add(id);
+    api(`/api/items/${id}`).catch(() => preDone.delete(id));
+    if (c.dataset.bg) { const im = new Image(); im.decoding = 'async'; im.src = /^(https?:|data:)/.test(c.dataset.bg) ? c.dataset.bg : `/img/${encodeURIComponent(c.dataset.bg)}?w=1280`; }
+  }, 140);
+}, { passive: true });
+
+// ---------------------------------------------------------------- mode léger (appareils modestes)
+// Auto : télé, box, vieux téléphone, économie de données ou animations réduites → flous et effets coupés.
+// Sinon on mesure la fluidité réelle quelques secondes après l'ouverture : si les images sautent, mode léger.
+export function liteSetting() { try { return localStorage.getItem('vn_lite') || 'auto'; } catch { return 'auto'; } }
+export function applyLite() {
+  const set = liteSetting();
+  let on = set === 'on';
+  if (set === 'auto') {
+    const ua = navigator.userAgent;
+    const tv = /SmartTV|SMART-TV|Tizen|Web0S|webOS|NetCast|AFT[A-Z]|BRAVIA|Android TV|CrKey|HbbTV|PlayStation|Xbox/i.test(ua);
+    const weak = (navigator.deviceMemory && navigator.deviceMemory <= 2) || (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 2);
+    const save = navigator.connection && navigator.connection.saveData;
+    let measured = null; try { measured = localStorage.getItem('vn_lite_auto'); } catch { /* */ }
+    on = tv || weak || save || matchMedia('(prefers-reduced-motion: reduce)').matches || measured === '1';
+  }
+  document.documentElement.classList.toggle('lite', !!on);
+  return on;
+}
+applyLite();
+setTimeout(() => {
+  if (liteSetting() !== 'auto' || document.documentElement.classList.contains('lite') || document.hidden) return;
+  try { if (localStorage.getItem('vn_lite_auto') === '0') return; } catch { /* */ }
+  const times = []; let last = performance.now(), n = 0;
+  const tick = (t) => {
+    times.push(t - last); last = t;
+    if (++n < 90 && !document.hidden) return requestAnimationFrame(tick);
+    if (document.hidden || times.length < 60) return;
+    times.sort((a, b) => a - b);
+    const slow = times[Math.floor(times.length * 0.5)] > 30 && times[Math.floor(times.length * 0.9)] > 50; // moins de ~30 images/s
+    try { localStorage.setItem('vn_lite_auto', slow ? '1' : '0'); } catch { /* */ }
+    if (slow) applyLite();
+  };
+  requestAnimationFrame(tick);
+}, 6000);
+
 let scrolledOn = false;
 addEventListener('scroll', () => { const on = scrollY > 12; if (on !== scrolledOn) { scrolledOn = on; document.documentElement.classList.toggle('scrolled', on); } }, { passive: true });
 

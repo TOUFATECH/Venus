@@ -13,7 +13,7 @@ import { runtime } from './env.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = process.env.VENUS_REPO || 'TOUFATECH/Venus';
 const BRANCH = process.env.VENUS_BRANCH || 'main';
-export const UPDATE_COMMAND = 'cd /opt/Venus && git pull && docker compose up -d --build';
+export const UPDATE_COMMAND = 'cd /opt/Venus && git pull && bash update.sh';
 let cache = { at: 0, data: null };
 
 const run = (cmd, args, opts = {}) => new Promise((resolve) => {

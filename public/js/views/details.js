@@ -29,7 +29,7 @@ export async function render(main, { id, query }) {
   showPath(d.path, ['ep'], from);
   const cleanups = [];
 
-  const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop), d.title, { lazy: false }) : frameImage(d.id, d.title, { fade: false, big: true }));
+  const bg = h('div', { class: 'details-bg' }, d.backdrop ? picture(img(d.backdrop, 1280), d.title, { lazy: false }) : frameImage(d.id, d.title, { fade: false, big: true }));
   const posterEl = h('div', { class: `details-poster${isClip ? ' wide' : ''}` }, d.poster && !isClip ? picture(img(d.poster), d.title, { lazy: false }) : isClip ? frameImage(d.id, d.title, { fade: false }) : framePoster(d));
   const root = h('div', { class: 'details' });
 
@@ -380,7 +380,18 @@ export async function render(main, { id, query }) {
   if (d.provenance) {
     pairs.push(['Source des infos', d.provenance.info]);
     if (d.provenance.poster) pairs.push(['Source de l’affiche', d.provenance.poster]);
-    if (d.provenance.file && state.profile.isAdmin) pairs.push(['Fichier', h('span', { class: 'prov-file' }, h('code', {}, d.provenance.file), h('button', { class: 'btn btn-small btn-ghost f', onclick: () => { navigator.clipboard?.writeText(d.provenance.folder).then(() => toast('Chemin du dossier copié'), () => {}); } }, icon('copy'), 'Copier le dossier'))]);
+    // Emplacement sur le NAS : dossier de la série et de chaque saison, ou fichier et dossier (copiable)
+    const copyBtn = (txt) => h('button', { class: 'btn btn-small btn-ghost f', title: 'Copier', onclick: () => { navigator.clipboard?.writeText(txt).then(() => toast('Chemin copié'), () => {}); } }, icon('copy'), 'Copier');
+    if (d.location) {
+      if (d.location.library) pairs.push(['Bibliothèque', d.location.library]);
+      for (const l of d.location.items) {
+        pairs.push([l.label, h('span', { class: 'prov-file loc' },
+          h('code', {}, l.nas || l.path),
+          l.nas ? h('small', { class: 'muted' }, `Dans Venus : ${l.path}`) : null,
+          l.count ? h('small', { class: 'muted' }, `${l.count} épisode${l.count > 1 ? 's' : ''}`) : null,
+          copyBtn(l.nas || l.path))]);
+      }
+    } else if (d.provenance.file && state.profile.isAdmin) pairs.push(['Fichier', h('span', { class: 'prov-file' }, h('code', {}, d.provenance.file), h('button', { class: 'btn btn-small btn-ghost f', onclick: () => { navigator.clipboard?.writeText(d.provenance.folder).then(() => toast('Chemin du dossier copié'), () => {}); } }, icon('copy'), 'Copier le dossier'))]);
   }
 
   const m = d.media;
@@ -420,6 +431,13 @@ export async function render(main, { id, query }) {
   }
   if (d.similar && d.similar.length) {
     content.append(h('div', { class: 'd-similar' }, row({ title: isClip ? 'Autres clips' : 'Plus de ce genre', items: d.similar })));
+  }
+  // Avec les mêmes acteurs (dans la médiathèque) ; le nom ouvre toute sa filmographie
+  for (const r of d.withCast || []) {
+    const sec = h('div', { class: 'd-similar d-withcast' }, row({ title: `Avec ${r.name}`, items: r.items }));
+    const t = sec.querySelector('h2, .row-title, .section-title');
+    if (t) { t.classList.add('linkish'); t.tabIndex = 0; t.title = `Tous les films et séries avec ${r.name}`; t.addEventListener('click', () => openPerson(r)); }
+    content.append(sec);
   }
 
   // ---------------------------------------------------------------- bande-annonce en fond
@@ -524,7 +542,12 @@ export async function openPerson(p) {
   const links = h('p', { class: 'person-links' },
     h('a', { href: `https://www.themoviedb.org/search/person?query=${encodeURIComponent(p.name)}`, target: '_blank', rel: 'noopener' }, 'Voir sur TMDB'), ' · ',
     h('a', { href: `https://www.imdb.com/fr/find/?q=${encodeURIComponent(p.name)}&s=nm`, target: '_blank', rel: 'noopener' }, 'IMDb'));
-  const s = sheet(p.name, h('div', {}, links, list), { wide: true });
+  const others = h('div', { class: 'grid person-grid person-out' }, h('p', { class: 'grid-empty' }, 'Recherche de sa filmographie…'));
+  const head = h('div', { class: 'person-head' }, p.photo ? h('img', { src: img(p.photo), alt: '', class: 'person-photo' }) : null,
+    h('div', {}, p.role ? h('p', { class: 'muted' }, p.role) : null, links));
+  const s = sheet(p.name, h('div', {}, head,
+    h('h3', { class: 'person-sub' }, 'Dans votre médiathèque'), list,
+    h('h3', { class: 'person-sub' }, 'Autres films et séries'), others), { wide: true });
   window.addEventListener('hashchange', () => s.close(), { once: true });
   try {
     const r = await api(`/api/people?name=${encodeURIComponent(p.name)}`);
@@ -534,6 +557,35 @@ export async function openPerson(p) {
       return c;
     }) : [h('p', { class: 'grid-empty' }, 'Aucun autre titre avec cette personne dans votre médiathèque.')]));
   } catch (e) { list.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
+  // Filmographie complète : ce qui n'est pas sur le NAS peut être mis en favori (téléchargé) ou téléchargé tout de suite
+  try {
+    const f = await api(`/api/people/films?name=${encodeURIComponent(p.name)}`);
+    const out = f.items.filter((x) => !x.nas);
+    if (!out.length) { others.replaceChildren(h('p', { class: 'grid-empty' }, f.error || 'Rien d’autre de connu, ou tout est déjà dans votre médiathèque.')); return; }
+    others.replaceChildren(...out.map((x) => {
+      const app = x.kind === 'movie' ? 'Radarr' : 'Sonarr';
+      const on = x.kind === 'movie' ? f.radarr : f.sonarr;
+      const body = { key: x.key, kind: x.kind, title: x.title, year: x.year || undefined, poster: x.poster, date: x.date || undefined };
+      const fav = h('button', { type: 'button', class: `up-act fav f${x.wanted ? ' on' : ''}`, title: x.wanted ? 'Retirer des favoris' : `Favori : téléchargé automatiquement${on ? ` par ${app}` : ''}`, 'aria-label': `Favori : ${x.title}` }, icon('heart'));
+      fav.onclick = async () => {
+        try {
+          if (x.wanted) { await api(`/api/wanted?key=${encodeURIComponent(x.key)}`, { method: 'DELETE' }); x.wanted = false; toast('Retiré de vos favoris'); }
+          else { const r = await api('/api/wanted', { method: 'POST', body: { ...body, download: true } }); x.wanted = true; toast(r.sent && !r.sent.error ? `« ${x.title} » en favori : le téléchargement est lancé` : `« ${x.title} » ajouté à vos favoris`, { type: 'success' }); }
+          fav.classList.toggle('on', x.wanted);
+        } catch (e) { toast(e.message, true); }
+      };
+      const dl = on && !f.kids ? h('button', { type: 'button', class: 'up-act dl f', title: `Télécharger avec ${app}`, 'aria-label': `Télécharger ${x.title}` }, icon('download')) : null;
+      if (dl) dl.onclick = async () => {
+        dl.disabled = true;
+        try { const r = await api('/api/wanted/grab', { method: 'POST', body }); dl.classList.add('done'); dl.replaceChildren(icon('check')); toast(r.already ? `« ${r.title} » est déjà suivi par ${app}` : `« ${r.title} » ajouté à ${app}`, { type: 'success' }); }
+        catch (e) { dl.disabled = false; toast(e.message, true); }
+      };
+      const pic = h('img', { src: x.poster, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+      pic.addEventListener('error', () => pic.replaceWith(h('div', { class: 'up-ph' }, h('span', {}, x.title))), { once: true });
+      return h('div', { class: 'up-sug person-film' }, h('div', { class: 'up-sug-pic' }, pic), f.kids ? null : h('div', { class: 'up-acts' }, fav, dl),
+        h('b', {}, x.title), h('small', {}, [x.kind === 'movie' ? 'Film' : 'Série', x.year].filter(Boolean).join(' · ')));
+    }));
+  } catch (e) { others.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
 }
 
 // Épisode en vignette compacte : juste « Épisode 2 » et la durée ; le titre s'affiche au survol et pendant la lecture.

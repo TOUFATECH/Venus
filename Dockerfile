@@ -1,4 +1,13 @@
 # Venus — image Docker légère avec ffmpeg de Jellyfin (tous les pilotes d'accélération matérielle inclus)
+
+# Étape 1 : interface allégée (JS et CSS minifiés). esbuild ne sert qu'ici ; s'il n'est pas téléchargeable,
+# l'interface est gardée telle quelle et la construction continue.
+FROM node:24-bookworm-slim AS web
+WORKDIR /w
+COPY public ./public
+COPY scripts/minify.mjs ./minify.mjs
+RUN (npm install --no-save --no-audit --no-fund --loglevel=error esbuild@0.24.2 && node minify.mjs public) || echo "Interface non minifiée (esbuild indisponible)"
+
 FROM node:24-bookworm-slim
 
 ARG TARGETARCH
@@ -36,7 +45,7 @@ RUN set -eux; \
 WORKDIR /app
 COPY package.json ./
 COPY server ./server
-COPY public ./public
+COPY --from=web /w/public ./public
 
 EXPOSE 8096
 VOLUME ["/config"]
