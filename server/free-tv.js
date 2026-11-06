@@ -1,9 +1,10 @@
-// Chaînes gratuites (France et Outre-mer), et vérification de toutes les chaînes IPTV.
+// Chaînes gratuites (France, Outre-mer et Japon), et vérification de toutes les chaînes IPTV.
 //
 // La source « venus:chaines-gratuites » est une liste construite par Venus à chaque analyse :
 //  1. Mayotte La 1ère en tête, puis les autres chaînes La 1ère (Réunion, Guadeloupe, Martinique…)
 //  2. les chaînes gratuites de la TNT (France 2, France 3, Arte, France Info…)
 //  3. les chaînes françaises publiques recensées par iptv-org (France 24, TV5Monde, chaînes locales…)
+//  4. le Japon : NHK World Premium (en japonais), NHK World-Japan et Weathernews, flux officiels
 // Les adresses des flux France Télévisions expirent chaque jour : ces listes publiques sont régénérées
 // automatiquement, et Venus les relit à chaque analyse.
 //
@@ -72,6 +73,29 @@ export async function buildFreeTv() {
       }
     }
   }
+  // 4. Japon : uniquement les flux OFFICIELS et gratuits (NHK sur ses propres serveurs, Weathernews).
+  //    Les chaînes privées (Fuji TV, TV Tokyo, Nippon TV, TBS, TV Asahi) ne diffusent pas leur direct
+  //    gratuitement hors du Japon : les flux « publics » qu'on trouve sont des retransmissions non autorisées.
+  const JP_OFFICIAL = [
+    ['NHK World Premium (japonais)', 'https://media-tyo.hls.nhkworld.jp/hls/wp/live/master.m3u8', 'NHKWorldPremium.jp@SD'],
+    ['NHK World-Japan', 'https://masterpl.hls.nhkworld.jp/hls/w/live/smarttv.m3u8', 'NHKWorldJapan.jp@SD'],
+    ['Weathernews (météo japonaise)', 'https://rch01e-alive-hls.akamaized.net/38fb45b25cdb05a1/out/v1/4e907bfabc684a1dae10df8431a84d21/index.m3u8', 'Weathernews.jp@SD'],
+  ];
+  const jp = new Map(JP_OFFICIAL.map(([n, u, id]) => [id, [n, u]]));
+  try {
+    // Les adresses officielles changent parfois : on reprend celles d'iptv-org, si elles restent chez NHK.
+    let info = null;
+    for (const raw of (await text(`${IPTV_ORG}/jp.m3u`)).split(/\r?\n/)) {
+      const line = raw.trim();
+      if (line.startsWith('#EXTINF')) info = line;
+      else if (info && /^https:\/\//i.test(line)) {
+        const id = (/tvg-id="([^"]*)"/i.exec(info) || [])[1] || '', host = new URL(line).hostname;
+        if (jp.has(id) && /(^|\.)nhkworld\.jp$/i.test(host) && !/\[Geo-blocked\]/i.test(info) && !jp.get(id).fresh) jp.set(id, [jp.get(id)[0], line, true]);
+        info = null;
+      }
+    }
+  } catch (e) { console.warn('[chaînes gratuites] Japon :', e.message); }
+  for (const [id, [name, url]] of jp) out.push(`#EXTINF:-1 tvg-id="${id}" tvg-logo="" group-title="Japon",${name}`, url);
   return out.join('\n');
 }
 
