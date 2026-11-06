@@ -125,14 +125,16 @@ class HlsSession {
       ...(live ? NET_INPUT(this.input) : []),
       ...(!live && this.offset > 0 ? ['-ss', String(this.offset)] : []),
       '-fflags', live ? '+genpts+discardcorrupt' : '+genpts',
-      '-analyzeduration', live ? '4M' : '20M', '-probesize', live ? '4M' : '20M',
+      // Direct : analyse courte (le codec est déjà connu grâce à l'analyse gardée en mémoire) = démarrage plus rapide
+      '-analyzeduration', live ? (this.probe && this.probe.video ? '1500000' : '3M') : '20M', '-probesize', live ? (this.probe && this.probe.video ? '1500000' : '3M') : '20M',
       '-i', this.input,
       ...p.video, ...p.audioArgs,
       '-sn', '-dn', '-map_metadata', '-1', '-map_chapters', '-1',
       '-max_muxing_queue_size', '2048', '-avoid_negative_ts', 'make_zero',
-      '-f', 'hls', '-hls_time', String(config.segmentSeconds),
+      // Direct : segments de 2 s (le premier d'1 s) pour que l'image arrive vite
+      '-f', 'hls', '-hls_time', String(live ? 2 : config.segmentSeconds),
       ...(live
-        ? ['-hls_list_size', '8', '-hls_flags', 'delete_segments+temp_file+independent_segments+omit_endlist']
+        ? ['-hls_init_time', '1', '-hls_list_size', '10', '-hls_flags', 'delete_segments+temp_file+independent_segments+omit_endlist']
         : ['-hls_list_size', '0', '-hls_playlist_type', 'event', '-hls_flags', 'temp_file+independent_segments']),
       ...(this.fmp4 ? ['-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4'] : ['-hls_segment_type', 'mpegts']),
       '-hls_segment_filename', path.join(this.dir, this.fmp4 ? 'seg%05d.m4s' : 'seg%05d.ts'),
@@ -369,9 +371,15 @@ fs.mkdirSync(liveShots, { recursive: true });
 const shotInflight = new Map();
 let shotBusy = 0;
 const shotQueue = [];
-export function channelSnapshot(item) {
+export function channelSnapshot(item, { wait = false } = {}) {
   const out = path.join(liveShots, `ch_${item.id}.jpg`);
-  try { if (Date.now() - fs.statSync(out).mtimeMs < 120000) return Promise.resolve(out); } catch { /* pas encore de capture */ }
+  // Une capture existe : elle part tout de suite (même ancienne) ; on la rafraîchit en arrière-plan si elle a plus de 3 min
+  let age = Infinity; try { age = Date.now() - fs.statSync(out).mtimeMs; } catch { /* pas encore de capture */ }
+  if (age < 180000) return Promise.resolve(out);
+  if (age < Infinity && !wait) { if (!shotInflight.has(out)) captureShot(item, out).catch(() => {}); return Promise.resolve(out); }
+  return captureShot(item, out);
+}
+function captureShot(item, out) {
   if (shotInflight.has(out)) return shotInflight.get(out);
   const p = new Promise((resolve, reject) => {
     const job = () => {
@@ -388,10 +396,16 @@ export function channelSnapshot(item) {
         resolve(out);
       });
     };
-    if (shotBusy < 3) job(); else shotQueue.push(job);
+    if (shotBusy < 6) job(); else shotQueue.push(job);
   });
   shotInflight.set(out, p);
   return p;
+}
+// Page TV ouverte : on prépare les captures de toutes les chaînes d'avance (au plus une fois toutes les 3 min)
+let warmAt = 0;
+export function warmSnapshots(items) {
+  if (Date.now() - warmAt < 180000) return; warmAt = Date.now();
+  for (const it of items) if (it.stream_url) channelSnapshot(it, { wait: true }).catch(() => {});
 }
 
 export { hw };

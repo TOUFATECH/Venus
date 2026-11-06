@@ -22,7 +22,8 @@ import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmd
 import { saveRemoteImage, freePosterCandidates, fillMissingPosters, fillMissingBackdrops, testSources, redoFreePosters } from './posters.js';
 import { findTrailerFor } from './youtube.js';
 import { guideFor, ensureGuide } from './guide.js';
-import { checkChannels, checkState, channelHealth, FREE_TV } from './free-tv.js';
+import { checkChannels, checkState, channelHealth, FREE_TV, reportChannelFailure } from './free-tv.js';
+import { canRelay, startRelay, stopRelay, holdRelay, servePlaylistRelay, serveSegmentRelay } from './relay.js';
 import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue } from './arr.js';
 import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
 import { checkUpdate, runUpdate, localCommit } from './update.js';
@@ -31,10 +32,10 @@ import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAY
 import { brokenFiles, weeklyReport } from './reports.js';
 import { setOpinion, opinionOf, genreTaste, tasteScore, storageForecast, logTranscode, transcodeSummary, makeClip, subtitleDrift } from './extras.js';
 import {
-  decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot,
+  decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot, warmSnapshots,
 } from './stream.js';
 import { detectHardware } from './hw.js';
-import { probeLive, readChapters } from './probe.js';
+import { probeLive, readChapters, cachedProbe } from './probe.js';
 import { runTask, listTasks } from './tasks.js';
 import { versionLabel, groupVersions } from './versions.js';
 import { permsOf, accessProblem, libraryClause, validPerms } from './perms.js';
@@ -700,6 +701,8 @@ router.get('/api/library', (ctx) => {
       const health = new Map(items.map((i) => [i.id, i]));
       for (const c of cards) { const i = health.get(c.id); if (i && i.ch_ok === 0) { c.down = true; c.downWhy = i.ch_error || 'Aucune image reçue'; } }
       cards.sort((a, b) => (a.number || 0) - (b.number || 0));
+      // Captures de toutes les chaînes préparées d'avance : la mosaïque s'affiche d'un coup
+      warmSnapshots(items.filter((i) => i.ch_ok !== 0));
     }
     base = { v: itemsVersion, cards };
     if (libraryCache.size > 24) libraryCache.clear();
@@ -1230,9 +1233,31 @@ router.get('/api/items/:id/trickplay/:n', (ctx) => {
   sendFile(ctx.req, ctx.res, file, { cache: 'private, max-age=2592000, immutable' });
 });
 
+// La chaîne n'a pas démarré chez quelqu'un : retest immédiat, cachée si elle échoue encore
+router.post('/api/channels/:id/failed', async (ctx) => {
+  requireProfile(ctx);
+  const r = await reportChannelFailure(Number(ctx.params.id));
+  sendJson(ctx.res, { ok: true, hidden: r ? !r.ok : false, error: r && !r.ok ? r.error : null });
+});
 // TV en direct : le flux est relu par ffmpeg et servi en HLS (copie de la vidéo quand c'est possible)
 async function playChannel(ctx, p, item, b) {
   if (!visible(p, item)) throw new HttpError(403, 'Contenu non autorisé pour ce profil');
+  // Chaîne déjà au format web (HLS) : relayée telle quelle, sans ffmpeg = démarrage quasi instantané.
+  // Sauf si on la sait en HEVC / AC-3 (illisible par le navigateur), ou si le relais vient d'échouer (noRelay).
+  const known = cachedProbe(item.stream_url);
+  const webOk = !known || ((!known.video || known.video.codec === 'h264') && !(known.audio || []).some((a) => /^(ac3|eac3|dts|truehd|mp2)$/i.test(a.codec || '')));
+  if (!b.noRelay && canRelay(item.stream_url) && webOk) {
+    if (!known) probeLive(item.stream_url).catch(() => {}); // pour la prochaine fois
+    if (b.replace) { sessions.get(b.replace)?.stop(); stopRelay(b.replace); }
+    const rl = startRelay(item);
+    if (!b.preview) setSetting(`last_channel:${p.id}`, { id: item.id, at: Date.now() });
+    return sendJson(ctx.res, {
+      itemId: item.id, slug: slugFor(item.id), path: `/tv/${channelNumber(item)}-${slugFor(item.id)}`, type: 'channel', live: true, mode: 'relay', reason: 'Direct (relais)', url: rl.url,
+      sessionId: rl.id, offset: 0, hwLabel: null, duration: 0, title: item.title, subtitle: item.grp || 'TV en direct', backdrop: null, logo: item.poster, startAt: 0,
+      audioOrder: 0, subId: null, quality: 'auto', audio: [], subs: [], qualities: [], video: known && known.video ? { width: known.video.width, height: known.video.height, codec: known.video.codec } : null,
+      next: null,
+    });
+  }
   let probe = null;
   try { probe = await probeLive(item.stream_url); } catch { /* certains serveurs refusent l'analyse : on convertit */ }
   const caps = b.caps || {};
@@ -1249,7 +1274,7 @@ async function playChannel(ctx, p, item, b) {
   if (b.replace) sessions.get(b.replace)?.stop();
   const s = startSession({ item, probe: probe || { video: null, audio: [], subs: [], bitrate: 0 }, decision, start: 0, profileId: p.id, quality: 'auto', live: true });
   sendJson(ctx.res, {
-    itemId: item.id, slug: slugFor(item.id), path: pathFor(item.id, { play: true }), type: 'channel', live: true, mode: decision.mode, reason: decision.reason, url: `/api/hls/${s.id}/index.m3u8`,
+    itemId: item.id, slug: slugFor(item.id), path: `/tv/${channelNumber(item)}-${slugFor(item.id)}`, type: 'channel', live: true, mode: decision.mode, reason: decision.reason, url: `/api/hls/${s.id}/index.m3u8`,
     sessionId: s.id, offset: 0, hwLabel: decision.mode === 'transcode' ? hw.label : null, duration: 0,
     title: item.title, subtitle: item.grp || 'TV en direct', backdrop: null, logo: item.poster, startAt: 0,
     audioOrder: 0, subId: null, quality: 'auto', audio: [], subs: [], qualities: [], video: probe && probe.video ? { width: probe.video.width, height: probe.video.height, codec: probe.video.codec } : null,
@@ -1273,6 +1298,12 @@ router.get('/api/stream/:id/file', (ctx) => {
   sendFile(ctx.req, ctx.res, item.path, { cache: 'private, max-age=3600' });
 });
 
+// Relais des chaînes (voir relay.js)
+router.get('/api/live/:rid/pl.m3u8', (ctx) => servePlaylistRelay(ctx, ctx.params.rid));
+router.get('/api/live/:rid/seg', (ctx) => serveSegmentRelay(ctx, ctx.params.rid));
+// Pause sur une chaîne : Venus continue d'enregistrer (direct différé) ; reprise ou retour au direct
+router.del('/api/live/:rid', (ctx) => { stopRelay(ctx.params.rid); sendJson(ctx.res, { ok: true }); });
+router.post('/api/live/:rid/hold', async (ctx) => { const b = await readBody(ctx.req); sendJson(ctx.res, { ok: holdRelay(ctx.params.rid, b.on !== false) }); });
 router.get('/api/hls/:sid/index.m3u8', (ctx) => servePlaylist(ctx.res, ctx.params.sid));
 router.get('/api/hls/:sid/:seg', (ctx) => serveSegment(ctx.req, ctx.res, ctx.params.sid, ctx.params.seg));
 router.post('/api/hls/:sid/ping', (ctx) => { sessions.get(ctx.params.sid)?.touch(); sendJson(ctx.res, { ok: sessions.has(ctx.params.sid) }); });

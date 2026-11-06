@@ -568,6 +568,22 @@ html:not(.touch) .opt:hover { background: var(--raise); }
 .pv-still { z-index: 1; filter: saturate(.9); }
 .pv-status { position: absolute; z-index: 2; left: 14px; bottom: 12px; padding: 6px 10px; border-radius: var(--r); background: rgb(var(--night-rgb) / .8); color: var(--haze); font-size: .88rem; font-weight: 600; }
 .pv-live { z-index: 3; left: 12px; top: 12px; padding: 4px 8px; border-radius: 4px; background: rgb(var(--night-rgb) / .7); }
+.pv-screen:focus-visible { outline: 3px solid var(--sulfur); outline-offset: 3px; }
+.pv-bar { position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding: 28px 10px 10px; background: linear-gradient(transparent, rgb(0 0 0 / .72)); opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; }
+.pv-screen.awake .pv-bar, .pv-screen.paused .pv-bar, .pv-screen:focus-within .pv-bar, .pv-screen:hover .pv-bar { opacity: 1; transform: none; }
+.pv-c { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 10px; background: rgb(255 255 255 / .08); color: #fff; cursor: pointer; transition: background .15s, transform .15s; }
+.pv-c:hover, .pv-c:focus-visible { background: var(--sulfur); color: var(--night); }
+.pv-c:active { transform: scale(.94); }
+.pv-c svg { width: 20px; height: 20px; }
+.pv-sp { flex: 1; }
+.pv-vol { width: 96px; accent-color: var(--sulfur); cursor: pointer; }
+.pv-screen:fullscreen { border-radius: 0; border: 0; }
+.pv-screen:fullscreen video { object-fit: contain; }
+.pv-screen:fullscreen .pv-bar { padding: 40px 24px 24px; }
+.pv-screen:fullscreen .pv-c { width: 48px; height: 48px; }
+@media (max-width: 760px) { .pv-vol { display: none; } .pv-c { width: 36px; height: 36px; } .pv-bar { opacity: 1; transform: none; } }
+html.touch .pv-bar { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .pv-bar { transition: none; } }
 .pv-name { font-weight: 850; font-stretch: var(--wide); font-size: clamp(1.6rem, 3vw, 2.6rem); line-height: 1.05; margin: 0 0 6px; text-wrap: balance; }
 .pv-group { color: var(--haze); margin: 0 0 20px; font-weight: 600; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(200px, 44vw), 1fr)); gap: 16px 14px; }
@@ -3425,3 +3441,40 @@ html:not(.touch) .up-card:hover .up-pic, .up-card .up-pic:focus-visible, html:no
   .up-card .up-badge { font-size: .64rem; padding: 2px 6px; max-width: calc(100% - 84px); }
   .up-acts { gap: 4px; }
 }
+
+/* ===== TV en direct : lecteur fixe à gauche, chaînes à droite ===== */
+.tvx { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr); gap: clamp(16px, 2.5vw, 32px); align-items: start; }
+.tvx-player { position: sticky; top: calc(var(--head-h, 64px) + 12px); }
+.tvx .pv { display: block; margin: 0; }
+.tvx .pv-info { margin-top: 14px; }
+.tvx .pv-name { font-size: clamp(1.3rem, 2.2vw, 1.9rem); margin-bottom: 2px; }
+.tvx .pv-group { margin-bottom: 4px; font-size: .9rem; }
+.tvx-tools { position: sticky; top: 0; z-index: 5; display: flex; flex-direction: column; gap: 10px; padding: 8px 0 12px; background: var(--night); }
+.tvx-tools .search-box { width: 100%; max-width: none; }
+.tvx .pv-status { top: 12px; bottom: auto; }
+.tvx-tools .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.tvx-tools .chips::-webkit-scrollbar { display: none; }
+.tvx .tiles { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.tile.playing .tile-img::after { content: 'EN COURS'; position: absolute; z-index: 3; left: 6px; top: 6px; padding: 2px 6px; border-radius: 4px; background: var(--sulfur); color: var(--night); font-size: .66rem; font-weight: 800; letter-spacing: .04em; }
+.pv-big { position: absolute; z-index: 3; inset: 0; margin: auto; width: 72px; height: 72px; display: none; place-items: center; border: 0; border-radius: 50%; background: rgb(0 0 0 / .55); color: #fff; cursor: pointer; backdrop-filter: blur(4px); transition: transform .15s, background .15s; }
+.pv-big svg { width: 32px; height: 32px; }
+.pv-big:hover, .pv-big:focus-visible { background: var(--sulfur); color: var(--night); transform: scale(1.06); }
+.pv-screen.idle .pv-big { display: grid; }
+.pv-screen.idle .pv-bar { display: none; }
+.pv-screen.idle { cursor: pointer; }
+.pv-livebtn { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; margin-left: 4px; border: 0; border-radius: 999px; background: rgb(255 255 255 / .1); color: #fff; font-weight: 700; font-size: .8rem; cursor: pointer; font-variant-numeric: tabular-nums; }
+.pv-livebtn .dot { width: 8px; height: 8px; border-radius: 50%; background: #e5484d; }
+.pv-livebtn.late .dot { background: #8a8f98; }
+.pv-livebtn.late:hover, .pv-livebtn:focus-visible { background: var(--sulfur); color: var(--night); }
+.pv-rec .rec-dot { width: 12px; height: 12px; border-radius: 50%; background: #e5484d; display: block; }
+@media (max-width: 960px) {
+  .tvx { grid-template-columns: 1fr; }
+  .tvx-player { top: calc(var(--head-h, 56px)); z-index: 6; background: var(--night); padding-bottom: 8px; }
+  .tvx .pv-info { margin-top: 8px; }
+  .tvx .pv-prog, .tvx .pv-group { display: none; }
+  .tvx-tools { top: auto; position: static; }
+  .tvx .tiles { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
+@media (max-width: 760px) { .pv-c.pv-rec { display: none; } }
+.tvx-tools .chips > * { white-space: nowrap; flex: none; }
+.tvx > * { min-width: 0; }
