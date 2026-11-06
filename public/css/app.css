@@ -1514,9 +1514,22 @@ button.kpi:hover, button.kpi:focus-visible { border-color: rgba(236,234,228,.35)
 .recent-box { padding: 20px 0 6px; overflow: hidden; }
 .recent-box .row { margin: 0; }
 
-.admin-msg { position: fixed; z-index: 500; left: 50%; top: calc(24px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); width: min(460px, calc(100vw - 32px)); padding: 18px 20px; border-radius: 14px; background: rgb(var(--raise-rgb) / .97); border: 1px solid rgb(var(--sulfur-rgb) / .5); box-shadow: 0 24px 60px rgba(0,0,0,.55); animation: ddin .25s ease; }
-.admin-msg b { color: var(--sulfur); font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; }
-.admin-msg p { margin: 6px 0 12px; font-size: 1.05rem; line-height: 1.45; }
+.msg-stack { position: fixed; z-index: 900; right: calc(20px + env(safe-area-inset-right, 0px)); bottom: calc(24px + env(safe-area-inset-bottom, 0px)); width: min(340px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.msg-note { pointer-events: auto; display: flex; align-items: flex-start; gap: 10px; padding: 11px 10px 11px 12px; border-radius: 14px; background: rgb(var(--raise-rgb) / .96); border: 1px solid rgb(var(--sulfur-rgb) / .35); box-shadow: 0 14px 36px rgba(0,0,0,.45); backdrop-filter: blur(10px); animation: msg-in .35s cubic-bezier(.2, 1.2, .3, 1) both; }
+.msg-note.out { animation: msg-out .25s ease forwards; }
+.msg-av { flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: .9rem; color: var(--bg, #0b0b0f); background: var(--sulfur); }
+.msg-body { flex: 1; min-width: 0; }
+.msg-head { display: flex; align-items: baseline; gap: 8px; }
+.msg-head b { font-size: .88rem; }
+.msg-time { font-size: .74rem; opacity: .6; }
+.msg-body p { margin: 2px 0 0; font-size: .92rem; line-height: 1.4; overflow-wrap: anywhere; }
+.msg-x { flex: none; border: 0; background: none; color: inherit; opacity: .55; font-size: 1.2rem; line-height: 1; padding: 2px 6px; border-radius: 8px; cursor: pointer; }
+.msg-x:hover, .msg-x:focus-visible { opacity: 1; background: rgb(255 255 255 / .08); }
+@keyframes msg-in { from { opacity: 0; transform: translateX(24px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes msg-out { to { opacity: 0; transform: translateX(24px); } }
+@media (max-width: 760px) { body:has(.tabbar) .msg-stack { bottom: calc(86px + env(safe-area-inset-bottom, 0px)); } .msg-stack { right: 16px; left: 16px; width: auto; } }
+body:has(.player) .msg-stack, :fullscreen .msg-stack { bottom: 120px; }
+@media (prefers-reduced-motion: reduce) { .msg-note, .msg-note.out { animation: none; } }
 .login-actions { justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
 .field small.muted { display: block; margin-top: 8px; font-size: .84rem; line-height: 1.45; }
 
@@ -1998,7 +2011,13 @@ html:not(.touch) .p-lockbtn { display: none; }
 .q-improve { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
 .q-improve b { font-size: 2.6rem; font-weight: 850; font-stretch: var(--wide); color: var(--sulfur); line-height: 1; }
 .q-improve span { color: var(--haze); }
-.q-list { display: flex; flex-direction: column; max-width: 1180px; }
+.q-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr)); align-items: stretch; }
+.q-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 8px 10px 10px; border-radius: 12px; background: rgb(var(--raise-rgb) / .55); border: 1px solid rgb(255 255 255 / .06); min-width: 0; }
+.q-row .q-main { flex: 1 1 100%; min-width: 0; padding: 4px; }
+.q-row .q-badges { flex: 1; padding-left: 56px; flex-wrap: nowrap; }
+.q-row > .btn { margin-left: auto; }
+.q-list .q-pic { width: 44px; }
+.q-list .q-text b { font-size: .98rem; }
 .q-main { flex: 1; min-width: 220px; display: flex; align-items: center; gap: 12px; padding: 6px; border: 0; border-radius: 8px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .q-main:hover, .q-main:focus-visible { background: var(--deep); }
 .q-pic { width: 40px; aspect-ratio: 2 / 3; border-radius: 4px; overflow: hidden; background: var(--raise); flex: none; }
