@@ -3324,3 +3324,85 @@ html:not(.touch) .card:hover .shot::after, .card:focus-visible .shot::after, .ca
 @media (prefers-reduced-motion: reduce) {
   html:not(.touch) .card:hover .shot, .card:focus-visible .shot, .card.is-focus .shot, .card .shot::before, .card .shot::after { animation: none !important; }
 }
+
+/* =====================================================================
+   À venir (Films, Séries, Animés) : jour par jour, sur le NAS ou pas, favoris et téléchargement
+   ===================================================================== */
+.up-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 4px 0 6px; }
+.up-bar .muted.small { display: inline-flex; align-items: center; gap: 4px; font-size: .82rem; }
+.up-bar .muted.small svg { width: 15px; height: 15px; color: #ff4d6d; }
+.up-earlier { align-self: flex-start; margin-top: 14px; }
+.up-card { position: relative; min-width: 0; }
+.up-card .up-pic { display: block; width: 100%; padding: 0; border: 0; cursor: pointer; color: inherit; font: inherit; }
+.up-card.out .up-pic img:not(.up-blur) { filter: saturate(.92); }
+html:not(.touch) .up-card:hover .up-pic, .up-card .up-pic:focus-visible, html:not(.touch) .up-sug:hover .up-sug-pic, .up-sug .up-sug-pic:focus-visible {
+  transform: translateY(-5px) scale(1.03); outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--sulfur-rgb)), 0 0 24px 3px rgb(var(--sulfur-rgb) / .5), 0 22px 40px -14px rgba(0,0,0,.7); animation: card-glow 2.4s ease-in-out .3s infinite;
+}
+.up-badge.in { background: var(--sulfur); color: var(--night); }
+.up-badge.arr { background: #2f7cf6; color: #fff; }
+.up-badge.fav { background: #e8364f; color: #fff; }
+.up-badge.out { background: rgba(10, 12, 20, .74); color: #fff; border: 1px solid rgba(255,255,255,.16); }
+.up-time { position: absolute; right: 8px; bottom: 8px; padding: 2px 7px; border-radius: 4px; background: rgba(10, 12, 20, .74); color: #fff; font-size: .72rem; font-weight: 700; }
+.up-tall { position: absolute; inset: 0; display: flex; justify-content: center; overflow: hidden; background: #0b0d12; }
+.up-tall .up-blur { position: absolute; inset: -20px; width: calc(100% + 40px); height: calc(100% + 40px); object-fit: cover; filter: blur(18px) brightness(.55); }
+.up-tall img.tall { position: relative; width: auto; height: 100%; object-fit: contain; box-shadow: 0 0 30px rgba(0,0,0,.6); }
+.up-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 12px; text-align: center; font-weight: 800; color: var(--haze);
+  background: linear-gradient(135deg, rgb(var(--raise-rgb)), rgb(var(--deep-rgb))); }
+.up-acts { position: absolute; top: 8px; right: 8px; z-index: 3; display: flex; gap: 6px; opacity: 0; transform: translateY(-4px); transition: opacity .18s, transform .18s; }
+.up-sug .up-acts { top: 8px; right: 8px; }
+.up-card:hover .up-acts, .up-card:focus-within .up-acts, .up-sug:hover .up-acts, .up-sug:focus-within .up-acts, html.touch .up-acts { opacity: 1; transform: none; }
+.up-acts:has(.on), .up-acts:has(.done) { opacity: 1; transform: none; }
+.up-act { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 36px; height: 36px; padding: 0; border-radius: 50%; border: 1px solid rgba(255,255,255,.22);
+  background: rgba(10, 12, 20, .72); color: #fff; cursor: pointer; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); transition: transform .15s, background .15s; }
+.up-act svg { width: 18px; height: 18px; }
+.up-act:hover { transform: scale(1.12); background: rgba(10, 12, 20, .9); }
+.up-act.fav.on { background: #e8364f; border-color: #e8364f; }
+.up-act.fav.on svg { fill: currentColor; }
+.up-act.dl.done { background: #1f9d55; border-color: #1f9d55; cursor: default; transform: none; }
+.up-act.busy { opacity: .6; pointer-events: none; }
+.up-act.wide { width: auto; height: auto; border-radius: 999px; padding: 10px 18px; font-weight: 700; }
+.up-act.wide.fav:not(.on) { background: var(--paper); color: var(--night); border-color: var(--paper); }
+.up-act.wide.dl:not(.done) { background: rgb(var(--raise-rgb)); border-color: var(--edge); color: var(--paper); }
+/* Propositions */
+.up-sugs { margin: 10px 0 4px; }
+.up-sugs .section-title { display: flex; align-items: baseline; gap: 10px; margin: 18px 0 12px; }
+.up-sugs .section-title small { color: var(--dim); font-size: .82rem; font-weight: 600; }
+.up-sug-row { display: flex; gap: 14px; overflow-x: auto; padding: 8px 4px 14px; margin: -8px -4px 0; scroll-snap-type: x proximity; scrollbar-width: thin; }
+.up-sug { position: relative; flex: none; width: 150px; display: flex; flex-direction: column; gap: 3px; scroll-snap-align: start; }
+.up-sug-pic { position: relative; aspect-ratio: 2 / 3; padding: 0; border: 0; border-radius: 8px; overflow: hidden; background: var(--raise); cursor: pointer; margin-bottom: 6px; transition: transform .25s var(--ease), box-shadow .25s; }
+.up-sug-pic > img { width: 100%; height: 100%; object-fit: cover; }
+.up-sug-date { position: absolute; left: 6px; bottom: 6px; padding: 2px 7px; border-radius: 4px; background: rgba(10, 12, 20, .78); color: #fff; font-size: .7rem; font-weight: 700; }
+.up-sug b { font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.up-sug small { color: var(--dim); font-size: .78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Fiche d'un titre pas sur le NAS */
+.up-sheet { display: flex; flex-direction: column; gap: 14px; }
+.up-sheet-pic { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: var(--raise); }
+.up-sheet-pic > img { width: 100%; height: 100%; object-fit: cover; }
+.up-sheet-body h2 { margin: 0 0 4px; font-size: 1.5rem; }
+.up-sheet-body .up-genres { color: var(--haze); font-size: .86rem; margin: 6px 0; }
+.up-sheet-body .up-over { line-height: 1.5; color: var(--haze); max-height: 9.5em; overflow: auto; }
+.up-sheet-acts { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 8px; }
+@media (max-width: 760px) {
+  .up-grid { grid-template-columns: 1fr 1fr; gap: 14px 10px; }
+  .up-card span { font-size: .78rem; }
+  .up-card b { font-size: .88rem; }
+  .up-sug { width: 118px; }
+  .up-act { width: 32px; height: 32px; }
+}
+
+/* Lecteur, volet des épisodes : « Saison 1 » sur une seule ligne, numéro aligné avec le mot */
+.ep-head .chips.ep-seasons { flex: 1 1 0; min-width: 0; display: flex; gap: 8px; padding: 2px; }
+.ep-seasons .chip { flex: none; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; line-height: 1; padding: 9px 16px; }
+.ep-head > .muted, .ep-head > small, .ep-head > span { white-space: nowrap; flex: none; }
+.ep-row .ep-text b { display: block; font-variant-numeric: tabular-nums; }
+.sheet:has(> .up-sheet) { max-width: min(720px, calc(100vw - 32px)); }
+.up-sheet-pic { max-height: 46vh; }
+.up-filter { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.up-filter .seg-b { white-space: nowrap; flex: none; }
+.up-card .up-badge { max-width: calc(100% - 96px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.up-card:not(.out) .up-badge { max-width: calc(100% - 16px); }
+@media (max-width: 760px) {
+  .up-card .up-badge { font-size: .64rem; padding: 2px 6px; max-width: calc(100% - 84px); }
+  .up-acts { gap: 4px; }
+}

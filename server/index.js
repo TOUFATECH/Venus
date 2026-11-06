@@ -1,5 +1,6 @@
 // Venus — point d'entrée du serveur
 import './logbuf.js'; // journal du serveur (tableau de bord) : chargé en premier
+import { warmUpcoming } from './upcoming.js';
 // Une erreur imprévue dans une tâche de fond ou un flux ne doit pas éteindre tout Venus : elle est notée dans le
 // journal (Serveur → Journal) et le serveur continue. Les erreurs de démarrage, elles, arrêtent bien le processus.
 let started = false;
@@ -145,6 +146,9 @@ async function main() {
   // Notes et bandes-annonces : titres nouveaux ou notés il y a plus de 10 jours
   setTimeout(() => refreshRatings(), 120000).unref();
   startWatch();
+  // « À venir » : programmes TVmaze et AniList préparés à l'avance
+  setTimeout(() => warmUpcoming().catch(() => {}), 45000).unref();
+  setInterval(() => warmUpcoming().catch(() => {}), 5.5 * 3600e3).unref();
   // Nouveautés : notification, et les envies arrivées passent dans « Ma liste » (avec notification à la personne)
   let watchSoon = null;
   events.on('library', (d) => {
