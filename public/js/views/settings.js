@@ -407,12 +407,19 @@ export async function render(main, { query } = {}) {
           mv.results.every((x) => x.status !== 200 && x.status !== 'aucun résultat') && tv.results.every((x) => x.status !== 200 && x.status !== 'aucun résultat') ? h('p', { class: 'error-text' }, 'Aucun service ne répond : le serveur de Venus n’a sans doute pas accès à Internet (pare-feu, DNS du conteneur Docker, proxy).') : null);
       } catch (e) { testOut.replaceChildren(h('p', { class: 'error-text' }, e.message)); } finally { testBtn.disabled = false; }
     } }, icon('search'), 'Tester les sources');
+    // Affiches trouvées avec l'ancienne correspondance (parfois fausses, ex. DB Multiverse pour Dragon Ball)
+    const redoBtn = h('button', { class: 'btn btn-small btn-ghost f', title: 'Oublie les affiches trouvées sans clé et les recherche à nouveau avec la correspondance stricte. Les affiches choisies à la main, de TMDB ou du dossier ne bougent pas.', onclick: async () => {
+      if (!await confirmSheet('Revérifier les affiches trouvées sans clé ? Elles seront recherchées à nouveau avec une correspondance plus stricte : les mauvaises disparaissent, les bonnes reviennent. Les affiches choisies à la main, celles de TMDB et celles du dossier ne bougent pas.', 'Revérifier')) return;
+      redoBtn.disabled = true;
+      try { const r = await api('/api/admin/posters/redo', { method: 'POST' }); toast(`${r.reset} affiche(s) à revérifier, recherche lancée en tâche de fond`); paintList(); }
+      catch (e) { toast(e.message, true); } finally { redoBtn.disabled = false; }
+    } }, icon('refresh'), 'Revérifier les affiches automatiques');
     return h('section', { class: 'box', id: 'affiches' },
       h('h2', {}, 'Affiches'),
       h('p', {}, 'Les affiches viennent de TMDB (avec une clé), ou sans clé de Trakt (si un Client ID est renseigné), du site de TMDB, d’IMP Awards, de Wikipédia, d’iTunes, de TVmaze et d’OMDb. Pour un titre précis, vous pouvez choisir parmi plusieurs propositions ou coller l’adresse d’une image trouvée sur n’importe quel site.'),
       h('label', { class: 'switch' }, h('span', {}, 'Chercher les affiches sur les services gratuits (sans clé)'), h('input', { type: 'checkbox', class: 'f', checked: a.settings.postersFree !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { postersFree: e.target.checked } }); toast(e.target.checked ? 'Recherche gratuite activée' : 'Recherche gratuite désactivée'); } })),
       head, list,
-      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, runBtn, testBtn), testOut);
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start', flexWrap: 'wrap' } }, runBtn, testBtn, redoBtn), testOut);
   }
 
   function backupBox(a) {

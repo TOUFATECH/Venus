@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
-import { all, run, getSetting } from './db.js';
+import { all, get, run, getSetting } from './db.js';
 import { lang } from './metadata.js';
 import dns from 'node:dns/promises';
 import net from 'node:net';
@@ -223,7 +223,41 @@ export async function findShow(title, year, { anime = false } = {}) {
   const yearOf = (s) => Number((s.premiered || '').slice(0, 4)) || null;
   const best = (year && shows.find((s) => yearOf(s) === year)) || shows.find((s) => s.image && s.image.original) || shows[0];
   if (!best.image || !best.image.original) return null;
-  return { poster: best.image.original, overview: stripHtml(best.summary) || null, year: yearOf(best), releaseDate: best.premiered || null, genres: best.genres || [] };
+  return { poster: best.image.original, overview: stripHtml(best.summary) || null, year: yearOf(best), releaseDate: best.premiered || null, genres: best.genres || [], tvmazeId: best.id };
+}
+
+// Image de fond d'une série sur TVmaze (type « background », la plus grande), sans clé
+export async function findShowBackdrop(title, year, { anime = false } = {}) {
+  const d = await getJson(`${TVMAZE}?q=${encodeURIComponent(title)}`);
+  if (!Array.isArray(d) || !d.length) return null;
+  const shows = d.map((x) => x.show).filter((s) => s && closeEnough(s.name, title) && (!anime || s.type === 'Animation' || s.language === 'Japanese'));
+  if (!shows.length) return null;
+  const yearOf = (s) => Number((s.premiered || '').slice(0, 4)) || null;
+  const best = (year && shows.find((s) => yearOf(s) === year)) || shows[0];
+  const imgs = await getJson(`https://api.tvmaze.com/shows/${best.id}/images`);
+  if (!Array.isArray(imgs)) return null;
+  const bg = imgs.filter((i) => i.type === 'background' && i.resolutions && i.resolutions.original && i.resolutions.original.width >= 1000)
+    .sort((a, b) => b.resolutions.original.width - a.resolutions.original.width)[0];
+  return bg ? bg.resolutions.original.url : null;
+}
+
+// Séries et animés sans image de fond : TVmaze en fournit pour la plupart. 120 titres par passage.
+export async function fillMissingBackdrops() {
+  const pending = all("SELECT id, title, year, category FROM items WHERE type = 'show' AND backdrop IS NULL AND IFNULL(backdrop_tried, 0) < 2 ORDER BY added_at DESC LIMIT 120");
+  let n = 0;
+  for (const it of pending) {
+    try {
+      const url = await findShowBackdrop(it.title, it.year, { anime: it.category === 'anime' });
+      const file = url ? await saveRemoteImage(url) : null;
+      if (file) { run('UPDATE items SET backdrop = ?, backdrop_tried = 0 WHERE id = ?', file, it.id); n++; }
+      else run('UPDATE items SET backdrop_tried = IFNULL(backdrop_tried, 0) + 1 WHERE id = ?', it.id);
+    } catch (e) {
+      if (/fetch failed|ENOTFOUND|ECONN|timeout/i.test(e.message)) break;
+      run('UPDATE items SET backdrop_tried = IFNULL(backdrop_tried, 0) + 1 WHERE id = ?', it.id);
+    }
+    await sleep(400);
+  }
+  return n;
 }
 
 // Première source qui répond ; une source en panne n'empêche pas les suivantes
@@ -244,11 +278,21 @@ export async function fillMissingPosters(onProgress) {
   let n = 0, done = 0;
   for (const it of pending) {
     try {
-      const found = await firstOf(it.type === 'movie'
-        ? [() => findTrakt('movie', it.title, it.year), () => findTmdbWeb('movie', it.title, it.year), () => findImp(it.title, it.year), () => findWiki('movie', it.title, it.year), () => findMovie(it.title, it.year), () => findOmdb('movie', it.title, it.year)]
-        : [() => findTrakt('tv', it.title, it.year), () => findTmdbWeb('tv', it.title, it.year), () => findShow(it.title, it.year, { anime: it.category === 'anime' }), () => findWiki('tv', it.title, it.year), () => findOmdb('tv', it.title, it.year)]);
+      const chain = (year) => (it.type === 'movie'
+        ? [() => findTrakt('movie', it.title, year), () => findTmdbWeb('movie', it.title, year), () => findImp(it.title, year), () => findWiki('movie', it.title, year), () => findMovie(it.title, year), () => findOmdb('movie', it.title, year)]
+        : [() => findTrakt('tv', it.title, year), () => findTmdbWeb('tv', it.title, year), () => findShow(it.title, year, { anime: it.category === 'anime' }), () => findWiki('tv', it.title, year), () => findOmdb('tv', it.title, year)]);
+      // L'année tirée du nom du fichier est parfois fausse (date de la copie) : second essai sans l'année
+      const found = (await firstOf(chain(it.year))) || (it.year ? await firstOf(chain(null)) : null);
       const poster = found ? (found.trakt ? await downloadTraktImage(found.poster) : await saveRemoteImage(found.poster)) : null;
       if (poster) {
+        if (it.type === 'show' && found.tvmazeId) {
+          try {
+            const imgs = await getJson(`https://api.tvmaze.com/shows/${found.tvmazeId}/images`);
+            const bg = Array.isArray(imgs) ? imgs.filter((x) => x.type === 'background' && x.resolutions && x.resolutions.original).sort((x, y) => y.resolutions.original.width - x.resolutions.original.width)[0] : null;
+            const bgFile = bg ? await saveRemoteImage(bg.resolutions.original.url) : null;
+            if (bgFile) run('UPDATE items SET backdrop = ? WHERE id = ? AND backdrop IS NULL', bgFile, it.id);
+          } catch { /* pas grave */ }
+        }
         run(`UPDATE items SET poster = ?, overview = IFNULL(overview, ?), year = IFNULL(year, ?), release_date = IFNULL(release_date, ?),
              genres = CASE WHEN genres IS NULL OR genres IN ('', '[]') THEN ? ELSE genres END, poster_tried = 0 WHERE id = ?`,
         poster, found.overview, found.year, found.releaseDate, JSON.stringify(found.genres || []), it.id);
