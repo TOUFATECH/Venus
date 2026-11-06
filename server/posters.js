@@ -272,6 +272,14 @@ async function firstOf(fns) {
 }
 
 // Complète les films et séries sans affiche (et sans fiche TMDB). Appelé après chaque analyse.
+// Combien de titres attendent encore une affiche (pour la cadence de la tâche)
+export const pendingPosters = () => get("SELECT COUNT(*) n FROM items WHERE type IN ('movie','show') AND poster IS NULL AND (matched <= 0 OR tmdb_id IS NULL) AND IFNULL(poster_tried, 0) < 3").n;
+// Affiches trouvées sans clé avec l'ancienne correspondance (trop large) : on les oublie pour les rechercher
+// avec la correspondance stricte. Les affiches choisies à la main, de TMDB ou du dossier ne bougent pas.
+export function redoFreePosters() {
+  const r = run(`UPDATE items SET poster = NULL, poster_tried = 0 WHERE type IN ('movie','show') AND poster LIKE 'p\\_%' ESCAPE '\\' AND (custom IS NULL OR custom NOT LIKE '%"poster"%')`);
+  return Number(r.changes || 0);
+}
 export async function fillMissingPosters(onProgress) {
   if (getSetting('posters_free', '1') === '0') return 0;
   const pending = all("SELECT id, type, title, year, category, overview, genres, release_date FROM items WHERE type IN ('movie','show') AND poster IS NULL AND (matched <= 0 OR tmdb_id IS NULL) AND IFNULL(poster_tried, 0) < 3 ORDER BY added_at DESC LIMIT 300");
