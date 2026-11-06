@@ -162,11 +162,16 @@ export function q(sql) {
 }
 export const all = (sql, ...p) => q(sql).all(...p);
 export const get = (sql, ...p) => q(sql).get(...p);
-export const run = (sql, ...p) => q(sql).run(...p);
+// Compteur des écritures dans la table des titres : permet de garder en mémoire les listes lourdes
+// (bibliothèques entières) et de les reconstruire seulement quand quelque chose a changé
+export let itemsVersion = 1;
+export const bumpItems = () => { itemsVersion++; };
+const touchesItems = (sql) => /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*\bitems\b/i.test(sql);
+export const run = (sql, ...p) => { const r = q(sql).run(...p); if (touchesItems(sql)) itemsVersion++; return r; };
 
 export function tx(fn) {
   db.exec('BEGIN');
-  try { const r = fn(); db.exec('COMMIT'); return r; }
+  try { const r = fn(); db.exec('COMMIT'); itemsVersion++; return r; }
   catch (e) { db.exec('ROLLBACK'); throw e; }
 }
 

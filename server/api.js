@@ -5,7 +5,7 @@ import { execFile, spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { Router, HttpError, readBody, sendJson, sendFile } from './http.js';
-import { db, all, get, run, tx, getSetting, setSetting } from './db.js';
+import { db, all, get, run, tx, itemsVersion, getSetting, setSetting } from './db.js';
 import { slugFor, resolveSlug, cleanName, pathFor, resolveEpisode } from './slugs.js';
 import { V, validate, passwordProblem, logSecurity, securityLog, listBans, unbanIp, banIp, attemptStats, isSecure, safeJoin, safeFileName, httpsMode } from './security.js';
 import { twofaOn, startChallenge, verifyChallenge, resendChallenge, twofaEmail, twofaStats, maskEmail } from './twofa.js';
@@ -20,6 +20,7 @@ import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scan
 import { pipeline } from 'node:stream/promises';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
 import { saveRemoteImage, freePosterCandidates, fillMissingPosters, testSources } from './posters.js';
+import { findTrailerFor } from './youtube.js';
 import { checkUpdate, runUpdate, localCommit } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
 import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAYS } from './trash.js';
@@ -126,7 +127,7 @@ function card(i, prog) {
     progress: prog ? { position: prog.position, duration: prog.duration, watched: !!prog.watched } : undefined,
     added: i.added_at, category: i.category, released: i.release_date || null,
     popularity: i.popularity, group: i.grp,
-    ratings: i.ratings ? parseJson(i.ratings, null) : null, trailer: i.trailer ? (parseJson(i.trailer, null) || {}).key || null : null,
+    ratings: i.ratings ? parseJson(i.ratings, null) : null, trailer: i.trailer ? (parseJson(i.trailer, null) || {}).key || null : null, // { none: … } = déjà cherché sans succès
     number: i.type === 'channel' ? channelNumber(i) : undefined,
   };
 }
@@ -648,6 +649,7 @@ router.get('/api/home', (ctx) => {
 });
 
 // Bibliothèque d'une source, avec l'état vu / non vu pour le profil (filtres et tris côté interface)
+const libraryCache = new Map();
 router.get('/api/library', (ctx) => {
   const p = requireProfile(ctx);
   const age = ageClause(p);
@@ -656,23 +658,32 @@ router.get('/api/library', (ctx) => {
     movie: "i.type = 'movie'", show: "i.type = 'show' AND COALESCE(i.category, 'show') = 'show'", anime: "i.type = 'show' AND i.category = 'anime'",
     clip: "i.type = 'clip' AND COALESCE(i.category, 'clip') != 'recording'", channel: "i.type = 'channel'", recording: "i.type = 'clip' AND i.category = 'recording'",
   }[type] || "i.type IN ('movie','show','clip')";
-  const items = all(`SELECT i.* FROM items i WHERE ${where} AND ${age.sql} ORDER BY ${type === 'channel' ? 'i.episode_num' : 'i.sort_title'}`, ...age.args);
+  // Les cartes (sans l'état vu / non vu, propre à chaque profil) sont gardées en mémoire tant que la table
+  // des titres ne change pas : avec 2 000 films, les reconstruire à chaque visite prenait plusieurs centaines de ms
+  const key = `${type}|${age.sql}|${age.args.join(',')}`;
+  let base = libraryCache.get(key);
+  if (!base || base.v !== itemsVersion) {
+    const items = all(`SELECT i.* FROM items i WHERE ${where} AND ${age.sql} ORDER BY ${type === 'channel' ? 'i.episode_num' : 'i.sort_title'}`, ...age.args);
+    // Résolution du premier épisode d'une série, pour le filtre « 4K / HDR »
+    const firstProbe = type === 'channel' ? new Map() : new Map(all(`SELECT show_id, probe FROM items WHERE type = 'episode' AND probe IS NOT NULL GROUP BY show_id`).map((r) => [r.show_id, r.probe]));
+    const cards = items.map((i) => {
+      const c = card(i);
+      if (type !== 'channel') {
+        const m = mediaSummary(i.type === 'show' ? firstProbe.get(i.id) : i.probe);
+        if (m) { c.res = m.resolution === '4K' ? '4K' : /1080/.test(m.resolution) ? '1080p' : /720/.test(m.resolution) ? '720p' : 'SD'; c.hdr = !!m.hdr; }
+        const cr = parseJson(i.credits, null);
+        if (cr) { c.studios = [...(cr.studios || []), ...(cr.networks || [])].slice(0, 6); c.people = [...(cr.directors || []), ...(cr.cast || []).slice(0, 8)].map((x) => x.name); }
+        if (i.duration && !c.runtime) c.runtime = Math.round(i.duration / 60);
+      }
+      return c;
+    });
+    if (type === 'channel') cards.sort((a, b) => (a.number || 0) - (b.number || 0));
+    base = { v: itemsVersion, cards };
+    if (libraryCache.size > 24) libraryCache.clear();
+    libraryCache.set(key, base);
+  }
   const idx = statusIndex(p.id);
-  // Résolution du premier épisode d'une série, pour le filtre « 4K / HDR »
-  const firstProbe = type === 'channel' ? new Map() : new Map(all(`SELECT show_id, probe FROM items WHERE type = 'episode' AND probe IS NOT NULL GROUP BY show_id`).map((r) => [r.show_id, r.probe]));
-  const out = items.map((i) => {
-    const c = withStatus(card(i), idx);
-    if (type !== 'channel') {
-      const m = mediaSummary(i.type === 'show' ? firstProbe.get(i.id) : i.probe);
-      if (m) { c.res = m.resolution === '4K' ? '4K' : /1080/.test(m.resolution) ? '1080p' : /720/.test(m.resolution) ? '720p' : 'SD'; c.hdr = !!m.hdr; }
-      const cr = parseJson(i.credits, null);
-      if (cr) { c.studios = [...(cr.studios || []), ...(cr.networks || [])].slice(0, 6); c.people = [...(cr.directors || []), ...(cr.cast || []).slice(0, 8)].map((x) => x.name); }
-      if (i.duration && !c.runtime) c.runtime = Math.round(i.duration / 60);
-    }
-    return c;
-  });
-  if (type === 'channel') out.sort((a, b) => (a.number || 0) - (b.number || 0));
-  sendJson(ctx.res, out);
+  sendJson(ctx.res, base.cards.map((c) => withStatus({ ...c }, idx)));
 });
 
 router.get('/api/items/:id', (ctx) => {
@@ -896,6 +907,17 @@ router.post('/api/items/:id/mylist', (ctx) => {
   sendJson(ctx.res, { inList: !exists, follows });
 });
 
+// Bande-annonce à la demande (sans clé TMDB) : recherche YouTube côté serveur, mémorisée
+const trailerLimiter = new Map();
+router.post('/api/items/:id/trailer', async (ctx) => {
+  requireProfile(ctx);
+  const id = Number(ctx.params.id);
+  const last = trailerLimiter.get(id) || 0;
+  if (Date.now() - last < 5000) throw new HttpError(429, 'Un instant…');
+  trailerLimiter.set(id, Date.now());
+  const key = await findTrailerFor(id);
+  sendJson(ctx.res, { trailer: key });
+});
 router.post('/api/items/:id/watched', async (ctx) => {
   const p = requireProfile(ctx);
   const b = await readBody(ctx.req);

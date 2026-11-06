@@ -59,7 +59,8 @@ function liveHover(el, item) {
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
 
 // Carte paysage (rangées) ou affiche (grilles). Le titre est écrit sous l'image, lisible de loin.
-export function card(item, { poster = false, rank = null, onFocus, queue = null } = {}) {
+export function card(item, opts = {}) {
+  const { poster = false, rank = null, onFocus, queue = null } = opts;
   if (item.type === 'channel') return channelCard(item);
   const isEp = item.type === 'episode';
   const isClip = item.type === 'clip';
@@ -107,7 +108,22 @@ export function card(item, { poster = false, rank = null, onFocus, queue = null 
     rank ? h('span', { class: 'rank', 'aria-hidden': 'true' }, rank) : null,
     isNew && !seen ? h('span', { class: 'tag-new' }, isEp ? 'Nouvel épisode' : 'Nouveau') : null,
     pct > 0 && !(p && p.watched) ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
-    seen ? h('span', { class: 'check', title: 'Déjà vu' }, icon('check')) : null),
+    seen ? h('span', { class: 'check', title: 'Déjà vu' }, icon('check')) : null,
+    // Séries et animés : pastille avec le nombre d'épisodes (et l'avancement quand on a commencé)
+    item.type === 'show' && item.episodes ? h('span', { class: 'ep-pill', title: `${item.episodes} épisode${item.episodes > 1 ? 's' : ''}` },
+      item.status === 'progress' && item.unseen != null && item.unseen < item.episodes ? `${item.episodes - item.unseen}/${item.episodes}` : `${item.episodes} ép.`) : null,
+    // Vu / non vu d'un clic, sans ouvrir la fiche (apparaît au survol ; toujours là sur écran tactile)
+    !isClip ? h('button', { type: 'button', class: 'card-eye f', 'aria-label': seen ? `Marquer « ${title} » comme non vu` : `Marquer « ${title} » comme vu`, title: seen ? 'Marquer comme non vu' : 'Marquer comme vu',
+      onclick: async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        try {
+          await api(`/api/items/${item.id}/watched`, { method: 'POST', body: { watched: !seen } });
+          const next = { ...item, status: seen ? 'unseen' : 'seen', progress: seen ? null : { ...(p || {}), watched: true, position: 0 }, unseen: seen ? item.episodes : 0, next: null };
+          const fresh = card(next, opts);
+          el.replaceWith(fresh);
+          toast(seen ? `« ${title} » : non vu` : `« ${title} » : vu`, { type: 'success', action: { label: 'Annuler', onClick: async () => { await api(`/api/items/${item.id}/watched`, { method: 'POST', body: { watched: seen } }); fresh.replaceWith(card(item, opts)); } } });
+        } catch (err) { toast(err.message, true); }
+      } }, icon(seen ? 'eye-off' : 'eye')) : null),
   h('div', { class: 'cap' }, h('b', { title: isClip ? title : isEp ? `Voir S${item.season}:É${item.episode} - ${item.title} dans sa saison` : `Voir la fiche de ${title}` }, title),
     sub || sc ? h('small', {}, sub || '', sc ? h('span', { class: 'cap-score', title: 'Note moyenne des sites' }, `★ ${sc.toFixed(1).replace('.', ',')}`) : null) : null));
   if (onFocus) el.addEventListener('focus', () => onFocus(item));

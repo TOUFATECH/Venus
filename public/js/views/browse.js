@@ -41,6 +41,31 @@ const store = {
 };
 const shuffleSeed = (n) => { const a = Array.from({ length: n }, (_, i) => i); for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
+// Grandes médiathèques (2 000 films) : on affiche d'abord ce qui tient à l'écran, le reste arrive par paquets
+// quand on approche du bas, au lieu de construire 2 000 cartes d'un coup (la page restait figée plusieurs secondes)
+let chunkObs = null;
+function renderChunked(grid, list, make, { first = 72, chunk = 72 } = {}) {
+  if (chunkObs) { chunkObs.disconnect(); chunkObs = null; }
+  grid.replaceChildren(...list.slice(0, first).map(make));
+  let i = first;
+  if (i >= list.length) return;
+  const sentinel = h('div', { class: 'grid-more', 'aria-hidden': 'true' });
+  grid.after(sentinel);
+  const more = () => {
+    const frag = document.createDocumentFragment();
+    for (const it of list.slice(i, i + chunk)) frag.append(make(it));
+    i += chunk;
+    grid.append(frag);
+    if (i >= list.length) { chunkObs && chunkObs.disconnect(); chunkObs = null; sentinel.remove(); }
+  };
+  chunkObs = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) more(); }, { rootMargin: '1200px 0px' });
+  chunkObs.observe(sentinel);
+  // Le reste se construit aussi tout seul pendant les temps morts, pour que la recherche et le tri aient tout
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
+  const step = () => { if (i < list.length && chunkObs) { more(); idle(step, { timeout: 1500 }); } };
+  idle(step, { timeout: 1500 });
+}
+
 export async function render(main, { kind, query }) {
   const upcomingTab = (kind === 'show' || kind === 'anime') && query && query.get('vue') === 'avenir';
   const wishTab = kind === 'mylist' && query && query.get('vue') === 'envies';
@@ -102,8 +127,7 @@ export async function render(main, { kind, query }) {
     if (f.desc && f.sort !== 'random') list.reverse();
     shown = list;
     grid.className = `grid view-${view}${isClip && view !== 'list' ? ' grid-wide' : ''}${view === 'wide' ? ' grid-wide' : ''}`;
-    if (view === 'list') grid.replaceChildren(...list.map(listRow));
-    else grid.replaceChildren(...list.map((i) => card(i, { poster: view === 'poster' && !isClip, queue: isClip ? () => shown : null })));
+    renderChunked(grid, list, view === 'list' ? listRow : (i) => card(i, { poster: view === 'poster' && !isClip, queue: isClip ? () => shown : null }));
     const word = isClip ? 'clip' : 'titre';
     count.textContent = `${list.length}${list.length !== items.length ? ` sur ${items.length}` : ''} ${word}${items.length > 1 ? 's' : ''}`;
     if (playAll) playAll.hidden = list.length < 1;

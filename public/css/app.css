@@ -2931,3 +2931,15 @@ html.kids .btn-play { font-size: 1.1rem; min-height: 54px; }
 
 /* Fond de l'accueil sans image de fond ni extrait : l'affiche agrandie et adoucie */
 .hero-bg .poster-fill { object-fit: cover; object-position: 50% 20%; filter: blur(22px) saturate(1.3) brightness(.85); transform: scale(1.12); }
+
+/* Cartes : pastille d'épisodes et œil « vu / non vu » */
+.card .ep-pill { position: absolute; left: 8px; bottom: 8px; padding: 3px 8px; border-radius: 999px; font-size: .7rem; font-weight: 700; letter-spacing: .02em; color: var(--paper); background: rgba(10, 12, 20, .72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); pointer-events: none; }
+.card .shot .bar ~ .ep-pill, .card .shot:has(.bar) .ep-pill { bottom: 11px; }
+.card .card-eye { position: absolute; right: 8px; top: 8px; width: 32px; height: 32px; border: 0; border-radius: 50%; display: grid; place-items: center; color: var(--paper); background: rgba(10, 12, 20, .72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); cursor: pointer; opacity: 0; transform: scale(.9); transition: opacity .2s, transform .2s var(--ease), background .2s; z-index: 2; }
+.card .card-eye svg { width: 18px; height: 18px; }
+.card:hover .card-eye, .card:focus-within .card-eye, .card .card-eye:focus-visible, html.touch .card .card-eye { opacity: 1; transform: none; }
+.card .card-eye:hover { background: var(--sulfur); color: var(--night); }
+.card .shot .check { right: 8px; top: 8px; }
+.card:hover .shot .check, .card:focus-within .shot .check, html.touch .card .shot .check { opacity: 0; }
+.card .tag-new { z-index: 1; }
+@media (hover: none) { .card .card-eye { opacity: .85; transform: none; width: 28px; height: 28px; } .card .card-eye svg { width: 15px; height: 15px; } .card .shot .check { opacity: 0; } }
