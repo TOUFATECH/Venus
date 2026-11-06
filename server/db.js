@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS playlist_items (playlist_id INTEGER REFERENCES playli
 const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
 for (const [col, def] of [['category', 'TEXT'], ['release_date', 'TEXT'], ['popularity', 'REAL'], ['stream_url', 'TEXT'], ['grp', 'TEXT'],
   ['imdb_id', 'TEXT'], ['anilist_id', 'INTEGER'], ['mal_id', 'INTEGER'], ['ratings', 'TEXT'], ['ratings_at', 'INTEGER'], ['trailer', 'TEXT'], ['channel_num', 'INTEGER'], ['credits', 'TEXT'],
-  ['nfo', 'TEXT'], ['custom', 'TEXT'], ['version_of', 'INTEGER'], ['tmdb_eps', 'TEXT'], ['tmdb_seasons', 'TEXT'], ['poster_tried', 'INTEGER'], ['backdrop_tried', 'INTEGER'], ['tvmaze_id', 'INTEGER'], ['guide_eps', 'TEXT'], ['guide_at', 'INTEGER']]) {
+  ['nfo', 'TEXT'], ['custom', 'TEXT'], ['version_of', 'INTEGER'], ['tmdb_eps', 'TEXT'], ['tmdb_seasons', 'TEXT'], ['poster_tried', 'INTEGER'], ['backdrop_tried', 'INTEGER'], ['tvmaze_id', 'INTEGER'], ['guide_eps', 'TEXT'], ['guide_at', 'INTEGER'], ['stream_opts', 'TEXT'], ['ch_ok', 'INTEGER'], ['ch_checked', 'INTEGER'], ['ch_error', 'TEXT']]) {
   if (!cols('items').includes(col)) db.exec(`ALTER TABLE items ADD COLUMN ${col} ${def}`);
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_items_version ON items(version_of)');

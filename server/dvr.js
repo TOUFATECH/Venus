@@ -13,6 +13,8 @@ import { logActivity } from './activity.js';
 import { notify } from './notify.js';
 import { emitHook } from './webhooks.js';
 
+// Anciens enregistrements : le logo de la chaîne servait de vignette ; il passe en logo, la vignette vient de la vidéo
+try { db.exec("UPDATE items SET logo = COALESCE(logo, poster), poster = NULL WHERE category = 'recording' AND poster IS NOT NULL"); } catch { /* */ }
 db.exec(`CREATE TABLE IF NOT EXISTS recordings (id INTEGER PRIMARY KEY, channel_id INTEGER, profile_id INTEGER, title TEXT, sub TEXT, descr TEXT,
   start INTEGER, stop INTEGER, status TEXT, path TEXT, item_id INTEGER, rule_id INTEGER, error TEXT, created_at INTEGER);
 CREATE TABLE IF NOT EXISTS record_rules (id INTEGER PRIMARY KEY, channel_id INTEGER, title TEXT, profile_id INTEGER, new_only INTEGER DEFAULT 0, created_at INTEGER);
@@ -81,7 +83,8 @@ function start(rec) {
     let probe = null;
     try { probe = await probeFile(file); } catch { /* */ }
     const st = fs.statSync(file);
-    const r = run(`INSERT OR IGNORE INTO items(library_id, type, category, title, original_title, sort_title, overview, path, size, mtime, duration, probe, poster, added_at, matched, release_date)
+    // Vignette = une image de l'enregistrement (pas le logo de la chaîne, gardé à part pour l'afficher à côté du nom)
+    const r = run(`INSERT OR IGNORE INTO items(library_id, type, category, title, original_title, sort_title, overview, path, size, mtime, duration, probe, logo, added_at, matched, release_date)
       VALUES(?, 'clip', 'recording', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`,
     lib.id, rec.sub ? `${rec.title} — ${rec.sub}` : rec.title, ch.title, String(rec.title).toLowerCase(), rec.descr, file, st.size, Math.floor(st.mtimeMs), probe ? probe.duration : null, probe ? JSON.stringify(probe) : null, ch.poster, Date.now(), new Date(rec.start).toISOString().slice(0, 10));
     const item = get('SELECT id FROM items WHERE path = ?', file);

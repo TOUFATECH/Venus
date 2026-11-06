@@ -275,6 +275,7 @@ export function watchLibraries() {
 }
 
 // ---------------------------------------------------------------- IPTV : liste de lecture M3U (adresse ou fichier)
+import { FREE_TV, buildFreeTv, checkChannels } from './free-tv.js';
 export function parseM3u(text) {
   const out = [];
   let cur = null;
@@ -285,6 +286,11 @@ export function parseM3u(text) {
       const attr = (k) => { const m = new RegExp(`${k}="([^"]*)"`, 'i').exec(line); return m ? m[1].trim() : null; };
       const comma = line.lastIndexOf(',');
       cur = { name: (comma >= 0 ? line.slice(comma + 1) : '').trim() || attr('tvg-name') || 'Chaîne', logo: attr('tvg-logo'), group: attr('group-title'), id: attr('tvg-id'), chno: parseInt(attr('tvg-chno') || attr('channel-number') || attr('tvg-num') || '', 10) || null };
+    } else if (/^#EXTVLCOPT:http-(user-agent|referrer|referer)=/i.test(line)) {
+      // En-têtes demandés par certaines chaînes (navigateur, page d'origine) : gardés pour ffmpeg
+      cur = cur || { name: 'Chaîne' };
+      const [, k, v] = /^#EXTVLCOPT:http-(user-agent|referrer|referer)=(.*)$/i.exec(line) || [];
+      if (k && v) cur.opts = { ...(cur.opts || {}), [/agent/i.test(k) ? 'ua' : 'referer']: v.trim().slice(0, 400) };
     } else if (line.startsWith('#EXTGRP:') && cur) {
       cur.group = cur.group || line.slice(8).trim();
     } else if (!line.startsWith('#')) {
@@ -297,7 +303,8 @@ export function parseM3u(text) {
 
 async function scanIptv(lib) {
   let text;
-  if (/^https?:\/\//i.test(lib.path)) {
+  if (lib.path === FREE_TV) text = await buildFreeTv();
+  else if (/^https?:\/\//i.test(lib.path)) {
     const res = await fetch(lib.path, { signal: AbortSignal.timeout(30000), headers: { 'User-Agent': 'Venus/1.0' } });
     if (!res.ok) throw new Error(`liste inaccessible (${res.status})`);
     text = await res.text();
@@ -305,7 +312,7 @@ async function scanIptv(lib) {
   const channels = parseM3u(text);
   // Guide des programmes : adresse donnée dans l'en-tête de la liste, ou celle de l'abonnement Xtream
   const head = (/^#EXTM3U([^\n]*)/i.exec(text.slice(0, 4000)) || [])[1] || '';
-  const epg = [...head.matchAll(/(?:url-tvg|x-tvg-url|tvg-url)="([^"]+)"/gi)].flatMap((m) => m[1].split(',')).map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u));
+  const epg = [...head.matchAll(/(?:url-tvg|x-tvg-url|tvg-url)="([^"]+)"/gi)].flatMap((m) => m[1].split(',')).map((u) => u.trim()).filter((u) => /^https?:\/\//i.test(u) || u === 'venus:guide-fr');
   if (/\/get\.php\?/i.test(lib.path)) { try { const u = new URL(lib.path); const x = new URL('/xmltv.php', u); x.searchParams.set('username', u.searchParams.get('username') || ''); x.searchParams.set('password', u.searchParams.get('password') || ''); epg.push(x.href); } catch { /* */ } }
   rememberEpgUrl(lib.id, [...new Set(epg)]);
   const known = new Map(all("SELECT id, stream_url FROM items WHERE library_id=? AND type='channel'", lib.id).map((r) => [r.stream_url, r]));
@@ -314,12 +321,15 @@ async function scanIptv(lib) {
     channels.forEach((c, i) => {
       seen.add(c.url);
       const k = known.get(c.url);
-      if (k) run('UPDATE items SET title=?, poster=?, grp=?, episode_num=?, channel_num=?, key=? WHERE id=?', c.name, c.logo, c.group, i + 1, c.chno, c.id || null, k.id);
-      else run(`INSERT INTO items(library_id, type, category, title, sort_title, poster, grp, stream_url, episode_num, channel_num, added_at, matched, key)
-                VALUES(?, 'channel', 'channel', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`, lib.id, c.name, sortTitle(c.name), c.logo, c.group, c.url, i + 1, c.chno, Date.now(), c.id || null);
+      const opts = c.opts ? JSON.stringify(c.opts) : null;
+      if (k) run('UPDATE items SET title=?, poster=?, grp=?, episode_num=?, channel_num=?, key=?, stream_opts=? WHERE id=?', c.name, c.logo, c.group, i + 1, c.chno, c.id || null, opts, k.id);
+      else run(`INSERT INTO items(library_id, type, category, title, sort_title, poster, grp, stream_url, episode_num, channel_num, added_at, matched, key, stream_opts)
+                VALUES(?, 'channel', 'channel', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`, lib.id, c.name, sortTitle(c.name), c.logo, c.group, c.url, i + 1, c.chno, Date.now(), c.id || null, opts);
     });
     for (const [url, r] of known) if (!seen.has(url)) run('DELETE FROM items WHERE id=?', r.id);
   });
   console.log(`[iptv] ${lib.name} : ${channels.length} chaînes`);
   events.emit('library', { added: [] });
+  // Chaînes jamais vérifiées : test en arrière-plan (images reçues ou non)
+  checkChannels({ libraryId: lib.id, onlyNew: true }).catch((e) => console.warn('[iptv] vérification :', e.message));
 }

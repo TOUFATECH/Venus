@@ -51,3 +51,40 @@ export function trailerPlayer(key, { mute = true, start = 0, loop = false, onPla
 export function trailerUrl(key) {
   return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(key)}?autoplay=1&rel=0&modestbranding=1&playsinline=1`;
 }
+
+// Bande-annonce seule, en plein écran : pas de fenêtre autour, juste la vidéo et un bouton « Fermer »
+// (Échap, Retour de la télécommande ou un clic sur le fond la ferment aussi)
+export function playTrailer(key, title = '', { onClose } = {}) {
+  const prev = document.activeElement;
+  const frame = document.createElement('iframe');
+  Object.assign(frame, { className: 'trailer-full-frame', src: trailerUrl(key), title: `Bande-annonce${title ? ` de ${title}` : ''}`, allowFullscreen: true, referrerPolicy: 'strict-origin-when-cross-origin' });
+  frame.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+  const close = document.createElement('button');
+  close.className = 'trailer-close f';
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Fermer la bande-annonce');
+  close.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Fermer</span>';
+  const wrap = document.createElement('div');
+  wrap.className = 'trailer-full';
+  wrap.setAttribute('role', 'dialog');
+  wrap.setAttribute('aria-modal', 'true');
+  wrap.setAttribute('aria-label', frame.title);
+  wrap.append(frame, close);
+  const done = () => {
+    removeEventListener('keydown', onKey, true);
+    frame.src = 'about:blank';
+    wrap.classList.add('off');
+    setTimeout(() => wrap.remove(), 220);
+    document.documentElement.classList.remove('trailer-open');
+    if (prev && prev.focus) prev.focus();
+    if (onClose) onClose();
+  };
+  const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Backspace' || e.key === 'GoBack' || e.keyCode === 461 || e.keyCode === 10009) { e.preventDefault(); e.stopPropagation(); done(); } };
+  close.addEventListener('click', done);
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) done(); });
+  addEventListener('keydown', onKey, true);
+  document.documentElement.classList.add('trailer-open');
+  document.body.append(wrap);
+  requestAnimationFrame(() => { wrap.classList.add('on'); close.focus(); });
+  return done;
+}

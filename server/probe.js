@@ -1,4 +1,5 @@
 // Analyse des fichiers vidéo (ffprobe) et des sous-titres externes
+import { get } from './db.js';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,9 +27,16 @@ function containerOf(file, formatName = '') {
 }
 
 // Options réseau pour les flux en direct (IPTV)
-export const NET_INPUT = (url) => (/^https?:/i.test(url)
-  ? ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-rw_timeout', '15000000', '-user_agent', 'Mozilla/5.0 Venus']
-  : []);
+// Options réseau de ffmpeg pour une chaîne : reconnexion, et l'identité de navigateur / la page d'origine que
+// certaines chaînes exigent (lignes #EXTVLCOPT de la liste M3U, gardées dans stream_opts)
+const BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+export const NET_INPUT = (url) => {
+  if (!/^https?:/i.test(url)) return [];
+  let o = {};
+  try { o = JSON.parse((get('SELECT stream_opts FROM items WHERE stream_url = ? AND stream_opts IS NOT NULL LIMIT 1', url) || {}).stream_opts || '{}') || {}; } catch { /* */ }
+  return ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-rw_timeout', '15000000', '-user_agent', o.ua || BROWSER,
+    ...(o.referer ? ['-headers', `Referer: ${o.referer}\r\n`] : [])];
+};
 
 const liveCache = new Map();
 export async function probeLive(url) {

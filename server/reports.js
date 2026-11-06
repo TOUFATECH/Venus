@@ -37,7 +37,7 @@ export function weeklyReport() {
 
 export async function sendWeeklyReport() {
   const r = weeklyReport();
-  await notify({ title: 'Venus, cette semaine', body: r.lines.slice(0, 2).join(' '), url: '/tableau-de-bord', tag: 'weekly' }, { adminOnly: true });
+  await notify({ title: 'Venus, cette semaine', body: r.lines.slice(0, 2).join(' '), url: '/dashboard', tag: 'weekly' }, { adminOnly: true });
   const to = twofaEmail();
   if (to && smtpConf().host) {
     try { await sendMail({ to, subject: `Venus : rapport de la semaine`, text: r.text, html: `<h2>Venus, cette semaine</h2><ul>${r.lines.map((l) => `<li>${l.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]))}</li>`).join('')}</ul>` }); } catch (e) { console.warn('[rapport] e-mail :', e.message); }

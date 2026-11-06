@@ -57,7 +57,7 @@ export function logSecurity(kind, ip, detail = '', severity = 'warn') {
   // Alerte à l'administrateur pour les évènements graves (au plus une fois toutes les 10 min par type)
   if (severity === 'high' && notifyFn && Date.now() - (lastAlert.get(kind) || 0) > 600000) {
     lastAlert.set(kind, Date.now());
-    try { notifyFn({ title: 'Venus : alerte de sécurité', body: `${detail}${ip ? ` (${ip})` : ''}`, url: '/tableau-de-bord' }); } catch { /* */ }
+    try { notifyFn({ title: 'Venus : alerte de sécurité', body: `${detail}${ip ? ` (${ip})` : ''}`, url: '/dashboard' }); } catch { /* */ }
   }
 }
 setInterval(() => {

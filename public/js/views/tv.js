@@ -1,7 +1,8 @@
 // TV en direct : aperçu muet de la chaîne sélectionnée + mosaïque des chaînes avec leur image actuelle
 import { api, auth, deviceCaps } from '../api.js';
 import { h, icon, img } from '../ui.js';
-import { go } from '../app.js';
+import { go, state } from '../app.js';
+import { toast } from '../ui.js';
 import { playPath } from '../components.js';
 import { attachStream, numberZapper } from '../live.js';
 
@@ -15,7 +16,11 @@ export async function render(main, { query } = {}) {
     return vue === 'guide' ? m.renderGuide(main) : m.renderRecordings(main);
   }
   const { tvTabs, programSheet } = await import('./guide.js');
-  const channels = await api('/api/library?type=channel');
+  const all = await api('/api/library?type=channel');
+  // Chaînes qui n'ont pas donné d'image lors de la dernière vérification : cachées (l'administrateur peut revérifier)
+  const down = all.filter((c) => c.down);
+  const channels = all.filter((c) => !c.down);
+  const admin = !!(state.profile && state.profile.isAdmin);
   // Programme en cours et suivant (guide XMLTV), s'il y en a un
   let nn = {};
   try { nn = await api('/api/epg/now'); } catch { /* pas de guide */ }
@@ -34,9 +39,11 @@ export async function render(main, { query } = {}) {
   const progEl = h('div', { class: 'pv-prog' });
   const soundBtn = h('button', { class: 'btn btn-ghost btn-small f', onclick: () => { muted = !muted; video.muted = muted; soundBtn.textContent = muted ? 'Activer le son' : 'Couper le son'; } }, 'Activer le son');
   const watchBtn = h('button', { class: 'btn btn-play f', onclick: () => selected && go(playPath(selected.id)) }, icon('play'), 'Regarder');
+  // Enregistrer la chaîne : le programme en cours, le suivant, ou une durée (même sans guide)
+  const recBtn = h('button', { class: 'btn btn-ghost f', onclick: async () => { if (!selected) return; const g = await import('./guide.js'); g.recordSheet(selected, nn[selected.id] || []); } }, h('span', { class: 'rec-dot' }), 'Enregistrer');
   const preview = h('section', { class: 'pv', 'aria-label': 'Aperçu de la chaîne' },
     h('div', { class: 'pv-screen' }, still, video, status, h('span', { class: 'live-dot pv-live' }, 'Direct')),
-    h('div', { class: 'pv-info' }, h('div', {}, nameEl, groupEl, progEl), h('div', { class: 'actions' }, watchBtn, soundBtn)));
+    h('div', { class: 'pv-info' }, h('div', {}, nameEl, groupEl, progEl), h('div', { class: 'actions' }, watchBtn, recBtn, soundBtn)));
 
   async function stopPreview() {
     if (detach) { detach(); detach = null; }
@@ -112,6 +119,16 @@ export async function render(main, { query } = {}) {
       return b;
     })) : null;
 
+  function downNote() {
+    const btn = h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => {
+      btn.disabled = true; btn.lastChild.textContent = 'Vérification en cours…';
+      try { await api('/api/admin/channels/check', { method: 'POST', body: {} }); toast('Vérification lancée : les chaînes sont testées une par une (quelques minutes)'); }
+      catch (e) { toast(e.message, true); btn.disabled = false; btn.lastChild.textContent = 'Revérifier'; }
+    } }, icon('refresh'), 'Revérifier');
+    return h('details', { class: 'tv-down' },
+      h('summary', {}, `${down.length} chaîne${down.length > 1 ? 's' : ''} hors service masquée${down.length > 1 ? 's' : ''} (aucune image reçue lors de la dernière vérification)`),
+      h('ul', {}, down.slice(0, 60).map((c) => h('li', {}, h('b', {}, c.title), ` — ${c.downWhy}`))), btn);
+  }
   if (!channels.length) {
     main.append(h('div', { class: 'page' }, h('div', { class: 'page-head' }, h('h1', {}, 'TV en direct')),
       h('div', { class: 'empty' }, h('h2', {}, 'Aucune chaîne'), h('p', {}, 'Ajoutez la liste M3U de votre abonnement IPTV pour voir vos chaînes ici.'),
@@ -122,6 +139,7 @@ export async function render(main, { query } = {}) {
   main.append(h('div', { class: 'page tv-page' },
     h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, 'TV en direct'), count), h('div', { class: 'head-tools' }, tvTabs('chaines'))),
     preview,
+    down.length && admin ? downNote() : null,
     h('div', { class: 'filters' }, chips || h('span'), channels.length > 8 ? h('div', { class: 'search-box small' }, icon('search'), input) : null),
     grid));
   paint();

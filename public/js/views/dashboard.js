@@ -28,7 +28,7 @@ const fmtUptime = (s) => {
 const meter = (pct, cls = '') => h('div', { class: `meter ${cls}${pct > 90 ? ' hot' : pct > 75 ? ' warm' : ''}` }, h('i', { style: { width: `${Math.max(0, Math.min(100, pct))}%` } }));
 const ACT_ICON = { play: 'play', stop: 'stop', login: 'key', message: 'chat', control: 'pause', device: 'exit', server: 'power', scan: 'refresh', seerr: 'down' };
 
-export async function render(main) {
+export async function render(main, { query } = {}) {
   if (!state.profile.isAdmin) { main.append(h('div', { class: 'empty' }, h('h2', {}, 'Réservé à l’administrateur'))); return; }
   let d = await api('/api/admin/dashboard');
   const page = h('div', { class: 'page dash' });
@@ -62,10 +62,36 @@ export async function render(main) {
   const kpis = h('div', { class: 'kpis' });
   const kpiMore = h('p', { class: 'kpi-more' });
   // Deux colonnes : ce qui se passe (lectures, santé, activité) à gauche ; les outils du quotidien à droite.
-  page.append(head, updNote, kpis, kpiMore,
-    h('div', { class: 'dash-cols' },
-      h('div', { class: 'dash-col' }, slot('playing', 'playing-box'), slot('system', 'c-health'), slot('activity', 'c-act')),
-      h('div', { class: 'dash-col side' }, slot('code', 'code-box c-code'), slot('devices', 'c-dev'), slot('tasks', 'c-task'), slot('libs', 'c-libs'))));
+  // Navigation par rubriques, comme les réglages : une colonne à gauche (bande en haut sur téléphone),
+  // chaque rubrique ne montre que ses blocs ; les outils (Qualité, Sécurité…) sont des liens visibles, plus de menu caché.
+  const NAV = [
+    ['Suivi', [['apercu', 'Aperçu', 'gauge'], ['lectures', 'En ce moment', 'play'], ['appareils', 'Appareils', 'cast'], ['activite', 'Activité', 'chat']]],
+    ['Serveur', [['sante', 'Santé', 'server'], ['taches', 'Tâches de fond', 'refresh'], ['medias', 'Médiathèques', 'folder']]],
+    ['Outils', [['/qualite', 'Qualité', 'film'], ['/securite', 'Sécurité', 'lock'], ['/serveur', 'Mises à jour et journaux', 'spark'], ['/stats', 'Statistiques', 'gauge'], ['/reglages', 'Réglages', 'gear']]],
+  ];
+  const WHERE = { playing: ['apercu', 'lectures'], code: ['apercu', 'appareils'], tasks: ['apercu', 'taches'], devices: ['appareils'], system: ['sante'], activity: ['activite'], libs: ['medias', 'sante'] };
+  const TABS = NAV.flatMap(([, l]) => l).filter(([k]) => !k.startsWith('/'));
+  let tab = (query && query.get('vue')) || (() => { try { return sessionStorage.getItem('vn_dash_tab'); } catch { return null; } })() || 'apercu';
+  if (!TABS.some(([k]) => k === tab)) tab = 'apercu';
+  const nav = h('nav', { class: 'set-nav', 'aria-label': 'Rubriques du tableau de bord' });
+  const paneHead = h('div', { class: 'set-head' });
+  const grid = h('div', { class: 'dash-grid' }, slot('playing', 'playing-box'), slot('code', 'code-box c-code'), slot('tasks', 'c-task'), slot('devices', 'c-dev'), slot('system', 'c-health'), slot('activity', 'c-act'), slot('libs', 'c-libs'));
+  const show = () => {
+    for (const [name, tabs] of Object.entries(WHERE)) slots[name].el.hidden = !tabs.includes(tab);
+    kpis.hidden = kpiMore.hidden = tab !== 'apercu';
+    grid.dataset.tab = tab;
+    nav.replaceChildren(...NAV.map(([title, items]) => h('div', { class: 'set-group' }, h('span', { class: 'set-group-t' }, title),
+      ...items.map(([k, label, ic]) => (k.startsWith('/')
+        ? h('a', { class: 'set-tab f', href: k }, icon(ic), h('span', {}, label), icon('fwd'))
+        : h('button', { class: `set-tab f${k === tab ? ' on' : ''}`, 'aria-current': k === tab ? 'page' : null, onclick: () => {
+          tab = k; try { sessionStorage.setItem('vn_dash_tab', k); } catch { /* */ }
+          history.replaceState(history.state, '', k === 'apercu' ? '/dashboard' : `/dashboard?vue=${k}`);
+          show(); grid.classList.remove('swap'); void grid.offsetWidth; grid.classList.add('swap');
+        } }, icon(ic), h('span', {}, label)))))));
+    paneHead.replaceChildren(h('h2', {}, (TABS.find(([k]) => k === tab) || [])[1] || ''));
+  };
+  page.append(head, updNote, h('div', { class: 'set-layout dash-layout' }, nav, h('div', { class: 'set-main' }, paneHead, kpis, kpiMore, grid)));
+  show();
 
   // ---------------------------------------------------------------- en-tête et chiffres
   let headSig = null;
@@ -95,7 +121,7 @@ export async function render(main) {
         h('button', { class: 'tool f', onclick: async () => { await api('/api/admin/scan', { method: 'POST', body: {} }); toast('Analyse des médiathèques lancée'); refresh(); } }, icon('refresh'), h('span', { class: 'lbl' }, 'Analyser')),
         h('button', { class: 'tool f', onclick: () => compose(null) }, icon('chat'), h('span', { class: 'lbl' }, 'Message à tous')),
         sv.canRestart ? h('button', { class: 'tool f', onclick: restart }, icon('power'), h('span', { class: 'lbl' }, 'Redémarrer')) : null,
-        h('button', { class: 'tool f', 'aria-label': 'Plus d\'outils', onclick: more }, icon('more'), h('span', { class: 'lbl' }, 'Plus'))));
+        null));
     const c = d.counts;
     // Quatre chiffres en couleur ; le reste en une ligne discrète
     const tiles = [['Films', c.movie, 'film', '/films', 'k-blue'], ['Séries', c.show, 'tv', '/series', 'k-violet'], ['Animés', c.anime, 'spark', '/animes', 'k-pink'], ['Stockage', fmtBytes(d.totals.size), 'server', null, 'k-amber']].filter(([, v], i) => i === 3 || v);

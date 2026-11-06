@@ -154,7 +154,7 @@ export async function render(main) {
     page.replaceChildren(
       h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, 'Sécurité'),
         h('p', { class: 'count' }, d.adminsWithoutPin.length ? `⚠ ${d.adminsWithoutPin.join(', ')} : administrateur sans code PIN` : 'Protections actives')),
-      h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go('/tableau-de-bord') }, icon('back'), 'Tableau de bord')),
+      h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go('/dashboard') }, icon('back'), 'Tableau de bord')),
       h('div', { class: 'sec-grid' }, auditBox(), twofaBox(), httpsBox(), bansBox(), devicesBox()),
       logBox());
   }
