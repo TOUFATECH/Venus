@@ -102,7 +102,19 @@ export async function render(main, { query } = {}) {
   const body = h('div', { class: 'admin-grid' });
   const groups = {};
   const paintTabs = () => tabBar.replaceChildren(...TABS.map(([k, label, ic]) => h('button', { class: `set-tab f${k === tab ? ' on' : ''}`, role: 'tab', 'aria-selected': String(k === tab), onclick: () => { tab = k; try { sessionStorage.setItem('vn_settings_tab', k); } catch { /* */ } paintTabs(); paintBody(); scrollTo({ top: 0 }); } }, icon(ic), h('span', {}, label))));
-  const paintBody = () => { body.replaceChildren(...(groups[tab] || []).filter(Boolean)); body.classList.remove('swap'); void body.offsetWidth; body.classList.add('swap'); };
+  // anim : seulement quand on change de rubrique (jamais lors d'un rafraîchissement automatique, sinon la page clignote)
+  const paintBody = ({ anim = true } = {}) => {
+    if (BUILD[tab] && lastA) build(tab);
+    body.replaceChildren(...(groups[tab] || []).filter(Boolean));
+    body.classList.remove('swap');
+    if (anim) { void body.offsetWidth; body.classList.add('swap'); }
+  };
+  // Rubriques de l'administration : construites à la demande, avec la signature des données qu'elles affichent
+  const BUILD = {};
+  const SIG = {};
+  const sigs = {};
+  let lastA = null;
+  const build = (k) => { groups[k] = BUILD[k](lastA); sigs[k] = SIG[k](lastA); };
   const toMenu = () => {
     const sec = query && query.get('section');
     if (!sec) return;
@@ -115,24 +127,56 @@ export async function render(main, { query } = {}) {
   // ----------------------------------------------------------- administration
   const grid = body;
 
+  const pick = (a, keys) => JSON.stringify(keys.map((k) => a[k]));
+  Object.assign(BUILD, {
+    medias: (a) => [libraryBox(a)], lecture: (a) => [playbackBox(a), subtitlesBox(a)], famille: (a) => [profilesBox(a), devicesBox(a)],
+    infos: (a) => [metadataBox(a), postersBox(a), ratingsBox(a), seerrBox(a)], alertes: (a) => [notifyBox(a)], serveur: (a) => [serverBox(a), backupBox(a)],
+  });
+  // Données dont dépend chaque rubrique ; l'état des lectures en cours et l'usage système bougent sans cesse :
+  // on les arrondit pour ne pas reconstruire la rubrique à chaque seconde
+  const roughSys = (a) => a.system ? { ...a.system, load: undefined, cpu: undefined, mem: a.system.mem ? Math.round((a.system.mem.used || 0) / 2 ** 28) : undefined, uptime: undefined } : null;
+  Object.assign(SIG, {
+    medias: (a) => pick(a, ['counts', 'libraries', 'scan']),
+    lecture: (a) => JSON.stringify([a.hw, a.settings, (a.sessions || []).length]),
+    famille: (a) => pick(a, ['profiles', 'devices', 'settings']),
+    infos: (a) => pick(a, ['settings', 'unmatched']),
+    alertes: (a) => pick(a, ['settings']),
+    serveur: (a) => JSON.stringify([a.settings, a.version, roughSys(a)]),
+  });
+  groups.profil = [myBox];
+  groups.affichage = [themeBox, menuBox];
+
+  // L'utilisateur est en train de se servir de la rubrique : on ne touche à rien
+  let lastUse = 0;
+  for (const ev of ['input', 'change', 'pointerdown', 'keydown']) body.addEventListener(ev, () => { lastUse = Date.now(); }, true);
+  const inUse = () => {
+    const el = document.activeElement;
+    return Date.now() - lastUse < 8000 || document.querySelector('.sheet-wrap') || (body.contains(el) && /INPUT|SELECT|TEXTAREA/.test(el.tagName)) || body.querySelector('details[open]');
+  };
+
   async function refresh() {
     let a;
-    try { a = await api('/api/admin'); } catch (e) { grid.replaceChildren(h('p', { class: 'error-text' }, e.message)); return; }
-    const first = !Object.keys(groups).length;
-    Object.assign(groups, {
-      medias: [libraryBox(a)], profil: [myBox], affichage: [themeBox, menuBox], lecture: [playbackBox(a), subtitlesBox(a)], famille: [profilesBox(a), devicesBox(a)],
-      infos: [metadataBox(a), postersBox(a), ratingsBox(a), seerrBox(a)], alertes: [notifyBox(a)], serveur: [serverBox(a), backupBox(a)],
-    });
-    paintBody();
-    if (first) toMenu();
+    try { a = await api('/api/admin'); } catch (e) { if (!lastA) grid.replaceChildren(h('p', { class: 'error-text' }, e.message)); return; }
+    const first = !lastA;
+    lastA = a;
+    if (first) { paintBody(); toMenu(); }
+    else if (BUILD[tab] && SIG[tab](a) !== sigs[tab] && !inUse()) {
+      // Seuls les blocs qui ont changé sont remplacés, à la même place, sans animation ni saut de la page
+      const old = groups[tab] || [];
+      build(tab);
+      const y = scrollY;
+      groups[tab].forEach((box, i) => {
+        const prev = old[i];
+        if (prev && prev.isConnected) {
+          if (prev.innerHTML === box.innerHTML) groups[tab][i] = prev; // identique : on garde l'ancien (et ses écouteurs, son état)
+          else prev.replaceWith(box);
+        }
+      });
+      if (scrollY !== y) scrollTo({ top: y });
+    }
     clearTimeout(timer);
-    const delay = a.scan.running || a.sessions.length ? 3000 : 15000;
-    const tick = () => {
-      const el = document.activeElement;
-      const busy = document.querySelector('.sheet-wrap') || (grid.contains(el) && /INPUT|SELECT/.test(el.tagName));
-      if (busy) timer = setTimeout(tick, delay); else refresh();
-    };
-    timer = setTimeout(tick, delay);
+    const delay = a.scan.running || a.sessions.length ? 4000 : 20000;
+    timer = setTimeout(refresh, delay);
   }
 
   // Espace « Bibliothèques » : un bloc par type de média, détection automatique des ajouts
@@ -355,6 +399,7 @@ export async function render(main, { query } = {}) {
       h('h2', {}, 'Notifications'),
       h('p', {}, 'Prévenir quand un film, une série ou un épisode arrive dans Venus. Chaque personne reçoit aussi « Votre envie est arrivée » sur ses appareils (Réglages, Cet appareil).'),
       h('label', { class: 'switch' }, h('span', {}, 'Annoncer les nouveautés'), h('input', { type: 'checkbox', class: 'f', checked: n.notifyNew !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { notifyNew: e.target.checked } }); toast('Préférence enregistrée'); } })),
+      h('label', { class: 'switch' }, h('span', {}, 'Prévenir chaque profil des nouveaux épisodes des séries qu’il suit'), h('input', { type: 'checkbox', class: 'f', checked: n.notifyEpisodes !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { notifyEpisodes: e.target.checked } }); toast('Préférence enregistrée'); } })),
       h('h3', { class: 'box-sub' }, 'ntfy (le plus simple, marche sans HTTPS)'),
       h('p', { class: 'muted', style: { fontSize: '.86rem', margin: '0 0 8px' } }, 'Installez l’appli gratuite ntfy sur le téléphone et abonnez-vous au même sujet.'),
       h('div', { class: 'two-cols' }, field('Sujet', ntfyTopic), field('Serveur', ntfyServer)),
@@ -416,7 +461,7 @@ export async function render(main, { query } = {}) {
     } }, icon('refresh'), 'Revérifier les affiches automatiques');
     return h('section', { class: 'box', id: 'affiches' },
       h('h2', {}, 'Affiches'),
-      h('p', {}, 'Les affiches viennent de TMDB (avec une clé), ou sans clé de Trakt (si un Client ID est renseigné), du site de TMDB, d’IMP Awards, de Wikipédia, d’iTunes, de TVmaze et d’OMDb. Pour un titre précis, vous pouvez choisir parmi plusieurs propositions ou coller l’adresse d’une image trouvée sur n’importe quel site.'),
+      h('p', {}, 'Les affiches viennent de TMDB (avec une clé), ou sans clé d’IMDb, de Cinemeta (Stremio), de Trakt (si un Client ID est renseigné), du site de TMDB, d’IMP Awards, de Wikipédia, d’iTunes, de TVmaze et d’OMDb. Pour un titre précis, vous pouvez choisir parmi plusieurs propositions ou coller l’adresse d’une image trouvée sur n’importe quel site.'),
       h('label', { class: 'switch' }, h('span', {}, 'Chercher les affiches sur les services gratuits (sans clé)'), h('input', { type: 'checkbox', class: 'f', checked: a.settings.postersFree !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { postersFree: e.target.checked } }); toast(e.target.checked ? 'Recherche gratuite activée' : 'Recherche gratuite désactivée'); } })),
       head, list,
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start', flexWrap: 'wrap' } }, runBtn, testBtn, redoBtn), testOut);
@@ -634,12 +679,12 @@ function menuEditor(me) {
     const toggle = (id, on) => saveMenuPrefs(me.id, { ...p, hidden: on ? p.hidden.filter((x) => x !== id) : [...p.hidden, id] });
     box.replaceChildren(
       h('h2', {}, 'Menu'),
-      h('p', {}, 'Choisissez ce qui apparaît dans le menu et dans quel ordre. Sur ordinateur, seules les 4 premières sections sont affichées ; le reste est rangé dans « Plus ». Réglages et profil restent toujours en bas.'),
+      h('p', {}, 'Choisissez ce qui apparaît dans le menu et dans quel ordre. Sur ordinateur, seules les 5 premières sections sont affichées ; le reste est rangé dans « Plus ». Réglages et profil restent toujours en bas.'),
       h('ol', { class: 'menu-edit' }, items.map((it, i) => h('li', { class: p.hidden.includes(it.id) ? 'off' : '' },
         h('span', { class: 'me-ic' }, icon(iconOf(it))), h('b', {}, it.id === 'today' ? 'Aujourd’hui / Ce soir' : labelOf(it)),
         h('button', { class: 'p-icon small f', 'data-id': it.id, 'data-dir': '-1', 'aria-label': `Monter ${labelOf(it)}`, disabled: i === 0, onclick: () => move(it.id, -1) }, icon('up')),
         h('button', { class: 'p-icon small f', 'data-id': it.id, 'data-dir': '1', 'aria-label': `Descendre ${labelOf(it)}`, disabled: i === items.length - 1, onclick: () => move(it.id, 1) }, icon('down')),
-        h('label', { class: 'switch mini', title: 'Afficher dans le menu' }, h('input', { type: 'checkbox', class: 'f', 'aria-label': `Afficher ${labelOf(it)} dans le menu`, checked: !p.hidden.includes(it.id), onchange: (e) => { toggle(it.id, e.target.checked); paint(); } }))))),
+        h('label', { class: 'switch mini', title: 'Afficher dans le menu' }, h('input', { type: 'checkbox', class: 'f', 'aria-label': `Afficher ${labelOf(it)} dans le menu`, checked: !p.hidden.includes(it.id), onchange: (e) => { toggle(it.id, e.target.checked); e.target.closest('li').classList.toggle('off', !e.target.checked); } }))))),
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
         h('button', { class: 'btn btn-small btn-ghost f', onclick: () => { resetMenuPrefs(me.id); paint(); toast('Menu d’origine rétabli'); } }, 'Rétablir le menu d’origine')));
     if (focusId) { const b = box.querySelector(`[data-id="${focusId}"][data-dir="${focusDir}"]`); (b && !b.disabled ? b : box.querySelector(`[data-id="${focusId}"]`))?.focus(); }

@@ -34,6 +34,8 @@ import { tlsOptions } from './tls.js';
 import { notify } from './notify.js';
 import { startSecurityAudit } from './audit.js';
 import { fillMissingPosters, fillMissingBackdrops, pendingPosters } from './posters.js';
+import { refreshGuides } from './guide.js';
+import { announceNewEpisodes } from './new-episodes.js';
 import { purgeTrash, KEEP_DAYS } from './trash.js';
 import { sendWeeklyReport, checkFiles } from './reports.js';
 import { recordSize } from './extras.js';
@@ -147,6 +149,7 @@ async function main() {
   events.on('library', (d) => {
     if (d && d.added && d.added.length) {
       libraryAdded(d.added);
+      announceNewEpisodes().catch((e) => console.warn('[nouveaux épisodes]', e.message));
       emitHook('library.added', { titles: d.added.slice(0, 50), count: d.added.length });
       clearTimeout(watchSoon); watchSoon = setTimeout(() => runWatch().catch(() => {}), 90000);
     }
@@ -165,6 +168,7 @@ async function main() {
   defineTask('ratings', { label: 'Notes, distribution et bandes-annonces', description: 'Notes des sites, épisodes manquants, affiches Trakt : titres nouveaux ou vus il y a plus de 10 jours.', when: 'Toutes les 6 heures', run: async () => `${ratingsAll()} titre(s) mis en file` });
   defineTask('segments', { label: 'Repérage des génériques', description: 'Analyse audio des épisodes pour « Passer l’intro » et « Passer le générique ».', when: 'Toutes les 30 minutes', run: async () => { schedulePending(); return 'Épisodes en attente ajoutés à la file'; } });
   defineTask('backup', { label: 'Sauvegarde de la base', description: 'Profils, vus, listes, envies et réglages (10 dernières gardées).', when: 'Chaque nuit', run: async () => { makeBackup(); return 'Sauvegarde faite'; } });
+  defineTask('guide', { label: 'Guide des épisodes', description: 'Sans clé TMDB : liste des épisodes diffusés (TVmaze), pour montrer les épisodes et saisons manquants.', when: 'Chaque jour', every: 86400e3, firstDelay: 240000, run: refreshGuides });
   defineTask('report', { label: 'Rapport de la semaine', description: 'Nouveautés, temps regardé par profil, espace disque, tâches en échec : envoyé à l’administrateur (notification, et e-mail si réglé).', when: 'Chaque semaine', every: 7 * 86400e3, firstDelay: 3 * 86400e3, run: sendWeeklyReport });
   defineTask('integrity', { label: 'Fichiers abîmés', description: 'Lit un peu de chaque vidéo avec ffmpeg pour repérer les fichiers corrompus ou incomplets (30 par passage, les nouveaux d’abord).', when: 'Toutes les 12 heures', every: 12 * 3600e3, firstDelay: 20 * 60000, run: () => checkFiles(30) });
   defineTask('trash', { label: 'Corbeille', description: `Efface pour de bon les vidéos supprimées depuis plus de ${KEEP_DAYS} jours (Réglages → Corbeille pour les restaurer avant).`, when: 'Chaque nuit', every: 86400e3, firstDelay: 300000, run: async () => { const r = purgeTrash(); return r.count ? `${r.count} élément(s) effacé(s), ${(r.freed / 1e9).toFixed(1)} Go libérés` : 'Rien à effacer'; } });

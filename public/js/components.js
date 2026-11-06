@@ -112,6 +112,8 @@ export function card(item, opts = {}) {
     // Séries et animés : pastille avec le nombre d'épisodes (et l'avancement quand on a commencé)
     item.type === 'show' && item.episodes ? h('span', { class: 'ep-pill', title: `${item.episodes} épisode${item.episodes > 1 ? 's' : ''}` },
       item.status === 'progress' && item.unseen != null && item.unseen < item.episodes ? `${item.episodes - item.unseen}/${item.episodes}` : `${item.episodes} ép.`) : null,
+    // Épisodes arrivés cette semaine et pas encore vus
+    item.type === 'show' && item.newEps && item.status !== 'seen' ? h('span', { class: 'new-pill', title: `${item.newEps} épisode${item.newEps > 1 ? 's' : ''} ajouté${item.newEps > 1 ? 's' : ''} cette semaine` }, `+${item.newEps} nouveau${item.newEps > 1 ? 'x' : ''}`) : null,
     // Vu / non vu d'un clic, sans ouvrir la fiche (apparaît au survol ; toujours là sur écran tactile)
     !isClip ? h('button', { type: 'button', class: 'card-eye f', 'aria-label': seen ? `Marquer « ${title} » comme non vu` : `Marquer « ${title} » comme vu`, title: seen ? 'Marquer comme non vu' : 'Marquer comme vu',
       onclick: async (e) => {

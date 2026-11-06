@@ -19,7 +19,6 @@ const ROUTES = [
   [/^\/clips$/, () => import('./views/browse.js'), { kind: 'clip' }],
   [/^\/tv$/, () => import('./views/tv.js')],
   [/^\/nouveautes$/, () => import('./views/nouveautes.js')],
-  [/^\/ajouter$/, () => import('./views/add.js')],
   [/^\/recherche$/, () => import('./views/search.js')],
   [/^\/titre\/([^/]+)$/, () => import('./views/details.js'), (m) => idOrSlug(m[1])],
   // Adresses rangées comme les dossiers : /films/Titre, /series/Titre/S01E02, /animes/Titre/S01E02, /clips/Titre
@@ -218,9 +217,10 @@ function ensureShell(path) {
   if (!chrome || chrome.sig !== sig || !app.contains(chrome.rail)) {
     if (chrome) chrome.cleanup();
     chrome = { sig, ...shell(path) };
-  }
+  } else chrome.rail.classList.remove('no-anim');
   for (const a of [...chrome.rail.querySelectorAll('a[href^="/"]'), ...chrome.tabs.querySelectorAll('a[href^="/"]')]) {
     const on = isActive(a.getAttribute('href'), path) && !a.classList.contains('home-link');
+    if (on && !a.classList.contains('active') && chrome.rail.isConnected && !chrome.rail.classList.contains('no-anim')) { a.classList.add('pop'); a.addEventListener('animationend', () => a.classList.remove('pop'), { once: true }); }
     a.classList.toggle('active', on);
     if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   }
@@ -239,14 +239,22 @@ export function setTitle(prefix) {
   const custom = state.status && state.status.name && state.status.name !== 'Venus' ? state.status.name : planet().name;
   document.title = prefix ? `${prefix} — ${custom}` : custom;
 }
+// Menu modifié : redessiné une seule fois par image (plusieurs interrupteurs basculés vite = un seul rendu),
+// sans rejouer les animations d'entrée (sinon tout le menu clignote)
+let menuFrame = 0;
 window.addEventListener('vn:menu', () => {
-  if (!chrome || !state.profile) return;
-  const { path } = parseHash();
-  const old = chrome;
-  chrome = null;
-  const fresh = ensureShell(path);
-  old.rail.replaceWith(fresh.rail); old.top.replaceWith(fresh.top); old.tabs.replaceWith(fresh.tabs);
-  old.cleanup();
+  if (!chrome || !state.profile || menuFrame) return;
+  menuFrame = requestAnimationFrame(() => {
+    menuFrame = 0;
+    if (!chrome) return;
+    const { path } = parseHash();
+    const old = chrome;
+    chrome = null;
+    const fresh = ensureShell(path);
+    for (const el of [fresh.rail, fresh.top, fresh.tabs]) el.classList.add('no-anim');
+    old.rail.replaceWith(fresh.rail); old.top.replaceWith(fresh.top); old.tabs.replaceWith(fresh.tabs);
+    old.cleanup();
+  });
 });
 
 // Squelette affiché pendant le chargement d'une page (au-delà de quelques dixièmes de seconde)
@@ -313,8 +321,11 @@ async function onLibrary(d) {
     await refreshCategories();
     const { path } = parseHash();
     const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '') || document.querySelector('.sheet-wrap');
-    if (!typing && ['/', '/films', '/series', '/animes', '/clips', '/tv', '/liste'].includes(path)) {
-      const y = scrollY; await route(); window.scrollTo(0, y);
+    // Pendant une analyse, des titres arrivent sans cesse : ré-afficher la page à chaque fois la faisait clignoter.
+    // On ne rafraîchit tout seul que l'accueil, en haut de page, au plus une fois par minute.
+    if (!typing && path === '/' && scrollY < 80 && Date.now() - (onLibrary.last || 0) > 60000) {
+      onLibrary.last = Date.now();
+      await route();
     }
   }
 }
@@ -401,7 +412,12 @@ async function mount(viewModule, params, { withNav, path }) {
     from.style.viewTransitionName = 'vt-poster';
     document.startViewTransition(() => { from.style.viewTransitionName = ''; place(main); window.scrollTo(0, 0); });
   } else {
-    if (!reduce) main.classList.add('page-in');
+    if (!reduce) {
+      main.classList.add('page-in');
+      // L'animation d'arrivée ne vaut que pour l'ouverture de la page : ensuite, les blocs mis à jour
+      // (tableau de bord, réglages, listes) ne doivent pas se rejouer, sinon la page clignote
+      setTimeout(() => main.classList.remove('page-in'), 900);
+    }
     place(main);
     window.scrollTo(0, 0);
   }

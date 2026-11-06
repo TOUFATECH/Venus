@@ -115,7 +115,7 @@ export async function render(main, { query } = {}) {
   if (!channels.length) {
     main.append(h('div', { class: 'page' }, h('div', { class: 'page-head' }, h('h1', {}, 'TV en direct')),
       h('div', { class: 'empty' }, h('h2', {}, 'Aucune chaîne'), h('p', {}, 'Ajoutez la liste M3U de votre abonnement IPTV pour voir vos chaînes ici.'),
-        h('button', { class: 'btn btn-play f', onclick: () => go('/ajouter') }, 'Ajouter une liste IPTV'))));
+        h('button', { class: 'btn btn-play f', onclick: () => go('/reglages?onglet=medias') }, 'Ajouter une liste IPTV'))));
     return {};
   }
 
