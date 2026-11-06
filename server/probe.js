@@ -1,5 +1,5 @@
 // Analyse des fichiers vidéo (ffprobe) et des sous-titres externes
-import { get } from './db.js';
+import { get, run } from './db.js';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -38,13 +38,25 @@ export const NET_INPUT = (url) => {
     ...(o.referer ? ['-headers', `Referer: ${o.referer}\r\n`] : [])];
 };
 
+// Analyse des chaînes gardée (mémoire + base) : le codec d'une chaîne change rarement. Elle sert tout de suite
+// (démarrage plus rapide) et se rafraîchit en arrière-plan au-delà d'une heure.
 const liveCache = new Map();
+const probeNet = (url) => probeFile(url, [...NET_INPUT(url).filter((x, i, a) => !/reconnect/.test(x) && !/reconnect/.test(a[i - 1] || '')), '-analyzeduration', '3000000', '-probesize', '3000000'], 15000);
+/** Analyse déjà connue (mémoire ou base), sans aller sur le réseau ; null sinon. */
+export function cachedProbe(url) {
+  let c = liveCache.get(url);
+  if (!c) { try { const s = get('SELECT value FROM settings WHERE key = ?', `probe:${url}`); if (s) { c = JSON.parse(s.value); liveCache.set(url, c); } } catch { /* rien */ } }
+  return c ? c.p : null;
+}
 export async function probeLive(url) {
-  const c = liveCache.get(url);
-  if (c && Date.now() - c.t < 3600e3) return c.p;
-  const p = await probeFile(url, [...NET_INPUT(url).filter((x, i, a) => !/reconnect/.test(x) && !/reconnect/.test(a[i - 1] || '')), '-analyzeduration', '4000000', '-probesize', '4000000'], 15000);
-  liveCache.set(url, { t: Date.now(), p });
-  return p;
+  let c = liveCache.get(url);
+  if (!c) { try { const s = get('SELECT value FROM settings WHERE key = ?', `probe:${url}`); if (s) { c = JSON.parse(s.value); liveCache.set(url, c); } } catch { /* rien */ } }
+  const save = (p) => { const v = { t: Date.now(), p }; liveCache.set(url, v); try { run('INSERT OR REPLACE INTO settings(key, value) VALUES(?, ?)', `probe:${url}`, JSON.stringify(v)); } catch { /* rien */ } return p; };
+  if (c && Date.now() - c.t < 24 * 3600e3) {
+    if (Date.now() - c.t > 3600e3 && !c.refreshing) { c.refreshing = true; probeNet(url).then(save).catch(() => { c.refreshing = false; }); }
+    return c.p;
+  }
+  return save(await probeNet(url));
 }
 
 export async function probeFile(file, pre = [], timeout = 90000) {

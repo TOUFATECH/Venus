@@ -1,4 +1,4 @@
-// Chaînes gratuites (France, Outre-mer et Japon), et vérification de toutes les chaînes IPTV.
+// Chaînes gratuites (France, Outre-mer, animé / manga en français, Japon), et vérification de toutes les chaînes IPTV.
 //
 // La source « venus:chaines-gratuites » est une liste construite par Venus à chaque analyse :
 //  1. Mayotte La 1ère en tête, puis les autres chaînes La 1ère (Réunion, Guadeloupe, Martinique…)
@@ -46,6 +46,8 @@ export async function buildFreeTv() {
     const k = key(name);
     // En français seulement : les versions en d'autres langues (France 24 English, TV5Monde Latin America…) sont écartées
     if (NOT_FRENCH.test(name) || PAY_TV.test(name)) return;
+    // Bloquées hors de leur pays, ou qui ne diffusent pas en continu : souvent écran noir, on ne les reprend pas
+    if (/\[(Geo-blocked|Not 24\/7)\]/i.test(name)) return;
     if (!url || seen.has(k)) return;
     seen.add(k);
     out.push(`#EXTINF:-1 tvg-id="${id}" tvg-logo="${logo}" group-title="${group}",${clean(name)}`, ...opts, url);
@@ -69,6 +71,24 @@ export async function buildFreeTv() {
         const logo = (/tvg-logo="([^"]*)"/i.exec(info) || [])[1] || '';
         const group = defGroup || ((/group-title="([^"]*)"/i.exec(info) || [])[1] || '').split(';')[0] || 'France';
         add(name, line, { logo, group, opts, id: (/tvg-id="([^"]*)"/i.exec(info) || [])[1] || '' });
+        info = null;
+      }
+    }
+  }
+  // 3 bis. Animé et manga en français : chaînes gratuites financées par la publicité (Pluto TV, Rakuten TV,
+  //        Samsung TV Plus), recensées par iptv-org. On ne prend que les chaînes animé / manga / dessins animés.
+  const ANIME = /anim|manga|one piece|yu-?gi-?oh|naruto|pok[eé]mon|dragon ?ball|wasabi|toons|sailor|captain tsubasa|olive (et|&) tom|saint seiya|goldorak|ladybug|miraculous/i;
+  for (const f of ['fr_pluto.m3u', 'fr_rakuten.m3u', 'fr_samsung.m3u']) {
+    let tx = '';
+    try { tx = await text(`${IPTV_ORG}/${f}`); } catch (e) { console.warn('[chaînes gratuites] animé :', e.message); continue; }
+    let info = null, opts = [];
+    for (const raw of tx.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (line.startsWith('#EXTINF')) { info = line; opts = []; }
+      else if (line.startsWith('#EXTVLCOPT')) opts.push(line);
+      else if (info && /^https?:\/\//i.test(line)) {
+        const name = info.slice(info.lastIndexOf(',') + 1);
+        if (ANIME.test(name) && !/animaux/i.test(name)) add(name, line, { logo: (/tvg-logo="([^"]*)"/i.exec(info) || [])[1] || '', group: 'Animé / Manga', opts, id: (/tvg-id="([^"]*)"/i.exec(info) || [])[1] || '' });
         info = null;
       }
     }
@@ -99,22 +119,41 @@ export async function buildFreeTv() {
   return out.join('\n');
 }
 
-// Une chaîne fonctionne si ffmpeg en tire une image en moins de 25 s
-function testOne(url) {
+// Une chaîne fonctionne si ffmpeg en lit 4 secondes d'images, sans s'arrêter, en moins de 25 s.
+// (une seule image ne suffit pas : beaucoup de flux donnent une image puis se coupent)
+export function testOne(url) {
   return new Promise((resolve) => {
     const t0 = Date.now();
     execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...NET_INPUT(url).filter((x, i, a) => !/reconnect/.test(x) && !/reconnect/.test(a[i - 1] || '')),
-      '-analyzeduration', '3M', '-probesize', '3M', '-i', url, '-map', '0:v:0', '-frames:v', '1', '-f', 'null', '-'], { timeout: 25000, maxBuffer: 256 * 1024 }, (err, _o, stderr) => {
-      if (!err) return resolve({ ok: true, ms: Date.now() - t0 });
-      const msg = String(stderr || err.message || '').trim().split('\n').filter(Boolean).pop() || '';
+      '-analyzeduration', '3M', '-probesize', '3M', '-i', url, '-map', '0:v:0', '-t', '4', '-f', 'null', '-'], { timeout: 25000, maxBuffer: 256 * 1024 }, (err, _o, stderr) => {
+      const ms = Date.now() - t0, log = String(stderr || '');
+      // Moins de 2 s pour « lire » 4 s de direct : le flux s'est arrêté net (fichier vide, boucle d'erreur)
+      if (!err && ms < 2000 && /error|invalid|end of file/i.test(log)) return resolve({ ok: false, error: 'Le flux s’arrête aussitôt' });
+      if (!err) return resolve(ms > 20000 ? { ok: false, error: 'Trop lent à démarrer (plus de 20 s)' } : { ok: true, ms });
+      const msg = log.trim().split('\n').filter(Boolean).pop() || String(err.message || '');
       resolve({ ok: false, error: err.killed ? 'Aucune image reçue (délai dépassé)' : /403|forbidden/i.test(msg) ? 'Accès refusé (403)' : /404|not found/i.test(msg) ? 'Flux introuvable (404)' : /matches no streams|Stream map|opening output files/i.test(msg) ? 'Aucune image (flux vide ou injoignable)' : /timed out/i.test(msg) ? 'Le serveur de la chaîne ne répond pas' : /Input\/output error|Connection refused/i.test(msg) ? 'Chaîne injoignable' : msg.slice(0, 160) || 'Erreur' });
     });
   });
 }
 
+// Une chaîne n'a pas marché quand quelqu'un a cliqué dessus : on la reteste aussitôt ;
+// si elle échoue encore, elle est cachée jusqu'à la prochaine vérification (elle revient si elle remarche).
+const retesting = new Set();
+export async function reportChannelFailure(id) {
+  if (retesting.has(id)) return null;
+  const c = get("SELECT id, stream_url FROM items WHERE id = ? AND type = 'channel'", id);
+  if (!c || !c.stream_url) return null;
+  retesting.add(id);
+  try {
+    const r = await testOne(c.stream_url);
+    run('UPDATE items SET ch_ok = ?, ch_checked = ?, ch_error = ? WHERE id = ?', r.ok ? 1 : 0, Date.now(), r.ok ? null : `${r.error} (échec à la lecture)`, id);
+    return r;
+  } finally { retesting.delete(id); }
+}
+
 let running = null;
 export const checkState = { running: false, done: 0, total: 0, ok: 0, bad: 0, at: Number(getSetting('iptv_check_at', 0)) || 0 };
-// Vérifie les chaînes (toutes, celles d'une liste, ou seulement les jamais vérifiées) ; 4 à la fois
+// Vérifie les chaînes (toutes, celles d'une liste, ou seulement les jamais vérifiées) ; 6 à la fois
 export function checkChannels({ libraryId = null, onlyNew = false, ids = null } = {}) {
   if (running) return running;
   running = (async () => {
@@ -130,7 +169,7 @@ export function checkChannels({ libraryId = null, onlyNew = false, ids = null } 
         checkState.done++; if (r.ok) checkState.ok++; else checkState.bad++;
       }
     };
-    await Promise.all([worker(), worker(), worker(), worker()]);
+    await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
     // Toutes en échec : c'est sans doute le serveur de Venus qui n'a pas accès à Internet, pas les chaînes.
     // On ne cache rien dans ce cas (sinon la page TV serait vide), et on le signale.
     checkState.offline = list.length > 3 && checkState.ok === 0;

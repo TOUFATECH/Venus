@@ -17,7 +17,7 @@ const nativeHls = () => document.createElement('video').canPlayType('application
 const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
 
 // Branche un flux (HLS ou fichier) sur une balise vidéo. Renvoie une fonction de nettoyage.
-export async function attachStream(video, url, { live = false, onError } = {}) {
+export async function attachStream(video, url, { live = false, dvr = false, onError } = {}) {
   const isHls = /\.m3u8(\?|$)/.test(url);
   if (!isHls || (nativeHls() && isSafari)) {
     video.src = url;
@@ -26,12 +26,18 @@ export async function attachStream(video, url, { live = false, onError } = {}) {
   }
   const Hls = await loadHls();
   if (!Hls.isSupported()) { video.src = url; video.play().catch(() => {}); return () => { video.removeAttribute('src'); video.load(); }; }
-  const hls = new Hls(live ? { liveSyncDurationCount: 3, manifestLoadingMaxRetry: 0, backBufferLength: 10, maxBufferLength: 12 } : {});
+  // Direct : on démarre 2 segments (≈ 4 s) avant le bord du direct, avec un petit tampon = image plus vite
+  // Direct différé (relais Venus) : on garde ce qui a été vu pour pouvoir reculer, sans sauter au direct tout seul
+  const cfg = dvr ? { liveSyncDurationCount: 2, manifestLoadingMaxRetry: 1, backBufferLength: 7200, maxBufferLength: 20, startFragPrefetch: true }
+    : live ? { liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 6, manifestLoadingMaxRetry: 0, backBufferLength: 10, maxBufferLength: 10, startFragPrefetch: true } : {};
+  const hls = new Hls(cfg);
   hls.on(Hls.Events.ERROR, (_e, data) => { if (data.fatal && onError) onError(data); });
   hls.loadSource(url);
   hls.attachMedia(video);
   video.play().catch(() => {});
-  return () => { hls.destroy(); video.removeAttribute('src'); video.load(); };
+  const off = () => { hls.destroy(); video.removeAttribute('src'); video.load(); };
+  off.hls = hls;
+  return off;
 }
 
 // Saisie d'un numéro de chaîne (clavier, télécommande TV ou téléphone) : les chiffres s'affichent,

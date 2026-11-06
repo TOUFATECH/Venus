@@ -18,6 +18,8 @@ const ROUTES = [
   [/^\/animes$/, () => import('./views/browse.js'), { kind: 'anime' }],
   [/^\/clips$/, () => import('./views/browse.js'), { kind: 'clip' }],
   [/^\/tv$/, () => import('./views/tv.js')],
+  // Chaîne en lecture : /tv/10-telepace-2 (numéro et nom de la chaîne)
+  [/^\/tv\/\d+-([^/]+)$/, () => import('./views/player.js'), (m) => idOrSlug(dec(m[1]))],
   [/^\/nouveau$/, () => import('./views/request.js')],
   [/^\/nouveautes$/, () => import('./views/nouveautes.js')],
   [/^\/recherche$/, () => import('./views/search.js')],
