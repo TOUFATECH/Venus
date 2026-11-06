@@ -33,7 +33,7 @@ import { clientIp, isSecure, inspectRequest, isBanned, applyHeaders, handlePrefl
 import { tlsOptions } from './tls.js';
 import { notify } from './notify.js';
 import { startSecurityAudit } from './audit.js';
-import { fillMissingPosters } from './posters.js';
+import { fillMissingPosters, fillMissingBackdrops, pendingPosters } from './posters.js';
 import { purgeTrash, KEEP_DAYS } from './trash.js';
 import { sendWeeklyReport, checkFiles } from './reports.js';
 import { recordSize } from './extras.js';
@@ -155,7 +155,13 @@ async function main() {
   // Vignettes d'aperçu de la barre de lecture : préparées en arrière-plan, titre après titre
   // Tâches visibles dans Tableau de bord → Serveur (leur propre minuterie reste celle d'origine)
   defineTask('scan', { label: 'Analyse des bibliothèques', description: 'Cherche les nouveaux fichiers, les fichiers modifiés et supprimés.', when: `Toutes les ${getSetting('scan_interval', 60)} min, et dès qu’un fichier apparaît`, run: async () => { await scanAll(); return 'Analyse terminée'; } });
-  defineTask('posters', { label: 'Affiches manquantes', description: 'Films et séries encore sans affiche : recherche sur des services gratuits (sans clé), en plus de TMDB.', when: 'Chaque jour', every: 86400e3, firstDelay: 120000, run: async () => `${await fillMissingPosters()} affiche(s) trouvée(s)` });
+  defineTask('posters', { label: 'Affiches manquantes', description: 'Films et séries encore sans affiche ou sans image de fond : recherche sur des services gratuits (sans clé), en plus de TMDB.', when: 'Chaque jour', every: 86400e3, firstDelay: 120000, run: async () => {
+    // Tant qu'il reste des titres à traiter, la tâche enchaîne les passages (300 titres chacun) sans attendre le lendemain
+    let found = 0, passes = 0;
+    do { found += await fillMissingPosters(); passes++; } while (pendingPosters() > 0 && passes < 12);
+    const bg = await fillMissingBackdrops();
+    return `${found} affiche(s) et ${bg} image(s) de fond trouvée(s)${pendingPosters() ? `, ${pendingPosters()} titre(s) encore sans affiche` : ''}`;
+  } });
   defineTask('ratings', { label: 'Notes, distribution et bandes-annonces', description: 'Notes des sites, épisodes manquants, affiches Trakt : titres nouveaux ou vus il y a plus de 10 jours.', when: 'Toutes les 6 heures', run: async () => `${ratingsAll()} titre(s) mis en file` });
   defineTask('segments', { label: 'Repérage des génériques', description: 'Analyse audio des épisodes pour « Passer l’intro » et « Passer le générique ».', when: 'Toutes les 30 minutes', run: async () => { schedulePending(); return 'Épisodes en attente ajoutés à la file'; } });
   defineTask('backup', { label: 'Sauvegarde de la base', description: 'Profils, vus, listes, envies et réglages (10 dernières gardées).', when: 'Chaque nuit', run: async () => { makeBackup(); return 'Sauvegarde faite'; } });

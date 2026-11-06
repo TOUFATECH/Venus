@@ -314,8 +314,11 @@ export function thumbnail(item, duration, { big = false } = {}) {
     const job = () => {
       thumbBusy++;
       const at = Math.max(1, Math.floor((duration || 600) * 0.2));
-      execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', item.path, '-frames:v', '1',
-        '-vf', big ? 'scale=1280:-2' : 'scale=480:-2', '-q:v', big ? '3' : '5', '-y', out], { timeout: 60000 }, (err) => {
+      // Grande image : au lieu de l'image pile à 20 %, ffmpeg choisit la plus représentative (ni noire, ni floue
+      // de mouvement) parmi 2 s de vidéo (filtre thumbnail), pour un fond net et parlant
+      const vf = big ? `thumbnail=50,scale=1280:-2` : 'scale=480:-2';
+      execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(at), ...(big ? ['-t', '2.5'] : []), '-i', item.path, '-frames:v', '1',
+        '-vf', vf, '-q:v', big ? '2' : '5', '-y', out], { timeout: 60000 }, (err) => {
         thumbBusy--;
         const next = thumbQueue.shift(); if (next) next();
         if (err || !fs.existsSync(out)) reject(new HttpError(404, 'Vignette indisponible')); else resolve(out);

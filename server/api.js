@@ -19,7 +19,7 @@ import {
 import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scanner.js';
 import { pipeline } from 'node:stream/promises';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
-import { saveRemoteImage, freePosterCandidates, fillMissingPosters, testSources } from './posters.js';
+import { saveRemoteImage, freePosterCandidates, fillMissingPosters, fillMissingBackdrops, testSources, redoFreePosters } from './posters.js';
 import { findTrailerFor } from './youtube.js';
 import { checkUpdate, runUpdate, localCommit } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
@@ -2635,8 +2635,17 @@ router.post('/api/admin/posters/run', async (ctx) => {
   requireAdmin(ctx);
   // Lancement à la main : on redonne leur chance aux titres déjà cherchés sans succès
   run("UPDATE items SET poster_tried = 0 WHERE poster IS NULL AND type IN ('movie','show')");
+  run("UPDATE items SET backdrop_tried = 0 WHERE backdrop IS NULL AND type = 'show'");
   const n = await fillMissingPosters();
+  fillMissingBackdrops().catch(() => {});
   sendJson(ctx.res, { found: n });
+});
+// Oublier les affiches trouvées sans clé (ancienne correspondance trop large) et les rechercher strictement
+router.post('/api/admin/posters/redo', async (ctx) => {
+  requireAdmin(ctx);
+  const n = redoFreePosters();
+  runTask('posters').catch(() => {});
+  sendJson(ctx.res, { reset: n });
 });
 router.get('/api/admin/posters/test', async (ctx) => {
   requireAdmin(ctx);
