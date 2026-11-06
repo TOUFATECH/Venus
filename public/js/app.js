@@ -240,6 +240,10 @@ export function setTitle(prefix) {
   const custom = state.status && state.status.name && state.status.name !== 'Venus' ? state.status.name : planet().name;
   document.title = prefix ? `${prefix} — ${custom}` : custom;
 }
+// Menu en haut (thème Cinéma) : transparent en haut de page, fond plein dès qu'on fait défiler
+let scrolledOn = false;
+addEventListener('scroll', () => { const on = scrollY > 12; if (on !== scrolledOn) { scrolledOn = on; document.documentElement.classList.toggle('scrolled', on); } }, { passive: true });
+
 // Menu modifié : redessiné une seule fois par image (plusieurs interrupteurs basculés vite = un seul rendu),
 // sans rejouer les animations d'entrée (sinon tout le menu clignote)
 let menuFrame = 0;

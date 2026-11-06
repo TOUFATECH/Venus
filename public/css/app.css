@@ -3171,3 +3171,156 @@ html.trailer-open body { overflow: hidden; }
 .rec-del svg { width: 16px; height: 16px; }
 .rec-del:hover { color: #ff6b6b; border-color: #ff6b6b; }
 .rec-menu .opt > span:last-child { display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
+
+/* =====================================================================
+   Thème Cinéma : ambiance plateforme de streaming
+   ===================================================================== */
+html[data-planet="cinema"] body { font-family: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif; background: #141414; }
+html[data-planet="cinema"] h1, html[data-planet="cinema"] .page-head h1, html[data-planet="cinema"] .hero h1 { font-stretch: normal; letter-spacing: -.01em; font-weight: 800; }
+html[data-planet="cinema"] .btn-play { background: #fff; color: #000; border-radius: 4px; }
+html[data-planet="cinema"] .btn-play:hover, html[data-planet="cinema"] .btn-play:focus-visible { background: rgba(255,255,255,.78); }
+html[data-planet="cinema"] .btn:not(.btn-play):not(.btn-ghost):not(.btn-danger) { background: rgba(109,109,110,.7); color: #fff; border-radius: 4px; border-color: transparent; }
+html[data-planet="cinema"] .btn-ghost { border-radius: 4px; }
+html[data-planet="cinema"] .card .shot, html[data-planet="cinema"] .episode .thumb, html[data-planet="cinema"] .rec-shot { border-radius: 4px; }
+html[data-planet="cinema"] .card .shot { transition: transform .3s var(--ease), box-shadow .3s; }
+html[data-planet="cinema"] .card:hover .shot, html[data-planet="cinema"] .card:focus-visible .shot, html[data-planet="cinema"] .card.is-focus .shot { transform: scale(1.07); box-shadow: 0 14px 34px rgba(0,0,0,.75); z-index: 2; }
+html[data-planet="cinema"] .card .new-pill, html[data-planet="cinema"] .card .tag-new, html[data-planet="cinema"] .episode .ep-badge { background: #e50914; color: #fff; border-radius: 2px; box-shadow: none; font-weight: 700; }
+html[data-planet="cinema"] .card .shot .bar i, html[data-planet="cinema"] .progress-line i { background: #e50914; }
+html[data-planet="cinema"] .chip.on, html[data-planet="cinema"] .seg-b.on { background: #fff; color: #000; border-color: #fff; }
+html[data-planet="cinema"] .box, html[data-planet="cinema"] .sheet { background: #181818; border-color: rgba(255,255,255,.1); border-radius: 6px; }
+html[data-planet="cinema"] .row h2, html[data-planet="cinema"] .section-title { font-stretch: normal; font-weight: 700; color: #e5e5e5; }
+
+/* Ordinateur : le menu passe en haut, en ligne, comme sur les plateformes de streaming */
+@media (min-width: 761px) {
+  html[data-layout="stream"] { --rail: 0px; }
+  html[data-layout="stream"] .rail {
+    inset: 0 0 auto 0; width: auto; height: 68px; flex-direction: row; align-items: center; gap: 4px;
+    padding: 0 max(4%, 24px); border: 0; overflow: visible;
+    background: linear-gradient(to bottom, rgba(0,0,0,.75) 10%, rgba(0,0,0,0)); transition: background .4s;
+  }
+  html[data-layout="stream"].scrolled .rail { background: #141414; box-shadow: 0 1px 0 rgba(255,255,255,.04); }
+  html[data-layout="stream"] .rail .home-link { margin: 0 26px 0 0; }
+  html[data-layout="stream"] .rail .home-link .mark { width: 34px; height: 34px; }
+  html[data-layout="stream"] .rail-scroll { flex: 1; flex-direction: row; align-items: center; gap: 4px; overflow: visible; padding: 0; mask-image: none; -webkit-mask-image: none; }
+  html[data-layout="stream"] .rail-scroll a, html[data-layout="stream"] .rail-scroll .rail-item { width: auto; flex-direction: row; gap: 0; padding: 8px 10px; border-radius: 4px; font-size: .9rem; font-weight: 500; color: #e5e5e5; background: none; }
+  html[data-layout="stream"] .rail-scroll a svg { display: none; }
+  html[data-layout="stream"] .rail-scroll .rail-item svg { width: 18px; height: 18px; margin-right: 6px; }
+  html[data-layout="stream"] .rail-scroll a:hover { color: #b3b3b3; transform: none; }
+  html[data-layout="stream"] .rail-scroll a.active { color: #fff; font-weight: 700; background: none; }
+  html[data-layout="stream"] .rail > a, html[data-layout="stream"] .rail > .rail-item { width: auto; padding: 8px; color: #fff; }
+  html[data-layout="stream"] .rail > a span, html[data-layout="stream"] .rail > .rail-item > span:not(.avatar) { display: none; }
+  html[data-layout="stream"] .rail .avatar.sm { width: 32px; height: 32px; border-radius: 4px; }
+  html[data-layout="stream"] main.with-nav { padding-left: 0; }
+  html[data-layout="stream"] .page { padding-top: 92px; }
+  html[data-layout="stream"] .rail a.active svg { filter: none; }
+}
+
+.theme-opt { flex-direction: column; }
+.theme-name { font-weight: 700; }
+.theme-layout { color: var(--dim); font-size: .68rem; line-height: 1.2; text-align: center; font-weight: 500; }
+
+/* =====================================================================
+   Mises en page par planète (ordinateur et télévision ; le téléphone garde sa barre du bas)
+   ===================================================================== */
+/* Mars : la planète rouge en mode streaming, comme Cinéma */
+html[data-planet="mars"] .btn-play { background: #fff; color: #000; border-radius: 4px; }
+html[data-layout="stream"] .card .shot { border-radius: 4px; }
+html[data-layout="stream"] .card:hover .shot, html[data-layout="stream"] .card:focus-visible .shot { transform: scale(1.07); box-shadow: 0 14px 34px rgba(0,0,0,.75); }
+
+/* ---- side : grand menu à gauche avec les noms (Mercure, Jupiter, Saturne) */
+@media (min-width: 761px) {
+  html[data-layout="side"] { --rail: 236px; }
+  html[data-layout="side"] .rail { width: var(--rail); align-items: stretch; padding: 22px 14px 18px; gap: 4px; background: rgb(var(--deep-rgb) / .96); }
+  html[data-layout="side"] .rail .home-link { align-self: flex-start; margin: 0 0 22px 10px; }
+  html[data-layout="side"] .rail-scroll { align-items: stretch; mask-image: none; -webkit-mask-image: none; }
+  html[data-layout="side"] .rail a, html[data-layout="side"] .rail button.rail-item { width: auto; flex-direction: row; justify-content: flex-start; gap: 14px; padding: 11px 14px; font-size: .95rem; font-weight: 600; border-radius: 10px; color: var(--haze); }
+  html[data-layout="side"] .rail a svg, html[data-layout="side"] .rail .rail-item svg { width: 21px; height: 21px; }
+  html[data-layout="side"] .rail a:hover svg { transform: none; }
+  html[data-layout="side"] .rail a.active { background: rgb(var(--sulfur-rgb) / .14); color: var(--paper); box-shadow: inset 3px 0 0 var(--sulfur); }
+  html[data-layout="side"] .rail a.active svg { color: var(--sulfur); filter: none; }
+  html[data-layout="side"] .rail .avatar.sm { width: 30px; height: 30px; }
+  html[data-layout="side"] .card .shot { border-radius: 8px; }
+  html[data-layout="side"] .page-head h1 { font-size: clamp(1.8rem, 3vw, 2.6rem); }
+}
+
+/* ---- dock : barre flottante en bas, coins très arrondis (Terre, Neptune, Blanc) */
+@media (min-width: 761px) {
+  html[data-layout="dock"] { --rail: 0px; }
+  html[data-layout="dock"] .rail {
+    inset: auto auto calc(18px + env(safe-area-inset-bottom, 0px)) 50%; transform: translateX(-50%); width: auto; height: auto; max-width: calc(100vw - 32px);
+    flex-direction: row; align-items: center; gap: 2px; padding: 8px 12px; border-radius: 24px; border: 1px solid var(--edge); overflow: visible;
+    background: rgb(var(--deep-rgb) / .8); -webkit-backdrop-filter: blur(22px) saturate(1.4); backdrop-filter: blur(22px) saturate(1.4); box-shadow: 0 22px 60px rgba(0,0,0,.45);
+  }
+  html[data-layout="dock"] .rail .home-link { margin: 0 8px 0 2px; }
+  html[data-layout="dock"] .rail .home-link .mark { width: 36px; height: 36px; }
+  html[data-layout="dock"] .rail-scroll { flex: none; width: auto; flex-direction: row; gap: 2px; overflow: visible; padding: 0; mask-image: none; -webkit-mask-image: none; }
+  html[data-layout="dock"] .rail a, html[data-layout="dock"] .rail button.rail-item { width: 66px; padding: 8px 4px; font-size: .62rem; border-radius: 16px; }
+  html[data-layout="dock"] .rail a:hover, html[data-layout="dock"] .rail .rail-item:hover { transform: translateY(-5px) scale(1.08); }
+  html[data-layout="dock"] .rail a.active::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--sulfur); margin-top: 1px; }
+  html[data-layout="dock"] .rail a.active { background: none; }
+  html[data-layout="dock"] main.with-nav { padding-left: 0; }
+  html[data-layout="dock"] .page { padding-bottom: 130px; }
+  html[data-layout="dock"] .card .shot { border-radius: 20px; }
+  html[data-layout="dock"] .btn { border-radius: 999px; }
+  html[data-layout="dock"] .box, html[data-layout="dock"] .sheet { border-radius: 24px; }
+  html[data-layout="dock"] .mini-player { bottom: 110px; }
+}
+
+/* ---- tv : grands onglets centrés en haut, gros textes, sélection très visible (TV, Noir) */
+@media (min-width: 761px) {
+  html[data-layout="tv"] { --rail: 0px; }
+  html[data-layout="tv"] .rail {
+    inset: 0 0 auto 0; width: auto; height: 88px; flex-direction: row; align-items: center; gap: 8px; padding: 0 3%; border: 0; overflow: visible;
+    background: linear-gradient(to bottom, rgb(var(--night-rgb) / .95) 30%, rgb(var(--night-rgb) / 0)); transition: background .3s;
+  }
+  html[data-layout="tv"].scrolled .rail { background: rgb(var(--night-rgb) / .97); }
+  html[data-layout="tv"] .rail .home-link { margin: 0 18px 0 0; }
+  html[data-layout="tv"] .rail-scroll { flex: 1; min-width: 0; width: auto; flex-direction: row; justify-content: center; align-items: center; gap: 6px; overflow: visible; padding: 0; mask-image: none; -webkit-mask-image: none; }
+  html[data-layout="tv"] .rail-scroll a, html[data-layout="tv"] .rail-scroll .rail-item { width: auto; flex-direction: row; gap: 10px; padding: 12px 22px; font-size: 1.08rem; font-weight: 700; border-radius: 999px; color: var(--haze); }
+  html[data-layout="tv"] .rail-scroll a svg { width: 22px; height: 22px; }
+  html[data-layout="tv"] .rail-scroll a.active { background: var(--paper); color: var(--night); }
+  html[data-layout="tv"] .rail-scroll a.active svg { color: var(--night); filter: none; }
+  html[data-layout="tv"] .rail > a, html[data-layout="tv"] .rail > .rail-item { width: auto; padding: 10px; }
+  html[data-layout="tv"] .rail > a span, html[data-layout="tv"] .rail > .rail-item > span:not(.avatar) { display: none; }
+  html[data-layout="tv"] main.with-nav { padding-left: 0; }
+  html[data-layout="tv"] .page { padding-top: 112px; font-size: 1.04rem; }
+  html[data-layout="tv"] .card .shot { border-radius: 12px; }
+  html[data-layout="tv"] .card:focus-visible .shot, html[data-layout="tv"] .card.is-focus .shot { transform: scale(1.06); box-shadow: 0 0 0 4px var(--paper), 0 18px 40px rgba(0,0,0,.6); }
+  html[data-layout="tv"] .btn { padding: 14px 26px; font-size: 1.02rem; }
+}
+
+/* =====================================================================
+   Affiche survolée ou sélectionnée : elle se soulève, son contour s'illumine (couleur du thème)
+   et un trait de lumière en fait le tour ; un reflet traverse l'image.
+   ===================================================================== */
+@property --card-spin { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.card .shot { transition: transform .28s cubic-bezier(.2, .8, .2, 1.2), box-shadow .28s ease; will-change: transform; }
+.card .shot::before {
+  content: ''; position: absolute; inset: 0; z-index: 4; border-radius: inherit; padding: 2px; pointer-events: none; opacity: 0; transition: opacity .25s;
+  background: conic-gradient(from var(--card-spin), transparent 0 55%, rgb(var(--sulfur-rgb) / .35) 68%, #fff 76%, rgb(var(--sulfur-rgb)) 82%, transparent 92%),
+    linear-gradient(rgb(var(--sulfur-rgb) / .85), rgb(var(--sulfur-rgb) / .85));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+.card .shot > img:first-child, .card .shot > .art { transition: filter .28s; }
+html:not(.touch) .card:hover .shot, .card:focus-visible .shot, .card.is-focus .shot {
+  transform: translateY(-6px) scale(1.045); outline: none; z-index: 2;
+  box-shadow: 0 0 0 1px rgb(var(--sulfur-rgb) / .9), 0 0 22px 2px rgb(var(--sulfur-rgb) / .5), 0 0 60px 6px rgb(var(--sulfur-rgb) / .2), 0 22px 40px -12px rgba(0, 0, 0, .7);
+  animation: card-glow 2.4s ease-in-out .3s infinite;
+}
+html:not(.touch) .card:hover .shot::before, .card:focus-visible .shot::before, .card.is-focus .shot::before { opacity: 1; animation: card-spin 2.6s linear infinite; }
+html:not(.touch) .card:hover .shot > img:first-child, .card:focus-visible .shot > img:first-child, .card.is-focus .shot > img:first-child { filter: brightness(1.08) saturate(1.08); }
+html:not(.touch) .card:hover .cap b, .card:focus-visible .cap b, .card.is-focus .cap b { color: var(--sulfur); transition: color .2s; }
+@keyframes card-spin { to { --card-spin: 360deg; } }
+@keyframes card-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgb(var(--sulfur-rgb) / .9), 0 0 22px 2px rgb(var(--sulfur-rgb) / .5), 0 0 60px 6px rgb(var(--sulfur-rgb) / .2), 0 22px 40px -12px rgba(0, 0, 0, .7); }
+  50% { box-shadow: 0 0 0 1px rgb(var(--sulfur-rgb)), 0 0 30px 4px rgb(var(--sulfur-rgb) / .7), 0 0 80px 12px rgb(var(--sulfur-rgb) / .3), 0 22px 40px -12px rgba(0, 0, 0, .7); }
+}
+/* Reflet qui traverse l'affiche à l'arrivée de la souris */
+.card .shot::after { content: ''; position: absolute; inset: 0; z-index: 3; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, .22) 48%, transparent 60%) no-repeat; background-size: 250% 100%; background-position: 130% 0; opacity: 0; }
+html:not(.touch) .card:hover .shot::after, .card:focus-visible .shot::after, .card.is-focus .shot::after { opacity: 1; animation: card-shine .9s ease-out forwards; }
+@keyframes card-shine { from { background-position: 130% 0; } to { background-position: -30% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  html:not(.touch) .card:hover .shot, .card:focus-visible .shot, .card.is-focus .shot, .card .shot::before, .card .shot::after { animation: none !important; }
+}

@@ -4,7 +4,7 @@ import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet, pass
 import { state, switchProfile, go } from '../app.js';
 import { openSourceWizard } from './source-wizard.js';
 import { NAV_ITEMS, menuPrefs, saveMenuPrefs, resetMenuPrefs, labelOf, iconOf } from '../menu.js';
-import { PLANETS, currentPlanet, setPlanet, planetMarkup, glassMode, setGlassMode, sunInfo } from '../themes.js';
+import { PLANETS, currentPlanet, setPlanet, planetMarkup, glassMode, setGlassMode, sunInfo, LAYOUTS, layoutOf } from '../themes.js';
 
 const AGES = [['', 'Aucune limite'], ['3', '3 ans et +'], ['7', '7 ans et +'], ['10', '10 ans et +'], ['12', '12 ans et +'], ['16', '16 ans et +']];
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
@@ -819,11 +819,11 @@ function themeEditor() {
     const cur = currentPlanet();
     const markOf = (id) => { const t = document.createElement('template'); t.innerHTML = planetMarkup(id).trim(); return t.content.firstChild; };
     box.replaceChildren(h('h2', {}, 'Thème'),
-      h('p', {}, 'Choisissez votre planète : les couleurs, le nom et le logo de l’application changent sur cet appareil. « Verre » est clair le jour et sombre la nuit, comme un téléphone.'),
+      h('p', {}, 'Choisissez votre planète : tout le site change sur cet appareil — couleurs, logo, mais aussi la place du menu, la forme des affiches et des boutons. « Verre » est clair le jour et sombre la nuit, comme un téléphone.'),
       h('div', { class: 'theme-grid', role: 'radiogroup', 'aria-label': 'Planète' }, Object.entries(PLANETS).map(([id, t]) => h('button', {
         class: `theme-opt f${id === cur ? ' on' : ''}`, role: 'radio', 'aria-checked': String(id === cur),
         onclick: (e) => { setPlanet(id, e.currentTarget.querySelector('.mark')); paint(); toast(t.glass ? "Thème Verre : clair le jour, sombre la nuit" : `Bienvenue sur ${t.name}`); box.querySelector(`[data-id="${id}"]`)?.focus(); }, 'data-id': id,
-      }, h('span', { class: 'theme-pic' }, markOf(id), id === cur ? h('span', { class: 'moon', 'aria-hidden': 'true' }) : null), t.name))),
+      }, h('span', { class: 'theme-pic' }, markOf(id), id === cur ? h('span', { class: 'moon', 'aria-hidden': 'true' }) : null), h('span', { class: 'theme-name' }, t.name), h('small', { class: 'theme-layout' }, LAYOUTS[layoutOf(id)])))),
       PLANETS[cur].glass ? glassChooser() : null);
   };
   // Thème Verre : clair le jour, sombre la nuit (au soleil), ou toujours l'un des deux

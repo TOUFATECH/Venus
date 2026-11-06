@@ -65,7 +65,7 @@ export async function render(main) {
     } };
     media = m;
     try {
-      const info = await api(`/api/play/${item.id}`, { method: 'POST', body: { caps: deviceCaps(), preview: true, start: 'resume' } });
+      const info = await api(`/api/play/${item.id}`, { method: 'POST', body: { caps: deviceCaps(), preview: true, hero: true, start: 'resume' } });
       session = info.sessionId;
       if (gone) { m.stop(); return; }
       v.addEventListener('playing', () => { if (media === m) mediaOn(item); });
@@ -80,7 +80,7 @@ export async function render(main) {
   function startClip(item) {
     const v = h('video', { class: 'hero-vid', muted: true, loop: true, playsinline: true, preload: 'auto', 'aria-hidden': 'true' });
     v.muted = !soundOn;
-    v.src = window.__VN_PREVIEW ? window.__VN_PREVIEW(item.id) : `/api/items/${item.id}/preview`;
+    v.src = window.__VN_PREVIEW ? window.__VN_PREVIEW(item.id) : `/api/items/${item.id}/preview?hd=1`;
     const m = { item, kind: 'clip', el: v, stop: () => { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } };
     media = m;
     v.addEventListener('playing', () => { if (media === m) mediaOn(item); });
@@ -88,12 +88,22 @@ export async function render(main) {
     bg.append(v);
     v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
   }
+  // Prépare à l'avance l'extrait HD du titre suivant (fabriqué une fois sur le serveur, puis gardé)
+  const warmed = new Set();
+  function warmNext() {
+    if (window.__VN_PREVIEW || !many) return;
+    const next = data.hero[(heroIdx + 1) % data.hero.length];
+    if (!next || next.trailer || next.heroResume || !playable(next) || warmed.has(next.id)) return;
+    warmed.add(next.id);
+    fetch(`/api/items/${next.id}/preview?hd=1`, { priority: 'low' }).then((r) => r.body && r.body.cancel()).catch(() => {});
+  }
   function launch(item) {
     if (shown !== item || document.hidden || media || trailer) return;
+    setTimeout(warmNext, 4000);
     if (item.heroResume) return startVideo(item);
     if (!item.trailer) return startClip(item);
     const t = trailerPlayer(item.trailer, {
-      mute: !soundOn,
+      mute: !soundOn, hd: true,
       onPlaying: () => { if (trailer !== t) return; mediaOn(item); },
       // Fin de la bande-annonce : on passe au titre suivant, qui lance la sienne
       onEnd: () => { if (trailer !== t) return; stopTrailer(); if (many) { goTo(heroIdx + 1); restart(); } },
@@ -104,7 +114,7 @@ export async function render(main) {
     bg.append(t.el);
     fit();
     // YouTube injoignable : extrait de la vidéo à la place
-    setTimeout(() => { if (trailer === t && !t.el.classList.contains('on') && shown === item) { t.destroy(); trailer = null; startClip(item); } }, 6000);
+    setTimeout(() => { if (trailer === t && !t.el.classList.contains('on') && shown === item) { t.destroy(); trailer = null; startClip(item); } }, 10000);
   }
   function startTrailer(item, delay = 1200) {
     stopTrailer();
