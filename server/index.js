@@ -18,6 +18,7 @@ import { router, customCss } from './api.js';
 import { together } from './together.js';
 import { detectHardware } from './hw.js';
 import { scanAll, watchLibraries, events } from './scanner.js';
+import { ensureFreeTv, checkChannels } from './free-tv.js';
 import { libraryAdded } from './notify.js';
 import { runWatch } from './watch.js';
 import { schedulePending } from './segments.js';
@@ -169,6 +170,7 @@ async function main() {
   defineTask('segments', { label: 'Repérage des génériques', description: 'Analyse audio des épisodes pour « Passer l’intro » et « Passer le générique ».', when: 'Toutes les 30 minutes', run: async () => { schedulePending(); return 'Épisodes en attente ajoutés à la file'; } });
   defineTask('backup', { label: 'Sauvegarde de la base', description: 'Profils, vus, listes, envies et réglages (10 dernières gardées).', when: 'Chaque nuit', run: async () => { makeBackup(); return 'Sauvegarde faite'; } });
   defineTask('guide', { label: 'Guide des épisodes', description: 'Sans clé TMDB : liste des épisodes diffusés (TVmaze), pour montrer les épisodes et saisons manquants.', when: 'Chaque jour', every: 86400e3, firstDelay: 240000, run: refreshGuides });
+  defineTask('iptv-check', { label: 'Vérification des chaînes', description: 'Ouvre chaque chaîne de TV en direct et vérifie qu’elle donne bien des images ; celles qui n’en donnent pas sont cachées jusqu’à la prochaine vérification.', when: 'Chaque jour', every: 86400e3, firstDelay: 600000, run: () => checkChannels() });
   defineTask('report', { label: 'Rapport de la semaine', description: 'Nouveautés, temps regardé par profil, espace disque, tâches en échec : envoyé à l’administrateur (notification, et e-mail si réglé).', when: 'Chaque semaine', every: 7 * 86400e3, firstDelay: 3 * 86400e3, run: sendWeeklyReport });
   defineTask('integrity', { label: 'Fichiers abîmés', description: 'Lit un peu de chaque vidéo avec ffmpeg pour repérer les fichiers corrompus ou incomplets (30 par passage, les nouveaux d’abord).', when: 'Toutes les 12 heures', every: 12 * 3600e3, firstDelay: 20 * 60000, run: () => checkFiles(30) });
   defineTask('trash', { label: 'Corbeille', description: `Efface pour de bon les vidéos supprimées depuis plus de ${KEEP_DAYS} jours (Réglages → Corbeille pour les restaurer avant).`, when: 'Chaque nuit', every: 86400e3, firstDelay: 300000, run: async () => { const r = purgeTrash(); return r.count ? `${r.count} élément(s) effacé(s), ${(r.freed / 1e9).toFixed(1)} Go libérés` : 'Rien à effacer'; } });
@@ -183,7 +185,7 @@ async function main() {
     }
     if (warn.length && getSetting('disk_warned', '') !== warn.join('|')) {
       setSetting('disk_warned', warn.join('|'));
-      notify({ title: 'Disque presque plein', body: warn.join(' · '), url: '/tableau-de-bord', tag: 'disk' }, { adminOnly: true });
+      notify({ title: 'Disque presque plein', body: warn.join(' · '), url: '/dashboard', tag: 'disk' }, { adminOnly: true });
     } else if (!warn.length) setSetting('disk_warned', '');
     return warn.length ? `Attention : ${warn.join(' · ')}` : 'Assez de place partout';
   } });
@@ -196,6 +198,8 @@ async function main() {
   defineTask('trickplay', { label: 'Vignettes de la barre de lecture', description: 'Une image toutes les 10 secondes pour chaque film, épisode et clip, montrée au survol de la barre.', every: 6 * 3600e3, firstDelay: 5 * 60e3, run: trickplayBackfill });
   setInterval(() => refreshRatings(), 6 * 3600000).unref();
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)
+  // Chaînes gratuites (France et Outre-mer, Mayotte La 1ère en tête) ajoutées à la première mise en route
+  try { if (ensureFreeTv()) console.log('[iptv] chaînes gratuites ajoutées'); } catch (e) { console.warn('[iptv]', e.message); }
   setTimeout(() => scanAll(), 2000);
   // Les partages réseau ne signalent pas les nouveaux fichiers : vérification toutes les 10 minutes
   setInterval(() => { if (all("SELECT 1 FROM libraries WHERE remote IS NOT NULL LIMIT 1").length) scanAll(); }, 10 * 60000).unref();

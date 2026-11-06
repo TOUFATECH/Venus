@@ -55,7 +55,14 @@ export async function render(main, { query } = {}) {
       'Si l’audio est déjà dans votre langue, seuls les sous-titres « forcés » s’affichent.'),
     field('Qualité sur cet appareil', select([['auto', 'Auto'], ['original', 'Originale'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p'], ['360p', '360p (data mobile)']], preferredQuality(),
       { onchange: (e) => { setPreferredQuality(e.target.value); toast('Qualité enregistrée pour cet appareil'); } })),
-    h('h3', { class: 'box-sub' }, 'Lecture sur cet appareil'),
+    h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
+      h('button', { class: 'btn btn-small f', onclick: () => editProfile(me, true, () => window.dispatchEvent(new CustomEvent('vn:reboot'))) }, 'Modifier nom, couleur et code PIN'),
+      h('button', { class: 'btn btn-small f', onclick: switchProfile }, 'Changer de profil'),
+      h('button', { class: 'btn btn-small btn-danger f', onclick: async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); auth.token = null; window.dispatchEvent(new CustomEvent('vn:reboot')); } }, 'Déconnecter l’appareil')));
+  // Préférences propres à cet appareil (lecture, aperçus, sous-titres)
+  const deviceBox = h('section', { class: 'box' },
+    h('h2', {}, 'Lecture sur cet appareil'),
+    h('p', {}, 'Ces choix ne valent que pour ce navigateur ou cette télévision.'),
     prefSwitch('fullscreenOnPlay', 'Plein écran au lancement d’une vidéo'),
     field('Au survol d’une affiche', select([['trailer', 'Bande-annonce (sinon un extrait)'], ['extract', 'Extrait de la vidéo'], ['off', 'Rien']], hoverMode(),
       { onchange: (e) => { prefs.set('hoverMode', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
@@ -75,11 +82,7 @@ export async function render(main, { query } = {}) {
       field('Position', select([['normal', 'En bas de l’image'], ['high', 'Un peu plus haut']], prefs.get('subPos'), { onchange: (e) => { prefs.set('subPos', e.target.value); toast('Préférence enregistrée pour cet appareil'); } }))),
     prefSwitch('autoSkip', 'Passer automatiquement les génériques (opening, ending)'),
     prefSwitch('miniPlayer', 'Mini-lecteur : la vidéo continue en petit quand on quitte le lecteur'),
-    pushRow(),
-    h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
-      h('button', { class: 'btn btn-small f', onclick: () => editProfile(me, true, () => window.dispatchEvent(new CustomEvent('vn:reboot'))) }, 'Modifier nom, couleur et code PIN'),
-      h('button', { class: 'btn btn-small f', onclick: switchProfile }, 'Changer de profil'),
-      h('button', { class: 'btn btn-small btn-danger f', onclick: async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); auth.token = null; window.dispatchEvent(new CustomEvent('vn:reboot')); } }, 'Déconnecter l’appareil')));
+    pushRow());
 
   async function saveMe(body) {
     const p = await api(`/api/profiles/${me.id}`, { method: 'PUT', body });
@@ -90,18 +93,34 @@ export async function render(main, { query } = {}) {
   const menuBox = menuEditor(me);
   const themeBox = themeEditor();
   page.append(h('div', { class: 'page-head' }, h('h1', {}, 'Réglages'),
-    me.isAdmin ? h('button', { class: 'tool f', onclick: () => go('/tableau-de-bord') }, icon('gauge'), 'Tableau de bord') : null));
+    me.isAdmin ? h('button', { class: 'tool f', onclick: () => go('/dashboard') }, icon('gauge'), 'Tableau de bord') : null));
   // Une rubrique à la fois : onglets en haut, seuls les blocs de la rubrique choisie sont affichés.
-  const TABS = me.isAdmin
-    ? [['medias', 'Médiathèques', 'folder'], ['profil', 'Mon profil', 'key'], ['affichage', 'Affichage', 'image'], ['lecture', 'Lecture', 'play'], ['famille', 'Profils', 'people'], ['infos', 'Infos et affiches', 'spark'], ['alertes', 'Notifications', 'chat'], ['serveur', 'Serveur', 'server']]
-    : [['profil', 'Mon profil', 'key'], ['affichage', 'Affichage', 'image']];
-  const SECTION_TAB = { menu: 'affichage', sources: 'infos', seerr: 'infos', ratings: 'infos', affiches: 'infos', subtitles: 'infos', notifications: 'alertes', backups: 'serveur' };
+  // Rubriques rangées par thème (colonne à gauche sur ordinateur, bande défilante sur téléphone) :
+  // chaque page ne montre que quelques blocs courts
+  const NAV = [
+    ['Vous', [['profil', 'Mon profil', 'key'], ['appareil', 'Cet appareil', 'play'], ['affichage', 'Thème et menu', 'image']]],
+    ...(me.isAdmin ? [
+      ['Médias', [['medias', 'Médiathèques', 'folder'], ['tv', 'TV en direct', 'live'], ['infos', 'Infos et affiches', 'spark'], ['notes', 'Notes des sites', 'heart'], ['demandes', 'Demandes', 'download']]],
+      ['Foyer', [['famille', 'Profils et appareils', 'people'], ['alertes', 'Notifications', 'chat']]],
+      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['serveur', 'Serveur', 'server'], ['sauvegardes', 'Sauvegardes', 'copy']]],
+    ] : []),
+  ];
+  const TABS = NAV.flatMap(([, items]) => items);
+  const SECTION_TAB = { menu: 'affichage', sources: 'infos', seerr: 'demandes', arr: 'demandes', ratings: 'notes', affiches: 'infos', subtitles: 'lecture', notifications: 'alertes', backups: 'sauvegardes', iptv: 'tv' };
   let tab = SECTION_TAB[query && query.get('section')] || (query && query.get('onglet')) || (() => { try { return sessionStorage.getItem('vn_settings_tab'); } catch { return null; } })() || TABS[0][0];
   if (!TABS.some(([k]) => k === tab)) tab = TABS[0][0];
-  const tabBar = h('nav', { class: 'set-tabs', role: 'tablist', 'aria-label': 'Rubriques des réglages' });
+  const tabBar = h('nav', { class: 'set-nav', 'aria-label': 'Rubriques des réglages' });
   const body = h('div', { class: 'admin-grid' });
+  const bodyHead = h('div', { class: 'set-head' });
   const groups = {};
-  const paintTabs = () => tabBar.replaceChildren(...TABS.map(([k, label, ic]) => h('button', { class: `set-tab f${k === tab ? ' on' : ''}`, role: 'tab', 'aria-selected': String(k === tab), onclick: () => { tab = k; try { sessionStorage.setItem('vn_settings_tab', k); } catch { /* */ } paintTabs(); paintBody(); scrollTo({ top: 0 }); } }, icon(ic), h('span', {}, label))));
+  const pick2 = (k) => { tab = k; try { sessionStorage.setItem('vn_settings_tab', k); } catch { /* */ } paintTabs(); paintBody(); if (scrollY > 120) scrollTo({ top: 0 }); };
+  const paintTabs = () => {
+    tabBar.replaceChildren(...NAV.map(([title, items]) => h('div', { class: 'set-group' }, NAV.length > 1 ? h('span', { class: 'set-group-t' }, title) : null,
+      ...items.map(([k, label, ic]) => h('button', { class: `set-tab f${k === tab ? ' on' : ''}`, 'aria-current': k === tab ? 'page' : null, onclick: () => pick2(k) }, icon(ic), h('span', {}, label))))));
+    const cur = TABS.find(([k]) => k === tab);
+    bodyHead.replaceChildren(h('h2', {}, cur ? cur[1] : ''));
+    requestAnimationFrame(() => tabBar.querySelector('.on')?.scrollIntoView({ block: 'nearest', inline: 'center' }));
+  };
   // anim : seulement quand on change de rubrique (jamais lors d'un rafraîchissement automatique, sinon la page clignote)
   const paintBody = ({ anim = true } = {}) => {
     if (BUILD[tab] && lastA) build(tab);
@@ -120,23 +139,29 @@ export async function render(main, { query } = {}) {
     if (!sec) return;
     requestAnimationFrame(() => { const el = sec === 'menu' ? menuBox : document.getElementById(sec); if (el) el.scrollIntoView({ block: 'start' }); });
   };
-  page.append(tabBar, body);
+  page.append(h('div', { class: 'set-layout' }, tabBar, h('div', { class: 'set-main' }, bodyHead, body)));
   paintTabs();
-  if (!me.isAdmin) { groups.profil = [myBox]; groups.affichage = [themeBox, menuBox]; paintBody(); toMenu(); return; }
+  if (!me.isAdmin) { groups.profil = [myBox]; groups.appareil = [deviceBox]; groups.affichage = [themeBox, menuBox]; paintBody(); toMenu(); return; }
 
   // ----------------------------------------------------------- administration
   const grid = body;
 
   const pick = (a, keys) => JSON.stringify(keys.map((k) => a[k]));
   Object.assign(BUILD, {
-    medias: (a) => [libraryBox(a)], lecture: (a) => [playbackBox(a), subtitlesBox(a)], famille: (a) => [profilesBox(a), devicesBox(a)],
-    infos: (a) => [metadataBox(a), postersBox(a), ratingsBox(a), seerrBox(a)], alertes: (a) => [notifyBox(a)], serveur: (a) => [serverBox(a), backupBox(a)],
+    medias: (a) => [libraryBox(a, { iptv: false })], tv: (a) => [libraryBox(a, { iptv: true })],
+    infos: (a) => [metadataBox(a), postersBox(a)], notes: (a) => [ratingsBox(a)], demandes: (a) => [arrBox(a), seerrBox(a)],
+    famille: (a) => [profilesBox(a), devicesBox(a)], alertes: (a) => [notifyBox(a)],
+    lecture: (a) => [playbackBox(a), subtitlesBox(a)], serveur: (a) => [serverBox(a)], sauvegardes: (a) => [backupBox(a)],
   });
   // Données dont dépend chaque rubrique ; l'état des lectures en cours et l'usage système bougent sans cesse :
   // on les arrondit pour ne pas reconstruire la rubrique à chaque seconde
   const roughSys = (a) => a.system ? { ...a.system, load: undefined, cpu: undefined, mem: a.system.mem ? Math.round((a.system.mem.used || 0) / 2 ** 28) : undefined, uptime: undefined } : null;
   Object.assign(SIG, {
     medias: (a) => pick(a, ['counts', 'libraries', 'scan']),
+    tv: (a) => pick(a, ['counts', 'libraries']),
+    notes: (a) => pick(a, ['settings']),
+    demandes: (a) => pick(a, ['settings']),
+    sauvegardes: (a) => pick(a, ['settings']),
     lecture: (a) => JSON.stringify([a.hw, a.settings, (a.sessions || []).length]),
     famille: (a) => pick(a, ['profiles', 'devices', 'settings']),
     infos: (a) => pick(a, ['settings', 'unmatched']),
@@ -144,6 +169,7 @@ export async function render(main, { query } = {}) {
     serveur: (a) => JSON.stringify([a.settings, a.version, roughSys(a)]),
   });
   groups.profil = [myBox];
+  groups.appareil = [deviceBox];
   groups.affichage = [themeBox, menuBox];
 
   // L'utilisateur est en train de se servir de la rubrique : on ne touche à rien
@@ -180,7 +206,7 @@ export async function render(main, { query } = {}) {
   }
 
   // Espace « Bibliothèques » : un bloc par type de média, détection automatique des ajouts
-  function libraryBox(a) {
+  function libraryBox(a, { iptv = null } = {}) {
     const s = a.scan;
     const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
     const COUNTS = { movies: [a.counts.movie, 'film'], shows: [a.counts.show, 'série'], anime: [null, 'animé'], clips: [a.counts.clip, 'clip'], iptv: [a.counts.channel, 'chaîne'], music: [a.counts.track, 'titre'], photos: [a.counts.photo, 'photo'], books: [a.counts.book, 'livre'] };
@@ -193,7 +219,7 @@ export async function render(main, { query } = {}) {
         libs.length ? libs.map((l) => h('div', { class: 'list-row' },
           h('span', { class: `dot${l.exists ? '' : ' off'}`, title: l.exists ? 'Accessible' : 'Inaccessible' }),
           h('div', { class: 'grow' },
-            l.network ? h('span', { class: 'net-line' }, icon('wifi'), l.network.address) : h('span', {}, l.path),
+            l.network ? h('span', { class: 'net-line' }, icon('wifi'), l.network.address) : h('span', {}, String(l.path).startsWith('venus:') ? l.name : l.path),
             l.network && l.network.error ? h('small', { class: 'warn' }, l.network.error)
               : !l.exists ? h('small', { class: 'warn' }, l.network ? 'Partage injoignable' : 'Dossier introuvable')
                 : type !== 'iptv' && !l.writable ? h('small', { class: 'muted' }, 'Lecture seule') : null),
@@ -202,23 +228,48 @@ export async function render(main, { query } = {}) {
             try { await api(`/api/admin/libraries/${l.id}/reconnect`, { method: 'POST' }); toast('Partage reconnecté'); } catch (e2) { toast(e2.message, true); }
             refresh();
           } }, 'Reconnecter') : null,
-          h('button', { class: 'btn btn-small btn-danger f', 'aria-label': `Retirer ${l.path}`, onclick: async () => {
-            if (!(await confirmSheet(`Retirer « ${l.path} » de Venus ? Vos fichiers ne sont pas supprimés.`, 'Retirer'))) return;
+          h('button', { class: 'btn btn-small btn-danger f', 'aria-label': `Retirer ${String(l.path).startsWith('venus:') ? l.name : l.path}`, onclick: async () => {
+            if (!(await confirmSheet(`Retirer « ${String(l.path).startsWith('venus:') ? l.name : l.path} » de Venus ? Vos fichiers ne sont pas supprimés.`, 'Retirer'))) return;
             await api(`/api/admin/libraries/${l.id}`, { method: 'DELETE' }); refresh();
           } }, 'Retirer'))) : h('p', { class: 'lib-hint' }, hint),
-        h('button', { class: 'btn btn-small f', onclick: () => addLibrary(type) }, icon('plus'), type === 'iptv' ? 'Ajouter une liste IPTV' : 'Ajouter un emplacement'));
+        h('button', { class: 'btn btn-small f', onclick: () => addLibrary(type) }, icon('plus'), type === 'iptv' ? 'Ajouter une liste IPTV' : 'Ajouter un emplacement'),
+        type === 'iptv' ? iptvTools(libs) : null);
+    };
+    // TV en direct : chaînes gratuites (France et Outre-mer) et vérification des images de chaque chaîne
+    const iptvTools = (libs) => {
+      const out = h('div', { class: 'iptv-tools' });
+      const has = libs.some((l) => l.path === 'venus:chaines-gratuites');
+      const status = h('small', { class: 'muted' }, 'État des chaînes…');
+      api('/api/admin/channels/health').then((r) => {
+        status.textContent = r.check.running ? `Vérification en cours : ${r.check.done}/${r.check.total}`
+          : r.check.offline ? 'Dernière vérification : aucune chaîne joignable. Le serveur de Venus n’a sans doute pas accès à Internet (rien n’a été caché).'
+          : r.n ? `${r.ok || 0} chaîne(s) fonctionnent${r.bad ? `, ${r.bad} hors service (cachées)` : ''}${r.todo ? `, ${r.todo} pas encore vérifiée(s)` : ''}` : 'Aucune chaîne';
+      }).catch(() => { status.textContent = ''; });
+      const check = h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => {
+        check.disabled = true;
+        try { await api('/api/admin/channels/check', { method: 'POST', body: {} }); toast('Vérification lancée : chaque chaîne est ouverte pour voir si elle donne des images'); status.textContent = 'Vérification en cours…'; }
+        catch (e) { toast(e.message, true); } finally { check.disabled = false; }
+      } }, icon('refresh'), 'Vérifier les chaînes');
+      const addFree = has ? null : h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => {
+        try { await api('/api/admin/libraries', { method: 'POST', body: { type: 'iptv', name: 'Chaînes gratuites (France et Outre-mer)', path: 'venus:chaines-gratuites' } }); toast('Chaînes gratuites ajoutées, chargement en cours'); refresh(); }
+        catch (e) { toast(e.message, true); }
+      } }, icon('live'), 'Ajouter les chaînes gratuites');
+      out.append(status, h('div', { class: 'form-actions', style: { justifyContent: 'flex-start', flexWrap: 'wrap' } }, check, addFree));
+      return out;
     };
     const last = (s.lastAdded || []).slice(0, 6);
     return h('section', { class: 'box libs-box' },
       h('div', { class: 'libs-top' },
-        h('div', {}, h('h2', {}, 'Bibliothèques'),
-          h('p', {}, 'Indiquez où se trouvent vos films, séries, animés et clips : un dossier de ce serveur ou un partage réseau (NAS, PC Windows). Venus les surveille et chaque nouveau fichier apparaît tout seul.')),
-        h('div', { class: 'auto-pill' }, h('span', { class: 'dot' }), 'Détection automatique active')),
+        iptv ? h('div', {}, h('h2', {}, 'Listes de chaînes'),
+          h('p', {}, 'Les chaînes gratuites (France et Outre-mer, Mayotte La 1ère en tête) sont déjà là. Vous pouvez ajouter la liste M3U de votre abonnement. Chaque chaîne est vérifiée chaque jour : celles qui ne donnent pas d’images sont cachées.'))
+          : h('div', {}, h('h2', {}, 'Bibliothèques'),
+            h('p', {}, 'Indiquez où se trouvent vos films, séries, animés et clips : un dossier de ce serveur ou un partage réseau (NAS, PC Windows). Venus les surveille et chaque nouveau fichier apparaît tout seul.')),
+        iptv ? null : h('div', { class: 'auto-pill' }, h('span', { class: 'dot' }), 'Détection automatique active')),
       a.runtime && a.runtime.mount ? adviceBox(a.runtime.mount) : null,
       s.running ? h('div', { class: 'scan-line' }, h('p', {}, `${s.phase}… ${s.total ? `${s.done}/${s.total}` : ''}`),
         h('div', { class: 'progress-line' }, h('i', { style: { width: `${pct}%` } }))) : null,
       s.error ? h('p', { class: 'error-text' }, s.error) : null,
-      h('div', { class: 'lib-grid' }, SOURCE_TYPES.map(typeCard)),
+      h('div', { class: 'lib-grid' }, SOURCE_TYPES.filter(([t]) => iptv == null || (iptv ? t === 'iptv' : t !== 'iptv')).map(typeCard)),
       last.length ? h('div', { class: 'last-added' }, h('h3', {}, 'Derniers médias détectés'),
         h('ul', {}, last.map((x) => h('li', {}, h('b', {}, x.title), h('small', {}, new Date(x.at).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })))))) : null,
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
@@ -322,6 +373,44 @@ export async function render(main, { query } = {}) {
   }
 
   // Seerr (Overseerr / Jellyseerr) : demander un titre depuis Nouveautés, Radarr / Sonarr le téléchargent
+  // Radarr (films) et Sonarr (séries, animés) : ce qu'on demande dans l'onglet « Nouveau » s'y ajoute tout seul
+  function arrBox() {
+    const box = h('section', { class: 'box', id: 'arr' },
+      h('h2', {}, 'Radarr et Sonarr'),
+      h('p', {}, 'Reliez Radarr (films) et Sonarr (séries et animés) : dans l’onglet « Nouveau », un clic sur « Ajouter » envoie le titre au bon service, qui le télécharge tout seul. Venus l’ajoute ensuite dès que le fichier arrive dans vos dossiers.'),
+      h('p', { class: 'muted' }, 'Chargement…'));
+    const one = (app, conf, name, port) => {
+      const err = h('p', { class: 'error-text' });
+      const url = h('input', { class: 'input', placeholder: `http://192.168.1.20:${port}`, value: conf.url || '', inputmode: 'url', autocomplete: 'off', 'aria-label': `Adresse de ${name}` });
+      const key = h('input', { class: 'input', placeholder: conf.keySet ? 'Clé enregistrée (laisser vide pour conserver)' : `Clé API (${name} : Settings → General)`, autocomplete: 'off', 'aria-label': `Clé API de ${name}` });
+      const picks = h('div', { class: 'arr-picks' });
+      const paintPicks = (opts) => {
+        const profile = select(opts.profiles.map((p) => [String(p.id), p.name]), String(conf.profile || (opts.profiles[0] || {}).id || ''));
+        const root = select(opts.roots.map((r) => [r.path, r.path]), conf.root || (opts.roots[0] || {}).path || '');
+        const animeRoot = app === 'sonarr' ? select([['', 'Même dossier que les séries'], ...opts.roots.map((r) => [r.path, r.path])], conf.animeRoot || '') : null;
+        const save = async () => { try { await api(`/api/admin/arr/${app}`, { method: 'PUT', body: { profile: Number(profile.value), root: root.value, ...(animeRoot ? { animeRoot: animeRoot.value } : {}) } }); toast('Enregistré'); } catch (e) { toast(e.message, true); } };
+        [profile, root, animeRoot].filter(Boolean).forEach((x) => x.addEventListener('change', save));
+        picks.replaceChildren(h('small', { class: 'ok-text' }, `${opts.name || name} ${opts.version || ''} relié`),
+          h('div', { class: 'two-cols wide' }, field('Profil de qualité', profile), field(app === 'sonarr' ? 'Dossier des séries' : 'Dossier des films', root)),
+          animeRoot ? field('Dossier des animés', animeRoot) : null);
+      };
+      if (conf.on) api(`/api/admin/arr/${app}/options`).then(paintPicks).catch((e) => { picks.replaceChildren(h('p', { class: 'error-text' }, e.message)); });
+      const btn = h('button', { class: 'btn btn-small btn-play f', onclick: async () => {
+        err.textContent = ''; btn.disabled = true;
+        try { const r = await api(`/api/admin/arr/${app}`, { method: 'PUT', body: { url: url.value.trim(), ...(key.value.trim() ? { key: key.value.trim() } : {}) } }); key.value = ''; conf.on = true; toast(`${name} relié`, { type: 'success' }); paintPicks(r); }
+        catch (e) { err.textContent = e.message; } finally { btn.disabled = false; }
+      } }, conf.on ? 'Tester et enregistrer' : 'Relier');
+      const rm = conf.on ? h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { await api(`/api/admin/arr/${app}`, { method: 'PUT', body: { remove: true } }); toast(`${name} retiré`); load(); } }, 'Retirer') : null;
+      return h('div', { class: 'arr-one' }, h('h3', { class: 'box-sub' }, name, h('small', { class: 'muted' }, app === 'radarr' ? ' — films' : ' — séries et animés')),
+        h('div', { class: 'two-cols wide' }, field('Adresse', url), field('Clé API', key)), err,
+        h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, btn, rm), picks);
+    };
+    const load = () => api('/api/admin/arr').then((c) => box.replaceChildren(box.children[0], box.children[1], one('radarr', c.radarr, 'Radarr', 7878), one('sonarr', c.sonarr, 'Sonarr', 8989)))
+      .catch((e) => box.replaceChildren(box.children[0], h('p', { class: 'error-text' }, e.message)));
+    load();
+    return box;
+  }
+
   function seerrBox(a) {
     const err = h('p', { class: 'error-text' });
     const box = h('section', { class: 'box', id: 'seerr' });
@@ -679,7 +768,7 @@ function menuEditor(me) {
     const toggle = (id, on) => saveMenuPrefs(me.id, { ...p, hidden: on ? p.hidden.filter((x) => x !== id) : [...p.hidden, id] });
     box.replaceChildren(
       h('h2', {}, 'Menu'),
-      h('p', {}, 'Choisissez ce qui apparaît dans le menu et dans quel ordre. Sur ordinateur, seules les 5 premières sections sont affichées ; le reste est rangé dans « Plus ». Réglages et profil restent toujours en bas.'),
+      h('p', {}, 'Choisissez ce qui apparaît dans le menu et dans quel ordre. Sur ordinateur, seules les 6 premières sections sont affichées ; le reste est rangé dans « Plus ». Réglages et profil restent toujours en bas.'),
       h('ol', { class: 'menu-edit' }, items.map((it, i) => h('li', { class: p.hidden.includes(it.id) ? 'off' : '' },
         h('span', { class: 'me-ic' }, icon(iconOf(it))), h('b', {}, it.id === 'today' ? 'Aujourd’hui / Ce soir' : labelOf(it)),
         h('button', { class: 'p-icon small f', 'data-id': it.id, 'data-dir': '-1', 'aria-label': `Monter ${labelOf(it)}`, disabled: i === 0, onclick: () => move(it.id, -1) }, icon('up')),

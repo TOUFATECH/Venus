@@ -15,6 +15,7 @@ export const NAV_ITEMS = [
   { id: 'shows', href: '/series', label: 'Séries', icon: 'tv', cat: 'show' },
   { id: 'anime', href: '/animes', label: 'Animés', icon: 'spark', cat: 'anime' },
   { id: 'clips', href: '/clips', label: 'Clips', icon: 'clip', cat: 'clip' },
+  { id: 'request', href: '/nouveau', label: 'Nouveau', icon: 'download', hint: 'Ajouter un film, une série ou un animé (téléchargé par Radarr / Sonarr)', short: 'Demander un titre', noKids: true },
   { id: 'today', href: '/cesoir', label: todayLabel, icon: todayIcon, hint: 'Trois questions, trois idées à regarder', short: '3 idées pour vous' },
   { id: 'new', href: '/nouveautes', label: 'Nouveautés', icon: 'cal', hint: 'Films, séries et animés qui sortent', short: 'Sorties à venir' },
   { id: 'tv', href: '/tv', label: 'TV', icon: 'live', cat: 'channel' },
@@ -28,16 +29,16 @@ export const NAV_ITEMS = [
   { id: 'remote', action: 'remote', label: 'Télécommande', icon: 'remote', hint: 'Piloter Venus avec votre téléphone' },
   { id: 'stats', href: '/stats', label: 'Statistiques', icon: 'gauge', hint: 'Vos heures, genres et séries préférées' },
   { id: 'downloads', href: '/telechargements', label: 'Téléchargements', icon: 'down', hint: 'Vos vidéos pour regarder sans réseau' },
-  { id: 'dashboard', href: '/tableau-de-bord', label: 'Tableau de bord', icon: 'gauge', admin: true, hint: 'Lectures en cours, appareils, code de connexion' },
+  { id: 'dashboard', href: '/dashboard', label: 'Tableau de bord', icon: 'gauge', admin: true, hint: 'Lectures en cours, appareils, code de connexion' },
 ];
 // Tout ce qui a du contenu est affiché d'office (Films, Séries, Animés, TV, Clips, Musique, Photos, Livres…) ;
 // seuls les outils sont rangés dans « Plus » au départ. Chaque section reste masquable dans Réglages → Menu.
 const DEFAULT_HIDDEN = ['seance', 'remote', 'dashboard', 'stats', 'downloads'];
 // Sections de contenu : jamais masquées par un ancien réglage (avant la v2, elles étaient cachées par défaut)
-export const CONTENT_IDS = ['today', 'home', 'movies', 'shows', 'anime', 'new', 'clips', 'tv', 'music', 'photos', 'books', 'mylist', 'collections', 'search'];
-const PREFS_VERSION = 4;
-/** Sur ordinateur, le rail montre les 5 premières sections (Accueil, Films, Séries, Animés, Clips) ; le reste est dans « Plus ». */
-export const RAIL_MAX = 5;
+export const CONTENT_IDS = ['today', 'home', 'movies', 'shows', 'anime', 'new', 'request', 'clips', 'tv', 'music', 'photos', 'books', 'mylist', 'collections', 'search'];
+const PREFS_VERSION = 5;
+/** Sur ordinateur, le rail montre les 6 premières sections (Accueil, Films, Séries, Animés, Clips, Nouveau) ; le reste est dans « Plus ». */
+export const RAIL_MAX = 6;
 const labelOf = (it) => (typeof it.label === 'function' ? it.label() : it.label);
 const iconOf = (it) => (typeof it.icon === 'function' ? it.icon() : it.icon);
 export { labelOf, iconOf };
@@ -52,6 +53,8 @@ export function menuPrefs(pid) {
   let order = [...savedOrder.filter((id) => ids.includes(id)), ...ids.filter((id) => !savedOrder.includes(id))];
   // Réglage d'avant la v4 : Clips prend place juste après Animés (visible dans le menu)
   if (saved && saved.v < 4) { order = order.filter((id) => id !== 'clips'); order.splice(Math.max(0, order.indexOf('anime')) + 1, 0, 'clips'); }
+  // v5 : l'onglet « Nouveau » (demandes Radarr / Sonarr) prend place juste après Clips
+  if (saved && saved.v < 5) { order = order.filter((id) => id !== 'request'); order.splice(Math.max(0, order.indexOf('clips')) + 1, 0, 'request'); }
   // Éléments apparus depuis le dernier réglage : rangés dans « Plus » s'ils le sont par défaut
   const known = (saved && saved.order) || [];
   let hidden = saved && Array.isArray(saved.hidden)
@@ -60,6 +63,7 @@ export function menuPrefs(pid) {
   // Réglage enregistré avec l'ancien menu court : les sections de contenu réapparaissent
   if (saved && saved.v < 2) hidden = hidden.filter((id) => !CONTENT_IDS.includes(id));
   if (saved && saved.v < 4) hidden = hidden.filter((id) => id !== 'clips');
+  if (saved && saved.v < 5) hidden = hidden.filter((id) => id !== 'request');
   hidden = [...new Set(hidden)];
   return { order, hidden };
 }
@@ -76,7 +80,7 @@ export function resetMenuPrefs(pid) {
 export function menuItems(profile, hasCat) {
   const p = menuPrefs(profile.id);
   // Profil enfant : seulement le contenu (pas d'outils, pas de nouveautés à venir, pas de téléchargements)
-  const KIDS_HIDE = new Set(['new', 'seance', 'remote', 'dashboard', 'stats', 'downloads', 'collections', 'tv']);
+  const KIDS_HIDE = new Set(['new', 'request', 'seance', 'remote', 'dashboard', 'stats', 'downloads', 'collections', 'tv']);
   const usable = (it) => (!it.admin || profile.isAdmin) && (!it.cat || hasCat(it.cat)) && !(profile.isKids && KIDS_HIDE.has(it.id));
   const byId = new Map(NAV_ITEMS.map((i) => [i.id, i]));
   const list = p.order.map((id) => byId.get(id)).filter(usable);

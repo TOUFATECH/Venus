@@ -20,6 +20,14 @@ export const PLANETS = {
     bands: ['#8fb2ff', '#4f74e6', '#7798f7', '#3c5bd1', '#6a8cf0', '#3350c2', '#5c7de6', '#25399a'], surface: 'spot', fx: '#1d2c7a' },
   pluton: { night: '#130e10', deep: '#1d1619', raise: '#2a2024', glow: '#c99a8a', name: 'Pluton', accent: '#f2c9b8', accent2: '#c98f86', dir: 'diag',
     bands: ['#f3e2d6', '#d8b8a5', '#efd8c9', '#c6a08c', '#e8cdbb', '#b48b78', '#dfc1ae', '#8f6a5a'], surface: 'heart', fx: '#fbf1ea' },
+  // Noir et blanc : trois planètes monochromes. Noir (noir pur, idéal sur écran OLED), Blanc (clair),
+  // et TV, le mélange des deux (fond noir, menu et boutons blancs, gros contours de sélection lisibles de loin)
+  noir: { night: '#000000', deep: '#0b0b0b', raise: '#171717', glow: '#bdbdbd', name: 'Noir', accent: '#ffffff', accent2: '#9a9a9a', dir: 'diag', mono: true,
+    bands: ['#5a5a5a', '#2b2b2b', '#4a4a4a', '#1c1c1c', '#3c3c3c', '#141414', '#303030', '#050505'], surface: 'craters', fx: '#d9d9d9' },
+  blanc: { night: '#f3f3f3', deep: '#ffffff', raise: '#e6e6e6', glow: '#9a9a9a', name: 'Blanc', accent: '#111111', accent2: '#5c5c5c', dir: 'diag', mono: true, light: true,
+    bands: ['#ffffff', '#e9e9e9', '#fafafa', '#d6d6d6', '#f2f2f2', '#c8c8c8', '#ececec', '#b4b4b4'], surface: 'clouds', fx: '#ffffff' },
+  tv: { night: '#050505', deep: '#121212', raise: '#1f1f1f', glow: '#ffffff', name: 'TV', accent: '#ffffff', accent2: '#b5b5b5', dir: 'flat', mono: true,
+    bands: ['#ffffff', '#111111', '#f2f2f2', '#1a1a1a', '#e6e6e6', '#0d0d0d', '#d9d9d9', '#000000'], surface: 'stripes', fx: '#ffffff' },
   // « Verre » (inspiré de Free My TV) : surfaces en verre dépoli, clair le jour et sombre la nuit, au rythme du soleil
   verre: { night: '#0b0b0d', deep: '#1c1c1e', raise: '#2c2c2e', glow: '#8fb8ff', name: 'Verre', brand: 'Venus', accent: '#2997ff', accent2: '#5e5ce6', dir: 'diag', glass: true,
     bands: ['#ffffff', '#e4ecf7', '#f6f8fc', '#cddcf0', '#eef3fa', '#b9cbe6', '#e2eaf6', '#9fb4d6'], surface: 'clouds', fx: '#ffffff' },
@@ -111,12 +119,22 @@ export function themeVars(id, glassState = glassNow().state) {
     return { ...g, '--night-rgb': trip(g['--night']), '--deep-rgb': trip(g['--deep']), '--raise-rgb': trip(g['--raise']), '--sulfur-rgb': trip(g['--sulfur']),
       '--planet-bands': `linear-gradient(172deg, ${t.bands.map((c, i) => `${c} ${Math.round((i / (t.bands.length - 1)) * 100)}%`).join(', ')})` };
   }
-  const paper = mix('#eceae4', t.accent, 0.08);
+  if (t.light) {
+    // Thème clair : textes foncés sur fond blanc
+    return {
+      '--night': t.night, '--deep': t.deep, '--raise': t.raise,
+      '--night-rgb': trip(t.night), '--deep-rgb': trip(t.deep), '--raise-rgb': trip(t.raise),
+      '--sulfur': t.accent, '--sulfur-rgb': trip(t.accent), '--dawn': t.accent2, '--glow': t.glow, '--tint': '#7a7a7a',
+      '--paper': '#111111', '--haze': '#4f4f4f', '--dim': '#7d7d7d', '--edge': 'rgb(0 0 0 / .12)',
+      '--planet-bands': `linear-gradient(172deg, ${t.bands.map((c, i) => `${c} ${Math.round((i / (t.bands.length - 1)) * 100)}%`).join(', ')})`,
+    };
+  }
+  const paper = t.mono ? '#f2f2f2' : mix('#eceae4', t.accent, 0.08);
   return {
     '--night': t.night, '--deep': t.deep, '--raise': t.raise,
     '--night-rgb': trip(t.night), '--deep-rgb': trip(t.deep), '--raise-rgb': trip(t.raise),
     '--sulfur': t.accent, '--sulfur-rgb': trip(t.accent), '--dawn': t.accent2, '--glow': t.glow, '--tint': t.accent,
-    '--paper': paper, '--haze': mix('#a6a9b0', t.accent, 0.16), '--dim': mix('#6e727c', t.accent, 0.14),
+    '--paper': paper, '--haze': t.mono ? '#a8a8a8' : mix('#a6a9b0', t.accent, 0.16), '--dim': t.mono ? '#727272' : mix('#6e727c', t.accent, 0.14),
     '--edge': `rgb(${trip(mix('#eceae4', t.accent, 0.4))} / .12)`,
     '--planet-bands': `linear-gradient(${t.dir === 'flat' ? 180 : 172}deg, ${t.bands.map((c, i) => `${c} ${Math.round((i / (t.bands.length - 1)) * 100)}%`).join(', ')})`,
   };
@@ -189,7 +207,7 @@ function lightOverrides() {
           decl.push(`${prop}: ${val.replace(re, (m, c, a) => `rgba(29, 29, 31, ${Math.min(1, Number(a) * 0.9)})`)}`);
         }
       }
-      if (decl.length) out.push(`${r.selectorText.split(',').map((x) => `html[data-glass="day"] ${x.trim()}`).join(', ')} { ${decl.join('; ')} }`);
+      if (decl.length) out.push(`${r.selectorText.split(',').map((x) => `html[data-tone="light"] ${x.trim()}`).join(', ')} { ${decl.join('; ')} }`);
     }
   };
   for (const sh of document.styleSheets) { try { walk(sh.cssRules); } catch { /* feuille externe */ } }
@@ -208,7 +226,6 @@ export function applyTheme(id = currentPlanet()) {
   const g = t.glass ? glassNow() : null;
   if (g) {
     document.documentElement.dataset.glass = g.state;
-    if (g.state === 'day') lightOverrides();
     try { localStorage.setItem('vn_glass', `${g.state}|${g.next || 0}`); } catch { /* */ }
     // Bascule toute seule au lever / coucher du soleil
     if (g.next) glassTimer = setTimeout(() => applyTheme(), Math.min(2 ** 31 - 1, Math.max(1000, g.next - Date.now() + 1000)));
@@ -216,6 +233,11 @@ export function applyTheme(id = currentPlanet()) {
     delete document.documentElement.dataset.glass;
     try { localStorage.removeItem('vn_glass'); } catch { /* */ }
   }
+  // Clair ou sombre (Verre le jour, Blanc) : les traits et fonds prévus pour le sombre passent en foncé
+  const light = (g && g.state === 'day') || !!t.light;
+  document.documentElement.dataset.tone = light ? 'light' : 'dark';
+  if (light) lightOverrides();
+  try { localStorage.setItem('vn_tone', light ? 'light' : 'dark'); } catch { /* */ }
   const vars = themeVars(id, g ? g.state : undefined);
   for (const [k, v] of Object.entries(vars)) r.setProperty(k, v);
   // Gardé pour le prochain démarrage : appliqué avant le premier affichage (index.html)

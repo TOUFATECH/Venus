@@ -123,6 +123,11 @@ export async function render(main, { id, query }) {
   const skipBtn = h('button', { class: 'p-skip f', hidden: true, onclick: () => doSkip() }, icon('skip'), h('span', {}, 'Passer l’intro'));
   // TV en direct : liste des chaînes à droite, pour zapper sans quitter l'image
   const chListBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, 'aria-label': 'Liste des chaînes', onclick: () => toggleChannels() }, icon('list'), h('span', { class: 'lbl' }, 'Chaînes'));
+  // TV en direct : enregistrer le programme en cours, le suivant ou une durée
+  const recBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, 'aria-label': 'Enregistrer', onclick: async () => {
+    const [g, nn] = await Promise.all([import('./guide.js'), api('/api/epg/now').catch(() => ({}))]);
+    g.recordSheet({ id: info.itemId, title: info.title }, nn[info.itemId] || []);
+  } }, h('span', { class: 'rec-dot' }), h('span', { class: 'lbl' }, 'Enregistrer'));
   const chPanel = h('aside', { class: 'ch-panel', hidden: true, 'aria-label': 'Chaînes' });
   // Téléphone tenu droit : l'image en haut, et en dessous le résumé et les épisodes (comme les applis mobiles)
   const below = h('section', { class: 'p-below', 'aria-label': 'À propos' });
@@ -141,7 +146,7 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, shareBtn, fitBtn, ambBtn, castBtn, airBtn, fsBtn)),
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, recBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, shareBtn, fitBtn, ambBtn, castBtn, airBtn, fsBtn)),
     nextPanel, overlay, volOsd, skipBtn, chPanel, below, lockLayer);
   main.append(root);
   document.body.style.overflow = 'hidden';
@@ -1091,6 +1096,7 @@ export async function render(main, { id, query }) {
     if (!channelList) channelList = await api('/api/library?type=channel').catch(() => []);
     if (destroyed || !channelList.length) return;
     chListBtn.hidden = false;
+    recBtn.hidden = false;
     if (!zapper) {
       zapper = numberZapper(channelList, (c) => { if (c.id !== id) go(`/lecture/${c.id}`, { replace: true }); }, root);
       document.addEventListener('keydown', zapper.onKey, true);

@@ -3,7 +3,7 @@
 import { api, prefs, detailsTrailers } from '../api.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince, hueOf, avatar } from '../ui.js';
 import { sendTo, row, card, playPath, metaLine, frameImage, framePoster, ratingChips, scrollArrows, deleteVideo } from '../components.js';
-import { trailerUrl, trailerPlayer } from '../trailer.js';
+import { trailerUrl, trailerPlayer, playTrailer } from '../trailer.js';
 import { go, state, setTitle, showPath, currentUrl } from '../app.js';
 import { focusEl } from '../nav.js';
 import { tintFrom } from '../ambiance.js';
@@ -654,8 +654,8 @@ export function fixMatch(item) {
 }
 
 // Bande-annonce avec le son, dans une grande fenêtre
+// Bande-annonce : la vidéo seule en plein écran, avec un bouton « Fermer » (plus de fenêtre autour)
 function openTrailer(d, bt) {
   if (bt) bt.hold();
-  const frame = h('iframe', { class: 'trailer-frame', src: trailerUrl(d.trailer), title: `Bande-annonce de ${d.title}`, allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin' });
-  sheet(`Bande-annonce : ${d.title}`, h('div', { class: 'trailer-box' }, frame), { wide: true, onClose: () => { frame.remove(); if (bt) bt.release(); } });
+  playTrailer(d.trailer, d.title, { onClose: () => { if (bt) bt.release(); } });
 }

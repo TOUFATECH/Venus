@@ -34,7 +34,16 @@ export function rememberEpgUrl(libId, urls) {
   setSetting('epg_auto', auto);
 }
 
+// Guide gratuit des chaînes françaises (TNT, Outre-mer La 1ère…) : projet XML-TV-Fr (xmltvfr.fr).
+// Plusieurs adresses possibles (compressée, complète, TNT seule) : la première qui répond est prise.
+export const FREE_GUIDE = 'venus:guide-fr';
+const FREE_GUIDE_URLS = (process.env.VENUS_GUIDE_FR || 'https://xmltvfr.fr/xmltv/xmltv.xml.gz https://xmltvfr.fr/xmltv/xmltv.xml https://xmltvfr.fr/xmltv/xmltv_tnt.xml').split(/\s+/).filter(Boolean);
 async function openSource(src) {
+  if (src === FREE_GUIDE) {
+    let last = null;
+    for (const u of FREE_GUIDE_URLS) { try { return await openSource(u); } catch (e) { last = e; } }
+    throw last || new Error('guide gratuit injoignable');
+  }
   if (/^https?:\/\//i.test(src)) {
     const res = await fetch(src, { headers: { 'User-Agent': 'Venus/1.0' }, signal: AbortSignal.timeout(180000) });
     if (!res.ok) throw new Error(`guide inaccessible (${res.status})`);
@@ -55,7 +64,9 @@ async function importSource(src, channels, from, to, rows) {
   const idMap = new Map(); // id XMLTV → id de la chaîne Venus
   // Une même chaîne peut être dans plusieurs listes : un identifiant XMLTV → plusieurs chaînes Venus
   const group = (pairs) => { const m = new Map(); for (const [k, id] of pairs) { if (!k) continue; if (!m.has(k)) m.set(k, []); m.get(k).push(id); } return m; };
-  const byKey = group(channels.filter((c) => c.key).map((c) => [c.key.toLowerCase(), c.id]));
+  // Identifiants « TF1.fr@SD » (iptv-org) : la variante après « @ » est ignorée pour retrouver « TF1.fr »
+  const keyOf = (k) => String(k).toLowerCase().replace(/@.*$/, '');
+  const byKey = group(channels.filter((c) => c.key).map((c) => [keyOf(c.key), c.id]));
   const byName = group(channels.map((c) => [norm(c.title), c.id]));
   let buf = '', kept = 0, total = 0;
   const handle = () => {
@@ -64,7 +75,7 @@ async function importSource(src, channels, from, to, rows) {
       const id = decode(m[1]);
       if (idMap.has(id)) continue;
       const names = [...m[2].matchAll(/<display-name[^>]*>([\s\S]*?)<\/display-name>/gi)].map((x) => decode(x[1]));
-      const cids = byKey.get(id.toLowerCase()) ?? names.map((n) => byName.get(norm(n))).find((x) => x != null) ?? byName.get(norm(id));
+      const cids = byKey.get(keyOf(id)) ?? names.map((n) => byName.get(norm(n))).find((x) => x != null) ?? byName.get(norm(id));
       idMap.set(id, cids ?? null);
     }
     let last = 0;
@@ -74,7 +85,7 @@ async function importSource(src, channels, from, to, rows) {
       const attrs = m[1];
       const ch = (/channel="([^"]+)"/i.exec(attrs) || [])[1];
       let cids = ch != null ? idMap.get(decode(ch)) : null;
-      if (cids === undefined) { cids = byKey.get(decode(ch).toLowerCase()) ?? byName.get(norm(decode(ch))) ?? null; idMap.set(decode(ch), cids); }
+      if (cids === undefined) { cids = byKey.get(keyOf(decode(ch))) ?? byName.get(norm(decode(ch))) ?? null; idMap.set(decode(ch), cids); }
       if (!cids) continue;
       const start = xmltvTime((/start="([^"]+)"/i.exec(attrs) || [])[1]);
       const stop = xmltvTime((/stop="([^"]+)"/i.exec(attrs) || [])[1]);

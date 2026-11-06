@@ -22,6 +22,8 @@ import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmd
 import { saveRemoteImage, freePosterCandidates, fillMissingPosters, fillMissingBackdrops, testSources, redoFreePosters } from './posters.js';
 import { findTrailerFor } from './youtube.js';
 import { guideFor } from './guide.js';
+import { checkChannels, checkState, channelHealth, FREE_TV } from './free-tv.js';
+import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue } from './arr.js';
 import { checkUpdate, runUpdate, localCommit } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
 import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAYS } from './trash.js';
@@ -567,6 +569,11 @@ router.get('/api/home', (ctx) => {
 
   const mine = all(`SELECT i.* FROM mylist m JOIN items i ON i.id = m.item_id WHERE m.profile_id = ? AND ${age.sql} ORDER BY m.added_at DESC`, p.id, ...age.args);
   if (mine.length) rows.push({ id: 'mylist', title: 'Ma liste', items: mine.map((i) => C(i)) });
+  // Vos enregistrements TV terminés : regardables tout de suite (vignette de l'enregistrement, nom de la chaîne)
+  try {
+    const recs = all(`SELECT i.* FROM recordings r JOIN items i ON i.id = r.item_id WHERE r.status = 'done' AND (r.profile_id IS NULL OR r.profile_id = ? OR ?) ORDER BY r.start DESC LIMIT 12`, p.id, p.is_admin ? 1 : 0);
+    if (recs.length) rows.push({ id: 'recordings', title: 'Vos enregistrements', items: recs.map((i) => C(i)) });
+  } catch { /* table absente : pas encore d'enregistrement */ }
 
   // Rangées personnalisées : d'après ce que ce profil regarde
   const seenIds = new Set(); // titres (films / séries) déjà commencés ou vus
@@ -687,7 +694,12 @@ router.get('/api/library', (ctx) => {
       }
       return c;
     });
-    if (type === 'channel') cards.sort((a, b) => (a.number || 0) - (b.number || 0));
+    if (type === 'channel') {
+      // État de la chaîne d'après la dernière vérification (images reçues ou non)
+      const health = new Map(items.map((i) => [i.id, i]));
+      for (const c of cards) { const i = health.get(c.id); if (i && i.ch_ok === 0) { c.down = true; c.downWhy = i.ch_error || 'Aucune image reçue'; } }
+      cards.sort((a, b) => (a.number || 0) - (b.number || 0));
+    }
     base = { v: itemsVersion, cards };
     if (libraryCache.size > 24) libraryCache.clear();
     libraryCache.set(key, base);
@@ -900,10 +912,21 @@ router.get('/api/stats', (ctx) => {
     totalHours: totalH, allTimeHours: Math.round(sum(rows) / 36) / 100,
     movies: movies.length, episodes: yr.filter((r) => r.type === 'episode' && r.watched).length, clips: yr.filter((r) => r.type === 'clip').length,
     days: days.size, streak: best, months, genres: topGenres,
-    topShows: [...shows.values()].filter((x) => x.eps || x.secs >= 600).sort((a, b) => b.secs - a.secs).slice(0, 6).map((x) => ({ ...x, hours: Math.round(x.secs / 36) / 100 })),
+    topShows: [...shows.values()].filter((x) => !x.anime && (x.eps || x.secs >= 600)).sort((a, b) => b.secs - a.secs).slice(0, 6).map((x) => ({ ...x, hours: Math.round(x.secs / 36) / 100 })),
     lastMovies: movies.sort((a, b) => b.at - a.at).slice(0, 6),
     person: [...people].sort((a, b) => b[1] - a[1])[0]?.[0] || null,
     bestMonth: months.reduce((a, b) => (b.hours > a.hours ? b : a), months[0]),
+    // Répartition par genre de contenu, jour de la semaine (lundi = 0) et heure de la journée
+    byKind: ['movie', 'show', 'anime', 'clip'].map((k) => ({ kind: k, hours: Math.round(sum(yr.filter((r) => (k === 'movie' ? r.type === 'movie' : k === 'clip' ? r.type === 'clip' : r.type === 'episode' && ((r.show_cat === 'anime') === (k === 'anime'))))) / 36) / 100 })),
+    weekdays: Array.from({ length: 7 }, (_, w) => ({ w, hours: Math.round(sum(yr.filter((r) => (new Date(r.updated_at).getDay() + 6) % 7 === w)) / 36) / 100 })),
+    hoursOfDay: Array.from({ length: 24 }, (_, hr) => ({ h: hr, hours: Math.round(sum(yr.filter((r) => new Date(r.updated_at).getHours() === hr)) / 36) / 100 })),
+    // Calendrier : minutes regardées chaque jour de l'année (temps réel de lecture, sinon reconstitué)
+    calendar: (() => {
+      const m = new Map(all('SELECT day, seconds FROM watch_time WHERE profile_id = ? AND day LIKE ?', p.id, `${year}-%`).map((r) => [r.day, Math.round(r.seconds / 60)]));
+      if (!m.size) for (const r of yr) { const k = new Date(r.updated_at).toISOString().slice(0, 10); m.set(k, (m.get(k) || 0) + Math.round(secs(r) / 60)); }
+      return Object.fromEntries(m);
+    })(),
+    topAnime: [...shows.values()].filter((x) => x.anime && (x.eps || x.secs >= 600)).sort((a, b) => b.secs - a.secs).slice(0, 6).map((x) => ({ ...x, hours: Math.round(x.secs / 36) / 100 })),
   });
 });
 
@@ -939,6 +962,65 @@ router.post('/api/items/:id/mylist', (ctx) => {
   sendJson(ctx.res, { inList: !exists, follows });
 });
 
+// ------------------------------------------------------------------ « Nouveau » : demandes à Radarr / Sonarr
+// Profils enfants exclus ; les autres peuvent demander. L'administrateur règle les services.
+const arrUser = (ctx) => { const p = requireProfile(ctx); if (p.max_age != null && p.max_age <= 12) throw new HttpError(403, 'Pas de demandes pour un profil enfant'); return p; };
+const arrLimiter = new Map();
+router.get('/api/arr/status', (ctx) => { arrUser(ctx); sendJson(ctx.res, { radarr: arrOn('radarr'), sonarr: arrOn('sonarr') }); });
+router.get('/api/arr/search', async (ctx) => {
+  arrUser(ctx);
+  const kind = ['movie', 'show', 'anime'].includes(ctx.url.searchParams.get('kind')) ? ctx.url.searchParams.get('kind') : 'movie';
+  sendJson(ctx.res, await arrSearch(kind, ctx.url.searchParams.get('q')));
+});
+router.post('/api/arr/add', async (ctx) => {
+  const p = arrUser(ctx);
+  const last = arrLimiter.get(p.id) || 0;
+  if (Date.now() - last < 2000) throw new HttpError(429, 'Un instant…');
+  arrLimiter.set(p.id, Date.now());
+  const b = validate(await readBody(ctx.req, 2048), { kind: V.str({ max: 10 }), id: V.int({ min: 1, max: 1e9 }) }, { required: ['kind', 'id'] });
+  if (!['movie', 'show', 'anime'].includes(b.kind)) throw new HttpError(400, 'Type inconnu');
+  const r = await arrAdd(b.kind, b.id);
+  logActivity('request', `${p.name} a demandé « ${r.title} »${r.already ? ' (déjà demandé)' : ''}`);
+  sendJson(ctx.res, r);
+});
+router.get('/api/arr/queue', async (ctx) => { arrUser(ctx); sendJson(ctx.res, await arrQueue()); });
+router.get('/api/admin/arr', (ctx) => {
+  requireAdmin(ctx);
+  const view = (app) => { const c = arrConf(app); return { url: c.url, keySet: !!c.key, profile: c.profile, root: c.root, animeRoot: c.animeRoot, on: arrOn(app) }; };
+  sendJson(ctx.res, { radarr: view('radarr'), sonarr: view('sonarr') });
+});
+router.put('/api/admin/arr/:app', async (ctx) => {
+  requireAdmin(ctx);
+  const app = ctx.params.app;
+  if (!['radarr', 'sonarr'].includes(app)) throw new HttpError(404, 'Service inconnu');
+  const b = validate(await readBody(ctx.req, 4096), { url: V.str({ max: 300 }), key: V.str({ max: 100 }), profile: V.int({ min: 0, max: 1e6 }), root: V.str({ max: 500 }), animeRoot: V.str({ max: 500 }), remove: V.bool() });
+  if (b.remove) { saveArr(app, { url: '', key: null, profile: 0, root: '', animeRoot: '' }); sendJson(ctx.res, { ok: true }); return; }
+  // Test avant d'enregistrer : adresse et clé doivent répondre
+  const cur = arrConf(app);
+  const conf = { ...cur, url: b.url !== undefined ? String(b.url).trim().replace(/\/+$/, '') : cur.url, key: b.key || cur.key };
+  const opts = await arrOptions(app, conf);
+  saveArr(app, b);
+  sendJson(ctx.res, { ok: true, ...opts });
+});
+router.get('/api/admin/arr/:app/options', async (ctx) => {
+  requireAdmin(ctx);
+  if (!['radarr', 'sonarr'].includes(ctx.params.app)) throw new HttpError(404, 'Service inconnu');
+  sendJson(ctx.res, await arrOptions(ctx.params.app));
+});
+
+// Vérification des chaînes de TV en direct : état, et lancement à la main (toutes ou une seule)
+router.get('/api/admin/channels/health', (ctx) => {
+  requireAdmin(ctx);
+  sendJson(ctx.res, { ...channelHealth(), check: checkState, down: all("SELECT id, title, ch_error AS error, ch_checked AS checked FROM items WHERE type = 'channel' AND ch_ok = 0 ORDER BY episode_num LIMIT 300") });
+});
+router.post('/api/admin/channels/check', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 4096).catch(() => ({})) || {};
+  const ids = Array.isArray(b.ids) ? b.ids.map(Number).filter(Number.isFinite).slice(0, 50) : null;
+  if (ids && ids.length) { await checkChannels({ ids }); sendJson(ctx.res, { ...checkState }); return; }
+  checkChannels().catch(() => {});
+  sendJson(ctx.res, { started: true, ...checkState });
+});
 // Bande-annonce à la demande (sans clé TMDB) : recherche YouTube côté serveur, mémorisée
 const trailerLimiter = new Map();
 router.post('/api/items/:id/trailer', async (ctx) => {
@@ -1973,7 +2055,7 @@ const maskUrl = (u) => String(u).replace(/(password=)[^&]*/i, '$1••••').
 function publicLibrary(l) {
   const r = remoteOf(l);
   const st = netState.get(l.id);
-  const exists = l.type === 'iptv' && /^https?:/i.test(l.path) ? true : fs.existsSync(l.path) && (!r || !st || st.ok);
+  const exists = l.type === 'iptv' && (/^https?:/i.test(l.path) || l.path === FREE_TV) ? true : fs.existsSync(l.path) && (!r || !st || st.ok);
   return {
     id: l.id, name: l.name, type: l.type, path: l.type === 'iptv' ? maskUrl(l.path) : l.path, exists, ...diskInfo(l),
     network: r ? { proto: r.proto, address: describe(r), user: r.user || null, writable: !!r.writable, ok: st ? st.ok : null, error: st ? st.error : null } : null,
@@ -2050,6 +2132,8 @@ router.post('/api/admin/libraries', async (ctx) => {
       const { server, user, pass } = b.xtream;
       if (!server || !user || !pass) throw new HttpError(400, 'Indiquez le serveur, l’identifiant et le mot de passe fournis par votre abonnement');
       p = xtreamUrl({ server, user, pass });
+    } else if (p === FREE_TV) {
+      // Liste des chaînes gratuites construite par Venus
     } else if (!/^https?:\/\//i.test(p)) {
       p = path.resolve(p);
       if (!fs.existsSync(p) || !fs.statSync(p).isFile()) throw new HttpError(400, 'Indiquez l’adresse de la liste M3U (http…) ou le chemin d’un fichier .m3u');
@@ -2404,7 +2488,9 @@ router.get('/api/epg/now', (ctx) => {
 router.get('/api/recordings', (ctx) => {
   const p = requireProfile(ctx);
   const list = listRecordings().filter((r) => p.is_admin || !r.profile_id || r.profile_id === p.id);
-  sendJson(ctx.res, { recordings: list.map((r) => ({ id: r.id, channel: r.channel_title, logo: r.channel_logo, channelId: r.channel_id, title: r.title, sub: r.sub, descr: r.descr, start: r.start, stop: r.stop, status: r.status, error: r.error, itemId: r.item_id, ruleId: r.rule_id })), rules: listRules(), dir: p.is_admin ? dvrDir() : null });
+  const itemOf = (id) => (id ? get('SELECT duration FROM items WHERE id = ?', id) : null);
+  const prog = (id) => (id ? get('SELECT position, duration, watched FROM progress WHERE profile_id = ? AND item_id = ?', p.id, id) : null);
+  sendJson(ctx.res, { recordings: list.map((r) => ({ id: r.id, channel: r.channel_title, logo: r.channel_logo, channelId: r.channel_id, title: r.title, sub: r.sub, descr: r.descr, start: r.start, stop: r.stop, status: r.status, error: r.error, itemId: r.item_id, ruleId: r.rule_id, duration: (itemOf(r.item_id) || {}).duration || null, progress: prog(r.item_id) })), rules: listRules(), dir: p.is_admin ? dvrDir() : null });
 });
 router.post('/api/recordings', async (ctx) => {
   const p = requireProfile(ctx);

@@ -24,7 +24,7 @@ export async function render(main, { query } = {}) {
     catch (e) { body.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
   };
   page.append(h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, 'Serveur')),
-    h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go('/tableau-de-bord') }, icon('back'), 'Tableau de bord')), tabs, body);
+    h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go('/dashboard') }, icon('back'), 'Tableau de bord')), tabs, body);
   main.append(page);
   paintTabs();
   await show();

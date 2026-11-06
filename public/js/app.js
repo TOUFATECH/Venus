@@ -18,6 +18,7 @@ const ROUTES = [
   [/^\/animes$/, () => import('./views/browse.js'), { kind: 'anime' }],
   [/^\/clips$/, () => import('./views/browse.js'), { kind: 'clip' }],
   [/^\/tv$/, () => import('./views/tv.js')],
+  [/^\/nouveau$/, () => import('./views/request.js')],
   [/^\/nouveautes$/, () => import('./views/nouveautes.js')],
   [/^\/recherche$/, () => import('./views/search.js')],
   [/^\/titre\/([^/]+)$/, () => import('./views/details.js'), (m) => idOrSlug(m[1])],
@@ -30,7 +31,7 @@ const ROUTES = [
   [/^\/(?:series|animes)\/([^/]+)$/, () => import('./views/details.js'), (m) => idOrSlug(m[1])],
   [/^\/lecture\/([^/]+)$/, () => import('./views/player.js'), (m) => idOrSlug(m[1])],
   [/^\/reglages$/, () => import('./views/settings.js')],
-  [/^\/tableau-de-bord$/, () => import('./views/dashboard.js')],
+  [/^\/dashboard$/, () => import('./views/dashboard.js')],
   [/^\/qualite$/, () => import('./views/quality.js')],
   [/^\/securite$/, () => import('./views/security.js')],
   [/^\/serveur$/, () => import('./views/server.js')],
@@ -167,7 +168,7 @@ export { openAll, hasCat };
 // Badge de l'administrateur : lectures en cours sur le serveur, rafraîchi toutes les 30 s (caché quand personne ne regarde)
 let liveTimer = null;
 function liveBadge(cls) {
-  const el = h('a', { href: '/tableau-de-bord', class: `${cls} f`, hidden: true, title: 'Lectures en cours' }, icon('play'), h('span', {}, ''));
+  const el = h('a', { href: '/dashboard', class: `${cls} f`, hidden: true, title: 'Lectures en cours' }, icon('play'), h('span', {}, ''));
   const tick = async () => {
     if (!el.isConnected) { clearInterval(liveTimer); liveTimer = null; return; }
     try { const r = await api('/api/admin/live'); const n = r.playing || 0; el.hidden = !n; el.querySelector('span').textContent = n === 1 ? '1 lecture' : `${n} lectures`; } catch { /* */ }
@@ -467,6 +468,8 @@ async function showRoute() {
     const upd = api('/api/status').then((st) => { if (!st) return; if (state.status) state.status.elsewhere = st.elsewhere; if (st.profile && state.profile && st.profile.id === state.profile.id) state.profile.dailyLeft = st.profile.dailyLeft; }).catch(() => {});
     if (parseHash().path === '/') await upd;
   }
+  // Ancienne adresse du tableau de bord : on garde les favoris
+  if (parseHash().path === '/tableau-de-bord') { go('/dashboard', { replace: true }); return; }
   const { path, query } = parseHash();
   for (const [re, loader, extra] of ROUTES) {
     const m = re.exec(path);

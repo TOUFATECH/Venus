@@ -122,9 +122,33 @@ export async function renderRecordings(main) {
         if (r.status === 'done' && !(await confirmSheet(`Supprimer l’enregistrement « ${r.title} » (fichier effacé) ?`, 'Supprimer'))) return;
         await api(`/api/recordings/${r.id}`, { method: 'DELETE' }); paint();
       } }, r.status === 'recording' ? 'Arrêter' : r.status === 'scheduled' ? 'Annuler' : icon('trash')));
+    const doneCard = (r) => {
+      const pct = r.progress && r.progress.duration && !r.progress.watched ? Math.min(100, (r.progress.position / r.progress.duration) * 100) : 0;
+      const pic = r.itemId ? h('img', { src: `/api/items/${r.itemId}/thumb?size=big`, alt: '', loading: 'lazy' }) : null;
+      if (pic) pic.addEventListener('error', () => { pic.remove(); }, { once: true });
+      const mins = r.duration ? Math.round(r.duration / 60) : Math.round((r.stop - r.start) / 60000);
+      return h('article', { class: `rec-card${r.progress && r.progress.watched ? ' seen' : ''}` },
+        h('button', { class: 'rec-shot f', 'aria-label': `Regarder ${r.title}`, disabled: !r.itemId, onclick: () => r.itemId && go(playPath(r.itemId)) },
+          pic, h('span', { class: 'rec-play' }, icon('play')), h('span', { class: 'rec-dur' }, mins >= 60 ? `${Math.floor(mins / 60)} h ${String(mins % 60).padStart(2, '0')}` : `${mins} min`),
+          pct ? h('i', { class: 'rec-bar', style: { width: `${pct}%` } }) : null),
+        h('div', { class: 'rec-meta' },
+          h('span', { class: 'rec-ch' }, r.logo ? h('img', { src: img(r.logo), alt: '', loading: 'lazy', onerror: (e) => e.target.remove() }) : null, r.channel || 'Chaîne'),
+          h('b', {}, r.title, r.sub ? h('small', {}, ` · ${r.sub}`) : null),
+          h('small', {}, `${day(r.start)}, ${hm(r.start)} – ${hm(r.stop)}`)),
+        h('button', { class: 'rec-del f', 'aria-label': `Supprimer l’enregistrement ${r.title}`, title: 'Supprimer', onclick: async () => {
+          if (!(await confirmSheet(`Supprimer l’enregistrement « ${r.title} » (fichier effacé) ?`, 'Supprimer'))) return;
+          await api(`/api/recordings/${r.id}`, { method: 'DELETE' }); paint();
+        } }, icon('trash')));
+    };
     page.replaceChildren(
       h('div', { class: 'page-head' }, h('div', { class: 'head-left' }, h('h1', {}, 'TV en direct')), h('div', { class: 'head-tools' }, tvTabs('enregistrements'))),
-      ...groups.map(([st, label]) => { const list = d.recordings.filter((r) => r.status === st); return list.length ? h('section', { class: 'rec-sec' }, h('h2', { class: 'section-title' }, `${label} (${list.length})`), ...list.map(row)) : null; }),
+      ...groups.map(([st, label]) => {
+        const list = d.recordings.filter((r) => r.status === st);
+        if (!list.length) return null;
+        // Enregistrés : en vignettes, prêts à regarder (image de l'enregistrement, chaîne, titre, date, durée)
+        if (st === 'done') return h('section', { class: 'rec-sec' }, h('h2', { class: 'section-title' }, `${label} (${list.length})`), h('div', { class: 'rec-grid' }, list.map(doneCard)));
+        return h('section', { class: 'rec-sec' }, h('h2', { class: 'section-title' }, `${label} (${list.length})`), ...list.map(row));
+      }),
       d.rules.length ? h('section', { class: 'rec-sec' }, h('h2', { class: 'section-title' }, 'Émissions suivies'),
         ...d.rules.map((r) => h('div', { class: 'rec-row' }, h('span', { class: 'rec-logo' }, icon('list')), h('div', { class: 'grow' }, h('b', {}, r.title), h('span', {}, `${r.channel_title || 'Chaîne'} · chaque diffusion est enregistrée`)),
           h('button', { class: 'btn btn-ghost btn-small f', onclick: async () => { await api(`/api/recordings/rules/${r.id}`, { method: 'DELETE' }); paint(); } }, 'Ne plus suivre')))) : null,
@@ -133,4 +157,33 @@ export async function renderRecordings(main) {
   await paint();
   const t = setInterval(() => { if (document.contains(page)) paint().catch(() => {}); }, 30000);
   return { destroy: () => clearInterval(t) };
+}
+
+// « Enregistrer » depuis une chaîne : le programme en cours, le suivant, ou une durée à partir de maintenant /
+// d'une heure choisie (même sans guide des programmes)
+export function recordSheet(ch, progs = []) {
+  const [cur, nxt] = progs;
+  const rec = async (body, msg) => {
+    try { await api('/api/recordings', { method: 'POST', body }); s.close(); toast(msg, { type: 'success', action: { label: 'Voir', onClick: () => go('/tv?vue=enregistrements') } }); }
+    catch (e) { toast(e.message, true); }
+  };
+  const now = Date.now();
+  const opt = (label, sub, fn) => h('button', { class: 'opt f', onclick: fn }, h('span', { class: 'rec-dot' }), h('span', {}, h('b', {}, label), h('small', {}, sub)));
+  const startIn = h('input', { class: 'input', type: 'time', value: hm(now + 3600e3) });
+  const durIn = h('select', { class: 'input' }, [[30, '30 min'], [60, '1 h'], [90, '1 h 30'], [120, '2 h'], [180, '3 h'], [240, '4 h']].map(([v, l]) => h('option', { value: v, selected: v === 60 }, l)));
+  const later = h('form', { class: 'rec-later', onsubmit: (e) => {
+    e.preventDefault();
+    const [hh, mm] = startIn.value.split(':').map(Number);
+    const d = new Date(); d.setHours(hh, mm, 0, 0);
+    if (d.getTime() < Date.now() - 60000) d.setDate(d.getDate() + 1); // heure passée : demain
+    const start = d.getTime(), stop = start + Number(durIn.value) * 60000;
+    rec({ channelId: ch.id, start, stop, title: `${ch.title} (${hm(start)})` }, `${ch.title} sera enregistrée à ${hm(start)}${d.getDate() !== new Date().getDate() ? ' demain' : ''}`);
+  } }, h('div', { class: 'field' }, h('label', {}, 'À partir de'), startIn), h('div', { class: 'field' }, h('label', {}, 'Pendant'), durIn), h('button', { class: 'btn btn-small f', type: 'submit' }, 'Programmer'));
+  const s = sheet(`Enregistrer ${ch.title}`, h('div', { class: 'dash-menu rec-menu' },
+    cur ? opt(`En cours : ${cur.title}`, `jusqu’à ${hm(cur.stop)}, à partir de maintenant`, () => rec({ programId: cur.id }, `« ${cur.title} » est en cours d’enregistrement`)) : null,
+    nxt ? opt(`Ensuite : ${nxt.title}`, `${hm(nxt.start)} – ${hm(nxt.stop)}`, () => rec({ programId: nxt.id }, `« ${nxt.title} » sera enregistré à ${hm(nxt.start)}`)) : null,
+    cur ? opt(`Toutes les diffusions de « ${cur.title} »`, 'à chaque passage sur cette chaîne', () => rec({ programId: cur.id, series: true }, `Toutes les diffusions de « ${cur.title} » seront enregistrées`)) : null,
+    ...[[30, '30 minutes'], [60, '1 heure'], [120, '2 heures']].map(([m, l]) => opt(`Maintenant, pendant ${l}`, `de ${hm(now)} à ${hm(now + m * 60000)}`, () => rec({ channelId: ch.id, start: Date.now(), stop: Date.now() + m * 60000, title: `${ch.title} (${hm(now)})` }, `${ch.title} est en cours d’enregistrement (${l})`))),
+    h('h3', { class: 'box-sub' }, 'Plus tard'), later));
+  return s;
 }
