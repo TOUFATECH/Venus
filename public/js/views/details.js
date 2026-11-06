@@ -115,6 +115,21 @@ export async function render(main, { id, query }) {
   }
   let bt = null;
   if (d.trailer) actions.append(h('button', { class: 'btn btn-ghost f', onclick: () => openTrailer(d, bt) }, icon('film'), 'Bande-annonce'));
+  else if (d.type !== 'clip') {
+    // Pas de bande-annonce connue (pas de clé TMDB) : Venus la cherche sur YouTube au premier clic
+    const trBtn = h('button', { class: 'btn btn-ghost f', title: 'Chercher la bande-annonce sur YouTube' }, icon('film'), 'Bande-annonce');
+    trBtn.onclick = async () => {
+      trBtn.disabled = true; trBtn.lastChild.textContent = 'Recherche…';
+      try {
+        const r = await api(`/api/items/${d.id}/trailer`, { method: 'POST' });
+        if (r.trailer) { d.trailer = r.trailer; trBtn.lastChild.textContent = 'Bande-annonce'; trBtn.disabled = false; openTrailer(d, bt); return; }
+      } catch { /* */ }
+      trBtn.disabled = false; trBtn.lastChild.textContent = 'Bande-annonce';
+      // Rien trouvé automatiquement : la recherche YouTube s'ouvre dans un nouvel onglet
+      window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(`${d.title} ${d.year || ''} bande-annonce`)}`, '_blank', 'noopener');
+    };
+    actions.append(trBtn);
+  }
   const listBtn = h('button', { class: 'btn btn-ghost btn-icon f', 'aria-label': d.inList ? 'Retirer de ma liste' : 'Ajouter à ma liste', title: 'Ma liste' }, icon(d.inList ? 'check' : 'plus'));
   listBtn.onclick = async () => {
     const r = await api(`/api/items/${d.id}/mylist`, { method: 'POST' });
