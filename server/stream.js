@@ -335,8 +335,9 @@ fs.mkdirSync(previews, { recursive: true });
 const previewInflight = new Map();
 let previewBusy = 0;
 const previewQueue = [];
-export function previewClip(item) {
-  const out = path.join(previews, `pv_${item.id}_${item.mtime || 0}.mp4`);
+// hd : version pour le grand bandeau de l'accueil (jusqu'en 1080p, 20 s, bonne qualité dès la première image)
+export function previewClip(item, { hd = false } = {}) {
+  const out = path.join(previews, `pv${hd ? 'hd' : ''}_${item.id}_${item.mtime || 0}.mp4`);
   if (fs.existsSync(out)) return Promise.resolve(out);
   if (previewInflight.has(out)) return previewInflight.get(out);
   const p = new Promise((resolve, reject) => {
@@ -345,9 +346,10 @@ export function previewClip(item) {
       const dur = item.duration || 600;
       const at = Math.max(0, Math.floor(dur * (item.type === 'clip' ? 0.3 : 0.22)));
       const tmp = `${out}.part.mp4`;
-      execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', item.path, '-t', '12', '-an', '-sn', '-dn',
-        '-vf', 'scale=-2:360:flags=fast_bilinear,fps=24,format=yuv420p', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '30',
-        '-movflags', '+faststart', '-y', tmp], { timeout: 90000 }, (err) => {
+      const vf = hd ? "scale=-2:'min(1080,ih)':flags=lanczos,fps=24,format=yuv420p" : 'scale=-2:360:flags=fast_bilinear,fps=24,format=yuv420p';
+      execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(at), '-i', item.path, '-t', hd ? '20' : '12', '-an', '-sn', '-dn',
+        '-vf', vf, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', hd ? '20' : '30', ...(hd ? ['-maxrate', '8M', '-bufsize', '16M'] : []),
+        '-movflags', '+faststart', '-y', tmp], { timeout: hd ? 240000 : 90000 }, (err) => {
         previewBusy--;
         const next = previewQueue.shift(); if (next) next();
         previewInflight.delete(out);

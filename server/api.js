@@ -1154,7 +1154,8 @@ router.post('/api/play/:id', async (ctx) => {
   if (!b.preview && dailyLeft(p) === 0) throw new HttpError(403, 'Temps d’écran du jour épuisé pour ce profil. On se retrouve demain !');
   if (decision.mode === 'transcode' && !b.preview && !permsOf(p).transcode) throw new HttpError(403, 'Cette vidéo doit être convertie pour cet appareil, ce qui n’est pas autorisé pour ce profil. Essayez sur un autre appareil ou demandez à l’administrateur.');
   // Aperçu (affiche d'accueil) : lecture directe quand c'est possible ; sinon petite conversion légère
-  if (b.preview && decision.mode === 'transcode') Object.assign(decision, { limitHeight: 480, limitBitrate: 1.2e6 });
+  // Aperçu du bandeau d'accueil : bonne qualité dès le lancement (1080p au plus), les vignettes restent légères
+  if (b.preview && decision.mode === 'transcode') Object.assign(decision, b.hero ? { limitHeight: 1080, limitBitrate: 6e6 } : { limitHeight: 480, limitBitrate: 1.2e6 });
   const progress = get('SELECT * FROM progress WHERE profile_id=? AND item_id=?', p.id, item.id);
   const resumeAt = progress && !progress.watched && progress.position > 20 ? Math.max(0, progress.position - 3) : 0;
   const start = b.start === 'resume' || b.start == null ? resumeAt : Math.max(0, Number(b.start) || 0);
@@ -1231,7 +1232,7 @@ async function playChannel(ctx, p, item, b) {
     decision = { mode: 'transcode', reason: probe ? `Codec ${probe.video ? probe.video.codec : 'inconnu'} converti` : 'Conversion', audio: probe ? probe.audio[0] || null : null, copyVideo: false, limitHeight: 1080, limitBitrate: 6e6 };
   }
   // Aperçu dans la page TV : petite image, faible débit si une conversion est nécessaire
-  if (b.preview && !decision.copyVideo) Object.assign(decision, { limitHeight: 480, limitBitrate: 1.2e6 });
+  if (b.preview && !decision.copyVideo) Object.assign(decision, b.hero ? { limitHeight: 720, limitBitrate: 3.5e6 } : { limitHeight: 480, limitBitrate: 1.2e6 });
   else if (!b.preview) setSetting(`last_channel:${p.id}`, { id: item.id, at: Date.now() });
   void caps;
   if (b.replace) sessions.get(b.replace)?.stop();
@@ -1298,7 +1299,7 @@ router.get('/api/items/:id/preview', async (ctx) => {
   requireDevice(ctx); // images et aperçus réservés aux appareils connectés (cookie de session)
   const item = playableOf(get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)));
   if (!item) throw new HttpError(404, 'Introuvable');
-  const file = await previewClip(item);
+  const file = await previewClip(item, { hd: ctx.url.searchParams.get('hd') === '1' });
   sendFile(ctx.req, ctx.res, file, { cache: 'public, max-age=2592000, immutable' });
 });
 

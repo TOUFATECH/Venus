@@ -1,6 +1,16 @@
 // Thèmes « planètes » : chaque planète du système solaire change les couleurs, le nom affiché
 // et le logo (une planète dont la surface tourne). Choix mémorisé sur cet appareil.
 
+// Chaque planète a aussi sa propre mise en page (pas seulement ses couleurs) :
+//   rail     menu d'icônes à gauche (la mise en page d'origine)
+//   side     grand menu à gauche avec les noms en clair, façon médiathèque
+//   dock     barre flottante en bas de l'écran, contenu sur toute la largeur, coins très arrondis
+//   stream   menu en haut, transparent puis plein au défilement, affiches aux coins nets (plateforme de streaming)
+//   tv       grands onglets centrés en haut, gros textes et contours, pensé pour la télévision
+//   glass    Verre : surfaces givrées (inchangé)
+export const LAYOUTS = { rail: 'Menu d’icônes à gauche', side: 'Grand menu à gauche', dock: 'Barre flottante en bas', stream: 'Menu en haut, style streaming', tv: 'Grands onglets, pour la télé', glass: 'Surfaces givrées' };
+const LAYOUT_OF = { venus: 'rail', pluton: 'rail', uranus: 'rail', mercure: 'side', saturne: 'side', jupiter: 'side', terre: 'dock', neptune: 'dock', mars: 'stream', cinema: 'stream', noir: 'tv', blanc: 'dock', tv: 'tv', verre: 'glass' };
+export const layoutOf = (id) => LAYOUT_OF[id] || 'rail';
 export const PLANETS = {
   mercure: { night: '#101113', deep: '#18191d', raise: '#24262b', glow: '#b9b0a4', name: 'Mercure', accent: '#dccdb9', accent2: '#9c8c7e', dir: 'diag',
     bands: ['#ddd6cc', '#bdb3a7', '#d3cabe', '#a69a8c', '#c7bcae', '#91857a', '#c0b4a6', '#7c7065'], surface: 'craters', fx: '#f3eee6' },
@@ -28,6 +38,10 @@ export const PLANETS = {
     bands: ['#ffffff', '#e9e9e9', '#fafafa', '#d6d6d6', '#f2f2f2', '#c8c8c8', '#ececec', '#b4b4b4'], surface: 'clouds', fx: '#ffffff' },
   tv: { night: '#050505', deep: '#121212', raise: '#1f1f1f', glow: '#ffffff', name: 'TV', accent: '#ffffff', accent2: '#b5b5b5', dir: 'flat', mono: true,
     bands: ['#ffffff', '#111111', '#f2f2f2', '#1a1a1a', '#e6e6e6', '#0d0d0d', '#d9d9d9', '#000000'], surface: 'stripes', fx: '#ffffff' },
+  // Cinéma : l'ambiance des plateformes de streaming. Fond anthracite, rouge vif, menu en haut de l'écran
+  // (sur ordinateur), affiches aux coins nets qui grandissent au survol, boutons blancs.
+  cinema: { night: '#141414', deep: '#181818', raise: '#2f2f2f', glow: '#e50914', name: 'Cinéma', accent: '#e50914', accent2: '#b20710', dir: 'diag', mono: true, topnav: true,
+    bands: ['#ff4b55', '#e50914', '#b20710', '#7a0a0f', '#e50914', '#5a0509', '#c40812', '#2a0204'], surface: 'spot', fx: '#ff8088' },
   // « Verre » (inspiré de Free My TV) : surfaces en verre dépoli, clair le jour et sombre la nuit, au rythme du soleil
   verre: { night: '#0b0b0d', deep: '#1c1c1e', raise: '#2c2c2e', glow: '#8fb8ff', name: 'Verre', brand: 'Venus', accent: '#2997ff', accent2: '#5e5ce6', dir: 'diag', glass: true,
     bands: ['#ffffff', '#e4ecf7', '#f6f8fc', '#cddcf0', '#eef3fa', '#b9cbe6', '#e2eaf6', '#9fb4d6'], surface: 'clouds', fx: '#ffffff' },
@@ -245,6 +259,10 @@ export function applyTheme(id = currentPlanet()) {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', vars['--night']);
   document.documentElement.dataset.planet = id;
+  // Mise en page propre à la planète (menu, cartes, boutons…) ; retenue pour le prochain démarrage
+  const layout = layoutOf(id);
+  document.documentElement.dataset.layout = layout;
+  try { localStorage.setItem('vn_layout', layout); } catch { /* */ }
 }
 
 // Changement de planète : une onde de la couleur de la planète part de l'endroit touché et recouvre l'écran

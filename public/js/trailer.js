@@ -4,7 +4,9 @@
 import { h } from './ui.js';
 
 let seq = 0;
-export function trailerPlayer(key, { mute = true, start = 0, loop = false, onPlaying, onEnd, onError } = {}) {
+// hd : YouTube démarre en basse définition puis monte ; on joue d'abord la vidéo cachée quelques secondes
+// (le temps qu'elle passe en HD), puis on revient au début et on l'affiche : elle est nette dès qu'on la voit.
+export function trailerPlayer(key, { mute = true, start = 0, loop = false, hd = false, onPlaying, onEnd, onError } = {}) {
   // Démo intégrée (pas d'accès à YouTube) : une vidéo locale fait office de bande-annonce
   if (window.__VN_TRAILER) return window.__VN_TRAILER({ mute, loop, onPlaying, onEnd });
   const id = ++seq;
@@ -13,6 +15,7 @@ export function trailerPlayer(key, { mute = true, start = 0, loop = false, onPla
     playsinline: '1', rel: '0', enablejsapi: '1', start: String(start), origin: location.origin,
   });
   if (loop) { params.set('loop', '1'); params.set('playlist', key); }
+  if (hd) params.set('vq', 'hd1080');
   const el = h('iframe', {
     class: 'yt', src: `https://www.youtube-nocookie.com/embed/${encodeURIComponent(key)}?${params}`, title: 'Bande-annonce',
     allow: 'autoplay; encrypted-media; picture-in-picture', referrerpolicy: 'strict-origin-when-cross-origin', tabindex: '-1', 'aria-hidden': 'true',
@@ -25,7 +28,15 @@ export function trailerPlayer(key, { mute = true, start = 0, loop = false, onPla
     if (!d) return;
     heard = true;
     const state = d.event === 'onStateChange' ? d.info : d.event === 'infoDelivery' && d.info ? d.info.playerState : undefined;
-    if (state === 1 && !playing) { playing = true; el.classList.add('on'); onPlaying && onPlaying(); }
+    if (state === 1 && !playing) {
+      playing = true;
+      const reveal = () => { if (done) return; el.classList.add('on'); onPlaying && onPlaying(); };
+      if (!hd) reveal();
+      else {
+        send('setPlaybackQuality', ['hd1080']);
+        setTimeout(() => { send('seekTo', [start, true]); setTimeout(reveal, 350); }, 2600);
+      }
+    }
     if (state === 0 && !done && !loop) { done = true; onEnd && onEnd(); }
     if (d.event === 'onError' && !done) { done = true; onError && onError(d.info); }
   };
