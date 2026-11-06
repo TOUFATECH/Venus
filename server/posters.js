@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
-import { all, get, run, getSetting } from './db.js';
+import { all, get, run, getSetting, setSetting } from './db.js';
 import { lang } from './metadata.js';
 import dns from 'node:dns/promises';
 import net from 'node:net';
@@ -36,7 +36,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Titre simplifié pour comparer deux résultats (accents, ponctuation, articles)
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
 const stripHtml = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
-function closeEnough(a, b) {
+export function closeEnough(a, b) {
   const x = norm(a), y = norm(b);
   if (!x || !y) return false;
   if (x === y) return true;
@@ -50,7 +50,7 @@ function closeEnough(a, b) {
   return common >= (short >= 4 ? short - 1 : short) && common / long >= 0.7;
 }
 
-async function getJson(url) {
+export async function getJson(url) {
   const res = await fetch(url, { headers: { ...BROWSER_UA, Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
   if (res.status === 429) { await sleep(5000); return null; } // trop de demandes : on réessaiera au prochain passage
   if (!res.ok) { lastStatus.set(url.split('?')[0], res.status); return null; }
@@ -65,7 +65,7 @@ export async function saveRemoteImage(url, { any = false } = {}) {
   let u;
   try { u = new URL(String(url).trim()); } catch { return null; }
   if (u.protocol !== 'https:' && !(process.env.VENUS_ITUNES_URL && u.protocol === 'http:')) return null;
-  if (!any && !process.env.VENUS_ITUNES_URL && !/(^|\.)(mzstatic\.com|tvmaze\.com|tmdb\.org|impawards\.com|wikipedia\.org|wikimedia\.org|media-amazon\.com|trakt\.tv)$/.test(u.hostname)) return null;
+  if (!any && !process.env.VENUS_ITUNES_URL && !/(^|\.)(mzstatic\.com|tvmaze\.com|tmdb\.org|impawards\.com|wikipedia\.org|wikimedia\.org|media-amazon\.com|metahub\.space|trakt\.tv)$/.test(u.hostname)) return null;
   if (any) {
     if (net.isIP(u.hostname) ? isPrivateIp(u.hostname) : /^(localhost|.*\.local|.*\.lan|.*\.internal)$/i.test(u.hostname)) return null;
     try { const addrs = await dns.lookup(u.hostname, { all: true }); if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) return null; } catch { return null; }
@@ -108,8 +108,8 @@ export async function freePosterCandidates(type, title, year) {
   const out = [];
   const push = (r, source) => { if (r && r.poster && !out.some((x) => x.url === r.poster)) out.push({ url: r.poster, source, year: r.year || null }); };
   const jobs = type === 'movie'
-    ? [[() => findTrakt('movie', title, year), 'Trakt'], [() => findTmdbWeb('movie', title, year), 'TMDB (site)'], [() => findImp(title, year), 'IMP Awards'], [() => findWiki('movie', title, year), 'Wikipédia'], [() => findMovie(title, year), 'iTunes'], [() => findOmdb('movie', title, year), 'OMDb']]
-    : [[() => findTrakt('tv', title, year), 'Trakt'], [() => findTmdbWeb('tv', title, year), 'TMDB (site)'], [() => findShow(title, year), 'TVmaze'], [() => findWiki('tv', title, year), 'Wikipédia'], [() => findOmdb('tv', title, year), 'OMDb']];
+    ? [[() => findTrakt('movie', title, year), 'Trakt'], [() => findImdb('movie', title, year), 'IMDb'], [() => findCinemeta('movie', title, year), 'Cinemeta'], [() => findTmdbWeb('movie', title, year), 'TMDB (site)'], [() => findImp(title, year), 'IMP Awards'], [() => findWiki('movie', title, year), 'Wikipédia'], [() => findMovie(title, year), 'iTunes'], [() => findOmdb('movie', title, year), 'OMDb']]
+    : [[() => findTrakt('tv', title, year), 'Trakt'], [() => findTmdbWeb('tv', title, year), 'TMDB (site)'], [() => findShow(title, year), 'TVmaze'], [() => findImdb('tv', title, year), 'IMDb'], [() => findCinemeta('tv', title, year), 'Cinemeta'], [() => findWiki('tv', title, year), 'Wikipédia'], [() => findOmdb('tv', title, year), 'OMDb']];
   await Promise.all(jobs.map(async ([fn, src]) => { try { push(await fn(), src); } catch { /* source muette */ } }));
   return out;
 }
@@ -183,6 +183,38 @@ export async function findTrakt(kind, title, year) {
 }
 
 // OMDb (si une clé est renseignée) : affiche Amazon/IMDb
+// IMDb (suggestions de la barre de recherche, sans clé) : la base la plus complète, affiches officielles en
+// bonne qualité (images Amazon). Tolérant aux titres approximatifs ; on vérifie le titre et l'année.
+const IMDB = process.env.VENUS_IMDB_URL || 'https://v3.sg.media-imdb.com/suggestion';
+export async function findImdb(kind, title, year) {
+  const q = String(title || '').trim();
+  if (!q) return null;
+  const first = (norm(q)[0] || 'x');
+  const d = await getJson(`${IMDB}/${/[a-z0-9]/.test(first) ? first : 'x'}/${encodeURIComponent(q.toLowerCase()).replace(/%20/g, '+')}.json`);
+  const list = d && Array.isArray(d.d) ? d.d : [];
+  const kinds = kind === 'movie' ? ['movie', 'tvMovie', 'video', 'short', 'tvSpecial'] : ['tvSeries', 'tvMiniSeries'];
+  const ok = list.filter((x) => x && x.id && /^tt\d+$/.test(x.id) && x.i && x.i.imageUrl && kinds.includes(x.qid) && closeEnough(x.l, q));
+  if (!ok.length) return null;
+  const best = (year && (ok.find((x) => x.y === year) || ok.find((x) => Math.abs((x.y || 0) - year) <= 1))) || (year ? null : ok[0]) || ok[0];
+  // Image redimensionnée à 600 px de large (l'originale peut faire 5 000 px)
+  const poster = best.i.imageUrl.replace(/\._V1_.*\.(jpe?g|png)$/i, '._V1_SX600.$1');
+  return { poster, year: best.y || year || null, genres: [], overview: null, releaseDate: null, imdbId: best.id };
+}
+
+// Cinemeta (catalogue public de Stremio, sans clé) : affiches IMDb via metahub, autre chemin si IMDb bloque
+const CINEMETA = process.env.VENUS_CINEMETA_URL || 'https://v3-cinemeta.strem.io';
+export async function findCinemeta(kind, title, year) {
+  const t = kind === 'movie' ? 'movie' : 'series';
+  const d = await getJson(`${CINEMETA}/catalog/${t}/top/search=${encodeURIComponent(String(title || '').trim())}.json`);
+  const list = d && Array.isArray(d.metas) ? d.metas : [];
+  const yearOf = (m) => Number(String(m.releaseInfo || m.year || '').slice(0, 4)) || null;
+  const ok = list.filter((m) => m && m.poster && closeEnough(m.name, title));
+  if (!ok.length) return null;
+  const best = (year && ok.find((m) => Math.abs((yearOf(m) || 0) - year) <= 1)) || ok[0];
+  const poster = /^tt\d+$/.test(best.imdb_id || best.id || '') ? `https://images.metahub.space/poster/large/${best.imdb_id || best.id}/img` : best.poster;
+  return { poster, year: yearOf(best) || year || null, genres: best.genres || [], overview: best.description || null, releaseDate: best.released ? String(best.released).slice(0, 10) : null };
+}
+
 export async function findOmdb(kind, title, year) {
   const key = getSetting('omdb_key', '') || process.env.OMDB_API_KEY || '';
   if (!key) return null;
@@ -281,14 +313,18 @@ export function redoFreePosters() {
   return Number(r.changes || 0);
 }
 export async function fillMissingPosters(onProgress) {
+  if (Number(getSetting('poster_sources_v', 0)) < 3) {
+    run("UPDATE items SET poster_tried = 0 WHERE poster IS NULL AND type IN ('movie','show')");
+    setSetting('poster_sources_v', 3);
+  }
   if (getSetting('posters_free', '1') === '0') return 0;
   const pending = all("SELECT id, type, title, year, category, overview, genres, release_date FROM items WHERE type IN ('movie','show') AND poster IS NULL AND (matched <= 0 OR tmdb_id IS NULL) AND IFNULL(poster_tried, 0) < 3 ORDER BY added_at DESC LIMIT 300");
   let n = 0, done = 0;
   for (const it of pending) {
     try {
       const chain = (year) => (it.type === 'movie'
-        ? [() => findTrakt('movie', it.title, year), () => findTmdbWeb('movie', it.title, year), () => findImp(it.title, year), () => findWiki('movie', it.title, year), () => findMovie(it.title, year), () => findOmdb('movie', it.title, year)]
-        : [() => findTrakt('tv', it.title, year), () => findTmdbWeb('tv', it.title, year), () => findShow(it.title, year, { anime: it.category === 'anime' }), () => findWiki('tv', it.title, year), () => findOmdb('tv', it.title, year)]);
+        ? [() => findTrakt('movie', it.title, year), () => findImdb('movie', it.title, year), () => findCinemeta('movie', it.title, year), () => findTmdbWeb('movie', it.title, year), () => findImp(it.title, year), () => findWiki('movie', it.title, year), () => findMovie(it.title, year), () => findOmdb('movie', it.title, year)]
+        : [() => findTrakt('tv', it.title, year), () => findTmdbWeb('tv', it.title, year), () => findShow(it.title, year, { anime: it.category === 'anime' }), () => findImdb('tv', it.title, year), () => findCinemeta('tv', it.title, year), () => findWiki('tv', it.title, year), () => findOmdb('tv', it.title, year)]);
       // L'année tirée du nom du fichier est parfois fausse (date de la copie) : second essai sans l'année
       const found = (await firstOf(chain(it.year))) || (it.year ? await firstOf(chain(null)) : null);
       const poster = found ? (found.trakt ? await downloadTraktImage(found.poster) : await saveRemoteImage(found.poster)) : null;
@@ -321,8 +357,8 @@ export async function fillMissingPosters(onProgress) {
 // avec le temps de réponse, le code HTTP et ce qu'il a trouvé. Permet de voir quel service est bloqué.
 export async function testSources(title, year, type = 'movie') {
   const jobs = type === 'movie'
-    ? [['Trakt', 'https://api.trakt.tv', () => findTrakt('movie', title, year)], ['Site TMDB', `${TMDB_WEB}/search/movie`, () => findTmdbWeb('movie', title, year)], ['IMP Awards', IMP, () => findImp(title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('movie', title, year)], ['iTunes', ITUNES, () => findMovie(title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('movie', title, year)]]
-    : [['Trakt', 'https://api.trakt.tv', () => findTrakt('tv', title, year)], ['Site TMDB', `${TMDB_WEB}/search/tv`, () => findTmdbWeb('tv', title, year)], ['TVmaze', TVMAZE, () => findShow(title, year, { anime: type === 'anime' })], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('tv', title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('tv', title, year)]];
+    ? [['Trakt', 'https://api.trakt.tv', () => findTrakt('movie', title, year)], ['IMDb', IMDB, () => findImdb('movie', title, year)], ['Cinemeta (Stremio)', CINEMETA, () => findCinemeta('movie', title, year)], ['Site TMDB', `${TMDB_WEB}/search/movie`, () => findTmdbWeb('movie', title, year)], ['IMP Awards', IMP, () => findImp(title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('movie', title, year)], ['iTunes', ITUNES, () => findMovie(title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('movie', title, year)]]
+    : [['Trakt', 'https://api.trakt.tv', () => findTrakt('tv', title, year)], ['Site TMDB', `${TMDB_WEB}/search/tv`, () => findTmdbWeb('tv', title, year)], ['TVmaze', TVMAZE, () => findShow(title, year, { anime: type === 'anime' })], ['IMDb', IMDB, () => findImdb('tv', title, year)], ['Cinemeta (Stremio)', CINEMETA, () => findCinemeta('tv', title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('tv', title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('tv', title, year)]];
   const out = [];
   for (const [name, base, fn] of jobs) {
     const t0 = Date.now(); for (const k of [...lastStatus.keys()]) if (k.startsWith(base)) lastStatus.delete(k);

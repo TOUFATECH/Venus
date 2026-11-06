@@ -585,9 +585,6 @@ html:not(.touch) .tile:hover .tile-img { transform: scale(1.03); }
 @media (max-width: 760px) { .pv { grid-template-columns: 1fr; align-items: start; } .pv-group { margin-bottom: 12px; } }
 
 /* ------------------------------------------------ Ajouter des vidéos */
-.add-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start; }
-.add-side { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
-@media (max-width: 960px) { .add-grid { grid-template-columns: 1fr; } }
 .two-cols { display: flex; gap: 12px; }
 .two-cols > :first-child { flex: 1; min-width: 0; }
 .two-cols > :last-child { flex: 0 0 110px; }
@@ -1078,7 +1075,8 @@ main.page-in .box:nth-child(n+5), main.page-in .dash-card:nth-child(n+5), main.p
 .rail a svg, .rail .rail-item svg { transition: transform .3s var(--ease); }
 .rail a:hover svg, .rail .rail-item:hover svg { transform: translateY(-2px) scale(1.12); }
 .rail a:active { transform: scale(.94); }
-.rail a.active { animation: navpop .35s var(--ease); }
+.rail a.pop { animation: navpop .35s var(--ease); }
+.no-anim, .no-anim * { animation: none !important; }
 @keyframes navpop { from { transform: scale(.92); } 50% { transform: scale(1.04); } }
 .rail a.active svg { filter: drop-shadow(0 0 8px rgb(var(--sulfur-rgb) / .55)); }
 /* Boutons et cartes : léger relief au survol */
@@ -1126,7 +1124,7 @@ img.fade.ok { opacity: 1; }
 @keyframes skipin { from { opacity: 0; transform: translateX(16px); } }
 html:not(.touch) .player.in-party:not(.chat-hidden) .p-skip { right: 400px; }
 .party-panel .p-icon.small.off { color: var(--dim); }
-@media (prefers-reduced-motion: reduce) { main.page-in, main.page-in *, .sk, .admin-grid.swap > .box, .rail a.active { animation: none !important; } .btn, .rail a, .set-tab { transition: none; } }
+@media (prefers-reduced-motion: reduce) { main.page-in, main.page-in *, .sk, .admin-grid.swap > .box, .rail a.pop { animation: none !important; } .btn, .rail a, .set-tab { transition: none; } }
 
 /* Thèmes planètes : la surface du logo tourne */
 .mark { overflow: visible; }
@@ -2944,3 +2942,44 @@ html.kids .btn-play { font-size: 1.1rem; min-height: 54px; }
 .card:hover .shot .check, .card:focus-within .shot .check, html.touch .card .shot .check { opacity: 0; }
 .card .tag-new { z-index: 1; }
 @media (hover: none) { .card .card-eye { opacity: .85; transform: none; width: 28px; height: 28px; } .card .card-eye svg { width: 15px; height: 15px; } .card .shot .check { opacity: 0; } }
+
+/* ================================================================ épisodes en grille compacte
+   « Épisode 2 · 24 min » seulement : toute la saison tient à l'écran, le titre est au survol et dans le lecteur */
+.episodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px 14px; max-width: none; }
+.episodes > .grid-empty, .episodes > .next-season { grid-column: 1 / -1; }
+.ep-item { max-width: none; }
+.ep-item .episode, .episodes > .episode { width: 100%; padding: 0; }
+.episode { flex-direction: column; align-items: stretch; gap: 7px; padding: 0; border-top: 0; border-radius: 10px; }
+.episode .thumb { flex: none; width: 100%; border-radius: 10px; transition: transform .25s var(--ease), box-shadow .25s; }
+.episode:hover, .episode.f:focus-visible, .episode.f.is-focus { background: none; }
+.episode:hover .thumb, .episode.f:focus-visible .thumb, .episode.f.is-focus .thumb { transform: translateY(-2px); box-shadow: 0 0 0 2px var(--paper), 0 10px 26px rgba(0,0,0,.35); }
+.episode .ep-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 0 2px 0 4px; min-width: 0; }
+.episode .ep-line b { font-size: .95rem; font-weight: 750; white-space: nowrap; }
+.episode .ep-line span { color: var(--dim); font-size: .8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.episode.seen .ep-line b { color: var(--haze); font-weight: 650; }
+.episode.seen .thumb img { opacity: .62; }
+.episode.is-current { background: none; box-shadow: none; }
+.episode.is-current .thumb { box-shadow: 0 0 0 2px var(--sulfur); }
+.episode .ep-badge { position: absolute; left: 7px; top: 7px; padding: 2px 8px; border-radius: 999px; font-size: .68rem; font-weight: 800; color: #111; background: #fff; }
+.episode .ep-badge.now { background: var(--sulfur); color: var(--night); }
+.episode .thumb .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.25); }
+.episode .thumb .bar i { display: block; height: 100%; background: var(--sulfur); }
+/* Bouton vu / non vu : petit rond en haut à droite de la vignette */
+.ep-toggle { top: 7px; right: 7px; transform: none; width: 30px; height: 30px; color: #fff; background: rgba(10,12,20,.72); border-color: rgba(255,255,255,.2); opacity: 0; transition: opacity .2s, background .2s, color .2s; }
+.ep-toggle svg { width: 16px; height: 16px; }
+.ep-item:hover .ep-toggle, .ep-item:focus-within .ep-toggle, .ep-toggle.on, html.touch .ep-toggle { opacity: 1; }
+.ep-toggle.on { color: var(--night); background: var(--sulfur); border-color: var(--sulfur); }
+.episode.missing { opacity: .55; filter: grayscale(.7); }
+.episode.missing .thumb { display: grid; place-items: center; background: repeating-linear-gradient(135deg, rgba(255,255,255,.04) 0 10px, transparent 10px 20px), var(--raise); border: 1px dashed rgba(255,255,255,.22); }
+.episode.missing .miss-num { font-size: 2rem; font-weight: 800; color: var(--haze); }
+.episode.missing .miss-tag { position: absolute; left: 7px; top: 7px; padding: 2px 8px; border-radius: 999px; font-size: .68rem; font-weight: 800; color: #fff; background: rgba(229,72,77,.85); }
+@media (max-width: 640px) {
+  .episodes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 10px; }
+  .ep-item .episode { padding-right: 0; gap: 6px; } .ep-item .episode .thumb { flex-basis: auto; }
+  .ep-toggle { right: 6px; top: 6px; width: 28px; height: 28px; opacity: 1; }
+  .episode .ep-line b { font-size: .86rem; }
+}
+
+/* Pastille « +2 nouveaux » sur l'affiche d'une série (couleurs fixes, lisibles avec tous les thèmes) */
+.card .new-pill { position: absolute; left: 8px; top: 8px; padding: 3px 9px; border-radius: 999px; font-size: .7rem; font-weight: 800; color: #111; background: #ffd34d; box-shadow: 0 2px 10px rgba(0,0,0,.35); pointer-events: none; z-index: 1; }
+.card .new-pill ~ .tag-new { display: none; }

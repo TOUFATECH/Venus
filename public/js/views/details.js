@@ -263,10 +263,10 @@ export async function render(main, { id, query }) {
       // Épisodes diffusés mais absents des dossiers (d'après TMDB), à leur place dans l'ordre
       if (epFilter === 'all' && prefs.get('showMissing') !== false && s.missing && s.missing.length) {
         for (const m of s.missing) {
-          const ghost = h('div', { class: 'episode missing', title: 'Pas dans vos dossiers' },
-            h('div', { class: 'thumb' }, m.still ? h('img', { src: m.still, alt: '', loading: 'lazy' }) : placeholder(m.title || `Épisode ${m.number}`), h('span', { class: 'miss-tag' }, 'Manquant')),
-            h('div', {}, h('div', { class: 'ep-meta' }, `Épisode ${m.number}${m.air ? `, ${fmtDate(m.air)}` : ''}`), h('h3', {}, m.title || `Épisode ${m.number}`), m.overview ? h('p', {}, m.overview) : null));
-          const after = [...epList.children].find((el) => !el.classList.contains('missing') && Number(el.dataset.ep || el.querySelector('[data-ep]')?.dataset.ep) > m.number);
+          const ghost = h('div', { class: 'episode missing', 'data-ep': m.number, title: `Épisode ${m.number}${m.title ? ` — ${m.title}` : ''} : diffusé${m.air ? ` le ${fmtDate(m.air)}` : ''}, mais pas dans vos dossiers` },
+            h('div', { class: 'thumb' }, m.still ? h('img', { src: m.still, alt: '', loading: 'lazy' }) : h('span', { class: 'miss-num' }, String(m.number)), h('span', { class: 'miss-tag' }, 'Manquant')),
+            h('div', { class: 'ep-line' }, h('b', {}, `Épisode ${m.number}`), m.air ? h('span', {}, fmtDate(m.air)) : null));
+          const after = [...epList.children].find((el) => Number(el.dataset.ep || el.querySelector('[data-ep]')?.dataset.ep) > m.number);
           if (after) epList.insertBefore(ghost, after); else epList.append(ghost);
         }
       }
@@ -536,25 +536,25 @@ export async function openPerson(p) {
   } catch (e) { list.replaceChildren(h('p', { class: 'error-text' }, e.message)); }
 }
 
+// Épisode en vignette compacte : juste « Épisode 2 » et la durée ; le titre s'affiche au survol et pendant la lecture.
+// Les vignettes se suivent en grille, on voit toute la saison d'un coup d'œil.
 function episodeRow(e, current = false, onToggle = null) {
   const p = e.progress;
   const pct = p && p.duration ? Math.min(100, (p.position / p.duration) * 100) : 0;
   const thumbSrc = e.still ? img(e.still) : `/api/items/${e.id}/thumb`;
   const thumb = h('img', { src: thumbSrc, alt: '', loading: 'lazy' });
-  thumb.addEventListener('error', () => thumb.replaceWith(placeholder(e.title)), { once: true });
+  thumb.addEventListener('error', () => thumb.replaceWith(placeholder(`É${e.episode}`)), { once: true });
   const dur = e.runtime || (e.duration ? Math.round(e.duration / 60) : null);
   const seen = !!(p && p.watched);
-  const toggle = onToggle ? h('button', { class: `ep-toggle f${seen ? ' on' : ''}`, 'aria-label': seen ? `Marquer « ${e.title} » comme non vu` : `Marquer « ${e.title} » comme vu`, title: seen ? 'Vu' : 'Marquer comme vu', onclick: (ev) => { ev.stopPropagation(); onToggle(!seen); } }, icon(seen ? 'check' : 'eye')) : null;
-  const row = h('button', { class: `episode f${current ? ' is-current' : ''}${seen ? ' seen' : ''}`, 'data-ep': e.episode, onclick: () => go(playPath(e.id)) },
+  const num = `Épisode ${e.episode}${e.episodeEnd ? `–${e.episodeEnd}` : ''}`;
+  // Nouveau : sorti il y a moins de 14 jours (date TMDB) ou, sans date de sortie, arrivé dans Venus cette semaine
+  const isNew = !seen && ((e.released && daysSince(e.released) <= 14) || (!e.released && e.added && Date.now() - e.added < 7 * 864e5));
+  const toggle = onToggle ? h('button', { class: `ep-toggle f${seen ? ' on' : ''}`, 'aria-label': seen ? `Marquer l’${num.toLowerCase()} comme non vu` : `Marquer l’${num.toLowerCase()} comme vu`, title: seen ? 'Vu — cliquer pour marquer non vu' : 'Marquer comme vu', onclick: (ev) => { ev.stopPropagation(); onToggle(!seen); } }, icon(seen ? 'check' : 'eye')) : null;
+  const row = h('button', { class: `episode f${current ? ' is-current' : ''}${seen ? ' seen' : ''}`, 'data-ep': e.episode, title: e.title && !/^(É|E)pisode \d+$/i.test(e.title) ? `${num} — ${e.title}` : num, 'aria-label': `${num}${e.title ? `, ${e.title}` : ''}${dur ? `, ${dur} minutes` : ''}${seen ? ', vu' : ''}`, onclick: () => go(playPath(e.id)) },
     h('div', { class: 'thumb' }, thumb, h('span', { class: 'ep-play' }, icon('play')),
-      pct > 0 && !p.watched ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
-      p && p.watched ? h('span', { class: 'check' }, icon('check')) : null),
-    h('div', {},
-      h('div', { class: 'ep-meta' }, `Épisode ${e.episode}${e.episodeEnd ? `–${e.episodeEnd}` : ''}${dur ? `, ${dur} min` : ''}${e.released && e.released.length === 10 ? `, ${fmtDate(e.released)}` : ''}`,
-        current ? h('span', { class: 'tag-new inline now' }, p && !p.watched && p.position > 0 ? 'Vous en étiez là' : 'Cet épisode') : null,
-        e.released && daysSince(e.released) <= 14 && !(e.progress && e.progress.watched) ? h('span', { class: 'tag-new inline' }, 'Nouveau') : null),
-      h('h3', {}, e.title),
-      e.overview ? h('p', {}, e.overview) : null));
+      pct > 0 && !seen ? h('div', { class: 'bar' }, h('i', { style: { width: `${pct}%` } })) : null,
+      current ? h('span', { class: 'ep-badge now' }, p && !seen && p.position > 0 ? 'En cours' : 'À suivre') : isNew ? h('span', { class: 'ep-badge' }, 'Nouveau') : null),
+    h('div', { class: 'ep-line' }, h('b', {}, num), dur ? h('span', {}, `${dur} min`) : null));
   return toggle ? h('div', { class: 'ep-item' }, row, toggle) : row;
 }
 

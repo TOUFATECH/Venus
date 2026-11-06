@@ -21,6 +21,7 @@ import { pipeline } from 'node:stream/promises';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
 import { saveRemoteImage, freePosterCandidates, fillMissingPosters, fillMissingBackdrops, testSources, redoFreePosters } from './posters.js';
 import { findTrailerFor } from './youtube.js';
+import { guideFor } from './guide.js';
 import { checkUpdate, runUpdate, localCommit } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
 import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAYS } from './trash.js';
@@ -118,8 +119,17 @@ export function dailyLeft(p) {
   return Math.max(0, Math.round(r.dailyMinutes - watchedToday(p.id) / 60));
 }
 
+// Séries : nombre d'épisodes arrivés ces 7 derniers jours (pastille « +2 nouveaux » sur l'affiche)
+let freshCache = { at: 0, v: -1, map: new Map() };
+function freshEpisodes() {
+  if (freshCache.v !== itemsVersion || Date.now() - freshCache.at > 600e3) {
+    freshCache = { at: Date.now(), v: itemsVersion, map: new Map(all("SELECT show_id, COUNT(*) n FROM items WHERE type = 'episode' AND added_at > ? GROUP BY show_id", Date.now() - 7 * 864e5).map((r) => [r.show_id, r.n])) };
+  }
+  return freshCache.map;
+}
 function card(i, prog) {
   return {
+    newEps: i.type === 'show' ? freshEpisodes().get(i.id) || undefined : undefined,
     id: i.id, slug: slugFor(i.id), path: pathFor(i.id), type: i.type, title: i.title, originalTitle: i.original_title, year: i.year, poster: i.poster, backdrop: i.backdrop, logo: i.logo,
     still: i.still, age: i.age, cert: i.certification, vote: i.vote, genres: parseJson(i.genres, []),
     overview: i.overview, runtime: i.runtime || (i.duration ? Math.round(i.duration / 60) : null),
@@ -686,7 +696,7 @@ router.get('/api/library', (ctx) => {
   sendJson(ctx.res, base.cards.map((c) => withStatus({ ...c }, idx)));
 });
 
-router.get('/api/items/:id', (ctx) => {
+router.get('/api/items/:id', async (ctx) => {
   const p = requireProfile(ctx);
   let item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
   if (!item) throw new HttpError(404, 'Introuvable');
@@ -704,7 +714,7 @@ router.get('/api/items/:id', (ctx) => {
   const custom = parseJson(item.custom, null);
   out.provenance = {
     info: custom && Object.keys(custom).some((k) => !['poster', 'backdrop', 'logo'].includes(k)) ? 'Modifié à la main' : item.tmdb_id ? 'TMDB' : item.nfo ? 'Fichier .nfo' : 'Nom du fichier',
-    poster: !item.poster ? null : custom && custom.poster ? 'Choisie à la main' : String(item.poster).startsWith('l_') ? 'Image dans le dossier' : String(item.poster).startsWith('k_') ? 'Trakt' : String(item.poster).startsWith('p_') ? 'Service gratuit (site TMDB, IMP Awards, iTunes, TVmaze)' : 'TMDB',
+    poster: !item.poster ? null : custom && custom.poster ? 'Choisie à la main' : String(item.poster).startsWith('l_') ? 'Image dans le dossier' : String(item.poster).startsWith('k_') ? 'Trakt' : String(item.poster).startsWith('p_') ? 'Service gratuit (IMDb, Cinemeta, site TMDB, IMP Awards, Wikipédia, iTunes, TVmaze)' : 'TMDB',
     file: item.path || null, folder: item.path ? path.dirname(item.path) : null,
   };
   // Sous-titres externes dont la durée ne colle pas à la vidéo (probablement pour une autre version)
@@ -748,12 +758,24 @@ router.get('/api/items/:id', (ctx) => {
     const eps = all("SELECT * FROM items WHERE type='episode' AND show_id=? ORDER BY season_num, episode_num", item.id);
     const pm = progressMap(p.id, eps.map((e) => e.id));
     const today = new Date().toISOString().slice(0, 10);
+    // Sans données TMDB : guide des épisodes de TVmaze (sans clé), attendu au plus 3,5 s
+    const noTmdb = !seasons.some((s) => parseJson(s.tmdb_eps, []).length);
+    const guide = noTmdb ? await guideFor(item.id).catch(() => []) : [];
     out.seasons = seasons.map((s) => {
       const list = eps.filter((e) => e.parent_id === s.id);
-      // Épisodes déjà diffusés (d'après TMDB) mais absents des dossiers
+      // Épisodes déjà diffusés (d'après TMDB, sinon TVmaze) mais absents des dossiers
       const have = new Set(list.flatMap((e) => { const a = []; for (let n = e.episode_num; n <= (e.episode_end || e.episode_num); n++) a.push(n); return a; }));
-      const missing = parseJson(s.tmdb_eps, []).filter((x) => x.n && !have.has(x.n) && x.air && x.air <= today)
+      let missing = parseJson(s.tmdb_eps, []).filter((x) => x.n && !have.has(x.n) && x.air && x.air <= today)
         .map((x) => ({ number: x.n, title: x.title, air: x.air, overview: x.overview, still: x.still ? `https://image.tmdb.org/t/p/w300${x.still}` : null }));
+      if (!missing.length && guide.length && s.season_num > 0) {
+        const g = guide.filter((x) => x.s === s.season_num);
+        // Numérotation compatible seulement (les animés numérotés en continu, 1 à 153, ne sont pas comparés)
+        const maxHave = Math.max(0, ...have);
+        if (g.length && maxHave <= g.length + 1) {
+          missing = g.filter((x) => !have.has(x.n) && x.air && x.air <= today)
+            .map((x) => ({ number: x.n, title: x.title, air: x.air, still: x.still, source: 'tvmaze' }));
+        }
+      }
       return {
         id: s.id, number: s.season_num, title: s.title, poster: s.poster, overview: s.overview,
         episodes: list.map((e) => {
@@ -767,6 +789,16 @@ router.get('/api/items/:id', (ctx) => {
     const haveSeasons = new Set(seasons.map((s) => s.season_num));
     out.missingSeasons = parseJson(item.tmdb_seasons, []).filter((x) => x.n > 0 && !haveSeasons.has(x.n) && x.count > 0 && x.air && x.air <= today)
       .map((x) => ({ number: x.n, title: x.name, count: x.count, air: x.air }));
+    if (!out.missingSeasons.length && guide.length) {
+      // Saisons entières absentes, d'après TVmaze ; pas pour les séries numérotées en continu (une seule saison locale très longue)
+      const localMax = Math.max(0, ...eps.map((e) => e.episode_num || 0));
+      const firstGuide = guide.filter((x) => x.s === 1).length;
+      if (!(seasons.length === 1 && localMax > firstGuide + 1)) {
+        const bySeason = new Map();
+        for (const x of guide) if (x.air && x.air <= today) { const b = bySeason.get(x.s) || { count: 0, air: x.air }; b.count++; bySeason.set(x.s, b); }
+        out.missingSeasons = [...bySeason].filter(([n]) => !haveSeasons.has(n)).map(([n, b]) => ({ number: n, title: `Saison ${n}`, count: b.count, air: b.air, source: 'tvmaze' }));
+      }
+    }
     // Prochain épisode à regarder
     const watchedSorted = eps.filter((e) => pm.get(e.id)).sort((a, b) => pm.get(b.id).updated_at - pm.get(a.id).updated_at);
     let next = eps.find((e) => e.season_num > 0) || eps[0];
@@ -1428,7 +1460,7 @@ router.get('/api/admin', (ctx) => {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
       maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0', trickplay: trickplayMode(),
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
-      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', backupCopyDir: getSetting('backup_copy_dir', ''), postersFree: getSetting('posters_free', '1') !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
+      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', notifyEpisodes: String(getSetting('notify_episodes', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', backupCopyDir: getSetting('backup_copy_dir', ''), postersFree: getSetting('posters_free', '1') !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
   });
@@ -1834,7 +1866,7 @@ const SETTINGS_SCHEMA = {
   ntfyServer: V.url({ label: 'Serveur ntfy' }), ntfyTopic: V.str({ max: 100, pattern: /^[\w-]+$/, label: 'Sujet ntfy' }),
   discordWebhook: V.url({ https: true, label: 'Webhook Discord' }), telegramToken: V.str({ max: 100, pattern: /^\d+:[\w-]+$/, label: 'Jeton Telegram' }),
   telegramChat: V.str({ max: 40, pattern: /^-?\d+$|^@\w+$/, label: 'Discussion Telegram' }), publicUrl: V.url({ label: 'Adresse publique' }),
-  notifyNew: V.bool(), autoBackup: V.bool(), backupCopyDir: V.str({ max: 1000 }), postersFree: V.bool(), detectSegments: V.bool(), kidsAllowUnrated: V.bool(),
+  notifyNew: V.bool(), notifyEpisodes: V.bool(), autoBackup: V.bool(), backupCopyDir: V.str({ max: 1000 }), postersFree: V.bool(), detectSegments: V.bool(), kidsAllowUnrated: V.bool(),
   opensubtitlesKey: V.str({ max: 200 }), opensubtitlesUser: V.str({ max: 100 }), opensubtitlesPass: V.str({ max: 200, trim: false }),
   seerrUrl: V.str({ max: 500 }), seerrKey: V.str({ max: 300 }),
   serverName: V.str({ max: 40 }), maxSessions: V.int({ min: 1, max: 20 }), scanInterval: V.int({ min: 5, max: 10080 }),
@@ -1881,6 +1913,7 @@ router.put('/api/admin/settings', async (ctx) => {
     if (b[k] !== undefined) setSetting(key, String(b[k] || '').trim());
   }
   if (typeof b.notifyNew === 'boolean') setSetting('notify_new', b.notifyNew ? '1' : '0');
+  if (typeof b.notifyEpisodes === 'boolean') setSetting('notify_episodes', b.notifyEpisodes ? '1' : '0');
   if (typeof b.autoBackup === 'boolean') setSetting('auto_backup', b.autoBackup ? '1' : '0');
   if (typeof b.postersFree === 'boolean') setSetting('posters_free', b.postersFree ? '1' : '0');
   if (b.backupCopyDir !== undefined) {
