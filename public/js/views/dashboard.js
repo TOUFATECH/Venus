@@ -161,8 +161,9 @@ export async function render(main, { query } = {}) {
   };
   const send = async (device, cmd, text) => {
     try {
-      await api('/api/admin/control', { method: 'POST', body: { device, cmd, text } });
-      toast(cmd === 'pause' ? 'Pause demandée' : cmd === 'play' ? 'Reprise demandée' : cmd === 'stop' ? 'Lecture arrêtée' : 'Message envoyé');
+      const r = await api('/api/admin/control', { method: 'POST', body: device ? { device, cmd, text } : { all: true, cmd, text } });
+      toast(cmd === 'pause' ? 'Pause demandée' : cmd === 'play' ? 'Reprise demandée' : cmd === 'stop' ? 'Lecture arrêtée'
+        : !device ? (r && r.sent ? `Message envoyé à ${r.sent} appareil${r.sent > 1 ? 's' : ''}` : 'Message envoyé (aucun autre appareil ouvert pour l’instant)') : 'Message envoyé', { type: 'success' });
       setTimeout(refresh, 1200);
     } catch (e) { toast(e.message, true); }
   };
@@ -173,7 +174,7 @@ export async function render(main, { query } = {}) {
       if (!input.value.trim()) return;
       await send(device, 'message', input.value);
       s.close();
-    } }, input, h('p', { class: 'muted' }, 'Le message s’affiche par-dessus l’image, même en plein écran.'), h('div', { class: 'form-actions' }, h('button', { class: 'btn btn-play f', type: 'submit' }, icon('send'), 'Envoyer'))));
+    } }, input, h('p', { class: 'muted' }, 'Il apparaît en petite notification en bas à droite chez les autres, même en plein écran. Toi, tu ne le reçois pas.'), h('div', { class: 'form-actions' }, h('button', { class: 'btn btn-play f', type: 'submit' }, icon('send'), 'Envoyer'))));
     setTimeout(() => input.focus(), 50);
   };
   const restart = async () => {

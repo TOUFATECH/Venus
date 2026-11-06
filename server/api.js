@@ -448,7 +448,7 @@ router.get('/api/events', (ctx) => {
   // Appareils connectés en ce moment (pour « Envoyer vers la télé ») : un par appareil, avec son nom et son profil
   const connKey = deviceId(mine);
   connected.set(connKey, { token: mine, profileId: myProfile, name: deviceLabel(ctx.auth.device), tv: /TV|Tizen|WebOS|BRAVIA|Silk|CrKey/i.test(ctx.auth.device || ''), since: Date.now() });
-  const onCtl = (d) => { if (d.all || (d.token && deviceId(d.token) === deviceId(mine)) || (d.profileId && d.profileId === myProfile)) res.write(`event: control\ndata: ${JSON.stringify({ cmd: d.cmd, text: d.text, from: d.from, title: d.title, url: d.url })}\n\n`); };
+  const onCtl = (d) => { if (d.except && deviceId(d.except) === deviceId(mine)) return; if (d.all || (d.token && deviceId(d.token) === deviceId(mine)) || (d.profileId && d.profileId === myProfile)) res.write(`event: control\ndata: ${JSON.stringify({ cmd: d.cmd, text: d.text, from: d.from, title: d.title, url: d.url, at: Date.now() })}\n\n`); };
   control.on('cmd', onCtl);
   const ping = setInterval(() => res.write(': ping\n\n'), 25000);
   ctx.req.on('close', () => { clearInterval(ping); events.off('library', onLib); control.off('cmd', onCtl); if (connected.get(connKey)?.token === mine) connected.delete(connKey); });
@@ -1621,9 +1621,11 @@ router.post('/api/admin/control', async (ctx) => {
   const text = String(b.text || '').trim().slice(0, 300);
   if (cmd === 'message' && !text) throw new HttpError(400, 'Message vide');
   if (b.all) {
-    control.emit('cmd', { all: true, cmd, text, from: p.name });
+    // Le message va aux AUTRES appareils : celui qui l'écrit ne le reçoit pas.
+    const others = [...connected.keys()].filter((k) => k !== deviceId(ctx.auth.token)).length;
+    control.emit('cmd', { all: true, except: ctx.auth.token, cmd, text, from: p.name });
     logActivity('message', `${p.name} a envoyé un message à tous les appareils`);
-    return sendJson(ctx.res, { ok: true });
+    return sendJson(ctx.res, { ok: true, sent: others });
   }
   const token = tokenOfDevice(String(b.device || '')) || all('SELECT token FROM tokens').map((r) => r.token).find((t) => deviceId(t) === String(b.device || ''));
   if (!token) throw new HttpError(404, 'Appareil introuvable');

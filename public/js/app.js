@@ -334,13 +334,26 @@ async function onLibrary(d) {
     }
   }
 }
+// Message d'un autre utilisateur : petite notification en bas à droite (empilées, la plus récente en bas),
+// qui disparaît seule ; survol ou toucher la garde ; × la ferme. Même en plein écran, sans gêner l'image.
 function adminMessage(d) {
   const host = overlayHost();
-  const box = h('div', { class: 'admin-msg', role: 'alertdialog', 'aria-live': 'assertive' },
-    h('b', {}, `Message de ${d.from || 'l’administrateur'}`), h('p', {}, d.text),
-    h('button', { class: 'btn btn-small f', onclick: () => box.remove() }, 'OK'));
-  host.append(box);
-  setTimeout(() => box.remove(), 20000);
+  let stack = host.querySelector(':scope > .msg-stack');
+  if (!stack) { stack = h('div', { class: 'msg-stack', 'aria-live': 'polite' }); host.append(stack); }
+  const who = String(d.from || 'Administrateur');
+  const time = new Date(d.at || Date.now()).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  let timer = 0;
+  const close = () => { clearTimeout(timer); card.classList.add('out'); setTimeout(() => card.remove(), 260); };
+  const card = h('div', { class: 'msg-note', role: 'status' },
+    h('span', { class: 'msg-av', 'aria-hidden': 'true' }, who.trim().charAt(0).toUpperCase()),
+    h('div', { class: 'msg-body' }, h('div', { class: 'msg-head' }, h('b', {}, who), h('span', { class: 'msg-time' }, time)), h('p', {}, d.text)),
+    h('button', { class: 'msg-x', type: 'button', 'aria-label': 'Fermer le message', onclick: close }, '×'));
+  const arm = (ms) => { clearTimeout(timer); timer = setTimeout(close, ms); };
+  card.addEventListener('pointerenter', () => clearTimeout(timer));
+  card.addEventListener('pointerleave', () => arm(4000));
+  stack.append(card);
+  while (stack.children.length > 4) stack.firstElementChild.remove();
+  arm(Math.min(20000, 8000 + String(d.text || '').length * 60));
 }
 export function stopEvents() { if (events) { events.close(); events = null; } }
 
