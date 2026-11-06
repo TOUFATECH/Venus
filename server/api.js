@@ -21,9 +21,10 @@ import { pipeline } from 'node:stream/promises';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
 import { saveRemoteImage, freePosterCandidates, fillMissingPosters, fillMissingBackdrops, testSources, redoFreePosters } from './posters.js';
 import { findTrailerFor } from './youtube.js';
-import { guideFor } from './guide.js';
+import { guideFor, ensureGuide } from './guide.js';
 import { checkChannels, checkState, channelHealth, FREE_TV } from './free-tv.js';
 import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue } from './arr.js';
+import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
 import { checkUpdate, runUpdate, localCommit } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
 import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAYS } from './trash.js';
@@ -850,31 +851,41 @@ router.get('/api/items/:id', async (ctx) => {
   sendJson(ctx.res, out);
 });
 
-// À venir : épisodes sortis ces derniers jours dans la médiathèque, et prochains épisodes annoncés (TMDB)
-router.get('/api/upcoming', (ctx) => {
+// À venir : films, séries, animés qui sortent autour d'aujourd'hui, sur le NAS ou pas (voir upcoming.js)
+router.get('/api/upcoming', async (ctx) => {
   const p = requireProfile(ctx);
-  const age = ageClause(p, 's');
-  const cat = ctx.url.searchParams.get('type') === 'anime' ? "s.category = 'anime'" : ctx.url.searchParams.get('type') === 'show' ? "COALESCE(s.category, 'show') = 'show'" : '1=1';
-  const day = (t) => new Date(t).toISOString().slice(0, 10);
-  const from = day(Date.now() - 14 * 86400000);
-  const pm = new Map(all('SELECT item_id, position, duration, watched FROM progress WHERE profile_id=?', p.id).map((r) => [r.item_id, r]));
-  const out = all(`SELECT e.*, s.title AS show_title, s.poster AS show_poster, s.backdrop AS show_backdrop, s.category AS cat FROM items e JOIN items s ON s.id = e.show_id
-      WHERE e.type = 'episode' AND e.release_date >= ? AND ${cat} AND ${age.sql} ORDER BY e.release_date DESC LIMIT 120`, from, ...age.args)
-    .map((e) => ({ date: e.release_date, id: e.id, showId: e.show_id, showTitle: e.show_title, season: e.season_num, episode: e.episode_num, title: e.title,
-      still: e.still, backdrop: e.show_backdrop, poster: e.show_poster, overview: e.overview, inLibrary: true, category: e.cat, progress: pm.get(e.id) ? { ...pm.get(e.id), watched: !!pm.get(e.id).watched } : null }));
-  const have = new Set(out.map((x) => `${x.showId}:${x.season}:${x.episode}`));
-  const stale = [];
-  for (const s of all(`SELECT s.* FROM items s WHERE s.type = 'show' AND s.credits IS NOT NULL AND ${cat} AND ${age.sql}`, ...age.args)) {
-    const cr = parseJson(s.credits, {});
-    if (cr.status === 'Returning Series' && (!s.ratings_at || Date.now() - s.ratings_at > 86400000)) stale.push(s.id);
-    const n = cr.nextEpisode;
-    if (!n || !n.date || n.date < from || have.has(`${s.id}:${n.season}:${n.episode}`)) continue;
-    out.push({ date: n.date, id: null, showId: s.id, showTitle: s.title, season: n.season, episode: n.episode, title: n.title || '', backdrop: s.backdrop, poster: s.poster, inLibrary: false, category: s.category });
+  const type = ctx.url.searchParams.get('type');
+  const out = type === 'movie' ? await upcomingMovies(p) : await upcomingShows(p, type === 'anime' ? 'anime' : 'show', ageClause(p, 's'));
+  // Séries du NAS dont le guide n'a jamais été lu : on le récupère en arrière-plan pour la prochaine visite
+  if (type !== 'movie') {
+    const stale = all("SELECT id FROM items WHERE type = 'show' AND (guide_at IS NULL OR guide_at < ?) LIMIT 20", Date.now() - 3 * 864e5).map((r) => r.id);
+    if (stale.length) setTimeout(() => { (async () => { for (const id of stale) await ensureGuide(id).catch(() => {}); })(); }, 50);
+    // Prochains épisodes annoncés par TMDB : séries en cours rafraîchies une fois par jour
+    const old = all("SELECT id FROM items WHERE type = 'show' AND credits LIKE '%Returning Series%' AND (ratings_at IS NULL OR ratings_at < ?) LIMIT 40", Date.now() - 864e5).map((r) => r.id);
+    if (old.length) scheduleRatings(old);
   }
-  // Prochains épisodes : on rafraîchit en arrière-plan les séries en cours (une fois par jour)
-  if (stale.length) scheduleRatings(stale.slice(0, 40));
-  out.sort((a, b) => a.date.localeCompare(b.date) || a.showTitle.localeCompare(b.showTitle));
   sendJson(ctx.res, out);
+});
+// Favori d'un titre pas encore sur le NAS (envoyé à Radarr / Sonarr pour le téléchargement), ou téléchargement direct
+const wantedBody = async (ctx) => {
+  const b = validate(await readBody(ctx.req, 16384), {
+    key: V.str({ max: 200 }), kind: V.oneOf(['movie', 'show', 'anime']), title: V.str({ max: 300 }), year: V.int({ min: 1880, max: 2200 }),
+    poster: V.str({ max: 1000 }), image: V.str({ max: 1000 }), date: V.str({ max: 20 }), tmdb: V.int({ min: 1, max: 1e9 }), tvdb: V.int({ min: 1, max: 1e9 }), anilist: V.int({ min: 1, max: 1e9 }), download: V.bool(),
+  }, { required: ['key', 'kind', 'title'] });
+  for (const f of ['poster', 'image']) if (b[f] && !/^https:\/\//i.test(b[f])) b[f] = null;
+  return b;
+};
+router.get('/api/wanted', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, wantedOf(p.id)); });
+router.post('/api/wanted', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await wantedBody(ctx);
+  sendJson(ctx.res, await addWanted(p, b, { download: b.download !== false }));
+});
+router.del('/api/wanted', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, removeWanted(p.id, String(ctx.url.searchParams.get('key') || ''))); });
+router.post('/api/wanted/grab', async (ctx) => {
+  const p = arrUser(ctx);
+  const b = await wantedBody(ctx);
+  try { sendJson(ctx.res, await grab(p, b)); } catch (e) { throw e instanceof HttpError ? e : new HttpError(e.status || 502, e.message); }
 });
 
 // Statistiques personnelles : temps passé, genres, séries préférées, mois par mois, « votre année »

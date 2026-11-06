@@ -32,7 +32,7 @@ export function saveArr(app, { url, key, profile, root, animeRoot }) {
   if (animeRoot !== undefined) setSetting(`${app}_anime_root`, String(animeRoot || '').slice(0, 500));
 }
 
-async function call(app, path, { method = 'GET', body = null, conf = null } = {}) {
+export async function call(app, path, { method = 'GET', body = null, conf = null } = {}) {
   const c = conf || arrConf(app);
   if (!c.url || !c.key) throw new HttpError(400, `${app === 'radarr' ? 'Radarr' : 'Sonarr'} n’est pas relié (Réglages → Demandes)`);
   let res;
@@ -132,4 +132,44 @@ export async function arrQueue() {
     } catch { /* service injoignable : on montre l'autre */ }
   }
   return out;
+}
+
+// ------------------------------------------------------------------ pour « À venir »
+// Ce que Radarr et Sonarr connaissent déjà (gardé 5 min) : sert à marquer « demandé » sans redemander.
+const known = { at: 0, movies: new Set(), series: new Set(), seriesNames: new Set() };
+export async function arrKnown() {
+  if (Date.now() - known.at < 300000) return known;
+  known.at = Date.now();
+  if (arrOn('radarr')) try { known.movies = new Set((await call('radarr', '/api/v3/movie') || []).map((m) => m.tmdbId)); } catch { /* */ }
+  if (arrOn('sonarr')) try {
+    const list = await call('sonarr', '/api/v3/series') || [];
+    known.series = new Set(list.map((x) => x.tvdbId));
+    known.seriesNames = new Set(list.map((x) => norm(x.title)));
+  } catch { /* */ }
+  return known;
+}
+export const forgetKnown = () => { known.at = 0; };
+
+// Ajout à partir de ce qu'on sait du titre : identifiant TMDB (film), TVDB (série), sinon recherche par nom
+export async function arrGrab({ kind, tmdb = null, tvdb = null, title = '', year = null }) {
+  if (kind === 'movie') {
+    let id = tmdb;
+    if (!id && title) {
+      const list = await call('radarr', `/api/v3/movie/lookup?term=${encodeURIComponent(title)}`) || [];
+      const hit = list.find((m) => norm(m.title) === norm(title) && (!year || Math.abs((m.year || 0) - year) <= 1)) || list[0];
+      id = hit && hit.tmdbId;
+    }
+    if (!id) throw new HttpError(404, 'Film introuvable dans Radarr');
+    const r = await arrAdd('movie', id); forgetKnown(); return r;
+  }
+  let id = tvdb;
+  if (!id && title) {
+    const list = await call('sonarr', `/api/v3/series/lookup?term=${encodeURIComponent(title)}`) || [];
+    const anime = (x) => x.seriesType === 'anime' || (x.genres || []).includes('Anime');
+    const same = list.filter((x) => norm(x.title) === norm(title) || norm(x.title).startsWith(norm(title)));
+    const hit = (kind === 'anime' ? same.find(anime) || list.find(anime) : null) || same[0] || list[0];
+    id = hit && hit.tvdbId;
+  }
+  if (!id) throw new HttpError(404, 'Série introuvable dans Sonarr');
+  const r = await arrAdd(kind === 'anime' ? 'anime' : 'show', id); forgetKnown(); return r;
 }
