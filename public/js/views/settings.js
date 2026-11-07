@@ -119,7 +119,7 @@ export async function render(main, { query } = {}) {
     ...(me.isAdmin ? [
       ['Médias', [['medias', 'Médiathèques', 'folder'], ['tv', 'TV en direct', 'live'], ['infos', 'Infos et affiches', 'spark'], ['notes', 'Notes des sites', 'heart'], ['demandes', 'Demandes', 'download']]],
       ['Foyer', [['famille', 'Profils et appareils', 'people'], ['alertes', 'Notifications', 'chat']]],
-      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['perf', 'Performances', 'spark'], ['serveur', 'Serveur', 'server'], ['sauvegardes', 'Sauvegardes', 'copy']]],
+      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['perf', 'Performances', 'spark'], ['maj', 'Mise à jour', 'download'], ['serveur', 'Serveur', 'server'], ['sauvegardes', 'Sauvegardes', 'copy']]],
     ] : []),
   ];
   const TABS = NAV.flatMap(([, items]) => items);
@@ -170,6 +170,7 @@ export async function render(main, { query } = {}) {
     famille: (a) => [profilesBox(a), devicesBox(a)], alertes: (a) => [notifyBox(a)],
     lecture: (a) => [playbackBox(a), subtitlesBox(a)], serveur: (a) => [serverBox(a)], sauvegardes: (a) => [backupBox(a)],
     perf: () => perfBoxes(),
+    maj: () => [updateBox()],
   });
   // Données dont dépend chaque rubrique ; l'état des lectures en cours et l'usage système bougent sans cesse :
   // on les arrondit pour ne pas reconstruire la rubrique à chaque seconde
@@ -186,6 +187,7 @@ export async function render(main, { query } = {}) {
     alertes: (a) => pick(a, ['settings']),
     serveur: (a) => JSON.stringify([a.settings, a.version, roughSys(a)]),
     perf: () => 'auto', // la rubrique se rafraîchit toute seule
+    maj: () => 'auto',
   });
   groups.profil = [myBox];
   groups.appareil = [deviceBox];
@@ -343,6 +345,70 @@ export async function render(main, { query } = {}) {
     load();
     const iv = setInterval(() => { if (!hwBox.isConnected) return clearInterval(iv); load(); }, 10000);
     return [hwBox, optBox, nasBox];
+  }
+
+  // ----------------------------------------------------------- mise à jour de Venus
+  function updateBox() {
+    const box = h('section', { class: 'box upd-box' }, h('h2', {}, 'Mise à jour de Venus'), h('p', { class: 'muted' }, 'Recherche de nouveautés…'));
+    const fmtD = (d) => (d ? new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : '');
+    let watching = 0;
+    // Pendant la mise à jour : on suit l'état, puis on attend que Venus revienne pour recharger la page
+    const follow = () => {
+      clearInterval(watching);
+      let lost = false;
+      watching = setInterval(async () => {
+        if (!box.isConnected) return clearInterval(watching);
+        try {
+          const r = await fetch('/api/health', { cache: 'no-store' });
+          if (!r.ok) throw new Error();
+          if (lost) { clearInterval(watching); toast('Venus est à jour : rechargement…', { type: 'success' }); setTimeout(() => location.reload(), 1200); return; }
+          const u = await api('/api/admin/update');
+          if (u.updater && u.updater.status && u.updater.status.state === 'error') { clearInterval(watching); paint(u); toast('La mise à jour a échoué : voir le journal', true); }
+          else paint(u, true);
+        } catch { lost = true; paint(null, true); }
+      }, 4000);
+    };
+    const toggle = (label, on, key, disabled = false, hint = null) => h('label', { class: 'switch' }, h('span', {}, label, hint ? h('small', { class: 'muted', style: { display: 'block' } }, hint) : null),
+      h('input', { type: 'checkbox', class: 'f', checked: on, disabled, onchange: async (e) => { try { await api('/api/admin/update/prefs', { method: 'PUT', body: { [key]: e.target.checked } }); toast('Préférence enregistrée'); } catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; } } }));
+    function paint(u, busy = false) {
+      if (!u) { box.replaceChildren(h('h2', {}, 'Mise à jour de Venus'), h('p', { class: 'upd-new' }, icon('refresh'), ' Venus redémarre avec la nouvelle version… la page se recharge toute seule.')); return; }
+      const up = u.updater || {};
+      const st = up.status && up.status.state;
+      const running = busy || up.pending || st === 'queued' || st === 'running';
+      const btn = h('button', { class: 'btn btn-play f', disabled: running, onclick: async () => {
+        if (!(await confirmSheet('Installer la mise à jour maintenant ? Venus se reconstruit puis redémarre (quelques minutes) ; les lectures en cours seront coupées.', 'Mettre à jour'))) return;
+        btn.disabled = true; btn.replaceChildren(icon('refresh'), 'Mise à jour…');
+        try {
+          const r = await api('/api/admin/update', { method: 'POST' });
+          if (r.ok) { toast(r.message, { type: 'success', duration: 8000 }); follow(); paint({ ...u, updater: { ...up, status: { state: 'queued' } } }, true); }
+          else { toast(r.message, true); paint({ ...u, command: r.command || u.command, showCmd: true }); }
+        } catch (e) { toast(e.message, true); btn.disabled = false; }
+      } }, icon(running ? 'refresh' : 'download'), running ? 'Mise à jour en cours…' : 'Mettre à jour maintenant');
+      const recheck = h('button', { class: 'btn btn-ghost btn-small f', onclick: async () => { recheck.disabled = true; try { paint(await api('/api/admin/update?force=1')); } catch (e) { toast(e.message, true); recheck.disabled = false; } } }, icon('refresh'), 'Vérifier maintenant');
+      const cmdBlock = (u.showCmd || (u.behind && !u.canSelfUpdate)) ? h('div', { class: 'upd-docker' },
+        h('p', {}, u.docker ? 'Pour que le bouton fasse tout seul la mise à jour, lancez une fois cette commande sur la machine de Venus (elle installe aussi le petit compagnon de mise à jour) :' : 'Lancez cette commande sur la machine de Venus :'),
+        h('code', { class: 'cmd' }, u.command),
+        h('button', { class: 'btn btn-small f', onclick: async () => { try { await navigator.clipboard.writeText(u.command); toast('Commande copiée'); } catch { toast('Sélectionnez la commande et copiez-la', true); } } }, icon('copy'), 'Copier la commande')) : null;
+      box.replaceChildren(
+        h('h2', {}, 'Mise à jour de Venus'),
+        h('p', {}, `Version installée : ${u.local ? u.local : 'inconnue'}${u.remote ? ` · dernière publiée : ${u.remote}` : ''}`),
+        u.error ? h('p', { class: 'error-text' }, u.error)
+          : running ? h('p', { class: 'upd-new' }, icon('refresh'), st === 'running' ? ' Mise à jour en cours : récupération, construction puis redémarrage…' : ' Mise à jour demandée : elle démarre dans quelques secondes…')
+            : st === 'error' ? h('p', { class: 'error-text' }, 'La dernière mise à jour a échoué (journal ci-dessous).')
+              : u.behind ? h('p', { class: 'upd-new' }, icon('spark'), ` ${u.behind}${u.more ? '+' : ''} nouveauté${u.behind > 1 ? 's' : ''} disponible${u.behind > 1 ? 's' : ''}`)
+                : h('p', { class: 'upd-ok' }, icon('check'), ' Venus est à jour.'),
+        u.commits && u.commits.length ? h('ul', { class: 'upd-list' }, u.commits.slice(0, 15).map((c) => h('li', {}, h('b', {}, c.title), h('small', {}, ` ${fmtD(c.date)}`)))) : null,
+        h('div', { class: 'btn-row' }, u.behind || running ? btn : null, recheck),
+        cmdBlock,
+        h('h3', { class: 'box-sub' }, 'Préférences'),
+        toggle('Me prévenir quand une nouvelle version sort', up.notify !== false, 'notify', false, 'Sur vos appareils, et sur Telegram, ntfy ou Discord s’ils sont reliés.'),
+        toggle('Mettre à jour automatiquement la nuit (vers 4 h)', !!up.night, 'night', !up.alive, up.alive ? 'Seulement s’il y a du nouveau.' : 'Disponible après avoir lancé une fois « bash update.sh » sur la machine.'),
+        h('p', { class: 'muted small' }, up.alive ? '● Compagnon de mise à jour actif : le bouton fait tout tout seul.' : u.docker ? '○ Compagnon de mise à jour absent.' : ''),
+        up.log && (st === 'error' || st === 'done' || running) ? h('details', { class: 'upd-log', open: st === 'error' }, h('summary', {}, 'Journal de la dernière mise à jour'), h('pre', {}, up.log)) : null);
+      if (running && !watching) follow();
+    }
+    api('/api/admin/update').then((u) => paint(u)).catch((e) => box.replaceChildren(h('h2', {}, 'Mise à jour de Venus'), h('p', { class: 'error-text' }, e.message)));
+    return box;
   }
 
   function playbackBox(a) {

@@ -105,3 +105,43 @@ export async function filmography(name) {
   cache.set(key, { at: Date.now(), list: out });
   return out;
 }
+
+// ------------------------------------------------------------------ photo d'une personne (acteur, réalisateur, équipe)
+// Quand la fiche n'a pas de photo : TVmaze (acteurs et équipes de séries), sinon Wikidata / Wikimedia Commons
+// (photo libre de droits). Résultat gardé 30 jours, y compris « pas de photo ».
+import { db as _db, get as _get } from './db.js';
+_db.exec('CREATE TABLE IF NOT EXISTS person_photos (name TEXT PRIMARY KEY, url TEXT, at INTEGER)');
+const FILM_JOBS = ['Q33999', 'Q10800557', 'Q10798782', 'Q2405480', 'Q2526255', 'Q28389', 'Q3282637', 'Q36834', 'Q3455803', 'Q1053574', 'Q222344', 'Q245068'];
+const pending = new Map();
+export function personPhoto(name) {
+  const key = String(name || '').trim().slice(0, 120);
+  if (!key) return Promise.resolve(null);
+  const row = _get('SELECT url, at FROM person_photos WHERE name = ?', key);
+  if (row && Date.now() - row.at < 30 * 864e5) return Promise.resolve(row.url || null);
+  if (pending.has(key)) return pending.get(key);
+  const job = (async () => {
+    let url = null;
+    try {
+      const list = await getJson(`${TVMAZE}/search/people?q=${encodeURIComponent(key)}`);
+      const hit = (list || []).find((x) => x.person && x.person.image && norm(x.person.name) === norm(key));
+      if (hit) url = hit.person.image.medium || hit.person.image.original;
+    } catch { /* */ }
+    if (!url) {
+      try {
+        const lit = JSON.stringify(key);
+        const q = `SELECT ?img WHERE { { ?p rdfs:label ${lit}@en } UNION { ?p rdfs:label ${lit}@fr } ?p wdt:P31 wd:Q5 ; wdt:P18 ?img ; wdt:P106 ?job . VALUES ?job { ${FILM_JOBS.map((j) => `wd:${j}`).join(' ')} } } LIMIT 1`;
+        const res = await fetch(`https://query.wikidata.org/sparql?format=json&query=${encodeURIComponent(q)}`, { headers: { Accept: 'application/sparql-results+json', 'User-Agent': 'Venus/1.0 (serveur multimédia personnel)' }, signal: AbortSignal.timeout(15000) });
+        if (res.ok) {
+          const d = await res.json();
+          const b = d.results && d.results.bindings && d.results.bindings[0];
+          if (b) url = `${b.img.value.replace(/^http:/, 'https:')}?width=300`;
+        }
+      } catch { /* */ }
+    }
+    run('INSERT OR REPLACE INTO person_photos(name, url, at) VALUES(?, ?, ?)', key, url, Date.now());
+    return url;
+  })().finally(() => pending.delete(key));
+  pending.set(key, job);
+  return job;
+}
+const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();

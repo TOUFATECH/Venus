@@ -8,7 +8,7 @@ import { playPath } from '../components.js';
 import { go } from '../app.js';
 
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés' };
-const FILTERS = [['all', 'Tout'], ['nas', 'Sur le NAS'], ['out', 'Pas sur le NAS'], ['fav', 'Mes favoris']];
+const FILTERS = [['all', 'Tout'], ['nas', 'Disponibles'], ['out', 'Pas disponibles'], ['fav', 'Mes favoris']];
 const pad = (n) => String(n).padStart(2, '0');
 const localDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const dayOf = (e) => (e.at ? localDay(e.at) : e.date);
@@ -94,8 +94,9 @@ export async function renderUpcoming(page, kind, tabs) {
   const badge = (e) => {
     const s = h('span', { class: 'up-badge' });
     const paint = () => {
-      const [cls, txt] = e.nas ? ['in', e.epId ? (e.seen ? 'Vu' : 'Sur le NAS') : e.kind === 'movie' ? 'Sur le NAS' : 'Série sur le NAS']
-        : e.arr ? ['arr', `Demandé · ${d.app}`] : favs.has(e.key) ? ['fav', 'Favori'] : ['out', 'Pas sur le NAS'];
+      // Deux états seulement : on peut le regarder maintenant, ou pas encore
+      const ok = e.kind === 'movie' ? !!e.nas : !!e.epId;
+      const [cls, txt] = ok ? ['in', e.seen ? 'Disponible · vu' : 'Disponible'] : ['out', 'Pas disponible'];
       s.className = `up-badge ${cls}`; s.textContent = txt;
     };
     paint(); repaint.push(paint);
@@ -155,7 +156,8 @@ export async function renderUpcoming(page, kind, tabs) {
     class: `seg-b f${k === filter ? ' on' : ''}`, role: 'radio', 'aria-checked': String(k === filter),
     onclick: () => { filter = k; try { sessionStorage.setItem(`vn_up_${kind}`, k); } catch { /* */ } paintChips(); paintBody(); },
   }, txt)));
-  const keep = (e) => (filter === 'nas' ? !!e.nas : filter === 'out' ? !e.nas : filter === 'fav' ? favs.has(e.key) : true);
+  const avail = (e) => (e.kind === 'movie' ? !!e.nas : !!e.epId);
+  const keep = (e) => (filter === 'nas' ? avail(e) : filter === 'out' ? !avail(e) : filter === 'fav' ? favs.has(e.key) : true);
   let showEarlier = false;
   function paintBody() {
     repaint.length = 0;
@@ -176,14 +178,14 @@ export async function renderUpcoming(page, kind, tabs) {
         h('div', { class: 'up-grid' }, groups.get(day).map(upCard))));
     }
     if (!shown.length) {
-      body.append(h('div', { class: 'grid-empty' }, h('p', {}, filter === 'fav' ? 'Aucun favori à venir.' : filter === 'nas' ? 'Rien sur le NAS pour ces jours-ci.' : 'Rien d’annoncé pour l’instant.'),
+      body.append(h('div', { class: 'grid-empty' }, h('p', {}, filter === 'fav' ? 'Aucun favori à venir.' : filter === 'nas' ? 'Rien de disponible pour ces jours-ci.' : 'Rien d’annoncé pour l’instant.'),
         kind === 'movie' && !d.arr && !d.tmdb ? h('p', { class: 'muted' }, 'Les sorties de films viennent de Radarr (ou de TMDB) : reliez Radarr dans Réglages → Demandes.') : null));
     }
     // Propositions (pas sur le NAS), seulement avec le filtre « Tout » ou « Pas sur le NAS »
     const sugs = (filter === 'all' || filter === 'out') && !kids ? d.suggestions : [];
     sug.hidden = !sugs.length;
     sug.replaceChildren(h('h2', { class: 'section-title' }, kind === 'movie' ? 'Films à découvrir' : kind === 'anime' ? 'Animés à découvrir' : 'Séries à découvrir',
-      h('small', {}, 'pas encore sur le NAS')), h('div', { class: 'up-sug-row' }, sugs.map(sugCard)));
+      h('small', {}, 'pas encore disponibles')), h('div', { class: 'up-sug-row' }, sugs.map(sugCard)));
   }
   // Abonnement iCal : le calendrier du téléphone affiche les épisodes et sorties qui vous concernent
   async function subscribe() {

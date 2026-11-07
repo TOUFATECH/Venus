@@ -292,7 +292,7 @@ async function renderWishes(page, tabs) {
   const wantedCard = (w) => {
     const app = w.kind === 'movie' ? 'Radarr' : 'Sonarr';
     const future = w.date && w.date > today;
-    const label = w.nas ? 'Sur le NAS' : w.error ? `${app} : ${w.error}` : w.sent ? `Demandé à ${app} : téléchargé dès sa sortie` : `En favori (reliez ${app} pour le téléchargement)`;
+    const label = w.nas ? 'Disponible' : w.error ? `${app} : ${w.error}` : w.sent ? `Demandé à ${app} : téléchargé dès sa sortie` : `En favori (reliez ${app} pour le téléchargement)`;
     const del = h('button', { class: 'btn btn-ghost btn-icon btn-mini f', 'aria-label': `Retirer ${w.title} de mes favoris`, title: 'Retirer', onclick: async () => {
       await api(`/api/wanted?key=${encodeURIComponent(w.key)}`, { method: 'DELETE' });
       wanted.splice(wanted.indexOf(w), 1); paint(); toast('Retiré de mes favoris');

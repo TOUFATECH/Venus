@@ -25,13 +25,13 @@ import { guideFor, ensureGuide } from './guide.js';
 import { checkChannels, checkState, channelHealth, FREE_TV, reportChannelFailure } from './free-tv.js';
 import { canRelay, startRelay, stopRelay, holdRelay, servePlaylistRelay, serveSegmentRelay } from './relay.js';
 import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue } from './arr.js';
-import { filmography } from './credits-free.js';
+import { filmography, personPhoto } from './credits-free.js';
 import { checkNas, nasHealth } from './nas-health.js';
 import { sendSample } from './telegram-media.js';
 import { describe as describeShare } from './netshare.js';
 import { optimizedFor, markUsed, pauseForPlayback, optStatus, runOptimize, clearAll as clearOptimized } from './optimize.js';
 import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
-import { checkUpdate, runUpdate, localCommit } from './update.js';
+import { checkUpdate, runUpdate, localCommit, updaterInfo, setUpdatePrefs } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
 import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAYS } from './trash.js';
 import { brokenFiles, weeklyReport } from './reports.js';
@@ -1054,6 +1054,14 @@ router.get('/api/people', (ctx) => {
 });
 
 // Filmographie d'une personne hors de la médiathèque (Wikidata), avec ce qui est déjà sur le NAS et les favoris
+// Photo d'une personne sans photo dans la fiche (lot de noms, réponses gardées en mémoire du serveur)
+router.get('/api/people/photos', async (ctx) => {
+  requireProfile(ctx);
+  const names = String(ctx.url.searchParams.get('names') || '').split('|').map((n) => n.trim()).filter(Boolean).slice(0, 24);
+  const out = {};
+  await Promise.all(names.map(async (n) => { out[n] = await personPhoto(n).catch(() => null); }));
+  sendJson(ctx.res, out);
+});
 router.get('/api/people/films', async (ctx) => {
   const p = requireProfile(ctx);
   const name = String(ctx.url.searchParams.get('name') || '').trim().slice(0, 120);
@@ -3025,7 +3033,12 @@ router.get('/api/admin/posters/:id/candidates', async (ctx) => {
 });
 
 // ---------------------------------------------------------------- mise à jour de Venus
-router.get('/api/admin/update', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await checkUpdate(ctx.url.searchParams.get('force') === '1')); });
+router.get('/api/admin/update', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { ...(await checkUpdate(ctx.url.searchParams.get('force') === '1')), updater: updaterInfo() }); });
+router.put('/api/admin/update/prefs', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req), { night: V.bool(), notify: V.bool() });
+  sendJson(ctx.res, setUpdatePrefs(b));
+});
 router.post('/api/admin/update', async (ctx) => {
   const me = requireAdmin(ctx);
   const r = await runUpdate();
