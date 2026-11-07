@@ -39,6 +39,8 @@ function App({ children }) {
   const viewKey = `${keyRef.current.key}#${tick}`;
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
+  // Les fenêtres ouvertes (fiche d'une personne…) se ferment quand on change de page
+  useEffect(() => { window.dispatchEvent(new Event('vn:navigate')); }, [keyRef.current.key]);
 
   const start = useCallback(async () => {
     setError(null);
