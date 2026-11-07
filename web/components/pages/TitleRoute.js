@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { legacy } from '../../lib/legacy';
 import Details from './Details';
-import LegacyMount from '../LegacyMount';
+import Player from './Player';
 
 const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
 
@@ -20,7 +20,7 @@ export default function TitleRoute({ param = 'slug' }) {
     if (playing || id) return;
     L.app.resolveParams({ slug: raw }).then((p) => setId(p.id)).catch((e) => { setError(e); L.ui.toast(e.message, true); L.app.go('/', { replace: true }); });
   }, [raw]);
-  if (playing) return <LegacyMount />;
+  if (playing) return <Player />;
   if (error) return null;
   if (!id) return <main className="with-nav" />;
   return <Details id={id} />;

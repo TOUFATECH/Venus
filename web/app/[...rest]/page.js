@@ -1,5 +1,4 @@
-// Toutes les autres adresses : fiche d'un titre, lecteur, TV, musique, photos, réglages, tableau de bord…
-// La vue correspondante de Venus est montée dans la coque React.
-import LegacyMount from '../../components/LegacyMount';
+// Toutes les autres adresses : lecteur (adresse de lecture inhabituelle) ou retour à l'accueil
+import Unknown from '../../components/pages/Unknown';
 
-export default function Page() { return <LegacyMount />; }
+export default function Page() { return <Unknown />; }
