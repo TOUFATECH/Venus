@@ -23,3 +23,9 @@ export function Avatar({ profile, cls = '' }) {
     </div>
   );
 }
+
+// QR code (adresse à scanner avec un téléphone)
+export function Qr({ text, size = 220 }) {
+  const el = legacy().ui.qrSvg(text, size);
+  return <span className="qr-host" style={{ display: 'contents' }} dangerouslySetInnerHTML={{ __html: el.outerHTML }} />;
+}
