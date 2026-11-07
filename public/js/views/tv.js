@@ -129,7 +129,7 @@ export async function render(main, { query } = {}) {
   function stopPreview() {
     if (detach) { detach(); detach = null; }
     hlsRef = null;
-    if (session) { fetch(relay ? `/api/live/${session}` : `/api/hls/${session}`, { method: 'DELETE', keepalive: true }).catch(() => {}); session = null; }
+    if (session) { fetch(relay ? `/api/live/${session}` : `/api/hls/${session}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {}); session = null; }
     relay = null; heldAt = 0;
   }
   function stopPlayback() {

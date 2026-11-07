@@ -32,7 +32,7 @@ function liveHover(el, item) {
   const stop = () => {
     clearTimeout(timer); gone = true;
     if (detach) { detach(); detach = null; }
-    if (session) { fetch(`/api/hls/${session}`, { method: 'DELETE', keepalive: true }).catch(() => {}); session = null; }
+    if (session) { fetch(`/api/hls/${session}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {}); session = null; }
     if (video) { video.remove(); video = null; }
     el.classList.remove('previewing');
   };
@@ -43,7 +43,7 @@ function liveHover(el, item) {
       try {
         const [{ api: callApi, deviceCaps }, { attachStream }] = await Promise.all([import('./api.js'), import('./live.js')]);
         const info = await callApi(`/api/play/${item.id}`, { method: 'POST', body: { caps: deviceCaps(), preview: true } });
-        if (gone) { fetch(`/api/hls/${info.sessionId}`, { method: 'DELETE' }).catch(() => {}); return; }
+        if (gone) { fetch(`/api/hls/${info.sessionId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {}); return; }
         session = info.sessionId;
         video = h('video', { class: 'pv', muted: true, playsinline: true, autoplay: true });
         video.muted = true;

@@ -1,5 +1,5 @@
 // Accueil : grande affiche + rangées. L'affiche suit la carte sélectionnée (télécommande ou souris).
-import { api, heroTrailers, deviceCaps } from '../api.js';
+import { api, auth, heroTrailers, deviceCaps } from '../api.js';
 import { trailerPlayer } from '../trailer.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, toast } from '../ui.js';
 import { row, playPath, metaLine, frameImage } from '../components.js';
@@ -61,7 +61,7 @@ export async function render(main) {
       gone = true;
       if (detach) detach();
       v.remove();
-      if (session) fetch(`/api/hls/${session}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+      if (session) fetch(`/api/hls/${session}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {});
     } };
     media = m;
     try {

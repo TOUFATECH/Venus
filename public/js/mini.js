@@ -83,11 +83,11 @@ export function startMini({ video, hls, info, id, offset = 0, subtitle = '', pos
     save();
     try { if (cur.hls) cur.hls.destroy(); } catch { /* */ }
     cur.hls = null;
-    if (cur.info.sessionId) fetch(`/api/hls/${cur.info.sessionId}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+    if (cur.info.sessionId) fetch(`/api/hls/${cur.info.sessionId}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {});
     let res;
     try { res = await api(`/api/play/${itemId}`, { method: 'POST', body: { caps: deviceCaps(), start } }); }
     catch (e) { loading = false; toast(e.message, true); return; }
-    if (mini !== me) { loading = false; if (res.sessionId) fetch(`/api/hls/${res.sessionId}`, { method: 'DELETE', keepalive: true }).catch(() => {}); return; }
+    if (mini !== me) { loading = false; if (res.sessionId) fetch(`/api/hls/${res.sessionId}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {}); return; }
     // Clips et musique : la file de lecture donne le suivant et le précédent
     const q = queueAround(res.itemId);
     if (q) { if (!res.next && q.next) res.next = { id: q.next.id, title: q.next.title, queue: true }; if (!res.prev && q.prev) res.prev = { id: q.prev.id, title: q.prev.title, queue: true }; }
@@ -116,7 +116,7 @@ export function startMini({ video, hls, info, id, offset = 0, subtitle = '', pos
   video.addEventListener('ended', onEnded);
   const timer = setInterval(() => {
     if (!video.paused) save();
-    else if (cur.info.sessionId) fetch(`/api/hls/${cur.info.sessionId}/ping`, { method: 'POST' }).catch(() => {});
+    else if (cur.info.sessionId) fetch(`/api/hls/${cur.info.sessionId}/ping`, { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {});
   }, 10000);
 
   const stop = (e) => e.stopPropagation();
@@ -192,7 +192,7 @@ export function startMini({ video, hls, info, id, offset = 0, subtitle = '', pos
       video.pause();
       video.removeAttribute('src');
       try { video.load(); } catch { /* */ }
-      if (cur.info.sessionId) fetch(`/api/hls/${cur.info.sessionId}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+      if (cur.info.sessionId) fetch(`/api/hls/${cur.info.sessionId}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {});
       el.classList.remove('on');
       el.classList.add('off');
       setTimeout(() => el.remove(), 300);
