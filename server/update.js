@@ -9,6 +9,40 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { runtime } from './env.js';
+import { config } from './config.js';
+import { getSetting, setSetting } from './db.js';
+import { notify } from './notify.js';
+
+// Compagnon de mise à jour (Docker, scripts/updater.sh) : fichiers partagés dans le dossier des données
+const REQ = path.join(config.dataDir, 'update-request');
+const STATUS = path.join(config.dataDir, 'update-status.json');
+const LOG = path.join(config.dataDir, 'update-log.txt');
+const ALIVE = path.join(config.dataDir, 'updater-alive');
+const NIGHT = path.join(config.dataDir, 'autoupdate-night');
+export function updaterInfo() {
+  let alive = false, status = null, log = null;
+  try { alive = Date.now() - fs.statSync(ALIVE).mtimeMs < 90000; } catch { /* absent */ }
+  try { status = JSON.parse(fs.readFileSync(STATUS, 'utf8')); } catch { /* */ }
+  try { log = fs.readFileSync(LOG, 'utf8').slice(-3000); } catch { /* */ }
+  return { alive, status, log, pending: fs.existsSync(REQ), night: fs.existsSync(NIGHT), notify: String(getSetting('update_notify', '1')) !== '0' };
+}
+export function setUpdatePrefs({ night, notify: n }) {
+  if (typeof night === 'boolean') { if (night) fs.writeFileSync(NIGHT, '1'); else fs.rmSync(NIGHT, { force: true }); }
+  if (typeof n === 'boolean') setSetting('update_notify', n ? '1' : '0');
+  return updaterInfo();
+}
+// Nouvelle version sortie : une notification aux administrateurs (appareils, Telegram, ntfy…), une fois par version
+export async function notifyNewVersion() {
+  if (String(getSetting('update_notify', '1')) === '0') return 'Notifications de mise à jour désactivées';
+  const u = await checkUpdate(true);
+  if (u.error) return u.error;
+  if (!u.behind || !u.remote) return 'Venus est à jour';
+  if (getSetting('update_notified', '') === u.remote) return `${u.behind} nouveauté(s), déjà signalée(s)`;
+  setSetting('update_notified', u.remote);
+  const first = u.commits[0] ? u.commits[0].title : '';
+  await notify({ title: 'Nouvelle version de Venus', body: `${u.behind} nouveauté${u.behind > 1 ? 's' : ''}${first ? ` : ${first}` : ''}. Réglages → Mise à jour pour l’installer.`, url: '/reglages?onglet=maj', tag: 'update' }, { adminOnly: true });
+  return `Notification envoyée (${u.behind} nouveauté(s))`;
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPO = process.env.VENUS_REPO || 'TOUFATECH/Venus';
@@ -38,7 +72,7 @@ export async function localCommit() {
 export async function checkUpdate(force = false) {
   if (!force && cache.data && Date.now() - cache.at < 30 * 60000) return cache.data;
   const local = await localCommit();
-  const out = { local: local ? local.slice(0, 7) : null, remote: null, behind: 0, commits: [], docker: runtime.kind === 'docker', canSelfUpdate: !!process.env.VENUS_UPDATE_CMD || (runtime.kind !== 'docker' && fs.existsSync(path.join(ROOT, '.git'))), command: UPDATE_COMMAND, checkedAt: Date.now(), error: null };
+  const out = { local: local ? local.slice(0, 7) : null, remote: null, behind: 0, commits: [], docker: runtime.kind === 'docker', canSelfUpdate: !!process.env.VENUS_UPDATE_CMD || (runtime.kind !== 'docker' && fs.existsSync(path.join(ROOT, '.git'))) || (runtime.kind === 'docker' && updaterInfo().alive), command: UPDATE_COMMAND, checkedAt: Date.now(), error: null };
   try {
     const headers = { 'User-Agent': 'Venus/1.0', Accept: 'application/vnd.github+json' };
     const r = await fetch(`https://api.github.com/repos/${REPO}/commits?sha=${encodeURIComponent(BRANCH)}&per_page=30`, { headers, signal: AbortSignal.timeout(15000) });
@@ -66,7 +100,16 @@ export async function runUpdate() {
       const r = await run('/bin/sh', ['-c', process.env.VENUS_UPDATE_CMD], { timeout: 15 * 60000 });
       return { ok: r.ok, message: r.ok ? 'Mise à jour lancée. Venus redémarre dans un instant.' : `La commande de mise à jour a échoué : ${(r.err || r.out).slice(-400)}`, log: (r.out + r.err).slice(-4000) };
     }
-    if (runtime.kind === 'docker') return { ok: false, docker: true, message: 'Sous Docker, la mise à jour se fait depuis la machine hôte.', command: UPDATE_COMMAND };
+    if (runtime.kind === 'docker') {
+      // Le compagnon fait tout : récupération, reconstruction et redémarrage de Venus
+      if (updaterInfo().alive) {
+        fs.writeFileSync(REQ, JSON.stringify({ at: Date.now() }));
+        fs.writeFileSync(STATUS, JSON.stringify({ state: 'queued', at: Date.now() }));
+        cache = { at: 0, data: null };
+        return { ok: true, queued: true, message: 'Mise à jour lancée : Venus va se reconstruire et redémarrer (quelques minutes).' };
+      }
+      return { ok: false, docker: true, message: 'Pour que ce bouton fasse tout seul la mise à jour sous Docker, lancez une fois « bash update.sh » sur la machine (il installe le compagnon de mise à jour). En attendant :', command: UPDATE_COMMAND };
+    }
     if (!fs.existsSync(path.join(ROOT, '.git'))) return { ok: false, message: 'Venus n’a pas été installé avec git : mettez à jour les fichiers à la main.' };
     const pull = await run('git', ['pull', '--ff-only'], { timeout: 5 * 60000 });
     if (!pull.ok) return { ok: false, message: `git pull a échoué : ${(pull.err || pull.out).slice(-400)}`, log: pull.out + pull.err };

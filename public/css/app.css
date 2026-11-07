@@ -3520,3 +3520,34 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
 .up-bar-right { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
 .cal-sheet { display: flex; flex-direction: column; gap: 12px; }
 .cal-sheet .input { font-size: .8rem; }
+
+/* Lecteur TV, petits écrans : la barre tient sur une ligne (flexbox), le plein écran reste toujours visible */
+.pv-bar { flex-wrap: nowrap; min-width: 0; }
+.pv-bar .pv-fs { order: 99; flex: none; margin-left: 2px; }
+.pv-livebtn { min-width: 0; flex-shrink: 1; overflow: hidden; }
+.pv-livebtn .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 560px) {
+  .pv-bar { gap: 3px; padding: 24px 8px 8px; }
+  .pv-bar .pv-seek { display: none; }
+  .pv-c { width: 34px; height: 34px; border-radius: 9px; }
+  .pv-c svg { width: 18px; height: 18px; }
+  .pv-livebtn { height: 30px; padding: 0 8px; margin-left: 2px; font-size: .74rem; }
+}
+@media (max-width: 380px) { .pv-bar .pv-stop { display: none; } }
+
+/* Fiche : affiche + informations en flexbox (les clips ont une vignette en largeur) ; en colonne sur téléphone */
+.details-top { display: flex; align-items: flex-end; gap: clamp(20px, 3vw, 44px); }
+.details-top > .details-poster { flex: 0 0 clamp(150px, 16vw, 250px); }
+.details-top > .details-poster.wide { flex-basis: clamp(220px, 28vw, 420px); }
+.details-top > .details-main { flex: 1 1 0; min-width: 0; max-width: 760px; }
+.details .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+@media (max-width: 760px) {
+  .details-top { flex-direction: column; align-items: stretch; gap: 16px; }
+  .details-top > .details-poster { flex: none; width: 132px; }
+  .details-top > .details-poster.wide { width: 100%; max-width: 420px; margin: 0; align-self: flex-start; }
+  .details-top > .details-poster { align-self: flex-start; margin: 0; }
+  .details-top > .details-main { max-width: none; }
+}
+.upd-log pre { max-height: 260px; overflow: auto; white-space: pre-wrap; font-size: .75rem; background: rgb(0 0 0 / .3); padding: 10px; border-radius: 8px; }
+.upd-box .btn-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 10px 0; }
+@media (max-width: 760px) { .up-filter { flex-wrap: wrap; overflow: visible; border-radius: 18px; } }

@@ -523,15 +523,36 @@ function backdropTrailer(d, bg, root) {
   };
 }
 
+// Photos manquantes (équipe surtout) : demandées au serveur par lots, qui les cherche sur TVmaze et Wikidata
+const photoQueue = new Map();
+let photoTimer = 0;
+function wantPhoto(name, face) {
+  if (!photoQueue.has(name)) photoQueue.set(name, []);
+  photoQueue.get(name).push(face);
+  clearTimeout(photoTimer);
+  photoTimer = setTimeout(async () => {
+    const batch = new Map(photoQueue); photoQueue.clear();
+    const names = [...batch.keys()];
+    for (let i = 0; i < names.length; i += 24) {
+      const part = names.slice(i, i + 24);
+      let r = {};
+      try { r = await api(`/api/people/photos?names=${encodeURIComponent(part.join('|'))}`); } catch { continue; }
+      for (const n of part) if (r[n]) for (const f of batch.get(n)) setFace(f, r[n]);
+    }
+  }, 60);
+}
+function setFace(face, src) {
+  if (face.querySelector('img')) return;
+  const im = h('img', { src: img(src), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+  im.addEventListener('load', () => face.classList.add('has-img'), { once: true });
+  im.addEventListener('error', () => im.remove(), { once: true });
+  face.append(im);
+}
 function personCard(p) {
   const initials = p.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('');
   const face = h('div', { class: 'face', style: { '--h': hueOf(p.name) } }, initials);
-  if (p.photo) {
-    const im = h('img', { src: img(p.photo), alt: '', loading: 'lazy' });
-    im.addEventListener('load', () => face.classList.add('has-img'), { once: true });
-    im.addEventListener('error', () => im.remove(), { once: true });
-    face.append(im);
-  }
+  if (p.photo) setFace(face, p.photo);
+  else if (!window.__VN_PREVIEW) wantPhoto(p.name, face);
   return h('button', { class: 'person f', onclick: () => openPerson(p) }, face,
     h('b', {}, p.name), p.role ? h('span', {}, p.role) : null);
 }

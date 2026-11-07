@@ -4,6 +4,7 @@ import { warmUpcoming, wantedArrivals } from './upcoming.js';
 import { runOptimize } from './optimize.js';
 import { checkNas } from './nas-health.js';
 import { pollDownloads, announceArrivals, pruneTgPosts } from './telegram-media.js';
+import { notifyNewVersion } from './update.js';
 // Une erreur imprévue dans une tâche de fond ou un flux ne doit pas éteindre tout Venus : elle est notée dans le
 // journal (Serveur → Journal) et le serveur continue. Les erreurs de démarrage, elles, arrêtent bien le processus.
 let started = false;
@@ -208,6 +209,7 @@ async function main() {
   defineTask('nas-health', { label: 'Santé du NAS', description: 'Mesure la vitesse de lecture de chaque bibliothèque et prévient si le partage est trop lent ou injoignable.', when: 'Toutes les 6 heures', every: 6 * 3600e3, firstDelay: 8 * 60e3, run: async () => { const r = await checkNas(); const bad = r.libraries.filter((x) => !x.ok); return bad.length ? `À surveiller : ${bad.map((x) => x.name).join(', ')}` : `${r.libraries.length} bibliothèque(s) en forme`; } });
   defineTask('wanted', { label: 'Favoris arrivés', description: 'Prévient chaque profil quand un favori pris dans « À venir » arrive sur le NAS.', when: 'Toutes les 20 minutes', every: 20 * 60e3, firstDelay: 5 * 60e3, run: wantedArrivals });
   defineTask('telegram', { label: 'Fiches Telegram', description: 'Envoie sur Telegram une fiche par film, série ou animé (affiche, résumé, date de sortie), mise à jour au fil du téléchargement puis de l’arrivée dans Venus.', when: 'Toutes les 2 minutes', every: 2 * 60e3, firstDelay: 90e3, run: async () => { const a = await pollDownloads(); const b = await announceArrivals(); pruneTgPosts(); return `${a} · ${b}`; } });
+  defineTask('update-check', { label: 'Nouvelle version', description: 'Regarde sur GitHub si une nouvelle version de Venus est sortie et prévient les administrateurs (appareils, Telegram…), une fois par version.', when: 'Toutes les 3 heures', every: 3 * 3600e3, firstDelay: 3 * 60e3, run: notifyNewVersion });
   defineTask('trickplay', { label: 'Vignettes de la barre de lecture', description: 'Une image toutes les 10 secondes pour chaque film, épisode et clip, montrée au survol de la barre.', every: 6 * 3600e3, firstDelay: 5 * 60e3, run: trickplayBackfill });
   setInterval(() => refreshRatings(), 6 * 3600000).unref();
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)

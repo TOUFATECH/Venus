@@ -9,13 +9,19 @@
 set -e
 cd "$(dirname "$0")"
 say() { printf '\033[1;35m▸\033[0m %s\n' "$1"; }
+# --from-app : lancé par le bouton « Mettre à jour » de Venus (compagnon de mise à jour) : on garde le réglage
+# matériel déjà fait sur la machine et on ne reconstruit que Venus.
+FROM_APP=0; [ "$1" = "--from-app" ] && FROM_APP=1
 
-if [ -d .git ]; then say "Récupération de la dernière version…"; git pull --ff-only || say "git pull impossible (modifications locales ?) : on continue avec la version présente"; fi
+if [ "$FROM_APP" = 0 ] && [ -d .git ]; then say "Récupération de la dernière version…"; git pull --ff-only || say "git pull impossible (modifications locales ?) : on continue avec la version présente"; fi
 
 DC="docker compose"; $DC version >/dev/null 2>&1 || DC="docker-compose"
 OVR=docker-compose.override.yml
 HW=docker-compose.hw.yml
 
+if [ "$FROM_APP" = 1 ] && [ -f "$HW" ]; then
+  say "Réglage matériel conservé ($HW)"
+else
 GPU_LINES=""; GPU_ENV=""; GPU_NAME="aucune (le processeur fera les conversions)"
 if [ -f "$OVR" ] && grep -Eq '/dev/dri|runtime: *nvidia|/dev/video1' "$OVR"; then
   GPU_NAME="déjà réglée dans $OVR"
@@ -59,13 +65,36 @@ fi
   fi
   true
 } > "$HW"
-
-# Fichiers utilisés par docker compose (dans .env, que docker compose lit tout seul)
-FILES="docker-compose.yml"; [ -f "$OVR" ] && FILES="$FILES:$OVR"; FILES="$FILES:$HW"
-touch .env; grep -v '^COMPOSE_FILE=' .env > .env.tmp || true; echo "COMPOSE_FILE=$FILES" >> .env.tmp; mv .env.tmp .env
-
 say "Carte graphique : $GPU_NAME"
 say "Conversions : $RAM_NAME"
+fi
+
+# Compagnon de mise à jour : il fait marcher le bouton « Mettre à jour » de Venus (Réglages → Mise à jour)
+# et, si vous l'activez, la mise à jour automatique la nuit. Il a besoin du Docker de la machine.
+UPD=docker-compose.updater.yml
+if [ "$FROM_APP" = 0 ] && [ -S /var/run/docker.sock ]; then
+  DIR="$(pwd)"
+  cat > "$UPD" <<YAML
+# Généré par update.sh : compagnon de mise à jour (bouton « Mettre à jour » de Venus)
+services:
+  venus-autoupdate:
+    image: docker:cli
+    container_name: venus-autoupdate
+    restart: unless-stopped
+    environment:
+      - VENUS_DIR=$DIR
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - $DIR:$DIR
+    working_dir: $DIR
+    entrypoint: ["/bin/sh", "$DIR/scripts/updater.sh"]
+YAML
+fi
+
+# Fichiers utilisés par docker compose (dans .env, que docker compose lit tout seul)
+FILES="docker-compose.yml"; [ -f "$OVR" ] && FILES="$FILES:$OVR"; FILES="$FILES:$HW"; [ -f "$UPD" ] && FILES="$FILES:$UPD"
+touch .env; grep -v '^COMPOSE_FILE=' .env > .env.tmp || true; echo "COMPOSE_FILE=$FILES" >> .env.tmp; mv .env.tmp .env
+
 say "Construction et redémarrage (quelques minutes)…"
-$DC up -d --build
+if [ "$FROM_APP" = 1 ]; then $DC up -d --build venus; else $DC up -d --build; fi
 say "C'est à jour. Réglages → Performances montre ce qui est activé."

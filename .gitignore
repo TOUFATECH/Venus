@@ -6,3 +6,4 @@ docker-compose.override.yml
 media/
 .env
 docker-compose.hw.yml
+docker-compose.updater.yml

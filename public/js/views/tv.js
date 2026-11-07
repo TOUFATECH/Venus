@@ -47,12 +47,12 @@ export async function render(main, { query } = {}) {
   const volIn = h('input', { class: 'pv-vol', type: 'range', min: 0, max: 100, step: 5, value: 80, 'aria-label': 'Volume', oninput: (e) => { video.volume = e.target.value / 100; if (muted && video.volume > 0) setMuted(false); paintSound(); wake(); } });
   const liveBtn = h('button', { class: 'pv-livebtn f', type: 'button', title: 'Revenir au direct', onclick: (e) => { e.stopPropagation(); goLive(); wake(); } }, h('span', { class: 'dot' }), h('span', { class: 'lbl' }, 'Direct'));
   const bar = h('div', { class: 'pv-bar' },
-    ctl('prev', 'Chaîne précédente', () => zap(-1)), playBtn, ctl('stop', 'Arrêter', () => stopPlayback()), ctl('next', 'Chaîne suivante', () => zap(1)),
-    ctl('r10', 'Reculer de 10 s', () => seekBy(-10)), ctl('f10', 'Avancer de 10 s', () => seekBy(10)), liveBtn,
+    ctl('prev', 'Chaîne précédente', () => zap(-1)), playBtn, ctl('stop', 'Arrêter', () => stopPlayback(), 'pv-stop'), ctl('next', 'Chaîne suivante', () => zap(1)),
+    ctl('r10', 'Reculer de 10 s', () => seekBy(-10), 'pv-seek'), ctl('f10', 'Avancer de 10 s', () => seekBy(10), 'pv-seek'), liveBtn,
     h('span', { class: 'pv-sp' }),
     muteBtn, volIn,
     h('button', { class: 'pv-c pv-rec f', type: 'button', title: 'Enregistrer', 'aria-label': 'Enregistrer', onclick: (e) => { e.stopPropagation(); record(); } }, h('span', { class: 'rec-dot' })),
-    ctl('fs', 'Agrandir (plein écran)', () => toggleFs()));
+    ctl('fs', 'Agrandir (plein écran)', () => toggleFs(), 'pv-fs'));
   const bigPlay = h('button', { class: 'pv-big f', type: 'button', 'aria-label': 'Lancer la chaîne', onclick: (e) => { e.stopPropagation(); if (selected) choose(selected, false); } }, icon('play'));
   const screen = h('div', { class: 'pv-screen idle', tabindex: 0, 'aria-label': 'Lecteur : espace pour pause, flèches pour le son et les chaînes, F pour agrandir' }, still, video, status, bigPlay, bar);
   let wakeT = 0, playing = false;
