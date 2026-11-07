@@ -198,7 +198,7 @@ Navigateur ──► Venus (port 8096)
 ```
 
 - **Processus séparé et surveillé** : Venus lance le serveur Next.js autonome (~20 Mo), le relance s'il s'arrête, et sert l'interface classique en attendant : il n'y a jamais d'écran vide.
-- **Tout passe par Next.js** : le menu (rail, menu en haut, dock, onglets mobiles), le démarrage (installation, connexion, profils) et le routage sont gérés par Next.js ; les pages sont des pages Next.js ou, pour celles pas encore réécrites, les vues éprouvées de Venus affichées dans Next.js (même code que l'interface classique, aucune fonction perdue).
+- **Tout passe par Next.js** : le menu (rail, menu en haut, dock, onglets mobiles), le démarrage (installation, connexion, profils), le routage et **chaque page** sont des composants Next.js. Le moteur de lecture vidéo (HLS, Chromecast, AirPlay, mini-lecteur) est un module piloté par la page Next.js du lecteur, comme on intègre video.js.
 - **Navigation Next.js** : liens préchargés, retour / avance du navigateur, adresses lisibles (`/films/inception-2010`, `/series/breaking-bad/S01E02`).
 - **Secours** : `VENUS_UI=classic` sert l'ancienne interface ; sans construction de `web/`, elle est servie automatiquement.
 
@@ -207,11 +207,14 @@ Navigateur ──► Venus (port 8096)
 | Partie | Statut |
 |---|---|
 | Coque : thèmes, 6 dispositions, rail, menu en haut, dock, onglets mobiles, badge des lectures, temps d'écran | ✅ Next.js |
-| Démarrage : installation, connexion, choix du profil, invitations | ✅ Next.js (écrans repris) |
-| Films, Séries, Animés, Clips, Ma liste (tri, filtres, affichages, chargement progressif) | ✅ Next.js |
-| Recherche (instantanée, demandes en français, titres en ligne) | ✅ Next.js |
-| Cartes (affiches, progression, vu / non vu, aperçu au survol, menu rapide) | ✅ Next.js |
-| Accueil, fiche d'un titre, lecteur, TV, À venir, réglages, tableau de bord, musique, photos, livres… | 🔄 affichées dans Next.js, réécriture en pages Next.js en cours |
+| Démarrage : installation, connexion (mot de passe, code à 6 chiffres, double authentification), « Qui regarde ? » et code PIN, invitations | ✅ Next.js |
+| Accueil, fiche d'un titre (saisons, épisodes, distribution, modifier, identifier, images) | ✅ Next.js |
+| Films, Séries, Animés, Clips, Ma liste, À venir, Mes envies, Nouveautés, Recherche | ✅ Next.js |
+| TV en direct (chaînes, guide, enregistrements), Ce soir, vote en famille, séance, télécommande | ✅ Next.js |
+| Musique, photos, livres et liseuse, collections, listes de lecture, téléchargements | ✅ Next.js |
+| Réglages (profil, appareil, thème, menu, médiathèques, assistant NAS / IPTV, Seerr, Radarr / Sonarr, notifications, sauvegardes…) | ✅ Next.js |
+| Tableau de bord, statistiques, qualité, sécurité, serveur | ✅ Next.js |
+| Lecteur vidéo (films, épisodes, clips, chaînes) | ✅ page Next.js, moteur de lecture en module |
 
 ### Développer l'interface
 
@@ -241,8 +244,8 @@ server/            API et services — Node.js ≥ 22, aucune dépendance
   metadata.js, posters.js, ratings.js, credits-free.js   affiches, notes, distribution
   update.js          vérification et installation des mises à jour
 web/               interface Next.js 16 (App Router)
-  app/               pages (Films, Séries, Animés, Clips, Ma liste, Recherche, toutes les autres adresses)
-  components/        coque, cartes, bibliothèque, recherche, pont vers les vues de Venus
+  app/               une route par page (accueil, fiches, bibliothèques, TV, musique, réglages, lecteur…)
+  components/        coque, écrans d'entrée, cartes, rangées, et toutes les pages (components/pages)
 public/            modules partagés (thèmes, API, vues), styles, icônes, service worker
 scripts/           installateurs Linux / Windows / Mac / Proxmox, test de charge, contrôle de sécurité
 ```

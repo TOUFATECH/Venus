@@ -1,3 +1,3 @@
-import LegacyMount from '../components/LegacyMount';
+import Unknown from '../components/pages/Unknown';
 
-export default function NotFound() { return <LegacyMount />; }
+export default function NotFound() { return <Unknown />; }
