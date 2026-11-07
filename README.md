@@ -7,7 +7,6 @@ Un serveur multimédia léger et auto-hébergé, avec une interface de salle de 
 
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.13-3c873a?logo=node.js&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)
-![React](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-pr%C3%AAt-2496ed?logo=docker&logoColor=white)
 ![Licence MIT](https://img.shields.io/badge/licence-MIT-f4cf9c)
 
@@ -22,7 +21,7 @@ Un serveur multimédia léger et auto-hébergé, avec une interface de salle de 
 | | |
 |---|---|
 | **Léger** | Serveur Node.js **sans aucune dépendance** (base `node:sqlite` intégrée) + ffmpeg. Démarre en quelques secondes. |
-| **Interface moderne** | **Next.js 16 / React 19**, mise en page en **flexbox**, 14 thèmes « planètes » et 6 dispositions (rail, menu en haut, dock, TV, verre…). |
+| **Interface moderne** | **Next.js 16**, mise en page en **flexbox**, 14 thèmes « planètes » et 6 dispositions (rail, menu en haut, dock, TV, verre…). |
 | **Partout** | Linux, Windows, Mac, Docker, Proxmox. Navigateur, téléphone (application installable), TV (télécommande), Chromecast, AirPlay. |
 | **Lecture intelligente** | Lecture directe quand l'appareil sait lire le fichier, simple « remux » sinon, conversion matérielle (NVIDIA, Intel, AMD, Apple, Raspberry Pi) en dernier recours. |
 | **Toute la maison** | Profils avec code PIN, comptes locaux ou **invitations par e-mail**, profils enfants (temps d'écran, âge), séances à plusieurs. |
@@ -187,7 +186,7 @@ cd /opt/Venus && git pull && bash update.sh
 
 ## Interface Next.js
 
-L'interface est une application **Next.js 16 (App Router) / React 19** dans le dossier [`web/`](web), mise en page en **flexbox**. Elle est servie **par Venus lui-même**, sur le même port : rien de plus à ouvrir ni à configurer.
+L'interface est une application **Next.js 16** (App Router) dans le dossier [`web/`](web), mise en page en **flexbox**. Elle est servie **par Venus lui-même**, sur le même port : rien de plus à ouvrir ni à configurer.
 
 ```
 Navigateur ──► Venus (port 8096)
@@ -199,7 +198,7 @@ Navigateur ──► Venus (port 8096)
 ```
 
 - **Processus séparé et surveillé** : Venus lance le serveur Next.js autonome (~20 Mo), le relance s'il s'arrête, et sert l'interface classique en attendant : il n'y a jamais d'écran vide.
-- **Une seule source de vérité** : la coque React (rail, menu en haut, dock, onglets mobiles), le démarrage (installation, connexion, profils) et le routage sont en React ; les pages sont des composants React ou, pour celles pas encore réécrites, les vues éprouvées de Venus montées dans React (même code que l'interface classique, aucune fonction perdue).
+- **Tout passe par Next.js** : le menu (rail, menu en haut, dock, onglets mobiles), le démarrage (installation, connexion, profils) et le routage sont gérés par Next.js ; les pages sont des pages Next.js ou, pour celles pas encore réécrites, les vues éprouvées de Venus affichées dans Next.js (même code que l'interface classique, aucune fonction perdue).
 - **Navigation Next.js** : liens préchargés, retour / avance du navigateur, adresses lisibles (`/films/inception-2010`, `/series/breaking-bad/S01E02`).
 - **Secours** : `VENUS_UI=classic` sert l'ancienne interface ; sans construction de `web/`, elle est servie automatiquement.
 
@@ -207,12 +206,12 @@ Navigateur ──► Venus (port 8096)
 
 | Partie | Statut |
 |---|---|
-| Coque : thèmes, 6 dispositions, rail, menu en haut, dock, onglets mobiles, badge des lectures, temps d'écran | ✅ React |
-| Démarrage : installation, connexion, choix du profil, invitations | ✅ React (écrans repris) |
-| Films, Séries, Animés, Clips, Ma liste (tri, filtres, affichages, chargement progressif) | ✅ React |
-| Recherche (instantanée, demandes en français, titres en ligne) | ✅ React |
-| Cartes (affiches, progression, vu / non vu, aperçu au survol, menu rapide) | ✅ React |
-| Accueil, fiche d'un titre, lecteur, TV, À venir, réglages, tableau de bord, musique, photos, livres… | 🔄 vues de Venus montées dans React, réécriture page par page |
+| Coque : thèmes, 6 dispositions, rail, menu en haut, dock, onglets mobiles, badge des lectures, temps d'écran | ✅ Next.js |
+| Démarrage : installation, connexion, choix du profil, invitations | ✅ Next.js (écrans repris) |
+| Films, Séries, Animés, Clips, Ma liste (tri, filtres, affichages, chargement progressif) | ✅ Next.js |
+| Recherche (instantanée, demandes en français, titres en ligne) | ✅ Next.js |
+| Cartes (affiches, progression, vu / non vu, aperçu au survol, menu rapide) | ✅ Next.js |
+| Accueil, fiche d'un titre, lecteur, TV, À venir, réglages, tableau de bord, musique, photos, livres… | 🔄 affichées dans Next.js, réécriture en pages Next.js en cours |
 
 ### Développer l'interface
 
@@ -241,7 +240,7 @@ server/            API et services — Node.js ≥ 22, aucune dépendance
   notify.js, telegram-media.js                 notifications et fiches Telegram
   metadata.js, posters.js, ratings.js, credits-free.js   affiches, notes, distribution
   update.js          vérification et installation des mises à jour
-web/               interface Next.js 16 / React 19 (App Router)
+web/               interface Next.js 16 (App Router)
   app/               pages (Films, Séries, Animés, Clips, Ma liste, Recherche, toutes les autres adresses)
   components/        coque, cartes, bibliothèque, recherche, pont vers les vues de Venus
 public/            modules partagés (thèmes, API, vues), styles, icônes, service worker
