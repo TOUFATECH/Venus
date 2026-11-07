@@ -22,7 +22,7 @@ Venus est pensé pour la maison, mais il est souvent ouvert sur Internet. Voici 
 | Cookies | `HttpOnly`, `SameSite=Strict`, `Secure` en HTTPS. Le cookie ne sert qu'aux images et vidéos (lectures) : il ne permet aucune modification. |
 | CSRF | Toute requête qui modifie quelque chose exige l'en-tête `Authorization` et une origine identique au serveur. |
 | CORS | Seuls les flux vidéo, sous-titres et images (pour le Chromecast) sont partagés ; l'API refuse les autres origines. |
-| XSS / CSP | `Content-Security-Policy` stricte (scripts du site uniquement, empreintes des scripts intégrés), échappement de tout texte affiché. |
+| XSS / CSP | `Content-Security-Policy` stricte : scripts du site uniquement, avec un nonce neuf à chaque page de l'interface Next.js (empreintes des scripts intégrés pour l'interface classique) ; échappement de tout texte affiché (React, et `textContent` dans les vues classiques). L'interface Next.js tourne dans un processus séparé, sans aucun secret, joignable seulement depuis la machine (127.0.0.1). |
 | Clickjacking | `X-Frame-Options: DENY` et `frame-ancestors 'none'`. |
 | Autres en-têtes | `nosniff`, `Referrer-Policy`, `Cross-Origin-Opener-Policy`, `Permissions-Policy`, HSTS en HTTPS ; pas de `X-Powered-By`. |
 | Validation | Chaque route vérifie type, longueur et format des champs. Corps JSON : objet uniquement, taille et profondeur limitées, clés `__proto__`/`constructor` supprimées (injection d'objets « NoSQL » et pollution de prototype). Paramètres en double refusés (HPP). |

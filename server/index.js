@@ -17,7 +17,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
-import { HttpError, sendJson, serveStatic } from './http.js';
+import { HttpError, sendJson, serveStatic, buildId } from './http.js';
+import { startNextUi, nextUiReady, nextStaticFile, proxyToNext } from './next-ui.js';
 import { authenticate, migrateTokens } from './auth.js';
 import { router, customCss } from './api.js';
 import { together } from './together.js';
@@ -35,7 +36,7 @@ import { mountAll, watchMounts } from './netshare.js';
 import { runtime } from './env.js';
 import { getSetting, setSetting, all } from './db.js';
 import fs from 'node:fs';
-import { clientIp, isSecure, inspectRequest, isBanned, applyHeaders, handlePreflight, checkCsrf, checkHpp, rateLimit, requireHttps, publicError, suspicious, logSecurity, onSecurityAlert } from './security.js';
+import { contentSecurityPolicy, clientIp, isSecure, inspectRequest, isBanned, applyHeaders, handlePreflight, checkCsrf, checkHpp, rateLimit, requireHttps, publicError, suspicious, logSecurity, onSecurityAlert } from './security.js';
 import { tlsOptions } from './tls.js';
 import { notify } from './notify.js';
 import { startSecurityAudit } from './audit.js';
@@ -86,10 +87,19 @@ async function handle(req, res) {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Méthode non autorisée');
     // CSS personnalisé (Tableau de bord → Serveur → Personnalisation)
     if (url.pathname === '/custom.css') { res.writeHead(200, { 'Content-Type': 'text/css; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end(customCss()); }
-    if (serveStatic(req, res, publicDir, url.pathname)) return;
+    // Interface Next.js : ses fichiers (noms uniques par version, gardés un an), puis ses pages
+    const next = nextUiReady();
+    if (url.pathname.startsWith('/_next/static/')) {
+      const f = nextStaticFile(url.pathname);
+      if (f && serveStatic(req, res, path.dirname(f), `/${path.basename(f)}`, { immutable: true })) return;
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end('Fichier introuvable');
+    }
+    const page = url.pathname === '/' || url.pathname === '/index.html';
+    if (!(next && page) && serveStatic(req, res, publicDir, url.pathname)) return;
     // Fichier absent (police, image, script…) : vraie erreur 404, pas la page d'accueil à sa place
     if (/\.(woff2?|ttf|otf|eot|m?js|css|map|png|jpe?g|gif|webp|avif|svg|ico|json|webmanifest|xml|txt)$/.test(url.pathname)) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end('Fichier introuvable'); }
-    // Application monopage : toute autre route renvoie l'interface
+    if (next) return await proxyToNext(req, res, { buildId: buildId(publicDir), csp: (nonce) => contentSecurityPolicy(secure, nonce) });
+    // Application monopage (ancienne interface) : toute autre route renvoie l'interface
     serveStatic(req, res, publicDir, '/index.html');
   } catch (e) {
     const { status, error } = publicError(e, ip, req, url);
@@ -118,6 +128,8 @@ async function main() {
   console.log(`[système] Venus tourne dans : ${where}${runtime.canMount ? '' : ' (montage réseau non autorisé)'}`);
   migrateTokens();
   await detectHardware();
+  // Interface Next.js lancée en parallèle (l'ancienne interface répond tant qu'elle n'est pas prête)
+  startNextUi(publicDir).catch((e) => console.error('[interface]', e.message));
   server.listen(config.port, config.host, () => {
     markStarted();
     console.log(`\n  ✨ Venus ${config.version} est prêt`);

@@ -210,10 +210,11 @@ function scriptHashes() {
     return list;
   } catch { return []; }
 }
-export function contentSecurityPolicy(secure) {
+// nonce : pages de l'interface Next.js (un nonce neuf par page, posé sur chaque script autorisé)
+export function contentSecurityPolicy(secure, nonce = null) {
   return [
     "default-src 'self'",
-    `script-src 'self' ${scriptHashes().join(' ')} https://www.gstatic.com`,
+    `script-src 'self' ${nonce ? `'nonce-${nonce}'` : scriptHashes().join(' ')} https://www.gstatic.com`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "media-src 'self' blob:",

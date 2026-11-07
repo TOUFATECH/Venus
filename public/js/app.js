@@ -7,6 +7,9 @@ import { applyTheme, currentPlanet, planet } from './themes.js';
 applyTheme();
 
 export const state = { status: null, profile: null, categories: null };
+// Interface Next.js (dossier web/) : elle possède la coque, le routage et les écrans d'accueil ;
+// ce module lui prête ses vues pas encore réécrites en React, et lui délègue la navigation.
+export const nextMode = !!window.__VN_NEXT;
 const app = document.getElementById('app');
 let current = null;
 
@@ -54,6 +57,15 @@ const ROUTES = [
   [/^\/seance$/, () => import('./views/seance.js')],
   [/^\/telecommande$/, () => import('./views/telecommande.js')],
 ];
+// Vue de l'ancienne interface pour une adresse (utilisée par l'interface Next.js)
+export function matchRoute(path) {
+  for (const [re, loader, extra] of ROUTES) {
+    const m = re.exec(path);
+    if (m) return { loader, params: typeof extra === 'function' ? extra(m) : { ...(extra || {}) }, bare: isBare(path) };
+  }
+  return null;
+}
+export { resolveParams };
 const playingHere = () => (!window.__VN_MEMORY_ROUTER && history.state && history.state.vnPlay) || null;
 const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
 // Adresses lisibles : /lecture/Breaking.Bad.S01E02, #/titre/Inception.2010 (le numéro marche aussi)
@@ -79,7 +91,7 @@ export function showSlug(kind, slug, keep = []) {
   const qs = q.toString();
   const enc = slug.split('').map((c) => (/[\p{L}\p{N}.~-]/u.test(c) ? c : encodeURIComponent(c))).join('');
   const target = `/${kind}/${enc}${qs ? `?${qs}` : ''}`;
-  if (here() !== target) history.replaceState(history.state, '', target);
+  if (here() !== target) { window.__vnSilent = target; history.replaceState(history.state, '', target); }
 }
 // Adresse « propre » donnée par le serveur (/films/Inception.2010, /series/Breaking.Bad/S01E02…),
 // seulement si l'on est toujours sur la page qui l'a demandée
@@ -92,11 +104,11 @@ export function showPath(target, keep = [], from = null, state = null) {
   for (const k of keep) if (query.get(k) != null) q.set(k, query.get(k));
   const enc = target.split('/').map((seg) => seg.split('').map((c) => (/[\p{L}\p{N}.~-]/u.test(c) ? c : encodeURIComponent(c))).join('')).join('/');
   const full = `${enc}${q.toString() ? `?${q}` : ''}`;
-  if (currentUrl() !== full || state) history.replaceState(state || history.state, '', full);
+  if (currentUrl() !== full || state) { window.__vnSilent = full; history.replaceState(state || history.state, '', full); }
 }
 // Écrans plein écran, sans navigation
 const BARE = ['/lecture', '/telecommande', '/vote'];
-const isBare = (p) => BARE.some((b) => p.startsWith(b)) || (!!playingHere() && /^\/(films|clips)\/[^/]+$/.test(p)) || /^\/(films|clips)\/[^/]+\/lecture$/.test(p) || /^\/(series|animes)\/[^/]+\/S\d+E\d+/i.test(p);
+export const isBare = (p) => BARE.some((b) => p.startsWith(b)) || (!!playingHere() && /^\/(films|clips)\/[^/]+$/.test(p)) || /^\/(films|clips)\/[^/]+\/lecture$/.test(p) || /^\/(series|animes)\/[^/]+\/S\d+E\d+/i.test(p);
 
 // Routeur : adresse (#/films…) par défaut, ou pile en mémoire quand l'adresse n'est pas modifiable (démo intégrée)
 const memory = !!window.__VN_MEMORY_ROUTER;
@@ -109,6 +121,7 @@ if (!memory && location.hash.startsWith('#/')) history.replaceState(history.stat
 const here = () => `${location.pathname}${location.search}`;
 
 export function go(path, { replace = false } = {}) {
+  if (nextMode) { ss.set('vn_nav', '1'); window.__vnSilent = null; if (path === here() && !replace) window.__VN_NEXT.refresh(); else window.__VN_NEXT.go(path, { replace }); return; }
   if (memory) { if (replace) stack[stack.length - 1] = path; else stack.push(path); notify(); return; }
   if (path === here() && !replace) { notify(); return; }
   if (replace) history.replaceState(null, '', path); else history.pushState(null, '', path);
@@ -339,12 +352,14 @@ function skeleton(path) {
 // Écran de chargement : présent dans index.html, retiré une fois le premier écran prêt
 const bootStarted = performance.now();
 let bootDone = false;
-function hideBoot() {
+export function hideBoot() {
   if (bootDone) return;
   bootDone = true;
   window.__vnBooted = true;
   const el = document.querySelector('.boot');
   if (!el) return;
+  // Interface Next.js : l'écran de chargement appartient à React, il est masqué (pas retiré)
+  if (nextMode) { setTimeout(() => { el.classList.add('out'); setTimeout(() => { el.style.display = 'none'; document.documentElement.classList.remove('first-open'); }, 500); }, Math.max(document.documentElement.classList.contains('first-open') ? 1300 - performance.now() : 0, 250)); return; }
   // Écran de chargement : seulement « VENUS », le temps de l'apercevoir (un peu plus à la première ouverture)
   const first = document.documentElement.classList.contains('first-open');
   const wait = Math.max(first ? 1300 - performance.now() : 0, first ? 500 : 250);
@@ -357,7 +372,7 @@ export function bootNote(text) { const n = document.querySelector('.boot-note');
 
 // Nouveautés en temps réel : le serveur prévient dès qu'un média est détecté
 let events = null;
-function listenEvents() {
+export function listenEvents() {
   if (events || !window.EventSource || window.__VN_MEMORY_ROUTER) return;
   events = new EventSource(`/api/events?token=${encodeURIComponent(auth.token || '')}`);
   events.addEventListener('library', (e) => { try { onLibrary(JSON.parse(e.data)); } catch { /* message illisible */ } });
@@ -505,6 +520,7 @@ if (!document.querySelector('.tint-glow')) document.body.prepend(h('div', { clas
 
 // Une erreur pendant l'affichage ne doit jamais laisser l'écran figé sur le logo
 async function route() {
+  if (nextMode) { window.__VN_NEXT.refresh(); return; }
   try { return await showRoute(); } catch (e) { startFailed(e); }
 }
 function startFailed(e) {
@@ -559,6 +575,7 @@ async function showRoute() {
 }
 
 async function showGate(kind) {
+  if (nextMode) { window.__VN_NEXT.gate(kind); return; }
   if (current) { try { current.destroy && current.destroy(); } catch { /* */ } current = null; }
   dropShell();
   app.replaceChildren();
@@ -602,8 +619,8 @@ async function startApp() {
 
 window.addEventListener('hashchange', () => { ss.set('vn_nav', '1'); route(); });
 // Retour / avance du navigateur ; et liens « #/… » encore présents (anciens favoris)
-window.addEventListener('popstate', () => { if (!memory) { if (location.hash.startsWith('#/')) history.replaceState(null, '', location.hash.slice(1)); notify(); } });
-window.addEventListener('vn:reboot', () => boot());
+window.addEventListener('popstate', () => { if (!memory && !nextMode) { if (location.hash.startsWith('#/')) history.replaceState(null, '', location.hash.slice(1)); notify(); } });
+window.addEventListener('vn:reboot', () => (nextMode ? window.__VN_NEXT.reboot() : boot()));
 // Liens internes : navigation sans recharger la page (Ctrl / Cmd + clic ouvre toujours un nouvel onglet)
 document.addEventListener('click', (e) => {
   if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -702,4 +719,4 @@ window.addEventListener('unhandledrejection', (e) => {
   if (e.reason && e.reason.message && e.reason.name !== 'AbortError') toast(e.reason.message, true);
 });
 
-boot();
+if (!nextMode) boot();

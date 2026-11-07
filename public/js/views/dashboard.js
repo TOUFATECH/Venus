@@ -85,7 +85,7 @@ export async function render(main, { query } = {}) {
         ? h('a', { class: 'set-tab f', href: k }, icon(ic), h('span', {}, label), icon('fwd'))
         : h('button', { class: `set-tab f${k === tab ? ' on' : ''}`, 'aria-current': k === tab ? 'page' : null, onclick: () => {
           tab = k; try { sessionStorage.setItem('vn_dash_tab', k); } catch { /* */ }
-          history.replaceState(history.state, '', k === 'apercu' ? '/dashboard' : `/dashboard?vue=${k}`);
+          { const u = k === 'apercu' ? '/dashboard' : `/dashboard?vue=${k}`; window.__vnSilent = u; history.replaceState(history.state, '', u); }
           show(); grid.classList.remove('swap'); void grid.offsetWidth; grid.classList.add('swap');
         } }, icon(ic), h('span', {}, label)))))));
     paneHead.replaceChildren(h('h2', {}, (TABS.find(([k]) => k === tab) || [])[1] || ''));

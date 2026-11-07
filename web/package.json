@@ -1,0 +1,16 @@
+{
+  "name": "venus-web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Interface de Venus en Next.js (React), servie par le serveur Venus",
+  "scripts": {
+    "dev": "next dev --port 3100",
+    "build": "next build",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

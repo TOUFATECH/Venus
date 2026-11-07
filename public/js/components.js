@@ -8,7 +8,7 @@ import { startMini, miniActive } from './mini.js';
 
 export function playPath(id, t) { return `/lecture/${id}${t != null ? `?t=${Math.floor(t)}` : ''}`; }
 
-function remaining(p) {
+export function remaining(p) {
   if (!p || !p.duration) return null;
   const min = Math.max(1, Math.round((p.duration - p.position) / 60));
   return `Reste ${min} min`;
@@ -188,7 +188,7 @@ function toMiniFromPreview(state, item) {
     subtitle: isEp ? `S${item.season} É${item.episode}` : item.originalTitle || '', position: () => v.currentTime || 0 });
   v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
 }
-function attachPreview(el, item) {
+export function attachPreview(el, item) {
   if (item.type === 'channel') return;
   el.addEventListener('mouseenter', () => {
     const mode = hoverMode();
@@ -342,7 +342,7 @@ export function ratingChips(ratings, links = {}) {
 }
 
 // Appui long (tactile) ou clic droit sur une affiche : menu rapide
-function attachQuick(el, item) {
+export function attachQuick(el, item) {
   let t = null, x0 = 0, y0 = 0, fired = false;
   el.addEventListener('contextmenu', (e) => { e.preventDefault(); if (!fired && !document.querySelector('.quick-menu')) quickMenu(item); });
   el.addEventListener('pointerdown', (e) => {

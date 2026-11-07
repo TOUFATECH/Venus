@@ -1,12 +1,14 @@
 {
   "name": "venus",
   "version": "1.0.0",
-  "description": "Venus — serveur multimédia personnel léger, interface façon Netflix / Apple TV",
+  "description": "Venus — serveur multimédia personnel léger et auto-hébergé, interface Next.js / React",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning server/index.js",
     "dev": "node --watch --disable-warning=ExperimentalWarning server/index.js",
+    "web:build": "cd web && npm ci --no-audit --no-fund && npm run build",
+    "web:dev": "cd web && VENUS_API=http://localhost:8096 npm run dev",
     "security": "node scripts/security-check.mjs",
     "audit": "npm audit --omit=dev && node scripts/security-check.mjs"
   },
