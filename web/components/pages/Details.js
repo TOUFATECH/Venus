@@ -11,6 +11,8 @@ import { Picture, FramePoster, FrameImage, Placeholder } from '../Card';
 import Ratings from '../Ratings';
 import { Row, ScrollRow } from '../Row';
 import { PersonCard, openPerson } from '../Person';
+import { openDownload } from './Downloads';
+import { addToSheet } from './Collections';
 
 const LIB = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips' };
 const libOf = (d) => LIB[d.category] || LIB[d.type] || '/films';
@@ -130,7 +132,7 @@ function DetailsView({ d: initial }) {
     const admin = profile.isAdmin;
     openSheet(d.title, (close) => (
       <div>
-        <button className="opt ic f" onClick={async () => { close(); const m = await L.imp('views/collections.js'); m.addToSheet(d); }}><Icon name="list" />Ajouter à une liste de lecture<small>{admin ? 'ou à une collection' : ''}</small></button>
+        <button className="opt ic f" onClick={() => { close(); addToSheet(d); }}><Icon name="list" />Ajouter à une liste de lecture<small>{admin ? 'ou à une collection' : ''}</small></button>
         {admin ? <button className="opt ic f" onClick={() => { close(); editInfo(d); }}><Icon name="edit" />Modifier les infos<small>Titre, résumé, année, genres, âge</small></button> : null}
         {admin && !isClip ? <button className="opt ic f" onClick={() => { close(); chooseImages(d); }}><Icon name="grid4" />Choisir les images<small>Affiche, fond, logo (TMDB, Trakt)</small></button> : null}
         {admin && !isClip ? <button className="opt ic f" onClick={() => { close(); fixMatch(d); }}><Icon name="search" />Corriger l’identification<small>Ce n’est pas le bon titre</small></button> : null}
@@ -190,7 +192,7 @@ function DetailsView({ d: initial }) {
                 : !isClip ? <button className="btn btn-ghost f" title="Chercher la bande-annonce sur YouTube" disabled={trSearch} onClick={findTrailer}><Icon name="film" />{trSearch ? 'Recherche…' : 'Bande-annonce'}</button> : null}
               <button className="btn btn-ghost btn-icon f" aria-label={inList ? 'Retirer de ma liste' : 'Ajouter à ma liste'} title="Ma liste" onClick={toggleList}><Icon name={inList ? 'check' : 'plus'} /></button>
               <button className={`btn btn-ghost btn-icon f${allWatched ? ' is-on' : ''}`} aria-label={allWatched ? 'Marquer comme non vu' : 'Marquer comme vu'} title={allWatched ? 'Vu : marquer comme non vu' : 'Marquer comme vu'} aria-pressed={String(!!allWatched)} onClick={toggleWatched}><Icon name="eye" /></button>
-              {!isShow && !noDownload ? <button className="btn btn-ghost btn-icon f" aria-label="Télécharger pour regarder sans réseau" title="Télécharger" onClick={async () => { const m = await L.imp('views/downloads.js'); m.openDownload({ id: d.id, title: d.title, size: d.file && d.file.size, duration: d.duration || (d.runtime ? d.runtime * 60 : 0) }); }}><Icon name="down" /></button> : null}
+              {!isShow && !noDownload ? <button className="btn btn-ghost btn-icon f" aria-label="Télécharger pour regarder sans réseau" title="Télécharger" onClick={() => openDownload({ id: d.id, title: d.title, size: d.file && d.file.size, duration: d.duration || (d.runtime ? d.runtime * 60 : 0) })}><Icon name="down" /></button> : null}
               <button className="btn btn-ghost btn-icon f" aria-label="Plus d’options" title="Ajouter à une liste, modifier…" onClick={moreOptions}><Icon name="more" /></button>
               {profile.isAdmin ? <button className="btn btn-ghost btn-icon btn-del f" aria-label={isShow ? 'Supprimer la série' : 'Supprimer la vidéo'} title={isShow ? 'Supprimer la série (fichiers effacés)' : 'Supprimer la vidéo (fichier effacé)'} onClick={delVideo}><Icon name="trash" /></button> : null}
             </div>
@@ -419,7 +421,7 @@ function Seasons({ d, setD, showDone, wantEp }) {
           <div className="sh-actions">
             {next ? <button className="btn btn-small f" onClick={() => go(components.playPath(next.id))}><Icon name="play" />{all ? 'Revoir la saison' : seen ? `Continuer É${next.episode}` : 'Lire la saison'}</button> : null}
             <button className={`btn btn-small btn-ghost f${all ? ' is-on' : ''}`} onClick={() => markSeason(cur, !all)}><Icon name="eye" />{all ? 'Saison vue' : 'Marquer la saison vue'}</button>
-            {profile.perms && profile.perms.download === false ? null : <button className="btn btn-small btn-ghost btn-icon f" aria-label="Télécharger la saison" title="Télécharger la saison" onClick={async () => { const m = await L.imp('views/downloads.js'); m.openDownload({ id: cur.id, title: seasonName(cur), season: true }); }}><Icon name="down" /></button>}
+            {profile.perms && profile.perms.download === false ? null : <button className="btn btn-small btn-ghost btn-icon f" aria-label="Télécharger la saison" title="Télécharger la saison" onClick={() => openDownload({ id: cur.id, title: seasonName(cur), season: true })}><Icon name="down" /></button>}
             {profile.isAdmin ? <button className="btn btn-small btn-ghost btn-icon btn-del f" aria-label={`Supprimer ${seasonName(cur)}`} title={`Supprimer ${seasonName(cur)} (fichiers effacés)`} onClick={() => components.deleteVideo({
               id: cur.id, what: `${seasonName(cur).toLowerCase().startsWith('saison') ? 'la ' : ''}${seasonName(cur)}`, detail: `Les ${total} épisode${total > 1 ? 's' : ''} de cette saison seront supprimés.`,
               onDone: (r) => (r.gone && d.seasons.length === 1 ? go(libOf(d), { replace: true }) : refresh()),
