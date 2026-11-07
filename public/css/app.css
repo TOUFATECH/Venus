@@ -3565,3 +3565,4 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
 /* ---------------------------------------------------------------- interface Next.js : coque en flexbox */
 .mobile-top .top-actions { display: flex; align-items: center; gap: 4px; }
 .tabs-slot { display: contents; }
+.sheet-react { display: contents; }

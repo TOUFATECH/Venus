@@ -1,4 +1,3 @@
-// Accueil (vue de Venus montée dans React, en attendant sa réécriture)
-import LegacyMount from '../components/LegacyMount';
+import Home from '../components/pages/Home';
 
-export default function Page() { return <LegacyMount />; }
+export default function Page() { return <Home />; }

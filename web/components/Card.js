@@ -30,7 +30,7 @@ export function FramePoster({ item }) {
   return <div className="gen-poster"><FrameImage id={item.id} title={item.title} /></div>;
 }
 
-export default function Card({ item: initial, poster = false, rank = null, queue = null }) {
+export default function Card({ item: initial, poster = false, rank = null, queue = null, onFocus = null, children = null }) {
   const L = legacy();
   const { ui, components, api, app, queue: Q } = L;
   const [item, setItem] = useState(initial);
@@ -97,6 +97,7 @@ export default function Card({ item: initial, poster = false, rank = null, queue
       data-bg={!isClip && !isEp && item.backdrop ? item.backdrop : undefined}
       aria-label={[title, sub, seen ? 'déjà vu' : null].filter(Boolean).join(', ')}
       onClick={open}
+      onFocus={onFocus ? () => onFocus(item) : undefined}
       onPointerDown={() => { if (!isClip) api.prefetch(`/api/items/${isEp ? item.showId : item.id}`); }}>
       <div className="shot">
         {media}
@@ -121,6 +122,7 @@ export default function Card({ item: initial, poster = false, rank = null, queue
         <b title={isClip ? title : isEp ? `Voir S${item.season}:É${item.episode} - ${item.title} dans sa saison` : `Voir la fiche de ${title}`}>{title}</b>
         {sub || sc ? <small>{sub || ''}{sc ? <span className="cap-score" title="Note moyenne des sites">{`★ ${sc.toFixed(1).replace('.', ',')}`}</span> : null}</small> : null}
       </div>
+      {children}
     </button>
   );
 }

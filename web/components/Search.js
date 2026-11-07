@@ -7,6 +7,7 @@ import { legacy } from '../lib/legacy';
 import { useVenus } from './Venus';
 import Card from './Card';
 import { Icon } from './Icon';
+import { openPerson as openPersonSheet } from './Person';
 
 const kindOf = (i) => (i.type === 'clip' ? 'clip' : i.type === 'movie' ? 'movie' : i.category === 'anime' ? 'anime' : 'show');
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -99,7 +100,7 @@ function SearchView({ all, initial, initialKind }) {
     return { scored, persons: [...persons].sort((a, b) => b[1] - a[1]).slice(0, 8), genreHits: genres.filter((g) => norm(g).startsWith(q)) };
   }, [q, kind, index, smartMod]);
 
-  const openPerson = async (name) => { pushRecent(name); const m = await L.imp('views/details.js'); m.openPerson({ name }); };
+  const openPerson = (name) => { pushRecent(name); openPersonSheet({ name }); };
   const remember = (e) => { if (e.target.closest('.card') && raw.trim()) pushRecent(raw.trim()); };
 
   let body;
