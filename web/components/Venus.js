@@ -6,7 +6,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, Su
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { loadLegacy, legacy } from '../lib/legacy';
 import Shell from './Shell';
-import LegacyMount from './LegacyMount';
+import Gate from './Gates';
 
 const Ctx = createContext(null);
 const sameUrl = (a, b) => { try { return decodeURI(a) === decodeURI(b); } catch { return a === b; } };
@@ -112,7 +112,7 @@ function App({ children }) {
   if (phase === 'gate') {
     return (
       <div id="app">
-        <LegacyMount key={`gate-${gate}`} gate={gate} done={(profile) => {
+        <Gate key={`gate-${gate}`} kind={gate} done={(profile) => {
           const { app } = legacy();
           if (profile) { app.state.profile = profile; app.refreshCategories().then(() => setPhase('ready')); } else { setPhase('loading'); start(); }
         }} />
