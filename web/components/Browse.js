@@ -1,13 +1,14 @@
 'use client';
 // Films, Séries, Animés, Clips, Ma liste — en React.
 // Barre d'outils : visionnage, tri (et son sens), filtres, affichage (affiches, vignettes, liste), au hasard.
-// Onglets « À venir » (Films, Séries, Animés) et « Mes envies » (Ma liste) : vues de Venus montées telles quelles.
+// Onglets « À venir » (Films, Séries, Animés) et « Mes envies » (Ma liste) : voir pages/Upcoming.js.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { legacy } from '../lib/legacy';
 import { useVenus } from './Venus';
 import Card, { Picture, FramePoster } from './Card';
 import { Icon } from './Icon';
+import Upcoming, { Wishes } from './pages/Upcoming';
 
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés', clip: 'Clips', mylist: 'Ma liste' };
 const PATHS = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips', mylist: '/liste' };
@@ -63,34 +64,9 @@ export default function Browse({ kind }) {
 
   return (
     <main className="with-nav page-in">
-      {upcomingTab || wishTab
-        ? <LegacyTab kind={kind} wish={wishTab} tabs={tabs} />
-        : <Library kind={kind} tabs={tabs} />}
+      {upcomingTab ? <Upcoming kind={kind} tabs={tabs} /> : wishTab ? <Wishes tabs={tabs} /> : <Library kind={kind} tabs={tabs} />}
     </main>
   );
-}
-
-// « À venir » et « Mes envies » : vues de Venus, avec les onglets React au-dessus
-function LegacyTab({ kind, wish, tabs }) {
-  const ref = useRef(null);
-  const [head, setHead] = useState(null);
-  useEffect(() => {
-    const L = legacy();
-    let dead = false;
-    const page = ref.current;
-    (async () => {
-      try {
-        if (wish) { const m = await L.imp('views/browse.js'); if (!dead) await m.renderWishes(page, null); }
-        else { const m = await L.imp('views/upcoming.js'); if (!dead) await m.renderUpcoming(page, kind, null); }
-        // Les onglets prennent place dans l'en-tête de la vue
-        const ph = page.querySelector('.page-head');
-        if (ph && !dead) { const slot = document.createElement('div'); slot.className = 'tabs-slot'; ph.append(slot); setHead(slot); }
-      } catch (e) { if (!dead) L.ui.toast(e.message, true); }
-      L.app.hideBoot();
-    })();
-    return () => { dead = true; };
-  }, [kind, wish]);
-  return <div className="page" ref={ref}>{head ? createPortal(tabs, head) : null}</div>;
 }
 
 function Library({ kind, tabs }) {
