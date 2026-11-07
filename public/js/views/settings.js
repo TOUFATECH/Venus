@@ -451,17 +451,37 @@ export async function render(main, { query } = {}) {
   function profilesBox(a) {
     return h('section', { class: 'box' },
       h('h2', {}, 'Profils'),
-      h('p', {}, 'Un profil enfant ne voit que les titres adaptés à son âge.'),
+      h('p', {}, 'Compte local : créé ici, utilisable tout de suite sur les appareils de la maison. Invitation : la personne reçoit un lien par e-mail pour préparer son compte (nom, code PIN) et connecter son appareil sans le mot de passe du foyer. Un profil enfant ne voit que les titres adaptés à son âge.'),
       a.profiles.map((p) => h('div', { class: 'list-row' },
         avatar(p, 'sm'),
         h('div', { class: 'grow' }, h('b', {}, p.name), h('span', {}, [p.isAdmin ? 'Administrateur' : null, p.maxAge != null ? `Jusqu’à ${p.maxAge} ans` : null, p.hasPin ? 'Code PIN' : null].filter(Boolean).join(', ') || 'Profil standard')),
         h('button', { class: 'btn btn-small f', onclick: () => editProfile(p, false, refresh) }, 'Modifier'))),
-      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small f', onclick: () => editProfile(null, false, refresh) }, icon('plus'), 'Ajouter un profil')),
+      h('div', { class: 'form-actions', style: { justifyContent: 'flex-start', flexWrap: 'wrap' } },
+        h('button', { class: 'btn btn-small f', onclick: () => editProfile(null, false, refresh) }, icon('plus'), 'Créer un compte local'),
+        h('button', { class: 'btn btn-small f', onclick: () => inviteSheet(null, refresh) }, icon('send'), 'Inviter par e-mail')),
+      invitesList(),
       h('label', { class: 'switch', style: { marginTop: '10px' } }, h('span', {}, 'Montrer aux enfants les titres sans classification'),
         h('input', { type: 'checkbox', class: 'f', checked: a.settings.kidsAllowUnrated, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { kidsAllowUnrated: e.target.checked } }); toast('Enregistré'); } })));
   }
 
   // Notes des sites : clés facultatives (OMDb pour IMDb / Rotten Tomatoes / Metacritic, Simkl, Trakt)
+  // Invitations en attente (lien envoyé par e-mail) : renvoyer, copier le lien, annuler
+  function invitesList() {
+    const box = h('div', { class: 'invites' });
+    api('/api/admin/invites').then((d) => {
+      const pend = d.invites.filter((i) => i.state !== 'used').slice(0, 20);
+      if (!pend.length && d.smtp) return;
+      box.replaceChildren(
+        !d.smtp ? h('p', { class: 'warn-text small' }, 'Pour envoyer les invitations par e-mail, configurez le serveur d’e-mails (Sécurité → E-mails). Sans lui, Venus vous donne le lien à transmettre vous-même.') : null,
+        pend.length ? h('h3', { class: 'box-sub' }, 'Invitations en attente') : null,
+        ...pend.map((i) => h('div', { class: 'list-row invite-row' },
+          h('div', { class: 'grow' }, h('b', {}, i.name), h('span', {}, `${i.email} · ${i.state === 'expired' ? 'lien expiré' : i.sentAt ? `envoyé le ${new Date(i.sentAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}` : i.error ? `non envoyé (${i.error})` : 'en attente'}`)),
+          h('button', { class: 'btn btn-small f', onclick: () => inviteSheet({ id: i.profileId, name: i.name, email: i.email }, refresh) }, icon('send'), 'Renvoyer'),
+          h('button', { class: 'btn btn-small btn-ghost btn-icon f', title: 'Annuler l’invitation', 'aria-label': `Annuler l’invitation de ${i.name}`, onclick: async () => { await api(`/api/admin/invites/${i.profileId}`, { method: 'DELETE' }); toast('Invitation annulée'); refresh(); } }, icon('close')))));
+    }).catch(() => {});
+    return box;
+  }
+
   function ratingsBox(a) {
     const link = (href, text) => h('a', { href, target: '_blank', rel: 'noopener', style: { textDecoration: 'underline' } }, text);
     const omdb = h('input', { class: 'input', placeholder: a.settings.omdbConfigured ? 'Clé enregistrée (laisser vide pour conserver)' : 'Clé OMDb' });
@@ -794,6 +814,36 @@ export async function render(main, { query } = {}) {
 }
 
 // ----------------------------------------------------------- dialogue : profil
+// Inviter quelqu'un par e-mail (ou renvoyer un lien) : le profil est créé, le lien part par e-mail
+function inviteSheet(existing, onDone) {
+  const err = h('p', { class: 'error-text', role: 'alert' });
+  const name = h('input', { class: 'input', maxlength: 30, required: !existing, value: existing ? existing.name : '', disabled: !!existing, autocomplete: 'off' });
+  const email = h('input', { class: 'input', type: 'email', maxlength: 200, required: true, value: existing ? existing.email || '' : '', autocomplete: 'off', placeholder: 'prenom@exemple.fr' });
+  const kind = h('select', { class: 'input' }, h('option', { value: 'std' }, 'Standard'), h('option', { value: 'kid' }, 'Enfant (moins de 12 ans)'), h('option', { value: 'teen' }, 'Ado (moins de 16 ans)'), h('option', { value: 'admin' }, 'Administrateur'));
+  const result = h('div', { class: 'invite-result' });
+  const submit = h('button', { class: 'btn btn-play f', type: 'submit' }, icon('send'), existing ? 'Renvoyer le lien' : 'Envoyer l’invitation');
+  const s = sheet(existing ? `Renvoyer l’invitation de ${existing.name}` : 'Inviter par e-mail', h('form', { onsubmit: async (e) => {
+    e.preventDefault(); err.textContent = ''; submit.disabled = true;
+    try {
+      const k = kind.value;
+      const r = await api('/api/admin/invites', { method: 'POST', body: existing ? { profileId: existing.id, email: email.value.trim() } : { name: name.value.trim(), email: email.value.trim(), isAdmin: k === 'admin', maxAge: k === 'kid' ? 11 : k === 'teen' ? 15 : null } });
+      result.replaceChildren(
+        r.sent ? h('p', { class: 'upd-ok' }, icon('check'), ` Invitation envoyée à ${email.value.trim()}.`) : h('p', { class: 'warn-text' }, `E-mail non envoyé : ${r.error}. Transmettez ce lien vous-même (valable 7 jours, une seule fois) :`),
+        h('code', { class: 'cmd' }, r.link),
+        h('button', { type: 'button', class: 'btn btn-small f', onclick: () => navigator.clipboard?.writeText(r.link).then(() => toast('Lien copié'), () => {}) }, icon('copy'), 'Copier le lien'));
+      submit.replaceChildren(icon('check'), 'Fait'); onDone && onDone();
+    } catch (e2) { err.textContent = e2.message; submit.disabled = false; }
+  } },
+  h('p', { class: 'muted' }, 'La personne reçoit un lien pour préparer son compte (nom, couleur, code PIN, langues). En l’ouvrant, son appareil est connecté directement, sans le mot de passe du foyer.'),
+  existing ? null : h('div', { class: 'field' }, h('label', {}, 'Nom'), name),
+  h('div', { class: 'field' }, h('label', {}, 'Adresse e-mail'), email),
+  existing ? null : h('div', { class: 'field' }, h('label', {}, 'Type de compte'), kind),
+  err, result,
+  h('div', { class: 'form-actions' }, submit)));
+  setTimeout(() => (existing ? email : name).focus(), 50);
+  return s;
+}
+
 function editProfile(p, self, onDone) {
   const isNew = !p;
   const nameIn = h('input', { class: 'input', value: p ? p.name : '', required: true, maxlength: 30 });

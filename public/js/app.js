@@ -589,6 +589,8 @@ async function startApp() {
     return;
   }
   setTitle();
+  // Lien d'invitation reçu par e-mail : préparation du compte, avant tout le reste
+  if (/^\/invitation\/[A-Za-z0-9_-]+$/.test(location.pathname) && state.status.setup) return showGate('invitation');
   if (!state.status.setup) return showGate('setup');
   if (!state.status.authenticated) return showGate('login');
   if (!state.status.profile) return showGate('profiles');

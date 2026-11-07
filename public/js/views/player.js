@@ -304,7 +304,7 @@ export async function render(main, { id, query }) {
 
   function stopSession(sid) {
     if (!sid) return;
-    fetch(`/api/hls/${sid}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+    fetch(`/api/hls/${sid}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {});
   }
 
   function onHlsError(Hls, data) {
@@ -809,7 +809,7 @@ export async function render(main, { id, query }) {
   }
   saveTimer = setInterval(() => {
     if (!video.paused || casting) saveProgress();
-    else if (info && info.sessionId) fetch(`/api/hls/${info.sessionId}/ping`, { method: 'POST' }).catch(() => {});
+    else if (info && info.sessionId) fetch(`/api/hls/${info.sessionId}/ping`, { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {});
   }, 10000);
   // Tableau de bord : le lecteur signale ce qu'il joue, et obéit aux commandes de l'administrateur
   const beat = (stop = false) => {

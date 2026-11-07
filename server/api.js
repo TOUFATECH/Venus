@@ -28,6 +28,7 @@ import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue } from
 import { filmography, personPhoto } from './credits-free.js';
 import { checkNas, nasHealth } from './nas-health.js';
 import { sendSample } from './telegram-media.js';
+import { createInvite, inviteFor, markUsed as markInviteUsed, listInvites, cancelInvites, baseUrl, EMAIL_RE } from './invites.js';
 import { describe as describeShare } from './netshare.js';
 import { optimizedFor, markUsed, pauseForPlayback, optStatus, runOptimize, clearAll as clearOptimized } from './optimize.js';
 import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
@@ -391,6 +392,66 @@ router.post('/api/profiles', async (ctx) => {
   sendJson(ctx.res, publicProfile(get('SELECT * FROM profiles WHERE id = ?', Number(r.lastInsertRowid))));
 });
 
+// ------------------------------------------------------------------ comptes par invitation (e-mail) — voir invites.js
+router.get('/api/admin/invites', (ctx) => {
+  requireAdmin(ctx);
+  sendJson(ctx.res, { invites: listInvites(), smtp: smtpOn(), emails: Object.fromEntries(all('SELECT id, email FROM profiles WHERE email IS NOT NULL').map((r) => [r.id, r.email])) });
+});
+router.post('/api/admin/invites', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 8192), {
+    name: V.str({ min: 1, max: 30, label: 'Nom' }), email: V.str({ max: 200, pattern: EMAIL_RE, label: 'Adresse e-mail' }),
+    isAdmin: V.bool(), maxAge: V.nullable(V.int({ min: 0, max: 21, label: 'Âge maximum' })), profileId: V.int({ min: 1 }),
+  }, { required: ['email'] });
+  checkRate('invite-send', ctx.ip);
+  let p;
+  if (b.profileId) {
+    p = get('SELECT * FROM profiles WHERE id = ?', b.profileId);
+    if (!p) throw new HttpError(404, 'Profil introuvable');
+  } else {
+    if (!b.name) throw new HttpError(400, 'Nom obligatoire');
+    if (get('SELECT 1 FROM profiles WHERE lower(email) = lower(?)', b.email)) throw new HttpError(409, 'Un compte utilise déjà cette adresse e-mail');
+    const r = run('INSERT INTO profiles(name, avatar, is_admin, max_age, email, created_at) VALUES(?, ?, ?, ?, ?, ?)',
+      b.name, Math.floor(Math.random() * 12), b.isAdmin ? 1 : 0, b.maxAge ?? null, b.email, Date.now());
+    p = get('SELECT * FROM profiles WHERE id = ?', Number(r.lastInsertRowid));
+    logSecurity('profil', ctx.ip, `${me.name} a invité « ${b.name} » (${b.email})${b.isAdmin ? ' comme administrateur' : ''}`, 'info');
+  }
+  run('UPDATE profiles SET email = ? WHERE id = ?', b.email, p.id);
+  const r = await createInvite(p, b.email, me.name, baseUrl(ctx.req));
+  sendJson(ctx.res, { profile: publicProfile(p), ...r });
+});
+router.del('/api/admin/invites/:id', (ctx) => { requireAdmin(ctx); cancelInvites(Number(ctx.params.id)); sendJson(ctx.res, { ok: true }); });
+// Page publique du lien reçu : qui est invité, par quel serveur
+router.get('/api/invite/:token', (ctx) => {
+  checkRate('invite', ctx.ip);
+  const r = inviteFor(ctx.params.token);
+  if (!r) { failRate('invite', ctx.ip, 'Lien d’invitation invalide ou expiré'); throw new HttpError(404, 'Ce lien d’invitation n’est plus valable (déjà utilisé ou expiré). Demandez-en un nouveau à l’administrateur.'); }
+  sendJson(ctx.res, { name: r.profile.name, avatar: r.profile.avatar, email: r.inv.email, by: r.inv.created_by, server: getSetting('server_name', 'Venus'), admin: !!r.profile.is_admin, kid: r.profile.max_age != null, expiresAt: r.inv.expires_at });
+});
+// La personne prépare son compte : l'appareil est connecté sur son profil, sans le mot de passe du foyer
+router.post('/api/invite/:token/accept', async (ctx) => {
+  checkRate('invite', ctx.ip);
+  const r = inviteFor(ctx.params.token);
+  if (!r) { failRate('invite', ctx.ip, 'Lien d’invitation invalide ou expiré'); throw new HttpError(404, 'Ce lien d’invitation n’est plus valable.'); }
+  const b = validate(await readBody(ctx.req, 8192), {
+    name: V.str({ min: 1, max: 30, label: 'Nom' }), avatar: V.int({ min: 0, max: 50 }), pin: V.nullable(V.pin()),
+    subtitleLang: V.str({ max: 8, pattern: /^[a-z]{2,3}(-[a-z]{2,4})?$|^none$/i }), audioLang: V.str({ max: 8, pattern: /^[a-z]{2,3}(-[a-z]{2,4})?$/i }),
+  }, { required: ['name'] });
+  const p = r.profile;
+  if (p.is_admin && !b.pin) throw new HttpError(400, 'Un compte administrateur doit avoir un code PIN (4 à 8 chiffres)');
+  resetRate('invite', ctx.ip);
+  tx(() => {
+    run('UPDATE profiles SET name = ?, avatar = COALESCE(?, avatar), pin_hash = ?, subtitle_lang = COALESCE(?, subtitle_lang), audio_lang = COALESCE(?, audio_lang) WHERE id = ?',
+      b.name, b.avatar ?? null, b.pin ? hashSecret(b.pin) : null, b.subtitleLang ?? null, b.audioLang ?? null, p.id);
+    markInviteUsed(ctx.params.token);
+  });
+  const token = issueToken(ctx, `avec l’invitation de ${r.inv.created_by}`);
+  setTokenProfile(token, p.id);
+  logSecurity('profil', ctx.ip, `« ${b.name} » a préparé son compte avec le lien d’invitation`, 'info');
+  notify({ title: 'Invitation acceptée', body: `${b.name} a préparé son compte sur Venus.`, url: '/reglages?onglet=famille', tag: 'invite' }, { adminOnly: true }).catch(() => {});
+  sendJson(ctx.res, { token, profile: publicProfile(get('SELECT * FROM profiles WHERE id = ?', p.id)) });
+});
+
 router.put('/api/profiles/:id', async (ctx) => {
   const me = requireProfile(ctx);
   const id = Number(ctx.params.id);
@@ -399,8 +460,10 @@ router.put('/api/profiles/:id', async (ctx) => {
     name: V.str({ min: 1, max: 30, label: 'Nom' }), avatar: V.int({ min: 0, max: 50 }), pin: V.nullable(V.pin()),
     subtitleLang: V.str({ max: 8, pattern: /^[a-z]{2,3}(-[a-z]{2,4})?$|^none$/i }), audioLang: V.str({ max: 8, pattern: /^[a-z]{2,3}(-[a-z]{2,4})?$/i }),
     maxAge: V.nullable(V.int({ min: 0, max: 21 })), isAdmin: V.bool(), perms: (v) => validPerms(v),
+    email: V.nullable(V.str({ max: 200, pattern: EMAIL_RE, label: 'Adresse e-mail' })),
   });
   const p = get('SELECT * FROM profiles WHERE id = ?', id);
+  if (b.email !== undefined && (me.is_admin || me.id === id)) run('UPDATE profiles SET email = ? WHERE id = ?', b.email || null, id);
   if (!p) throw new HttpError(404, 'Profil introuvable');
   if (b.name != null) run('UPDATE profiles SET name = ? WHERE id = ?', b.name, id);
   if (b.avatar != null) run('UPDATE profiles SET avatar = ? WHERE id = ?', b.avatar, id);
@@ -1488,12 +1551,12 @@ router.post('/api/items/:id/prepare', async (ctx) => {
 router.get('/api/live/:rid/pl.m3u8', (ctx) => servePlaylistRelay(ctx, ctx.params.rid));
 router.get('/api/live/:rid/seg', (ctx) => serveSegmentRelay(ctx, ctx.params.rid));
 // Pause sur une chaîne : Venus continue d'enregistrer (direct différé) ; reprise ou retour au direct
-router.del('/api/live/:rid', (ctx) => { stopRelay(ctx.params.rid); sendJson(ctx.res, { ok: true }); });
-router.post('/api/live/:rid/hold', async (ctx) => { const b = await readBody(ctx.req); sendJson(ctx.res, { ok: holdRelay(ctx.params.rid, b.on !== false) }); });
+router.del('/api/live/:rid', (ctx) => { requireDevice(ctx); stopRelay(ctx.params.rid); sendJson(ctx.res, { ok: true }); });
+router.post('/api/live/:rid/hold', async (ctx) => { requireDevice(ctx); const b = await readBody(ctx.req); sendJson(ctx.res, { ok: holdRelay(ctx.params.rid, b.on !== false) }); });
 router.get('/api/hls/:sid/index.m3u8', (ctx) => servePlaylist(ctx.res, ctx.params.sid));
 router.get('/api/hls/:sid/:seg', (ctx) => serveSegment(ctx.req, ctx.res, ctx.params.sid, ctx.params.seg));
-router.post('/api/hls/:sid/ping', (ctx) => { sessions.get(ctx.params.sid)?.touch(); sendJson(ctx.res, { ok: sessions.has(ctx.params.sid) }); });
-router.del('/api/hls/:sid', (ctx) => { sessions.get(ctx.params.sid)?.stop(); sendJson(ctx.res, { ok: true }); });
+router.post('/api/hls/:sid/ping', (ctx) => { requireDevice(ctx); sessions.get(ctx.params.sid)?.touch(); sendJson(ctx.res, { ok: sessions.has(ctx.params.sid) }); });
+router.del('/api/hls/:sid', (ctx) => { requireDevice(ctx); sessions.get(ctx.params.sid)?.stop(); sendJson(ctx.res, { ok: true }); });
 
 router.get('/api/subs/:id/:sub', async (ctx) => {
   const p = requireProfile(ctx);
