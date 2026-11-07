@@ -1,77 +1,51 @@
+<div align="center">
+
 # Venus
 
-Votre cinéma personnel : un serveur multimédia léger, auto-hébergé, avec une interface façon Netflix / Apple TV qui se pilote au doigt, à la souris ou à la télécommande.
+**Votre cinéma personnel, chez vous.**
+Un serveur multimédia léger et auto-hébergé, avec une interface de salle de cinéma qui se pilote au doigt, à la souris ou à la télécommande.
 
-- **Zéro dépendance** côté serveur : Node.js + ffmpeg, rien d’autre. Démarre en quelques secondes, environ 70 Mo de RAM au repos.
-- **Linux, Windows, Mac, Docker et Proxmox** : une commande d'installation pour chacun.
-- **S'adapte au matériel tout seul** : NVIDIA (NVENC), Intel (Quick Sync / VA-API), AMD (VA-API, AMF sous Windows), Raspberry Pi, puce Apple (VideoToolbox), sinon processeur. Chaque option est réellement testée au démarrage, et si une conversion échoue, Venus bascule automatiquement sur la suivante.
-- **Lecture intelligente** : lecture directe quand l'appareil sait lire le fichier (0 % de CPU), simple « remux » quand seul le conteneur ou l'audio pose problème, conversion matérielle sinon. La conversion se met en pause quand elle a assez d'avance : pas de film entier converti pour rien.
-- **Profils** avec code PIN, **contrôle parental** par âge, langue audio et sous-titres préférées par profil.
-- **Séries** : saisons, « Reprendre la lecture », épisode suivant automatique avec compte à rebours.
-- **Sous-titres** SRT / ASS / VTT, intégrés ou externes (`Film.fr.srt`, `Film.forced.fr.srt`), encodage Windows détecté. Les sous-titres image (PGS Blu-ray) sont incrustés à la volée.
-- **TV** : navigation complète aux flèches de la télécommande (Android TV, Fire TV, Samsung, LG…).
-- **Chromecast** et **AirPlay**, contrôles sur l'écran verrouillé du téléphone, application installable (PWA).
-- **Affiches et résumés en français** via TMDB (gratuit) et [Trakt](https://app.trakt.tv) (en secours ou en premier), ou vos propres `poster.jpg` / `fanart.jpg`. Sans aucune clé, Venus trouve quand même les affiches : site de TMDB (en français), IMP Awards et iTunes pour les films, TMDB et TVmaze pour les séries et animés. Réglages → Affiches liste les titres sans affiche ; pour chacun, plusieurs propositions ou l'adresse d'une image de votre choix (IMP Awards, MoviePosterDB, CineMaterial…).
+![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.13-3c873a?logo=node.js&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)
+![React](https://img.shields.io/badge/React-19-149eca?logo=react&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-pr%C3%AAt-2496ed?logo=docker&logoColor=white)
+![Licence MIT](https://img.shields.io/badge/licence-MIT-f4cf9c)
 
-## Notes, nouveautés, Seerr, thèmes
+[Installation](#installation) · [Mise à jour](#mise-à-jour) · [Fonctionnalités](#fonctionnalités) · [Interface Next.js](#interface-nextjs) · [Architecture](#architecture) · [Fiabilité et sécurité](#fiabilité-et-sécurité)
 
-- **Notes des sites** sur chaque fiche, et tri par note : TMDB, IMDb, Rotten Tomatoes, Metacritic (clé gratuite [OMDb](https://www.omdbapi.com/apikey.aspx)), AniList et MyAnimeList (sans clé), Simkl (identifiant gratuit), Trakt (identifiant gratuit, qui fournit aussi des affiches, fonds et logos : en secours de TMDB ou en premier, au choix). SensCritique n'a pas d'API publique : un lien vers sa page est proposé. Clés à coller dans **Réglages → Notes des sites**.
-- **Profils enfants** : menu réduit aux contenus, grandes tuiles, temps d'écran par jour (la lecture s'arrête une fois le temps écoulé), horaires autorisés.
-- **Mise à jour depuis l'interface** (Réglages → Mise à jour) : nouveautés disponibles, bouton « Mettre à jour » (sous Docker grâce au petit compagnon installé par `update.sh`), notification quand une nouvelle version sort, mise à jour automatique la nuit au choix.
-- **Au quotidien** : recherche en français (« un film drôle de moins d'1 h 30 des années 90 »), « vous regardiez X sur la télé il y a 2 min, continuer ici », piste audio et sous-titres mémorisés par série et par profil, « déjà vu par… » sur les fiches, rangée « Vous aviez laissé… » avec retrait d'un clic, films « sortis un jour comme aujourd'hui ».
-- **Lecture** : « Toujours là ? » après trois épisodes enchaînés sans geste ; silences accélérés (option) ; « scène après le générique » ; « Vous avez aimé ? » à la fin d'un film, qui nourrit les suggestions ; partage d'un extrait de quelques secondes (GIF ou MP4) ; avertissement quand le temps d'écran restant ne suffit pas pour l'épisode ; sous-titres externes décalés signalés ; page « Venus ne répond pas » avec l'heure du dernier contact.
-- **Serveur** : prévision « disque plein dans N mois », conversions évitables (par appareil, par cause, commande ffmpeg prête, page Qualité), provenance des infos et chemin du fichier dans « À propos » ; corbeille 7 jours pour les vidéos supprimées, détection des fichiers abîmés, rapport hebdomadaire à l'administrateur (notification, e-mail si réglé), journal des changements après une mise à jour.
-- **Médiathèque** (Réglages → Bibliothèques) : doublons avec la place récupérable, renommage des fichiers façon Plex / Jellyfin (« Film (Année)/Film (Année).mkv », « Série/Saison 01/… ») d'un clic ; export / import complet pour changer de machine ; « Envoyer vers la télé » depuis le téléphone ; état public `/api/health` pour la domotique ; raccourcis clavier avec `?`. Alerte quand un disque est presque plein ; sauvegardes copiées en plus vers un NAS si vous indiquez un dossier.
-- **Nouveautés** : films au cinéma et à venir, séries de la semaine, animés de la saison (TMDB et AniList), avec une grande affiche qui suit le titre survolé et sa bande-annonce.
-- **Seerr** (Overseerr / Jellyseerr) : **Réglages → Seerr**. Le plus simple : l'adresse de Seerr et un compte administrateur Seerr (e-mail, ou compte Jellyfin / Emby) ; Venus récupère la clé API tout seul, le mot de passe n'est pas gardé. On peut aussi coller la clé API.
-  - **Mes envies** : le ♡ des Nouveautés ajoute un film, une série ou un animé (sorti ou à venir) à « Ma liste → Mes envies ». Il est demandé à Seerr aussitôt : Radarr / Sonarr le téléchargent dès sa sortie, puis il passe tout seul dans « Ma liste ».
-  - **Séries suivies** : chaque nouvelle saison annoncée des séries de « Ma liste » (ou de toute la médiathèque, au choix) est demandée automatiquement. Vérification toutes les 6 heures, ou « Vérifier maintenant ».
-  - **Au nom de chacun** : reliez chaque profil à son compte Seerr, ses demandes et sa liste de suivi Seerr sont à son nom. Les profils enfants ajoutent des envies, un adulte décide.
-- **Bandes-annonces** au survol des affiches et dans le carrousel d'accueil (son activable), réglables dans **Réglages → Lecture sur cet appareil**.
-- **Guide des programmes et enregistrements** : TV → Guide (grille XMLTV : adresse lue dans la liste M3U ou l'abonnement Xtream, ou ajoutée dans « Réglages du guide »), programme en cours sur chaque chaîne, enregistrement d'un programme ou de toutes les diffusions d'une émission, avec marges avant / après ; les enregistrements se lisent dans TV → Enregistrements.
-- **TV en direct** : numéros de chaîne (ceux de la liste M3U, `tvg-chno`, sinon dans l'ordre), saisie d'un numéro au clavier, à la télécommande ou au pavé numérique du téléphone, liste des chaînes à droite pendant la lecture (touche L).
-- **Thème Verre** (inspiré de [Free My TV](https://github.com/simbasjungles/free-my-tv)) : verre dépoli, clair le jour et sombre la nuit, au lever et au coucher du soleil.
-- **Thèmes planètes** : Mercure, Vénus, Terre, Mars, Jupiter, Saturne, Uranus, Neptune, Pluton. Couleurs, nom et logo animé changent (**Réglages → Thème**).
+</div>
 
-## Musique, photos et livres
+---
 
-- **Musique** (bibliothèque « Musique », un dossier par artiste puis par album) : albums, artistes, titres, pochettes (`cover.jpg` ou intégrée), paroles synchronisées (fichier `.lrc` du même nom), lecteur en bas de l'écran qui continue pendant la navigation, file d'attente, écran verrouillé du téléphone. Les formats que le navigateur ne lit pas sont convertis à la volée.
-- **Photos** (un dossier = un album) : grille, visionneuse plein écran, glisser du doigt, diaporama, HEIC et TIFF convertis par le serveur.
-- **Livres** : EPUB lus dans Venus (fond clair, sépia ou sombre, taille du texte, table des matières, reprise au bon endroit), PDF, bandes dessinées CBZ, et **livres audio** (un dossier de fichiers audio ou un `.m4b`) avec reprise là où on s'était arrêté.
+## En bref
 
-## Sur le téléphone, le soir, et pour l'administrateur
+| | |
+|---|---|
+| **Léger** | Serveur Node.js **sans aucune dépendance** (base `node:sqlite` intégrée) + ffmpeg. Démarre en quelques secondes. |
+| **Interface moderne** | **Next.js 16 / React 19**, mise en page en **flexbox**, 14 thèmes « planètes » et 6 dispositions (rail, menu en haut, dock, TV, verre…). |
+| **Partout** | Linux, Windows, Mac, Docker, Proxmox. Navigateur, téléphone (application installable), TV (télécommande), Chromecast, AirPlay. |
+| **Lecture intelligente** | Lecture directe quand l'appareil sait lire le fichier, simple « remux » sinon, conversion matérielle (NVIDIA, Intel, AMD, Apple, Raspberry Pi) en dernier recours. |
+| **Toute la maison** | Profils avec code PIN, comptes locaux ou **invitations par e-mail**, profils enfants (temps d'écran, âge), séances à plusieurs. |
+| **Automatique** | Affiches et résumés en français, « À venir » relié à Radarr / Sonarr / Seerr, notifications Telegram, mises à jour en un clic. |
 
-- **Comme une vraie appli sur téléphone** : bandeau « Installer Venus » (sur iPhone, les étapes Safari sont expliquées), glisser vers le bas pour fermer une fenêtre, tirer vers le bas pour actualiser, appui long sur une affiche pour un menu rapide (lecture, Ma liste, vu, bande-annonce, téléchargement), verrouillage de l'écran tactile pendant la lecture (pour les enfants), et **mini-lecteur** : en quittant le lecteur, la vidéo continue en petit pendant qu'on navigue.
-- **Fluide** : transition animée de l'affiche vers la fiche, fiches préchargées au survol ou dès le début d'un appui, pages déjà vues affichées instantanément puis rafraîchies, images redimensionnées par le serveur à la taille de l'écran.
-- **Le soir** : épisode suivant façon Netflix (image, résumé, compte à rebours), **minuterie de sommeil** (fin de l'épisode ou 15 à 90 min, avec baisse douce du son), **vote en famille** depuis « Ce soir » (chacun vote sur son téléphone avec un code ou un QR code), et **Mes statistiques** : heures regardées, mois par mois, genres, séries préférées, « votre année sur Venus ».
-- **Recherche instantanée** : titres, acteurs et réalisateurs, genres, années, recherches récentes, et les titres pas encore dans Venus avec un ♡ pour les demander à Seerr.
-- **Accueil personnalisé** : « Parce que vous avez regardé… », « Avec (acteur) », pépites non vues, films de moins d'1 h 30, et les **sagas** (rangée sur la fiche de chaque film d'une saga).
-- **Téléchargements pour regarder sans réseau** : fichier d'origine, ou version légère 720p / 480p préparée par le serveur (film, épisode ou saison entière). Désactivable dans les réglages.
-- **Sous-titres en ligne** : dans le lecteur, « Chercher des sous-titres en ligne » via [OpenSubtitles](https://www.opensubtitles.com/fr/consumers) (clé API gratuite à coller dans **Réglages → Sous-titres en ligne**), les sous-titres de la même version que votre fichier sont proposés en premier. Décalage des sous-titres réglable (± 0,1 s, touches G et H), mémorisé par titre.
-- **Notifications** : « nouveau sur Venus », « votre envie est arrivée ». Sur l'appareil (notifications du navigateur, **HTTPS obligatoire**, voir plus bas), et pour toute la maison par [ntfy](https://ntfy.sh) (le plus simple, marche sans HTTPS : installez l'appli ntfy et abonnez-vous au sujet choisi), Discord ou Telegram : **Réglages → Notifications**.
-- **Sauvegardes** : profils, vus, listes, envies et réglages sauvegardés chaque nuit (les 10 dernières sont gardées, dans `DATA_DIR/backups`), téléchargeables et restaurables en un clic (Venus redémarre tout seul sous Docker ; sinon, redémarrez-le). Vos vidéos ne sont pas concernées.
-- **Qualité de la médiathèque** (Tableau de bord → Qualité) : définition, codecs, HDR, poids par heure, titres à améliorer (SD, 720p, débit trop faible), avec « Meilleure version » qui redemande le titre à Seerr (en 4K si Seerr a un serveur 4K).
-
-## Ce que Netflix ne fait pas
-
-- **Mode Ambiance** : la lumière du film déborde autour de l'image, comme une TV Ambilight, et toute l'interface prend la couleur du titre que vous survolez. Bouton dans le lecteur, ou touche A.
-- **Que regarder ce soir ?** : trois questions (votre envie, votre temps, avec qui) et Venus propose trois idées argumentées, en tenant compte de ce que vous avez déjà vu, de l'heure de fin et de l'âge des enfants.
-- **Séance à plusieurs** : regardez le même film au même moment, chacun chez soi. Pause, avance et retour sont partagés, avec réactions qui s'envolent sur l'image et discussion. Bouton « Ensemble » dans le lecteur, puis partagez le code de 4 lettres ou le QR code.
-- **Votre téléphone devient la télécommande** : menu Télécommande sur la TV, scannez le QR code. Croix directionnelle, lecture, recherche au clavier du téléphone, et « Reprendre sur la TV » en un geste.
+---
 
 ## Installation
 
-Venus s'installe sur **Linux, Windows et Mac**, avec ou sans **Docker**. Une seule commande, puis ouvrez `http://ADRESSE-DE-LA-MACHINE:8096` et laissez-vous guider : prénom, mot de passe du foyer, c'est tout.
+Une seule commande, puis ouvrez `http://ADRESSE-DE-LA-MACHINE:8096` et laissez-vous guider : prénom, mot de passe du foyer, c'est tout.
 
-| Machine | Commande | Carte graphique utilisée |
+| Machine | Commande | Carte graphique |
 |---|---|---|
 | **Linux avec Docker** (NAS, mini-PC, VPS) | `git clone https://github.com/TOUFATECH/Venus.git && cd Venus && ./install.sh` | Intel / AMD / NVIDIA / Raspberry Pi, détectée seule |
-| **Linux sans Docker** (Debian, Ubuntu, conteneur Proxmox…) | `curl -fsSL https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/install-native.sh \| sudo bash` | Intel / AMD / NVIDIA |
-| **Windows 10 / 11** | Dans PowerShell : `irm https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/install-windows.ps1 \| iex` | NVIDIA, Intel Quick Sync, AMD |
+| **Linux sans Docker** (Debian, Ubuntu, LXC…) | `curl -fsSL https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/install-native.sh \| sudo bash` | Intel / AMD / NVIDIA |
+| **Windows 10 / 11** | PowerShell : `irm https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/install-windows.ps1 \| iex` | NVIDIA, Intel Quick Sync, AMD |
 | **Mac** (puce Apple ou Intel) | `curl -fsSL https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/install-macos.sh \| bash` | Puce Apple (VideoToolbox) |
 | **Windows / Mac avec Docker Desktop** | voir plus bas | Processeur uniquement |
 
-### Linux avec Docker
+> L'interface Next.js est construite pendant l'installation (Docker, Linux, Mac). Si ce n'est pas possible (pas d'accès à npm, installation Windows), Venus sert automatiquement son **interface classique** : tout fonctionne de la même façon.
+
+<details>
+<summary><b>Linux avec Docker</b></summary>
 
 ```bash
 git clone https://github.com/TOUFATECH/Venus.git
@@ -79,25 +53,26 @@ cd Venus
 ./install.sh
 ```
 
-Le script demande le dossier de vos films et celui de vos séries (laissez vide si tout est sur un NAS), détecte votre carte graphique, puis démarre Venus. Sans Docker sur la machine, il propose de l'installer ou d'installer Venus directement. `./install.sh --docker` ou `./install.sh --native` forcent un mode.
-
-Mise à jour : `cd Venus && bash update.sh` (récupère la dernière version, active la carte graphique et les conversions en mémoire si la machine le permet, puis redémarre)
+Le script demande le dossier de vos films et celui de vos séries (laissez vide si tout est sur un NAS), détecte votre carte graphique et la mémoire disponible, puis construit et démarre Venus. Sans Docker sur la machine, il propose de l'installer ou d'installer Venus directement. `./install.sh --docker` ou `./install.sh --native` forcent un mode.
 
 À la main : modifiez les chemins dans `docker-compose.yml`, ajoutez votre GPU si besoin (voir `docker-compose.override.example.yml`), puis `docker compose up -d --build`.
+</details>
 
-### Linux sans Docker
+<details>
+<summary><b>Linux sans Docker</b></summary>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/install-native.sh | sudo bash
 ```
 
-Installe Node.js (version officielle), ffmpeg de Jellyfin (toutes les accélérations matérielles), les outils SMB / NFS, puis un service `venus` qui démarre avec la machine. Code dans `/opt/venus`, réglages dans `/etc/venus/venus.env`, données dans `/var/lib/venus`.
+Installe Node.js (version officielle), ffmpeg de Jellyfin (toutes les accélérations matérielles), les outils SMB / NFS, construit l'interface, puis crée un service `venus` qui démarre avec la machine. Code dans `/opt/venus`, réglages dans `/etc/venus/venus.env`, données dans `/var/lib/venus`.
 
-- Mise à jour : relancez la même commande (vos réglages sont conservés)
 - Journal : `journalctl -u venus -f`
 - Désinstaller : `sudo bash /opt/venus/scripts/install-native.sh uninstall`
+</details>
 
-### Windows
+<details>
+<summary><b>Windows</b></summary>
 
 Ouvrez **PowerShell** (menu Démarrer → tapez PowerShell) et collez :
 
@@ -105,28 +80,30 @@ Ouvrez **PowerShell** (menu Démarrer → tapez PowerShell) et collez :
 irm https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/install-windows.ps1 | iex
 ```
 
-Windows demande l'autorisation administrateur, puis le script télécharge Node.js et ffmpeg (versions portables, rien d'autre n'est modifié sur le PC), demande vos dossiers de vidéos, ouvre le port 8096 dans le pare-feu pour le réseau privé, et lance Venus **au démarrage du PC, même sans session ouverte**. Tout est rangé dans `C:\ProgramData\Venus`.
+Le script télécharge Node.js et ffmpeg (versions portables, rien d'autre n'est modifié sur le PC), demande vos dossiers de vidéos, ouvre le port 8096 pour le réseau privé, et lance Venus **au démarrage du PC, même sans session ouverte**. Tout est rangé dans `C:\ProgramData\Venus`.
 
-- Mise à jour : relancez la même commande
 - Journal : `C:\ProgramData\Venus\venus.log`
 - Réglages : `C:\ProgramData\Venus\venus.conf`, puis relancez la commande
 - Désinstaller : `$env:VENUS_ACTION='uninstall'; irm https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/install-windows.ps1 | iex`
 
-Si la TV ou le téléphone ne voient pas Venus, vérifiez que votre Wi-Fi est en profil **Privé** (Paramètres → Réseau et Internet). Les partages réseau (NAS, autre PC) s'ajoutent dans Venus avec leur adresse `\\NAS\Videos`.
+Si la TV ou le téléphone ne voient pas Venus, vérifiez que votre Wi-Fi est en profil **Privé**.
+</details>
 
-### Mac
+<details>
+<summary><b>Mac</b></summary>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/install-macos.sh | bash
 ```
 
-Nécessite [Homebrew](https://brew.sh). Installe Node.js et ffmpeg, puis lance Venus à chaque ouverture de session. La conversion vidéo utilise la puce du Mac (VideoToolbox). Données dans `~/Library/Application Support/Venus`, journal dans `~/Library/Logs/Venus.log`.
+Nécessite [Homebrew](https://brew.sh). Installe Node.js et ffmpeg, construit l'interface, puis lance Venus à chaque ouverture de session. Données dans `~/Library/Application Support/Venus`, journal dans `~/Library/Logs/Venus.log`.
 
-- Mise à jour : relancez la même commande
 - Désinstaller : `bash ~/Library/Application\ Support/Venus/app/scripts/install-macos.sh uninstall`
-- Vidéos sur un disque externe ou dans Documents : Réglages Système → Confidentialité et sécurité → Accès complet au disque → ajoutez `node` (le chemin est affiché à la fin de l'installation).
+- Vidéos sur un disque externe : Réglages Système → Confidentialité et sécurité → Accès complet au disque → ajoutez `node`.
+</details>
 
-### Windows ou Mac avec Docker Desktop
+<details>
+<summary><b>Windows ou Mac avec Docker Desktop</b></summary>
 
 ```bash
 git clone https://github.com/TOUFATECH/Venus.git
@@ -135,11 +112,13 @@ cp .env.example .env        # puis indiquez vos dossiers dans .env (Windows : C:
 docker compose -f docker-compose.desktop.yml up -d --build
 ```
 
-Docker Desktop fait tourner Venus dans une machine virtuelle : la carte graphique n'est pas accessible (conversion au processeur) et les NAS ne sont trouvés automatiquement que si `LAN_SUBNET` est renseigné dans `.env`. Pour profiter de la carte graphique, préférez l'installation sans Docker ci-dessus. Sur Mac, `./install.sh --docker` fait tout cela pour vous.
+Docker Desktop fait tourner Venus dans une machine virtuelle : la carte graphique n'est pas accessible et les NAS ne sont trouvés automatiquement que si `LAN_SUBNET` est renseigné dans `.env`.
+</details>
 
-### Proxmox (conteneur LXC)
+<details>
+<summary><b>Proxmox (conteneur LXC)</b></summary>
 
-Venus fonctionne très bien dans un conteneur LXC Debian ou Ubuntu, avec la méthode « Linux sans Docker » (la plus légère) ou « Linux avec Docker ». Deux réglages se font **sur l'hôte Proxmox** (shell du nœud, pas celui du conteneur), avec le script fourni. Remplacez `7700` par le numéro de votre conteneur :
+Venus fonctionne très bien dans un conteneur LXC Debian ou Ubuntu. Deux réglages se font **sur l'hôte Proxmox** (remplacez `7700` par le numéro du conteneur) :
 
 ```bash
 # Carte graphique Intel / AMD → conversion vidéo accélérée
@@ -149,54 +128,153 @@ bash <(curl -fsSL https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts
 bash <(curl -fsSL https://raw.githubusercontent.com/TOUFATECH/Venus/main/scripts/proxmox-host.sh) nas 7700
 ```
 
-- `gpu` transmet `/dev/dri/renderD128` au conteneur avec les bons droits (Proxmox 8.1 et plus : `devN` ; versions antérieures : règles `lxc.cgroup2`). Avec Docker dans le conteneur, relancez ensuite `./install.sh --docker` dans le conteneur pour donner la carte à Venus.
-- `nas` est nécessaire pour un conteneur **non privilégié** (le cas par défaut) : Proxmox lui interdit de monter lui-même un partage réseau. Le script monte le partage sur l'hôte (`/etc/fstab`, remonté au démarrage), le transmet au conteneur dans `/media/<nom>`, et il suffit de l'ajouter dans Venus comme « Dossier de ce serveur ».
-- Conteneur **privilégié** : `… proxmox-host.sh mount 7700` autorise le conteneur à monter lui-même les partages, et l'assistant « Partage réseau » de Venus fonctionne directement.
+- `gpu` transmet `/dev/dri/renderD128` avec les bons droits.
+- `nas` est nécessaire pour un conteneur **non privilégié** (le cas par défaut), qui n'a pas le droit de monter un partage lui-même.
+- Conteneur **privilégié** : `… proxmox-host.sh mount 7700` suffit, l'assistant « Partage réseau » de Venus fonctionne ensuite directement.
 
-Venus détecte tout seul qu'il tourne dans un LXC et affiche ces commandes dans **Réglages** quand la carte graphique ou les partages ne sont pas accessibles.
+Venus détecte qu'il tourne dans un LXC et affiche ces commandes dans **Réglages** quand c'est utile.
+</details>
+
+## Mise à jour
+
+**Depuis l'application** : Réglages → **Mise à jour** → « Mettre à jour maintenant ». Venus prévient (notification, Telegram) quand une nouvelle version sort, et peut se mettre à jour tout seul la nuit.
+
+**En ligne de commande** (Docker) :
+
+```bash
+cd /opt/Venus && git pull && bash update.sh
+```
+
+`update.sh` récupère la dernière version, reconstruit l'image (serveur **et** interface Next.js), active la carte graphique et les conversions en mémoire si la machine le permet, installe le petit compagnon qui rend le bouton « Mettre à jour » autonome, puis redémarre. Sans Docker, relancez simplement la commande d'installation (vos réglages sont conservés) ; le bouton de l'application reconstruit aussi l'interface.
+
+---
+
+## Fonctionnalités
+
+### Regarder
+
+- **Lecture intelligente** : lecture directe (0 % de processeur) quand l'appareil sait lire le fichier, « remux » quand seul le conteneur ou le son posent problème, conversion matérielle sinon. La conversion se met en pause quand elle a assez d'avance.
+- **Copies optimisées** préparées la nuit ou quand la carte graphique est libre (H.264 + AAC) pour les appareils qui convertiraient sinon ; conversions en mémoire vive quand la machine en a assez.
+- **Séries** : saisons, « Reprendre », épisode suivant avec compte à rebours, « Toujours là ? », minuterie de sommeil.
+- **Sous-titres** SRT / ASS / VTT / PGS, intégrés ou externes, recherche en ligne (OpenSubtitles), décalage réglable.
+- **Mini-lecteur** qui continue pendant la navigation, mode **Ambiance** (la lumière du film déborde autour de l'image), partage d'un extrait (GIF ou MP4).
+- **TV en direct** (IPTV M3U / Xtream) avec guide des programmes, numéros de chaîne et **enregistrements**.
+- **Musique** (paroles synchronisées), **photos** (diaporama, HEIC), **livres** (EPUB, PDF, BD, livres audio).
+
+### Trouver
+
+- **Films, Séries, Animés, Clips** : tri (date d'ajout, sortie, note, popularité, durée…), filtres (genres, années, note, classification, qualité, studios), affiches / vignettes / liste.
+- **À venir** : sorties et épisodes jour par jour, **Disponible** ou **Pas disponible** sur le NAS, suggestions de titres absents ; le ♡ met en favori **et** lance le téléchargement (Radarr / Sonarr), calendrier à s'abonner (iCal).
+- **Recherche instantanée** en français : « un film drôle de moins d'1 h 30 des années 90 », acteurs, genres, et titres pas encore dans Venus.
+- **Fiches complètes** : distribution et équipe **avec leurs photos**, filmographie de chaque acteur, notes des sites (IMDb, Rotten Tomatoes, Metacritic, AniList…), emplacement du fichier sur le NAS.
+- **Survol** : contour lumineux animé de l'affiche, bande-annonce, fiche préchargée pour s'ouvrir instantanément.
+
+### Toute la maison
+
+- **Comptes** : l'administrateur crée des **comptes locaux** ou **invite par e-mail** (lien personnel, valable 7 jours).
+- **Profils** avec code PIN, langues préférées, **profils enfants** (menu simplifié, temps d'écran, horaires, âge).
+- **Séance à plusieurs** (chacun chez soi, en même temps), **vote en famille** pour choisir le film, **téléphone-télécommande** par QR code.
+- **Notifications** : Web Push, ntfy, Discord, et **Telegram avec une fiche par nouveauté** (affiche, résumé, date de sortie, « en cours de téléchargement » puis « disponible »).
+
+### Administrer
+
+- **Tableau de bord** : lectures en cours, appareils, tâches planifiées, journal, **santé du NAS**, performances (GPU, mémoire, copies optimisées).
+- **Seerr, Radarr, Sonarr** : envies, séries suivies, nouvelles saisons demandées automatiquement.
+- **Médiathèque** : doublons, renommage façon Plex / Jellyfin, corbeille 7 jours, qualité (4K, HDR, débits), sauvegardes nocturnes restaurables.
+- **API et webhooks** (`X-Api-Key`, Home Assistant, n8n…), CSS personnalisé, message d'accueil.
+
+---
+
+## Interface Next.js
+
+L'interface est une application **Next.js 16 (App Router) / React 19** dans le dossier [`web/`](web), mise en page en **flexbox**. Elle est servie **par Venus lui-même**, sur le même port : rien de plus à ouvrir ni à configurer.
+
+```
+Navigateur ──► Venus (port 8096)
+                ├─ /api, /img, /cal ............ API (Node.js, zéro dépendance)
+                ├─ /_next/static ............... fichiers de l'interface (brotli, cache 1 an)
+                ├─ /js, /css, /icons ........... modules partagés de l'interface
+                └─ pages ───► Next.js (processus séparé, 127.0.0.1, port interne)
+                              nonce CSP neuf à chaque page
+```
+
+- **Processus séparé et surveillé** : Venus lance le serveur Next.js autonome (~20 Mo), le relance s'il s'arrête, et sert l'interface classique en attendant : il n'y a jamais d'écran vide.
+- **Une seule source de vérité** : la coque React (rail, menu en haut, dock, onglets mobiles), le démarrage (installation, connexion, profils) et le routage sont en React ; les pages sont des composants React ou, pour celles pas encore réécrites, les vues éprouvées de Venus montées dans React (même code que l'interface classique, aucune fonction perdue).
+- **Navigation Next.js** : liens préchargés, retour / avance du navigateur, adresses lisibles (`/films/inception-2010`, `/series/breaking-bad/S01E02`).
+- **Secours** : `VENUS_UI=classic` sert l'ancienne interface ; sans construction de `web/`, elle est servie automatiquement.
+
+### État de la migration
+
+| Partie | Statut |
+|---|---|
+| Coque : thèmes, 6 dispositions, rail, menu en haut, dock, onglets mobiles, badge des lectures, temps d'écran | ✅ React |
+| Démarrage : installation, connexion, choix du profil, invitations | ✅ React (écrans repris) |
+| Films, Séries, Animés, Clips, Ma liste (tri, filtres, affichages, chargement progressif) | ✅ React |
+| Recherche (instantanée, demandes en français, titres en ligne) | ✅ React |
+| Cartes (affiches, progression, vu / non vu, aperçu au survol, menu rapide) | ✅ React |
+| Accueil, fiche d'un titre, lecteur, TV, À venir, réglages, tableau de bord, musique, photos, livres… | 🔄 vues de Venus montées dans React, réécriture page par page |
+
+### Développer l'interface
+
+```bash
+npm start                 # serveur Venus (port 8096)
+npm run web:dev           # interface en direct sur http://localhost:3100 (API prise sur le port 8096)
+npm run web:build         # construction de production (servie ensuite par Venus)
+```
+
+---
+
+## Architecture
+
+```
+server/            API et services — Node.js ≥ 22, aucune dépendance
+  index.js           serveur HTTP/HTTPS, tâches de fond, démarrage
+  next-ui.js         lancement, surveillance et relais de l'interface Next.js
+  api.js             routes de l'API
+  stream.js          décision de lecture, sessions HLS, sous-titres, vignettes
+  hw.js              détection et pipelines d'accélération matérielle
+  optimize.js        copies optimisées (nuit / carte graphique libre)
+  scanner.js         analyse des bibliothèques, surveillance des dossiers
+  netshare.js        partages SMB / NFS, recherche des NAS
+  upcoming.js        « À venir », favoris envoyés à Radarr / Sonarr, calendrier iCal
+  invites.js, auth.js, security.js, twofa.js   comptes, invitations, sécurité
+  notify.js, telegram-media.js                 notifications et fiches Telegram
+  metadata.js, posters.js, ratings.js, credits-free.js   affiches, notes, distribution
+  update.js          vérification et installation des mises à jour
+web/               interface Next.js 16 / React 19 (App Router)
+  app/               pages (Films, Séries, Animés, Clips, Ma liste, Recherche, toutes les autres adresses)
+  components/        coque, cartes, bibliothèque, recherche, pont vers les vues de Venus
+public/            modules partagés (thèmes, API, vues), styles, icônes, service worker
+scripts/           installateurs Linux / Windows / Mac / Proxmox, test de charge, contrôle de sécurité
+```
+
+---
+
+## Fiabilité et sécurité
+
+| Contrôle | Résultat |
+|---|---|
+| Contrôle de sécurité (`npm run security`) | **25 / 25** protections vérifiées |
+| Test de charge (`node scripts/load-test.mjs`) : 50 utilisateurs, 90 s, lectures vidéo et chaînes | 0 erreur, p95 ≤ 21 ms, 0 coupure |
+| Endurance (3 séries de charge) | mémoire stable (208 → 213 Mo), descripteurs stables |
+| Exploration des 213 routes de l'API avec des entrées invalides | aucune erreur 500 |
+| Pages de l'interface (Next.js) | HTML en ~10 ms, fichiers servis compressés et gardés en cache |
+
+- **CSP stricte** avec nonce par page, en-têtes de sécurité, protection CSRF, limitation des requêtes, blocage automatique des adresses suspectes.
+- **Double authentification** par e-mail, codes PIN, appareils révocables, journal et audit hebdomadaire.
+- **HTTPS** intégré (port 8920, certificat créé au premier démarrage) ou derrière Caddy / Nginx.
+
+Détails et marche à suivre : [SECURITY.md](SECURITY.md).
+
+---
 
 ## Vidéos sur le réseau (NAS, PC Windows)
 
-Inutile de copier vos vidéos sur le serveur : **Réglages → Bibliothèques → Ajouter un emplacement → Partage réseau**.
+Inutile de copier vos vidéos : **Réglages → Bibliothèques → Ajouter un emplacement → Partage réseau**. Venus trouve les appareils qui partagent des fichiers (SMB, NFS), monte le partage, le remonte après une coupure et vérifie les nouveautés toutes les 10 minutes. Si un partage devient injoignable, rien n'est effacé et un bouton « Reconnecter » apparaît.
 
-1. Venus cherche les appareils qui partagent des fichiers sur votre réseau (SMB et NFS). Si le vôtre n'apparaît pas, saisissez son adresse (`192.168.1.20`, `nas.local`).
-2. Entrez l'identifiant et le mot de passe du partage (ou laissez vide pour un accès invité) et choisissez le partage.
-3. Indiquez si besoin le sous-dossier (`Films/HD`), et c'est tout.
+**IPTV** : même menu, type « TV en direct », puis identifiants Xtream ou adresse M3U.
 
-Venus monte le partage lui-même, le remonte automatiquement après une coupure ou un redémarrage, et vérifie les nouveautés toutes les 10 minutes. Si un partage devient injoignable, la bibliothèque est conservée telle quelle (rien n'est effacé) et un bouton « Reconnecter » apparaît.
-
-Venus monte les partages avec `mount.cifs` / `mount -t nfs` sur Linux, `net use` sur Windows et `mount_smbfs` sur Mac. Avec Docker, le conteneur a besoin des lignes `cap_add: SYS_ADMIN` et `network_mode: host` déjà présentes dans le `docker-compose.yml` fourni. Dans un conteneur Proxmox non privilégié, voir la section Proxmox ci-dessus. Les mots de passe des partages sont stockés dans le dossier de données de Venus (`net/`), lisibles uniquement par Venus.
-
-**IPTV** : même menu, type « TV en direct », puis « Identifiants Xtream » (serveur, identifiant, mot de passe de votre abonnement) ou « Adresse M3U ».
-
-## Ajouter des films, séries, animés et clips
-
-Trois façons, au choix :
-
-1. **Depuis l'application** : menu **Ajouter** (administrateur). Choisissez la bibliothèque, le nom de la série et la saison si besoin, puis déposez les fichiers. Une barre de progression indique la vitesse et le temps restant.
-2. **En copiant dans les dossiers** (partage réseau, NAS, clé USB) : Venus surveille les dossiers et ajoute chaque nouveau fichier tout seul en quelques secondes. Une notification « Nouveau dans Venus » s'affiche sur tous les écrans ouverts, et l'accueil se met à jour sans recharger.
-3. **Réglages → Bibliothèques** : ajoutez un dossier par type (Films, Séries, Animés, Clips) ou une liste IPTV. Les derniers médias détectés y sont listés.
-
-Pour l'envoi depuis l'application, les dossiers doivent être accessibles en écriture : avec Docker, n'ajoutez pas `:ro` aux volumes de vos médias (c'est le réglage par défaut du `docker-compose.yml` fourni). Sur un partage réseau sans détection des changements, Venus revérifie à intervalle régulier (réglable).
-
-## Sources
-
-Dans **Réglages → Bibliothèques → Ajouter un emplacement**, choisissez le type :
-
-| Source | Contenu | Comment ranger |
-|---|---|---|
-| Films | Films | Un fichier par film, ou un dossier par film |
-| Séries | Séries TV | Un dossier par série, un sous-dossier par saison, `S01E01` dans le nom |
-| Animés | Animés | Comme les séries |
-| Clips | Clips musicaux, vidéos courtes | Nom conseillé : `Artiste - Titre.mp4` |
-| TV en direct | Chaînes IPTV | Collez l'adresse M3U de votre abonnement, ou le chemin d'un fichier `.m3u` |
-
-L'accueil affiche **Reprendre la lecture** (là où vous vous êtes arrêté), **Nouveaux épisodes** (sortis ces 60 derniers jours d'après TMDB, sinon ajoutés récemment), **Nouveaux films**, **Derniers ajouts**, **Populaires**, **Au hasard**, puis une rangée par source.
-Chaque page de source se filtre par **Non vus / En cours / Déjà vus** et se trie par **date d'ajout, date de sortie**, titre, note ou popularité. Sur la fiche d'une série, les épisodes se filtrent aussi par vus / non vus.
-
-TV en direct : la page TV montre un aperçu en direct (muet) de la chaîne sélectionnée et l'image actuelle de chaque chaîne, rafraîchie toutes les 2 minutes. La vidéo est relayée telle quelle quand c'est possible (H.264), sinon convertie. Touches P+ / P- de la télécommande pour zapper. Les chaînes qui ne répondent pas affichent un message clair au lieu de tourner dans le vide.
-
-## Ranger ses vidéos
+### Ranger ses vidéos
 
 ```
 Films/
@@ -204,43 +282,35 @@ Films/
   Interstellar (2014)/
     Interstellar.2014.MULTI.1080p.mkv
     Interstellar.2014.MULTI.1080p.fr.srt
-    poster.jpg            (facultatif)
 Series/
   Breaking Bad/
     Saison 1/
       Breaking.Bad.S01E01.mkv
-      Breaking.Bad.S01E02.mkv
 ```
 
-Les noms « sales » (`Film.2019.MULTI.VFF.1080p.BluRay.x264-GRP.mkv`) sont nettoyés automatiquement. Les nouveaux fichiers apparaissent tout seuls en quelques secondes ; un scan complet tourne aussi toutes les heures. Si un titre est mal reconnu : fiche du titre → **Corriger l'identification**.
+Les noms « sales » (`Film.2019.MULTI.VFF.1080p.BluRay.x264-GRP.mkv`) sont nettoyés automatiquement ; un titre mal reconnu se corrige depuis sa fiche.
 
 ## Sur chaque écran
 
 | Appareil | Comment |
 |---|---|
-| Téléphone, tablette | Ouvrez l'adresse, puis « Ajouter à l'écran d'accueil » |
+| Téléphone, tablette | Ouvrez l'adresse, puis « Installer Venus » (sur iPhone : Partager → Sur l'écran d'accueil) |
 | Ordinateur | Navigateur, ou icône « Installer » dans la barre d'adresse |
-| Android TV, Fire TV, Google TV | Navigateur de la TV (ex. TV Bro), télécommande prise en charge |
-| Samsung (Tizen), LG (webOS) | Navigateur intégré à la TV |
-| Chromecast | Bouton de diffusion dans le lecteur (nécessite HTTPS, voir plus bas) |
+| Android TV, Fire TV, Google TV, Samsung, LG | Navigateur de la TV, navigation complète aux flèches de la télécommande |
+| Chromecast | Bouton de diffusion dans le lecteur (HTTPS nécessaire) |
 | Apple TV | AirPlay depuis l'iPhone, l'iPad ou le Mac |
 
-Raccourcis du lecteur : flèches ← → (10 s), espace (pause), F (plein écran), Retour (quitter). Sur mobile : toucher deux fois à gauche ou à droite pour reculer ou avancer.
+## Accès depuis l'extérieur (HTTPS)
 
-## Accès depuis l'extérieur et Chromecast (HTTPS)
-
-Le Chromecast, l'installation de l'application et les notifications sur le téléphone exigent une adresse HTTPS (sinon, utilisez ntfy pour les notifications). Le plus simple est Caddy, qui obtient le certificat tout seul :
+Le plus simple est [Caddy](https://caddyserver.com), qui obtient le certificat tout seul :
 
 ```
-# Caddyfile
 cinema.mondomaine.fr {
   reverse_proxy 127.0.0.1:8096
 }
 ```
 
-Sans Caddy, Venus sert aussi HTTPS lui-même sur le port **8920** (`https://192.168.1.x:8920`) avec un certificat auto-signé créé au premier démarrage : le navigateur affiche un avertissement la première fois. Pour un vrai certificat, donnez `TLS_CERT` et `TLS_KEY`. Par défaut, les connexions venant d'Internet en `http://` sont redirigées vers HTTPS ; le réseau local reste accessible en `http://`.
-
-Hors de chez vous, baissez la qualité dans le lecteur (720p ou 480p) si votre connexion montante est limitée.
+Sans Caddy, Venus sert aussi HTTPS sur le port **8920** avec un certificat auto-signé (`TLS_CERT` et `TLS_KEY` pour un vrai certificat). Les connexions venant d'Internet en `http://` sont redirigées vers HTTPS ; le réseau local reste accessible en `http://`.
 
 ## Variables d'environnement
 
@@ -248,59 +318,25 @@ Hors de chez vous, baissez la qualité dans le lecteur (720p ou 480p) si votre c
 |---|---|---|
 | `PORT` | `8096` | Port HTTP |
 | `DATA_DIR` | `/config` (Docker), `./data` | Base de données, affiches, cache |
-| `TRANSCODE_DIR` | `/transcode` (Docker) | Fichiers temporaires de conversion (son contenu est vidé au démarrage ; le dossier peut être un point de montage) |
-| `MOVIES_PATH` / `SHOWS_PATH` / `ANIME_PATH` / `CLIPS_PATH` | `/media/films`, `/media/series`… | Dossiers proposés à l'installation |
-| `TMDB_API_KEY` | — | Clé TMDB (sinon saisissable dans l'interface) |
-| `HWACCEL` | `auto` | Forcer `nvenc`, `vaapi`, `qsv`, `amf` (Windows), `videotoolbox` (Mac), `v4l2m2m` ou `none` |
-| `LAN_SUBNET` | — | Réseau à explorer pour trouver les NAS (ex. `192.168.1`), utile avec Docker Desktop |
-| `FFMPEG_PATH` / `FFPROBE_PATH` | auto | Chemins de ffmpeg |
+| `TRANSCODE_DIR` | `/transcode` (Docker) | Fichiers temporaires de conversion |
+| `MOVIES_PATH` / `SHOWS_PATH` / `ANIME_PATH` / `CLIPS_PATH` | `/media/films`… | Dossiers proposés à l'installation |
+| `TMDB_API_KEY` | — | Clé TMDB (sinon saisissable dans l'interface ; Venus trouve les affiches sans clé) |
+| `HWACCEL` | `auto` | Forcer `nvenc`, `vaapi`, `qsv`, `amf`, `videotoolbox`, `v4l2m2m` ou `none` |
+| `VENUS_FAST_TRANSCODE` | — | Dossier en mémoire vive (tmpfs) pour les conversions ; posé par `update.sh` quand la machine a assez de RAM |
+| `VENUS_UI` | — | `classic` : sert l'interface classique au lieu de l'interface Next.js |
+| `VENUS_WEB_DIR` | auto | Dossier de l'interface Next.js construite (`web-dist` dans l'image Docker) |
+| `VENUS_NEXT_PORT` | aléatoire | Port interne (127.0.0.1) de l'interface Next.js |
 | `HTTPS_PORT` | `8920` | Port HTTPS intégré (`HTTPS=0` pour le couper) |
-| `TLS_CERT` / `TLS_KEY` | — | Certificat et clé (sinon auto-signé dans `/config/tls`) |
-| `FORCE_HTTPS` | `remote` | `off`, `remote` (HTTPS obligatoire hors du réseau local) ou `all` |
-| `TRUST_PROXY` | — | `1` si un proxy (Caddy, Nginx) sur une autre machine du réseau transmet l'adresse du visiteur |
+| `TLS_CERT` / `TLS_KEY` | — | Certificat et clé (sinon auto-signé) |
+| `FORCE_HTTPS` | `remote` | `off`, `remote` ou `all` |
+| `TRUST_PROXY` | — | `1` si un proxy sur une autre machine transmet l'adresse du visiteur |
+| `LAN_SUBNET` | — | Réseau à explorer pour trouver les NAS (ex. `192.168.1`) |
 | `VENUS_SECRET` | — | Clé de chiffrement des clés d'API (sinon `/config/secret.key`) |
-| `VENUS_DISABLE_2FA` | — | `1` : coupe la double authentification par e-mail (secours) |
 
-## Administration (comme Jellyfin)
+## Par rapport à Plex et Jellyfin
 
-Tableau de bord → **Serveur** :
-- **Tâches planifiées** : analyse, notes, génériques, sauvegardes, audit, Seerr, vignettes ; dernière exécution, durée, bouton « Lancer ».
-- **Journal du serveur** : les 2 000 dernières lignes (filtres, recherche, téléchargement), mots de passe et jetons masqués.
-- **Clés API** pour vos scripts et la domotique : en-tête `X-Api-Key`, par exemple `curl -X POST -H "X-Api-Key: vk_…" http://venus:8096/api/admin/scan`.
-- **Webhooks** : POST JSON `{ event, at, server, data }` vers Home Assistant, n8n, Gotify… pour `library.added`, `playback.start`, `playback.stop`, `login.new_device`, `security.alert`, `task.failed` ; signature `X-Venus-Signature: sha256=…` (HMAC du corps) si un secret est donné.
-- **Personnalisation** : message sur la page de connexion et CSS personnalisé.
+Venus fait mieux sur la légèreté, la simplicité d'installation, la sobriété de l'interface et l'automatisation (À venir, téléchargements, Telegram). Plex et Jellyfin gardent l'avantage des applications natives dans les stores des TV, des plugins et du DLNA.
 
-Profils : bibliothèques visibles, téléchargement, lecture convertie, accès depuis l'extérieur et horaires, dans Réglages → Profils → Modifier.
+## Licence
 
-## Sécurité
-
-Tableau de bord → **Sécurité** : note de l'audit (refait chaque semaine), double authentification par e-mail, HTTPS, adresses bloquées, appareils connectés et journal. Détails, réglages et marche à suivre en cas de problème : [SECURITY.md](SECURITY.md). Vérification automatique : `npm run security`.
-
-## Architecture
-
-```
-server/
-  index.js      serveur HTTP, démarrage
-  api.js        routes de l'API
-  stream.js     décision de lecture, sessions HLS, sous-titres WebVTT, vignettes
-  hw.js         détection et pipelines d'accélération matérielle
-  scanner.js    analyse des bibliothèques, surveillance des dossiers
-  netshare.js   partages réseau SMB / NFS (Linux, Windows, Mac), recherche des NAS, Xtream
-  env.js        détection Docker / LXC Proxmox / machine, conseils GPU et montage
-  together.js   séances à plusieurs, téléphone-télécommande, vote en famille
-  watch.js      Seerr : envies et séries suivies demandées automatiquement
-  notify.js     notifications : Web Push (VAPID, chiffrement RFC 8291), ntfy, Discord, Telegram
-  backup.js     sauvegardes nocturnes de la base et restauration
-  downloads.js  versions légères 720p / 480p pour regarder sans réseau
-  subtitles.js  sous-titres en ligne (OpenSubtitles)
-  metadata.js   TMDB : affiches, résumés, classifications d'âge
-  parse.js      nettoyage des noms de fichiers
-  probe.js      ffprobe, sous-titres externes
-  auth.js, db.js, http.js, config.js
-scripts/        installateurs Linux, Windows, Mac et outil hôte Proxmox
-public/         interface (JavaScript natif, sans framework ni compilation)
-```
-
-## Honnêtement, par rapport à Plex et Jellyfin
-
-Venus fait mieux sur la légèreté, la simplicité d'installation et la sobriété de l'interface. Plex et Jellyfin restent plus complets sur certains points qui ne sont pas (encore) dans cette version : applications natives dans les stores des TV, guide des programmes (EPG) pour l'IPTV, plugins et DLNA. Les vignettes de la barre de progression, le guide des programmes, la musique, les photos et les livres sont maintenant dans Venus.
+[MIT](LICENSE) © 2026 TOUFATECH

@@ -7,3 +7,6 @@ media/
 .env
 docker-compose.hw.yml
 docker-compose.updater.yml
+web/.next/
+web-dist/
+web/next-env.d.ts

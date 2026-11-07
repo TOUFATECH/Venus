@@ -234,7 +234,7 @@ export async function render(main, { kind, query }) {
 }
 
 // Une ligne de la vue « Liste »
-function listRow(i) {
+export function listRow(i) {
   const pic = h('div', { class: 'lr-pic' }, i.poster ? h('img', { src: img(i.poster), alt: '', loading: 'lazy' }) : framePoster(i));
   const score = norm(i);
   const p = i.progress;
@@ -254,7 +254,7 @@ function listRow(i) {
 
 // Menu déroulant ancré sous un bouton (fermeture : clic à côté, Échap)
 let openDropdown = null;
-function dropdown(anchor, build, { wide = false } = {}) {
+export function dropdown(anchor, build, { wide = false } = {}) {
   if (anchor.__dd) { anchor.__dd(); return; }
   if (openDropdown) openDropdown();
   const box = h('div', { class: `dropdown${wide ? ' wide' : ''}`, role: 'menu' });
@@ -284,7 +284,7 @@ function dropdown(anchor, build, { wide = false } = {}) {
 
 // ---------------------------------------------------------------- Mes envies (favoris pas encore dans Venus, suivis dans Seerr)
 const WISH_STATE = { none: 'Pas encore demandé', pending: 'Demandé, en attente de validation', processing: 'Demandé : téléchargé dès sa sortie', partial: 'Disponible en partie', available: 'Disponible, arrive dans Venus', blocked: 'Bloqué dans Seerr', deleted: 'Supprimé de Seerr', error: 'Seerr injoignable' };
-async function renderWishes(page, tabs) {
+export async function renderWishes(page, tabs) {
   const [d, wanted] = await Promise.all([api('/api/wishlist'), api('/api/wanted').catch(() => [])]);
   const today = new Date().toISOString().slice(0, 10);
   // Favoris pris dans « À venir » (Films, Séries, Animés) : envoyés à Radarr / Sonarr

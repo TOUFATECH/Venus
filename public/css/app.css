@@ -3561,3 +3561,7 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
 .invite-av { padding: 3px; border: 2px solid transparent; border-radius: 50%; background: none; cursor: pointer; }
 .invite-av.on { border-color: var(--sulfur); }
 .invite-av .avatar { width: 40px; height: 40px; font-size: 1rem; }
+
+/* ---------------------------------------------------------------- interface Next.js : coque en flexbox */
+.mobile-top .top-actions { display: flex; align-items: center; gap: 4px; }
+.tabs-slot { display: contents; }

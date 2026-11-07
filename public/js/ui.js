@@ -109,6 +109,8 @@ const P = {
   folder: '<path d="M3.5 7a1.5 1.5 0 0 1 1.5-1.5h4l2 2h8a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 17z" fill="currentColor" opacity=".8"/>',
   restart: '<path d="M5 12a7 7 0 1 0 2.1-5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M5 4v4h4" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
 };
+// Dessin d'une icône (contenu du <svg>), pour l'interface React
+export const iconMarkup = (name) => P[name] || '';
 export function icon(name) {
   const span = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   span.setAttribute('viewBox', '0 0 24 24');

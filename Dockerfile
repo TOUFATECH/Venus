@@ -8,6 +8,18 @@ COPY public ./public
 COPY scripts/minify.mjs ./minify.mjs
 RUN (npm install --no-save --no-audit --no-fund --loglevel=error esbuild@0.24.2 && node minify.mjs public) || echo "Interface non minifiée (esbuild indisponible)"
 
+# Étape 2 : interface Next.js (React), construite en serveur autonome léger (~20 Mo, sans dossier node_modules complet)
+FROM node:24-bookworm-slim AS next
+WORKDIR /w/web
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund --loglevel=error
+COPY web ./
+RUN npm run build \
+ && mkdir -p /out \
+ && cp -r .next/standalone/. /out/ \
+ && mkdir -p /out/.next && cp -r .next/static /out/.next/static
+
 FROM node:24-bookworm-slim
 
 ARG TARGETARCH
@@ -46,6 +58,8 @@ WORKDIR /app
 COPY package.json ./
 COPY server ./server
 COPY --from=web /w/public ./public
+# Interface Next.js : lancée et surveillée par Venus sur un port interne (VENUS_UI=classic pour l'ancienne interface)
+COPY --from=next /out ./web-dist
 
 EXPOSE 8096
 VOLUME ["/config"]

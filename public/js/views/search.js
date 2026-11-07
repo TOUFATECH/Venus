@@ -131,7 +131,7 @@ const GENRE_WORDS = [
   [/\b(fantastique|magie|dragons?)\b/, 'Fantastique'], [/\b(policier|enquete|crime|flic|detective)\b/, 'Policier'], [/\b(documentaire|docu|vrai|reel)\b/, 'Documentaire'],
   [/\b(animation|dessin anime|cartoon)\b/, 'Animation'], [/\b(famille|enfants?|gamins?|petits)\b/, 'Famille'], [/\b(guerre)\b/, 'Guerre'], [/\b(western)\b/, 'Western'], [/\b(histoire|historique)\b/, 'Histoire'], [/\b(musique|musical|comedie musicale)\b/, 'Musique'], [/\b(mystere|mysterieux)\b/, 'Mystère'],
 ];
-function understand(raw, { genres, people }) {
+export function understand(raw, { genres, people }) {
   const q = norm(raw);
   const tests = [], terms = [];
   // Type

@@ -1,5 +1,5 @@
 // Service worker : l'interface s'ouvre instantanément (cache), les données restent toujours fraîches.
-const VERSION = 'venus-v9';
+const VERSION = 'venus-v10';
 // Les fichiers de l'interface sont servis sous /b/<version>/ : chaque mise à jour a ses propres adresses
 const SHELL = ['/', '/icons/favicon.svg', '/hors-ligne.html'];
 
@@ -13,6 +13,8 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   if (url.pathname.startsWith('/api/')) return; // jamais de cache pour l'API et la vidéo
+  // Navigation de l'interface Next.js (données de page) : toujours fraîche, jamais gardée
+  if (url.searchParams.has('_rsc') || e.request.headers.get('RSC')) return;
   if (url.pathname.startsWith('/img/')) {
     // Affiches : cache d'abord (elles ne changent jamais de nom)
     e.respondWith(caches.open('venus-img').then(async (c) => {

@@ -159,7 +159,7 @@ export function buildId(root) {
 
 // Fichiers statiques de l'interface, compressés en mémoire (brotli/gzip) une seule fois
 const staticCache = new Map();
-export function serveStatic(req, res, root, pathname) {
+export function serveStatic(req, res, root, pathname, { immutable = false } = {}) {
   let rel = decodeURIComponent(pathname);
   // /b/<version>/js/app.js → /js/app.js ; immuable si c'est la version en cours
   let versioned = false;
@@ -177,7 +177,7 @@ export function serveStatic(req, res, root, pathname) {
   // ne mélange jamais anciens et nouveaux fichiers. Polices et icônes : cache d'une heure.
   const fresh = /\.(html|js|mjs|css|webmanifest|json)$/.test(full);
   const isIndex = path.basename(full) === 'index.html';
-  const cacheCtl = versioned && !isIndex ? 'public, max-age=31536000, immutable' : fresh ? 'no-cache' : 'public, max-age=3600, stale-while-revalidate=86400';
+  const cacheCtl = (versioned || immutable) && !isIndex ? 'public, max-age=31536000, immutable' : fresh ? 'no-cache' : 'public, max-age=3600, stale-while-revalidate=86400';
   if (!compressible) { sendFile(req, res, full, { cache: cacheCtl }); return true; }
 
   const cacheKey = isIndex ? `${full}#${buildId(root)}` : full;

@@ -114,8 +114,19 @@ export async function runUpdate() {
     const pull = await run('git', ['pull', '--ff-only'], { timeout: 5 * 60000 });
     if (!pull.ok) return { ok: false, message: `git pull a échoué : ${(pull.err || pull.out).slice(-400)}`, log: pull.out + pull.err };
     cache = { at: 0, data: null };
+    // Interface Next.js reconstruite avec le nouveau code (si elle avait été construite). En cas d'échec, l'ancienne
+    // construction est retirée : Venus sert alors son interface classique, toujours à jour, plutôt qu'un mélange.
+    let web = '';
+    if (fs.existsSync(path.join(ROOT, 'web', 'package.json')) && fs.existsSync(path.join(ROOT, 'web', '.next'))) {
+      const env = { ...process.env, PATH: `${path.dirname(process.execPath)}${path.delimiter}${process.env.PATH || ''}`, NEXT_TELEMETRY_DISABLED: '1' };
+      const npm = (args) => new Promise((resolve) => execFile(process.platform === 'win32' ? 'npm.cmd' : 'npm', args, { cwd: path.join(ROOT, 'web'), env, timeout: 15 * 60000, maxBuffer: 8 * 1024 * 1024, shell: process.platform === 'win32' }, (err, so, se) => resolve({ ok: !err, out: String(so || '') + String(se || '') })));
+      const ci = await npm(['ci', '--no-audit', '--no-fund', '--loglevel=error']);
+      const build = ci.ok ? await npm(['run', 'build']) : ci;
+      if (!build.ok) { fs.rmSync(path.join(ROOT, 'web', '.next'), { recursive: true, force: true }); web = `\nInterface Next.js non reconstruite (interface classique servie) : ${build.out.slice(-300)}`; }
+      else web = '\nInterface Next.js reconstruite.';
+    }
     // Redémarrage : un superviseur (systemd, pm2, docker) relance Venus ; sinon l'administrateur le fait
     setTimeout(() => process.exit(0), 1500).unref();
-    return { ok: true, message: 'Mise à jour installée. Venus redémarre…', log: pull.out };
+    return { ok: true, message: 'Mise à jour installée. Venus redémarre…', log: pull.out + web };
   } finally { updating = false; }
 }

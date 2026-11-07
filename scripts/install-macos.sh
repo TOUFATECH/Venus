@@ -73,6 +73,17 @@ elif [ ! -f "$APP_DIR/server/index.js" ]; then
   ok "Code téléchargé dans ${APP_DIR}"
 fi
 
+# ------------------------------------------------------------------ interface (Next.js / React)
+# Construite une fois ici ; sans accès à npm, Venus sert son interface classique (tout fonctionne quand même).
+if [ -f "$APP_DIR/web/package.json" ]; then
+  NODE_DIR="$(dirname "$NODE_BIN")"
+  if (cd "$APP_DIR/web" && export PATH="$NODE_DIR:$PATH" NEXT_TELEMETRY_DISABLED=1 && npm ci --no-audit --no-fund --loglevel=error >/dev/null 2>&1 && npm run build >/dev/null 2>&1); then
+    ok "Interface construite (Next.js)"
+  else
+    warn "Interface Next.js non construite : l'interface classique est servie"
+  fi
+fi
+
 # ------------------------------------------------------------------ réglages
 mkdir -p "$DATA_DIR" "$TRANSCODE_DIR" "$(dirname "$PLIST")" "$(dirname "$LOG")"
 CONF="$SUPPORT/venus.conf"
