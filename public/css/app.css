@@ -3603,3 +3603,8 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
 .episode.missing.future .miss-tag { background: rgb(var(--night-rgb) / .85); color: var(--sulfur); }
 .season-card.absent .season-pic { opacity: .5; filter: grayscale(.7); }
 .season-card.absent > span:last-child { color: var(--haze); }
+
+/* Grandes médiathèques : les affiches hors de l'écran ne sont ni dessinées ni mises en page (défilement fluide) ;
+   « auto » garde la taille déjà mesurée, la page ne saute pas. Pas pendant le survol (aperçu qui déborde). */
+.grid > .card:not(:hover):not(:focus-within), .tiles > .tile-wrap:not(:hover):not(:focus-within) { content-visibility: auto; contain-intrinsic-size: auto 320px; }
+.tiles > .tile-wrap:not(:hover):not(:focus-within) { contain-intrinsic-size: auto 150px; }

@@ -144,3 +144,23 @@ test('séries : saisons absentes et épisodes manquants ou à venir affichés', 
   await page.locator('.season-card.absent').click();
   await expect(page.locator('.episode.missing')).toHaveCount(4);
 });
+
+test('vitesse : HTTPS en HTTP/2, fiche préparée au survol d’une affiche', async ({ page }) => {
+  const http2 = await import('node:http2');
+  const port = Number(new URL(etat().base).port) + 1;
+  const get = (p) => new Promise((resolve, reject) => {
+    const s = http2.connect(`https://127.0.0.1:${port}`, { rejectUnauthorized: false });
+    s.on('error', reject);
+    const r = s.request({ ':path': p });
+    let status = 0; r.on('response', (h) => { status = h[':status']; });
+    r.on('data', () => {}); r.on('end', () => { s.close(); resolve(status); }); r.end();
+  });
+  expect(await get('/api/status')).toBe(200);
+  expect(await get('/')).toBe(200);
+  expect(await get('/css/app.css')).toBe(200);
+  // Survol : la fiche est demandée avant le clic
+  await ouvrir(page, '/films');
+  const asked = page.waitForRequest((r) => /\/api\/items\/\d+$/.test(r.url()), { timeout: 5000 });
+  await page.locator('.grid .card').first().hover();
+  await asked;
+});

@@ -57,7 +57,7 @@ export default async function globalSetup() {
   const log = fs.openSync(logFile, 'a');
   const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
     cwd: root, detached: true, stdio: ['ignore', log, log],
-    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS: '0', NODE_ENV: 'production', VENUS_IPTV_WORLD: '0' },
+    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0' },
   });
   srv.unref();
 

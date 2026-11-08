@@ -72,6 +72,7 @@ function App({ children }) {
   if (L0) {
     L0.app.setHost({
       go: (p, { replace = false } = {}) => (replace ? router.replace(p) : router.push(p)),
+      prefetch: (p) => { try { router.prefetch(p); } catch { /* adresse inconnue */ } },
       refresh,
       gate: (kind) => { L0.app.state.profile = null; setGate(kind); setPhase('gate'); },
       reboot: () => { setPhase('loading'); start(); },
