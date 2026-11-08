@@ -5,6 +5,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { shared } from '../lib/shared';
 import { Icon } from './Icon';
 
+// Fiche préparée d'avance : ses données (cache de l'API) et sa page Next.js
+function prefetchItem(item, isEp) {
+  const L = shared();
+  L.api.prefetch(`/api/items/${isEp ? item.showId : item.id}`);
+  const h = L.app.hostHooks;
+  if (!isEp && item.path && h && h.prefetch) h.prefetch(item.path);
+}
+
 // Image avec fondu à l'arrivée ; aplat de couleur si elle manque
 export function Picture({ src, title, className = '', lazy = true }) {
   const [failed, setFailed] = useState(!src);
@@ -100,7 +108,11 @@ export default function Card({ item: initial, poster = false, rank = null, queue
       aria-label={[title, sub, seen ? 'déjà vu' : null].filter(Boolean).join(', ')}
       onClick={open}
       onFocus={onFocus ? () => onFocus(item) : undefined}
-      onPointerDown={() => { if (!isClip) api.prefetch(`/api/items/${isEp ? item.showId : item.id}`); }}>
+      onPointerDown={() => { if (!isClip) api.prefetch(`/api/items/${isEp ? item.showId : item.id}`); }}
+      // Survol (souris) ou sélection au clavier / télécommande : la fiche et sa page se préparent, elle s'ouvre aussitôt
+      onPointerEnter={(e) => { if (e.pointerType === 'mouse' && !isClip) { clearTimeout(ref.preT); ref.preT = setTimeout(() => prefetchItem(item, isEp), 140); } }}
+      onPointerLeave={() => clearTimeout(ref.preT)}
+      onFocusCapture={() => { if (!isClip) { clearTimeout(ref.preT); ref.preT = setTimeout(() => prefetchItem(item, isEp), 250); } }}>
       <div className="shot">
         {media}
         {rank ? <span className="rank" aria-hidden="true">{rank}</span> : null}

@@ -109,7 +109,7 @@ export function proxyToNext(req, res, { buildId, csp }) {
     const before = res.getHeader('Content-Security-Policy');
     res.setHeader('Content-Security-Policy', policy);
     const headers = {};
-    for (const [k, v] of Object.entries(req.headers)) if (!HOP.has(k) && !k.startsWith('x-venus-')) headers[k] = v;
+    for (const [k, v] of Object.entries(req.headers)) if (!HOP.has(k) && !k.startsWith('x-venus-') && !k.startsWith(':')) headers[k] = v;
     headers.host = `127.0.0.1:${state.port}`;
     headers['content-security-policy'] = policy;
     headers['x-venus-nonce'] = nonce;

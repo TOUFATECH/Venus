@@ -13,6 +13,7 @@ process.on('uncaughtException', (e) => { console.error('[erreur fatale évitée]
 export const markStarted = () => { started = true; };
 import http from 'node:http';
 import https from 'node:https';
+import http2 from 'node:http2';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -58,10 +59,23 @@ import { startDvr, applyRules } from './dvr.js';
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
 let httpsPort = null;
+// HTTP/2 : en-têtes propres à HTTP/1 interdits (une erreur sinon), adresse dans « :authority »
+const HOP_HEADERS = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'proxy-connection']);
+function h2compat(req, res) {
+  if (!req.headers.host && req.headers[':authority']) req.headers.host = req.headers[':authority'];
+  const setHeader = res.setHeader.bind(res), writeHead = res.writeHead.bind(res);
+  res.setHeader = (k, v) => (HOP_HEADERS.has(String(k).toLowerCase()) ? res : setHeader(k, v));
+  res.writeHead = (status, a, b) => {
+    const clean = (h) => (h && typeof h === 'object' && !Array.isArray(h) ? Object.fromEntries(Object.entries(h).filter(([k]) => !HOP_HEADERS.has(k.toLowerCase()))) : h);
+    return typeof a === 'string' ? writeHead(status, a, clean(b)) : writeHead(status, clean(a));
+  };
+}
+
 async function handle(req, res) {
+  if (req.httpVersionMajor === 2) h2compat(req, res);
   const url = new URL(req.url, 'http://localhost');
   const ctx = { req, res, url, params: {}, auth: null };
-  res.req = req;
+  if (!res.req) res.req = req;
   const ip = clientIp(req);
   ctx.ip = ip;
   const secure = isSecure(req);
@@ -141,7 +155,10 @@ async function main() {
   const tls = await tlsOptions(lanAddresses()).catch((e) => { console.warn('[https]', e.message); return null; });
   const wanted = Number(process.env.HTTPS_PORT || getSetting('https_port', 8920)) || 0;
   if (tls && wanted) {
-    const secureServer = https.createServer({ ...tls, minVersion: 'TLSv1.2' }, handle);
+    // HTTP/2 (et HTTP/1.1 pour les anciens appareils) : le navigateur charge tout en parallèle sur une seule
+    // connexion, au lieu de 6 connexions au plus (images, vidéo et chaînes ne s'attendent plus les unes les autres)
+    const secureServer = process.env.VENUS_HTTP2 === '0' ? https.createServer({ ...tls, minVersion: 'TLSv1.2' }, handle)
+      : http2.createSecureServer({ ...tls, minVersion: 'TLSv1.2', allowHTTP1: true, settings: { maxConcurrentStreams: 256 } }, handle);
     secureServer.headersTimeout = 20000; secureServer.requestTimeout = 0; secureServer.setTimeout(120000); secureServer.keepAliveTimeout = 65000;
     secureServer.on('error', (e) => console.warn('[https]', e.message));
     secureServer.listen(wanted, config.host, () => {
