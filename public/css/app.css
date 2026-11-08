@@ -3608,3 +3608,20 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
    « auto » garde la taille déjà mesurée, la page ne saute pas. Pas pendant le survol (aperçu qui déborde). */
 .grid > .card:not(:hover):not(:focus-within), .tiles > .tile-wrap:not(:hover):not(:focus-within) { content-visibility: auto; contain-intrinsic-size: auto 320px; }
 .tiles > .tile-wrap:not(:hover):not(:focus-within) { contain-intrinsic-size: auto 150px; }
+
+/* ---- TV : multi-écran ---- */
+.mv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-bottom: 16px; }
+.mv-tools p { margin: 0; }
+.mv-grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+.mv-cell { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; border: 2px solid var(--edge); cursor: pointer; }
+.mv-cell.sound { border-color: var(--sulfur); }
+.mv-cell video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.mv-cell:fullscreen { border: 0; border-radius: 0; }
+.mv-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--haze); }
+.mv-empty svg { width: 34px; height: 34px; }
+.mv-status { position: absolute; left: 10px; top: 10px; right: 10px; padding: 6px 10px; border-radius: var(--r); background: rgb(var(--night-rgb) / .8); color: var(--haze); font-size: .85rem; font-weight: 600; }
+.mv-bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; align-items: center; padding: 26px 8px 8px; background: linear-gradient(transparent, rgb(0 0 0 / .75)); opacity: 0; transition: opacity .2s; }
+.mv-cell:hover .mv-bar, .mv-cell:focus-within .mv-bar, html.touch .mv-bar, .mv-cell:not(:has(video[src])) .mv-bar { opacity: 1; }
+.mv-bar .input { flex: 1; min-width: 0; height: 38px; padding: 0 10px; }
+.mv-bar .pv-c.on { background: var(--sulfur); color: var(--night); }
+@media (max-width: 760px) { .mv-grid { grid-template-columns: 1fr; } }

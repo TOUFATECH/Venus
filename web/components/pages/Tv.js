@@ -17,6 +17,7 @@ const playPath = (id) => shared().components.playPath(id);
 // Ordre des catégories (le serveur les déduit du nom de la chaîne et de son groupe)
 const CAT_ORDER = ['Outre-mer', 'Info', 'Généraliste', 'Films', 'Séries', 'Animé / Manga', 'Jeunesse', 'Documentaire', 'Histoire', 'Culture', 'Sport', 'Musique', 'Cuisine & maison', 'Japon', 'Autres'];
 const FAV = '★';
+const RECENT = '↺';
 // Arrêt d'une lecture en cours (le jeton accompagne la demande : une suppression sans lui serait refusée)
 const stopSession = (id, relay) => {
   const t = shared().api.auth.token;
@@ -30,13 +31,14 @@ export default function Tv() {
   useTitle('TV en direct');
   if (vue === 'guide') return <Guide />;
   if (vue === 'enregistrements') return <Recordings />;
+  if (vue === 'multi') return <MultiView />;
   return <Channels />;
 }
 
 function TvTabs({ current }) {
   return (
     <div className="seg tv-tabs" role="tablist">
-      {[['chaines', 'Chaînes', '/tv'], ['guide', 'Guide', '/tv?vue=guide'], ['enregistrements', 'Enregistrements', '/tv?vue=enregistrements']].map(([k, l, href]) => (
+      {[['chaines', 'Chaînes', '/tv'], ['multi', 'Multi-écran', '/tv?vue=multi'], ['guide', 'Guide', '/tv?vue=guide'], ['enregistrements', 'Enregistrements', '/tv?vue=enregistrements']].map(([k, l, href]) => (
         <button key={k} className={`seg-b f${k === current ? ' on' : ''}`} role="tab" aria-selected={String(k === current)} onClick={() => k !== current && go(href)}>{l}</button>
       ))}
     </div>
@@ -65,11 +67,25 @@ export function programSheet(p, ch, onChange = () => {}) {
           {onAir && ch ? <button className="btn btn-play f" onClick={() => { close(); go(playPath(ch.id)); }}><Icon name="play" />Regarder</button> : null}
           {p.rec ? <button className="btn btn-ghost f" onClick={async () => { await api(`/api/recordings/${p.rec.id}`, { method: 'DELETE' }); close(); toast(p.rec.status === 'recording' ? 'Enregistrement arrêté' : 'Enregistrement annulé'); onChange(); }}><Icon name="close" />{p.rec.status === 'recording' ? 'Arrêter l’enregistrement' : 'Annuler l’enregistrement'}</button>
             : p.stop > now ? <button className="btn f" onClick={() => recordIt({ programId: p.id }, `« ${p.title} » sera enregistré`, close, onChange)}><span className="rec-dot" />{onAir ? 'Enregistrer (à partir de maintenant)' : 'Enregistrer'}</button> : null}
+          {p.start > now ? <RemindButton p={p} onChange={onChange} /> : null}
           {p.stop > now ? <button className="btn btn-ghost f" onClick={() => recordIt({ programId: p.id, series: true }, `Toutes les diffusions de « ${p.title} » seront enregistrées`, close, onChange)}><Icon name="list" />Enregistrer toutes les diffusions</button> : null}
         </div>
       </div>
     );
   });
+}
+
+// Rappel : notification (téléphone, application ouverte) 5 minutes avant le début
+function RemindButton({ p, onChange }) {
+  const [rem, setRem] = useState(p.rem || null);
+  const toggle = async () => {
+    try {
+      if (rem) { await api(`/api/epg/reminders/${rem}`, { method: 'DELETE' }); setRem(null); toast('Rappel annulé'); }
+      else { const r = await api('/api/epg/reminders', { method: 'POST', body: { programId: p.id } }); setRem(r.id); toast(`Vous serez prévenu 5 minutes avant « ${p.title} »`, { type: 'success' }); }
+      p.rem = rem ? null : true; onChange && onChange();
+    } catch (e) { toast(e.message, true); }
+  };
+  return <button className={`btn btn-ghost f${rem ? ' is-on' : ''}`} aria-pressed={String(!!rem)} onClick={toggle}><Icon name="bell" />{rem ? 'Rappel programmé (annuler)' : 'Me prévenir'}</button>;
 }
 
 // « Enregistrer » depuis une chaîne : programme en cours, suivant, ou une durée (même sans guide)
@@ -159,14 +175,28 @@ function ChannelsView({ all, nn, admin }) {
   const player = useRef(null);
   const input = useRef(null);
   const grid = useRef(null);
-  const inGroup = (c) => !group || (group === FAV ? favs.has(c.id) : (c.cat || 'Autres') === group);
-  const visible = channels.filter((c) => inGroup(c) && (!q.trim() || norm(`${c.title} ${c.group || ''} ${c.cat || ''}`).includes(norm(q.trim()))));
+  const [recentIds, setRecentIds] = useState(() => all.filter((c) => c.recent != null).sort((a, b) => a.recent - b.recent).map((c) => c.id));
+  const recents = recentIds.map((id) => channels.find((c) => c.id === id)).filter(Boolean);
+  const inGroup = (c) => !group || (group === FAV ? favs.has(c.id) : group === RECENT ? recentIds.includes(c.id) : (c.cat || 'Autres') === group);
+  let visible = channels.filter((c) => inGroup(c) && (!q.trim() || norm(`${c.title} ${c.group || ''} ${c.cat || ''}`).includes(norm(q.trim()))));
+  if (group === RECENT) visible = visible.sort((a, b) => recentIds.indexOf(a.id) - recentIds.indexOf(b.id));
   const visRef = useRef(visible); visRef.current = visible;
   // Des milliers de chaînes possibles : on en affiche 120, puis « Afficher plus »
   const [limit, setLimit] = useState(120);
   useEffect(() => setLimit(120), [group, q]);
   const chRef = useRef(channels); chRef.current = channels;
-  const choose = (c, focus = true) => { try { localStorage.setItem('vn.tv.last', String(c.id)); } catch { /* */ } setSelected(c); player.current && player.current.play(c, focus); };
+  // Chaîne d'avant (bouton « Dernière chaîne », comme sur une box) et liste des récentes
+  const prevCh = useRef(null);
+  const choose = (c, focus = true) => {
+    try { localStorage.setItem('vn.tv.last', String(c.id)); } catch { /* */ }
+    if (selected && selected.id !== c.id) prevCh.current = selected;
+    setRecentIds((l) => [c.id, ...l.filter((x) => x !== c.id)].slice(0, 12));
+    setSelected(c); player.current && player.current.play(c, focus);
+  };
+  const lastChannel = () => { if (prevCh.current) choose(prevCh.current, false); else toast('Pas encore de chaîne précédente'); };
+  // Chaînes voisines (zapping) : préparées d'avance par le lecteur
+  const selRef = useRef(selected); selRef.current = selected;
+  const neighbors = () => { const list = visRef.current.length > 1 ? visRef.current : chRef.current; const sel = selRef.current; const i = list.findIndex((c) => sel && c.id === sel.id); return i < 0 ? [] : [list[(i + 1) % list.length], list[(i - 1 + list.length) % list.length]]; };
   // Les vignettes se rafraîchissent toutes les 2 minutes
   useEffect(() => { const t = setInterval(() => setStamp(Math.floor(Date.now() / 120000)), 120000); return () => clearInterval(t); }, []);
   // « / » : la recherche ; numéro de chaîne au clavier ou à la télécommande (« 1 », « 2 » → chaîne 12)
@@ -204,7 +234,7 @@ function ChannelsView({ all, nn, admin }) {
         </div>
         {down.length && admin ? <DownNote down={down} /> : null}
         <div className="tvx">
-          <div className="tvx-player"><TvPlayer ref={player} selected={selected} nn={nn} onZap={zap} onDead={onDead} still={selected ? pic(selected) : null} onPlaying={setPlayingId} fav={!!selected && favs.has(selected.id)} onFav={() => toggleFav(selected)} /></div>
+          <div className="tvx-player"><TvPlayer ref={player} selected={selected} nn={nn} onZap={zap} onDead={onDead} still={selected ? pic(selected) : null} onPlaying={setPlayingId} fav={!!selected && favs.has(selected.id)} onFav={() => toggleFav(selected)} onLast={lastChannel} neighbors={neighbors} /></div>
           <div className="tvx-list">
             <div className="tvx-tools">
               <div className="search-box small"><Icon name="search" />
@@ -212,7 +242,7 @@ function ChannelsView({ all, nn, admin }) {
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (visible[0]) choose(visible[0]); } else if (e.key === 'ArrowDown') { e.preventDefault(); grid.current.querySelector('.tile')?.focus(); } else if (e.key === 'Escape') setQ(''); }} />
               </div>
               <div className="chips tv-cats" role="group" aria-label="Catégories de chaînes">
-                {[['', 'Toutes', channels.length], [FAV, '★ Favoris', favs.size], ...cats.map((k) => [k, k, counts.get(k)])].map(([id, label, n]) => (
+                {[['', 'Toutes', channels.length], [FAV, '★ Favoris', favs.size], ...(recents.length ? [[RECENT, '↺ Récentes', recents.length]] : []), ...cats.map((k) => [k, k, counts.get(k)])].map(([id, label, n]) => (
                   <button key={id || 'all'} className={`chip f${id === group ? ' on' : ''}`} aria-pressed={String(id === group)} onClick={() => setGroup(id)}>{label}<small className="chip-n">{n}</small></button>
                 ))}
               </div>
@@ -285,7 +315,7 @@ function DownNote({ down }) {
 
 // Lecteur de la page TV : pause = direct différé (le serveur garde le flux), ±10 s, retour au direct,
 // chaîne précédente / suivante, son, plein écran. Il reste visible pendant qu'on choisit une autre chaîne.
-const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, still, onPlaying, fav, onFav }, ref) {
+const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, still, onPlaying, fav, onFav, onLast, neighbors }, ref) {
   const L = shared();
   const video = useRef(null);
   const screen = useRef(null);
@@ -298,7 +328,23 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
   const [muted, setMutedS] = useState(true);
   const [volume, setVolume] = useState(0.8);
   const [lag, setLag] = useState({ late: false, label: 'Direct' });
-  const S = useRef({ session: null, relay: null, detach: null, hls: null, heldAt: 0, ch: null, playing: false, dead: false, wakeT: 0 }).current;
+  const S = useRef({ session: null, relay: null, detach: null, hls: null, heldAt: 0, ch: null, playing: false, dead: false, wakeT: 0, warm: new Map(), warmT: 0 }).current;
+  // Zapping instantané : 2 s après le début d'une chaîne, la suivante et la précédente sont préparées (relais
+  // ouvert, première liste lue par Venus) ; changer de chaîne ne fait plus qu'attacher le flux déjà prêt
+  const warmNeighbors = () => {
+    clearTimeout(S.warmT);
+    S.warmT = setTimeout(() => {
+      if (!neighbors || S.dead) return;
+      for (const c of neighbors()) {
+        if (!c || c === S.ch) continue;
+        const w = S.warm.get(c.id);
+        if (w && Date.now() - w.at < 40000) continue;
+        api(`/api/play/${c.id}`, { method: 'POST', body: { caps: L.api.deviceCaps(), preview: true, warm: true } })
+          .then((info) => { if (info && info.mode === 'relay') { S.warm.set(c.id, { info, at: Date.now() }); fetch(info.url, { credentials: 'same-origin' }).catch(() => {}); } })
+          .catch(() => {});
+      }
+    }, 2000);
+  };
 
   const wake = () => { setAwake(true); clearTimeout(S.wakeT); S.wakeT = setTimeout(() => setAwake(false), 3000); };
   const hold = (on) => { if (S.relay) api(`/api/live/${S.relay}/hold`, { method: 'POST', body: { on } }).catch(() => {}); };
@@ -328,7 +374,11 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
     if (S.detach) { S.detach(); S.detach = null; } S.hls = null;
     try {
       const live = await L.imp('live.js');
-      const info = await api(`/api/play/${ch.id}`, { method: 'POST', body: { caps: L.api.deviceCaps(), preview: true, replace: prev || undefined, noRelay } });
+      const ready = !noRelay && !again && S.warm.get(ch.id);
+      S.warm.delete(ch.id);
+      if (prev && ready) stopSession(prev, !!S.relay);
+      const info = ready && Date.now() - ready.at < 40000 ? ready.info
+        : await api(`/api/play/${ch.id}`, { method: 'POST', body: { caps: L.api.deviceCaps(), preview: true, replace: prev || undefined, noRelay } });
       if (S.dead || S.ch !== ch || !S.playing) { stopSession(info.sessionId, info.mode === 'relay'); return; }
       S.session = info.sessionId; S.relay = info.mode === 'relay' ? info.sessionId : null;
       S.detach = await live.attachStream(video.current, info.url, {
@@ -376,7 +426,7 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
   useEffect(() => {
     const v = video.current;
     v.volume = 0.8;
-    const onPlay = () => setPaused(false), onPause = () => setPaused(true), onPlaying = () => { setStatus(''); setStillOn(false); };
+    const onPlay = () => setPaused(false), onPause = () => setPaused(true), onPlaying = () => { setStatus(''); setStillOn(false); warmNeighbors(); };
     v.addEventListener('play', onPlay); v.addEventListener('pause', onPause); v.addEventListener('playing', onPlaying);
     const lagT = setInterval(() => {
       if (!S.playing) return;
@@ -385,7 +435,7 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
       // Revenu tout seul au direct : plus besoin d'enregistrer
       if (S.heldAt && !v.paused && l < 8) { hold(false); S.heldAt = 0; }
     }, 1000);
-    return () => { S.dead = true; clearInterval(lagT); clearTimeout(S.wakeT); stopPreview(); v.removeEventListener('play', onPlay); v.removeEventListener('pause', onPause); v.removeEventListener('playing', onPlaying); };
+    return () => { S.dead = true; clearInterval(lagT); clearTimeout(S.warmT); for (const w of S.warm.values()) stopSession(w.info.sessionId, true); S.warm.clear(); clearTimeout(S.wakeT); stopPreview(); v.removeEventListener('play', onPlay); v.removeEventListener('pause', onPause); v.removeEventListener('playing', onPlaying); };
   }, []);
   // Chaîne montrée sans être lancée (image et programme)
   useEffect(() => { if (selected && S.ch !== selected) setStillOn(true); }, [selected]);
@@ -418,6 +468,7 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
           {ctl(paused ? 'play' : 'pause', paused ? 'Reprendre' : 'Pause (Venus enregistre : tu reprends où tu étais)', togglePause)}
           {ctl('stop', 'Arrêter', stopPlayback, 'pv-stop')}
           {ctl('next', 'Chaîne suivante', () => onZap(1))}
+          {onLast ? ctl('refresh', 'Dernière chaîne regardée', onLast, 'pv-last') : null}
           {ctl('r10', 'Reculer de 10 s', () => seekBy(-10), 'pv-seek')}
           {ctl('f10', 'Avancer de 10 s', () => seekBy(10), 'pv-seek')}
           <button className={`pv-livebtn f${lag.late ? ' late' : ''}`} type="button" title="Revenir au direct" onClick={(e) => { e.stopPropagation(); goLive(); wake(); }}><span className="dot" /><span className="lbl">{lag.label}</span></button>
@@ -634,5 +685,80 @@ function DoneCard({ r, onDelete }) {
       </div>
       <button className="rec-del f" aria-label={`Supprimer l’enregistrement ${r.title}`} title="Supprimer" onClick={onDelete}><Icon name="trash" /></button>
     </article>
+  );
+}
+
+// ---------------------------------------------------------------- multi-écran : 2 ou 4 chaînes en même temps
+function MultiView() {
+  const { data: all, error } = useApi('/api/library?type=channel');
+  const read = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch { return d; } };
+  const [n, setNs] = useState(() => (read('vn.tv.multi.n', 4) === 2 ? 2 : 4));
+  const [ids, setIds] = useState(() => read('vn.tv.multi', []));
+  const [sound, setSound] = useState(0);
+  const setN = (x) => { setNs(x); try { localStorage.setItem('vn.tv.multi.n', String(x)); } catch { /* */ } if (sound >= x) setSound(0); };
+  const pick = (i, id) => { const next = [...ids]; next[i] = id; setIds(next); try { localStorage.setItem('vn.tv.multi', JSON.stringify(next)); } catch { /* */ } };
+  if (error) return <PageError error={error} />;
+  if (!all) return <PageLoading />;
+  // Favoris d'abord dans les listes de choix
+  const channels = all.filter((c) => !c.down).sort((a, b) => (b.fav ? 1 : 0) - (a.fav ? 1 : 0));
+  return (
+    <main className="with-nav page-in">
+      <div className="page tv-page">
+        <div className="page-head">
+          <div className="head-left"><h1>TV en direct</h1><p className="count">Multi-écran</p></div>
+          <div className="head-tools"><TvTabs current="multi" /></div>
+        </div>
+        <div className="mv-tools">
+          <div className="seg" role="group" aria-label="Nombre d’écrans">
+            {[2, 4].map((x) => <button key={x} className={`seg-b f${x === n ? ' on' : ''}`} aria-pressed={String(x === n)} onClick={() => setN(x)}>{`${x} écrans`}</button>)}
+          </div>
+          <p className="muted">Touchez un écran pour entendre son son ; double-cliquez pour l’agrandir.</p>
+        </div>
+        <div className={`mv-grid n${n}`}>
+          {Array.from({ length: n }, (_v, i) => <MultiCell key={i} index={i} channels={channels} id={ids[i] || null} onPick={(id) => pick(i, id)} sound={sound === i} onSound={() => setSound(i)} />)}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function MultiCell({ index, channels, id, onPick, sound, onSound }) {
+  const L = shared();
+  const box = useRef(null);
+  const video = useRef(null);
+  const S = useRef({ session: null, relay: false, detach: null }).current;
+  const [status, setStatus] = useState('');
+  const ch = id ? channels.find((c) => c.id === id) || null : null;
+  useEffect(() => {
+    if (!ch) { setStatus(''); return undefined; }
+    let dead = false;
+    setStatus('Connexion à la chaîne…');
+    (async () => {
+      try {
+        const live = await L.imp('live.js');
+        const info = await api(`/api/play/${ch.id}`, { method: 'POST', body: { caps: L.api.deviceCaps(), preview: true } });
+        if (dead) { stopSession(info.sessionId, info.mode === 'relay'); return; }
+        S.session = info.sessionId; S.relay = info.mode === 'relay';
+        S.detach = await live.attachStream(video.current, info.url, { live: true, dvr: false, onError: () => { if (!dead) setStatus('Cette chaîne ne répond pas : choisissez-en une autre'); } });
+      } catch (e) { if (!dead) setStatus(e.message); }
+    })();
+    return () => { dead = true; if (S.detach) { S.detach(); S.detach = null; } if (S.session) { stopSession(S.session, S.relay); S.session = null; } };
+  }, [id]);
+  useEffect(() => { const v = video.current; v.muted = !sound; if (sound) v.play().catch(() => {}); }, [sound, id]);
+  const fs = () => { const el = box.current; if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else if (el.requestFullscreen) el.requestFullscreen().catch(() => {}); };
+  return (
+    <div ref={box} className={`mv-cell${sound ? ' sound' : ''}`} role="group" aria-label={`Écran ${index + 1}${ch ? ` : ${ch.title}` : ''}${sound ? ', son activé' : ''}`} onClick={onSound} onDoubleClick={fs}>
+      <video ref={video} playsInline muted onPlaying={() => setStatus('')} />
+      {!ch ? <div className="mv-empty"><Icon name="tv" /><span>Choisissez une chaîne</span></div> : null}
+      {status ? <div className="mv-status">{status}</div> : null}
+      <div className="mv-bar" onClick={(e) => e.stopPropagation()}>
+        <select className="input" value={id || ''} onChange={(e) => onPick(Number(e.target.value) || null)} aria-label={`Chaîne de l’écran ${index + 1}`}>
+          <option value="">— Chaîne —</option>
+          {channels.map((c) => <option key={c.id} value={c.id}>{`${c.fav ? '★ ' : ''}${c.number ? `${c.number}. ` : ''}${c.title}`}</option>)}
+        </select>
+        <button className={`pv-c f${sound ? ' on' : ''}`} type="button" aria-label={sound ? 'Son de cet écran' : 'Écouter cet écran'} title={sound ? 'Son de cet écran' : 'Écouter cet écran'} onClick={onSound}><Icon name={sound ? 'vol' : 'mute'} /></button>
+        <button className="pv-c f" type="button" aria-label="Agrandir cet écran" title="Agrandir" onClick={fs}><Icon name="fs" /></button>
+      </div>
+    </div>
   );
 }

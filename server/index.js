@@ -21,7 +21,7 @@ import { config } from './config.js';
 import { HttpError, sendJson, serveStatic, buildId } from './http.js';
 import { startNextUi, nextUiReady, nextStaticFile, proxyToNext } from './next-ui.js';
 import { authenticate, migrateTokens } from './auth.js';
-import { router, customCss } from './api.js';
+import { router, customCss, sendTvReminders } from './api.js';
 import { together } from './together.js';
 import { detectHardware } from './hw.js';
 import { scanAll, watchLibraries, events } from './scanner.js';
@@ -169,6 +169,8 @@ async function main() {
   // Alertes de sécurité envoyées à l'administrateur (notifications, ntfy, Discord, Telegram)
   onSecurityAlert((m) => { notify({ title: m.title, body: m.body, url: m.url, tag: 'securite' }, { adminOnly: true }); emitHook('security.alert', { title: m.title, message: m.body }); });
   startSecurityAudit();
+  // Rappels de programmes TV : notification 5 minutes avant le début
+  setInterval(() => sendTvReminders().catch((e) => console.warn('[rappels]', e.message)), 30000).unref();
   // Partages réseau (NAS, PC) : montés avant la première analyse
   await mountAll().catch((e) => console.warn('[réseau]', e.message));
   watchMounts(() => scanAll());
