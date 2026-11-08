@@ -3,7 +3,7 @@
 import { api } from '../api.js';
 import { h, icon, toast } from '../ui.js';
 import { card } from '../components.js';
-import { go, state } from '../app.js';
+import { go, state } from '../core.js';
 
 const kindOf = (i) => (i.type === 'clip' ? 'clip' : i.type === 'movie' ? 'movie' : i.category === 'anime' ? 'anime' : 'show');
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();

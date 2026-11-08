@@ -2,7 +2,7 @@
 // et livres audio (lecteur audio de Venus, reprise là où on s'était arrêté)
 import { api } from '../api.js';
 import { h, icon, img, placeholder, sheet, toast, isBack } from '../ui.js';
-import { go, setTitle, showSlug } from '../app.js';
+import { go, setTitle, showSlug } from '../core.js';
 import { playList } from '../audio.js';
 
 const pct = (b) => (b.progress && b.progress.duration ? Math.min(100, Math.round((b.progress.watched ? 1 : b.progress.position / b.progress.duration) * 100)) : 0);

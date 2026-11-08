@@ -1,5 +1,5 @@
 // Service worker : l'interface s'ouvre instantanément (cache), les données restent toujours fraîches.
-const VERSION = 'venus-v10';
+const VERSION = 'venus-v11';
 // Les fichiers de l'interface sont servis sous /b/<version>/ : chaque mise à jour a ses propres adresses
 const SHELL = ['/', '/icons/favicon.svg', '/hors-ligne.html'];
 

@@ -2,7 +2,7 @@
 // Qualité de la médiathèque (administration) : définition, codecs, HDR, poids ; titres à améliorer
 // (demande d'une meilleure version ou de la 4K à Seerr) ; conversions évitables et leurs causes.
 import { useEffect, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, toast, img, go } from '../../lib/hooks';
 import { Icon } from '../Icon';
 import { PageError, PageLoading } from '../PageState';
@@ -12,7 +12,7 @@ const FILTERS = [['improve', 'À améliorer'], ['all', 'Tout'], ['4K', '4K'], ['
 
 export default function Quality() {
   useTitle('Qualité');
-  const admin = legacy().app.state.profile.isAdmin;
+  const admin = shared().app.state.profile.isAdmin;
   const { data: d, error } = useApi(admin ? '/api/admin/quality' : null);
   if (!admin) return <main className="with-nav"><div className="empty"><h2>Réservé à l’administrateur</h2></div></main>;
   if (error) return <PageError error={error} />;

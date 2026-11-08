@@ -2,7 +2,7 @@
 // Sécurité (administrateur) : audit, double authentification par e-mail, HTTPS, adresses bloquées,
 // appareils connectés et journal des évènements de sécurité.
 import { useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, toast, go } from '../../lib/hooks';
 import { Icon } from '../Icon';
 import { PageError, PageLoading } from '../PageState';
@@ -16,12 +16,12 @@ const KIND = {
   'mot-de-passe': 'Mot de passe', droits: 'Droits', profil: 'Profil', pin: 'Code PIN', 'envoi-refuse': 'Fichier refusé', envoi: 'Fichier envoyé', audit: 'Audit', https: 'HTTPS',
   deconnexion: 'Déconnexion', journal: 'Journal', installation: 'Installation', 'erreur-serveur': 'Erreur serveur', 'cle-api': 'Clé API',
 };
-const confirm = (msg, label) => legacy().ui.confirmSheet(msg, label);
+const confirm = (msg, label) => shared().ui.confirmSheet(msg, label);
 export const Field = ({ label, hint, children }) => <div className="field"><label>{label}</label>{children}{hint ? <small>{hint}</small> : null}</div>;
 
 export default function Security() {
   useTitle('Sécurité');
-  const admin = legacy().app.state.profile.isAdmin;
+  const admin = shared().app.state.profile.isAdmin;
   const { data: d, error, reload, set } = useApi(admin ? '/api/admin/security' : null, { keep: true });
   if (!admin) return <main className="with-nav"><div className="empty"><h2>Réservé à l’administrateur</h2></div></main>;
   if (error) return <PageError error={error} />;

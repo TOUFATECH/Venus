@@ -1,7 +1,7 @@
 'use client';
 // Mes statistiques : l'année en un coup d'œil (heures, calendrier jour par jour), puis le détail
 // (mois, jours de la semaine, heures de la journée, films / séries / animés, genres, titres préférés).
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, go, img } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { PageError, PageLoading } from '../PageState';
@@ -20,7 +20,7 @@ export default function Stats() {
   const year = Number(search && search.get('annee')) || new Date().getFullYear();
   const { data: d, error } = useApi(`/api/stats?year=${year}`);
   useTitle('Mes statistiques');
-  const name = legacy().app.state.profile.name;
+  const name = shared().app.state.profile.name;
   if (error) return <PageError error={error} />;
   if (!d) return <PageLoading />;
   const years = d.years.length ? d.years : [year];

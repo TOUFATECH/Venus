@@ -2,7 +2,7 @@
 // « Nouveau » : chercher un film, une série ou un animé et l'ajouter à Radarr / Sonarr, qui le téléchargent.
 // En dessous : les téléchargements en cours (progression), rafraîchis toutes les 15 s.
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, toast, go } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
@@ -19,7 +19,7 @@ export default function Request() {
 
 function RequestView({ st }) {
   const { search } = useVenus();
-  const admin = !!legacy().app.state.profile.isAdmin;
+  const admin = !!shared().app.state.profile.isAdmin;
   const [kind, setKind] = useState(() => { const k = (search && search.get('type')) || (st.radarr ? 'movie' : 'show'); return KINDS.some(([x]) => x === k) ? k : 'movie'; });
   const [q, setQ] = useState((search && search.get('q')) || '');
   const [results, setResults] = useState([]);

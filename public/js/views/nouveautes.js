@@ -3,7 +3,7 @@
 // téléchargement via Seerr (Radarr / Sonarr lancent la recherche automatiquement).
 import { api, prefs, hoverMode } from '../api.js';
 import { h, icon, toast, fmtDate } from '../ui.js';
-import { go, state } from '../app.js';
+import { go, state } from '../core.js';
 import { scrollArrows } from '../components.js';
 import { trailerPlayer } from '../trailer.js';
 

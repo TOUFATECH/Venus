@@ -2,7 +2,7 @@
 // Accueil : grande affiche « À la une » (bande-annonce, extrait ou reprise de la vidéo), tuiles des sections,
 // rappels (« vous regardiez… », affiches manquantes) et rangées. À la télécommande, l'affiche suit la carte choisie.
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, go, api, toast, img } from '../../lib/hooks';
 import { Row } from '../Row';
 import { Icon } from '../Icon';
@@ -53,7 +53,7 @@ function HomeSkeleton() {
 
 // ---------------------------------------------------------------- affiche « À la une »
 function Hero({ items, apiRef }) {
-  const L = legacy();
+  const L = shared();
   const many = items.length > 1;
   const [idx, setIdx] = useState(0);
   const [bgItem, setBgItem] = useState(items[0]);
@@ -250,7 +250,7 @@ function HeroLayer({ item, on }) {
 }
 
 async function playItem(item) {
-  const { components } = legacy();
+  const { components } = shared();
   if (item.type === 'movie') return go(components.playPath(item.id));
   const d = await api(`/api/items/${item.id}`);
   if (d.nextUp) go(components.playPath(d.nextUp.id));
@@ -258,7 +258,7 @@ async function playItem(item) {
 }
 
 function Meta({ item }) {
-  const { ui } = legacy();
+  const { ui } = shared();
   const age = ui.ageBadge(item);
   const isShow = item.type === 'show';
   return (
@@ -274,7 +274,7 @@ function Meta({ item }) {
 }
 
 function HeroBody({ item, bodyRef, swap }) {
-  const { components } = legacy();
+  const { components } = shared();
   const ref = bodyRef;
   // Petite animation d'arrivée à chaque changement de titre
   useEffect(() => { const b = ref.current; if (!b) return; b.classList.remove('swap'); void b.offsetWidth; b.classList.add('swap'); }, [swap]);
@@ -316,7 +316,7 @@ function HeroBody({ item, bodyRef, swap }) {
 
 // ---------------------------------------------------------------- tuiles, rappels, médiathèque vide
 function SectionStrip() {
-  const { app, menu } = legacy();
+  const { app, menu } = shared();
   const all = menu.sections(app.state.profile, app.hasCat, app.state.categories || {});
   const list = ['today', 'new', 'mylist', 'collections', 'tv', 'clips'].map((id) => all.find((x) => x.id === id)).filter(Boolean).slice(0, 3);
   return (
@@ -338,7 +338,7 @@ function SectionStrip() {
 
 // « Vous regardiez X sur la télé il y a 2 min » : reprise au même endroit sur cet appareil
 function Elsewhere() {
-  const { app, components } = legacy();
+  const { app, components } = shared();
   const e = app.state.status && app.state.status.elsewhere;
   if (!e || e.duration < 60) return null;
   const ago = e.ago < 90000 ? 'à l’instant' : `il y a ${Math.round(e.ago / 60000)} min`;
@@ -371,11 +371,11 @@ function NoPosters() {
 }
 
 function Empty({ data }) {
-  const { app } = legacy();
+  const { app } = shared();
   const p = app.state.profile;
   useEffect(() => {
     if (!data.scanning) return undefined;
-    const t = setTimeout(() => window.__VN_NEXT.refresh(), 5000);
+    const t = setTimeout(() => shared().app.hostHooks.refresh(), 5000);
     return () => clearTimeout(t);
   }, [data.scanning]);
   return (

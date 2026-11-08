@@ -2,7 +2,7 @@
 // appareils connectés et journal des évènements de sécurité.
 import { api } from '../api.js';
 import { h, icon, toast, confirmSheet } from '../ui.js';
-import { state, go } from '../app.js';
+import { state, go } from '../core.js';
 
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('small', {}, hint) : null);
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—');

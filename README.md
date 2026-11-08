@@ -200,6 +200,7 @@ Navigateur ──► Venus (port 8096)
 
 - **Processus séparé et surveillé** : Venus lance le serveur Next.js autonome (~20 Mo), le relance s'il s'arrête, et sert l'interface classique en attendant : il n'y a jamais d'écran vide.
 - **Tout passe par Next.js** : le menu (rail, menu en haut, dock, onglets mobiles), le démarrage (installation, connexion, profils), le routage et **chaque page** sont des composants Next.js. Le moteur de lecture vidéo (HLS, Chromecast, AirPlay, mini-lecteur) est un module piloté par la page Next.js du lecteur, comme on intègre video.js.
+- **Code partagé embarqué** : l'état, l'accès au serveur, les thèmes, le menu et la navigation à la télécommande (`public/js`, avec `core.js` au centre) sont embarqués par Next.js dans ses propres fichiers au moment de la construction. L'ancienne application n'est plus chargée du tout ; elle ne sert que d'interface de secours.
 - **Navigation Next.js** : liens préchargés, retour / avance du navigateur, adresses lisibles (`/films/inception-2010`, `/series/breaking-bad/S01E02`).
 - **Secours** : `VENUS_UI=classic` sert l'ancienne interface ; sans construction de `web/`, elle est servie automatiquement.
 
@@ -255,7 +256,7 @@ server/            API et services — Node.js ≥ 22, aucune dépendance
 web/               interface Next.js 16 (App Router)
   app/               une route par page (accueil, fiches, bibliothèques, TV, musique, réglages, lecteur…)
   components/        coque, écrans d'entrée, cartes, rangées, et toutes les pages (components/pages)
-public/            modules partagés (thèmes, API, vues), styles, icônes, service worker
+public/            code partagé (core.js : état et navigation ; API, thèmes, menu, lecteur), interface de secours (app.js), styles, icônes
 scripts/           installateurs Linux / Windows / Mac / Proxmox, test de charge, contrôle de sécurité
 ```
 

@@ -8,3 +8,4 @@ docker-compose.override.yml
 **/node_modules
 web/.next
 web-dist
+web/partage

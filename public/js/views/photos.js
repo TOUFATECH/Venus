@@ -1,7 +1,7 @@
 // Photos : albums (un dossier = un album), grille, visionneuse plein écran avec diaporama
 import { api } from '../api.js';
 import { h, icon } from '../ui.js';
-import { go, setTitle } from '../app.js';
+import { go, setTitle } from '../core.js';
 import { isBack } from '../ui.js';
 
 const dateOf = (d) => (d ? new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '');

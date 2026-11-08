@@ -1,7 +1,7 @@
 'use client';
 // Rangées défilantes (accueil, fiche, nouveautés) et carte de chaîne TV, en composants Next.js
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../lib/legacy';
+import { shared } from '../lib/shared';
 import Card from './Card';
 import { Icon } from './Icon';
 
@@ -33,14 +33,14 @@ const initials = (t) => String(t || '').split(/\s+/).map((w) => w[0]).join('').s
 
 // Chaîne de TV : logo, « Direct », et l'image en direct au survol de la souris (sans le son)
 export function ChannelCard({ item }) {
-  const { app, components, ui } = legacy();
+  const { app, components, ui } = shared();
   const ref = useRef(null);
   const [logoOk, setLogoOk] = useState(!!item.poster);
   const [previewing, setPreviewing] = useState(false);
   useEffect(() => {
     const el = ref.current;
     let timer = null, session = null, detach = null, video = null, gone = false;
-    const L = legacy();
+    const L = shared();
     const stop = () => {
       clearTimeout(timer); gone = true;
       if (detach) { detach(); detach = null; }
@@ -88,7 +88,7 @@ export function AnyCard(props) {
 
 // Rangée de l'accueil ou d'une fiche : titre, outils (tout lire, mélanger, tout voir), cartes
 export function Row({ r, onFocus = null, poster: forcePoster }) {
-  const { app, components, queue: Q, api, ui } = legacy();
+  const { app, components, queue: Q, api, ui } = shared();
   const [items, setItems] = useState(r.items);
   useEffect(() => setItems(r.items), [r.items]);
   const scroller = useRef(null);

@@ -5,7 +5,7 @@ import { api } from '../api.js';
 import { h, icon, img, fmtRuntime, fmtDate, ageBadge, toast } from '../ui.js';
 import { card, playPath, RATING_SOURCES, framePoster } from '../components.js';
 import { setQueue } from '../queue.js';
-import { go } from '../app.js';
+import { go } from '../core.js';
 import { renderUpcoming } from './upcoming.js';
 
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés', clip: 'Clips', mylist: 'Ma liste' };

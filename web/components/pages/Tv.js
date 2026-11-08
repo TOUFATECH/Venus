@@ -2,7 +2,7 @@
 // TV en direct : chaînes (lecteur qui reste visible, direct différé, ±10 s, chaîne ±, son, plein écran,
 // mosaïque des chaînes), guide des programmes (grille) et enregistrements.
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, toast, img, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
@@ -13,9 +13,9 @@ const hm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', min
 const day = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
-const playPath = (id) => legacy().components.playPath(id);
-const token = () => encodeURIComponent(legacy().api.auth.token || '');
-const confirm = (m, l) => legacy().ui.confirmSheet(m, l);
+const playPath = (id) => shared().components.playPath(id);
+const token = () => encodeURIComponent(shared().api.auth.token || '');
+const confirm = (m, l) => shared().ui.confirmSheet(m, l);
 
 export default function Tv() {
   const { search } = useVenus();
@@ -102,7 +102,7 @@ function RecordMenu({ ch, progs, close }) {
 
 // ---------------------------------------------------------------- chaînes
 function Channels() {
-  const L = legacy();
+  const L = shared();
   const { data: all, error } = useApi('/api/library?type=channel');
   const [nn, setNn] = useState({});
   useEffect(() => { api('/api/epg/now').then(setNn).catch(() => {}); }, []);
@@ -122,7 +122,7 @@ function Channels() {
 }
 
 function ChannelsView({ all, nn, admin }) {
-  const L = legacy();
+  const L = shared();
   const [channels, setChannels] = useState(() => all.filter((c) => !c.down));
   const down = all.filter((c) => c.down);
   const groups = [...new Set(channels.map((c) => c.group).filter(Boolean))];
@@ -233,7 +233,7 @@ function DownNote({ down }) {
 // Lecteur de la page TV : pause = direct différé (le serveur garde le flux), ±10 s, retour au direct,
 // chaîne précédente / suivante, son, plein écran. Il reste visible pendant qu'on choisit une autre chaîne.
 const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, still, onPlaying }, ref) {
-  const L = legacy();
+  const L = shared();
   const video = useRef(null);
   const screen = useRef(null);
   const [playing, setPlayingS] = useState(false);
@@ -395,7 +395,7 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
 
 // ---------------------------------------------------------------- guide des programmes
 function Guide() {
-  const admin = legacy().app.state.profile.isAdmin;
+  const admin = shared().app.state.profile.isAdmin;
   const nowFrom = () => Math.floor((Date.now() - 30 * 60000) / (30 * 60000)) * 30 * 60000;
   const [from, setFrom] = useState(nowFrom);
   const [n, setN] = useState(0);

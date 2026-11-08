@@ -1,7 +1,7 @@
 // Téléchargements : vidéos préparées pour regarder sans réseau (train, avion…)
 import { api, auth } from '../api.js';
 import { h, icon, img, sheet, toast } from '../ui.js';
-import { go } from '../app.js';
+import { go } from '../core.js';
 
 const fmtSize = (b) => (!b ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
 const fileUrl = (j) => `/api/downloads/${j.id}/file?token=${encodeURIComponent(auth.token || '')}`;

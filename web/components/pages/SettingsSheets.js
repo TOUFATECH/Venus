@@ -2,12 +2,12 @@
 // Réglages : petits composants partagés et fenêtres (profil, invitation, affiche, doublons, renommage,
 // corbeille, fichiers abîmés, import d'archive)
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { api, toast, go, openSheet } from '../../lib/hooks';
 import { Icon, Avatar } from '../Icon';
 
-export const confirm = (m, l) => legacy().ui.confirmSheet(m, l);
-export const token = () => encodeURIComponent(legacy().api.auth.token || '');
+export const confirm = (m, l) => shared().ui.confirmSheet(m, l);
+export const token = () => encodeURIComponent(shared().api.auth.token || '');
 export const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
 
@@ -67,7 +67,7 @@ export function Advice({ adv }) {
 
 // Jauge de solidité d'un mot de passe (mêmes règles que le serveur)
 export function PasswordMeter({ value }) {
-  const problem = legacy().ui.passwordProblem;
+  const problem = shared().ui.passwordProblem;
   const s = value || '';
   const kinds = [/[a-z]/, /[A-Z]/, /\d/, /[^a-zA-Z\d]/].filter((r) => r.test(s)).length;
   const score = !s ? 0 : problem(s) ? 1 : Math.min(4, 1 + kinds + (s.length >= 14 ? 1 : 0) - 1);
@@ -137,8 +137,8 @@ export function editProfile(p, self, onDone) {
 }
 function ProfileForm({ p, self, onDone, close }) {
   const isNew = !p;
-  const me = legacy().app.state.profile;
-  const hues = legacy().ui.AVATAR_HUES;
+  const me = shared().app.state.profile;
+  const hues = shared().ui.AVATAR_HUES;
   const [name, setName] = useState(p ? p.name : '');
   const [av, setAv] = useState(() => (p ? p.avatar : Math.floor(Math.random() * hues.length)));
   const [pin, setPin] = useState('');
@@ -355,7 +355,7 @@ export function importArchive() {
     if (!(await confirm(`Importer « ${f.name} » ? Profils, vus, listes et réglages actuels seront remplacés par ceux de l’archive (une sauvegarde est faite avant). Venus redémarre ensuite.`, 'Importer'))) return;
     toast('Envoi de l’archive…');
     try {
-      const r = await fetch('/api/admin/import', { method: 'POST', headers: { Authorization: `Bearer ${legacy().api.auth.token || ''}`, 'Content-Type': 'application/gzip' }, body: f });
+      const r = await fetch('/api/admin/import', { method: 'POST', headers: { Authorization: `Bearer ${shared().api.auth.token || ''}`, 'Content-Type': 'application/gzip' }, body: f });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || 'Import impossible');
       toast(d.restarting ? 'Import prêt : Venus redémarre…' : 'Import prêt : redémarrez Venus pour l’appliquer', { type: 'success', duration: 8000 });

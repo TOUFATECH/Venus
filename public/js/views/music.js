@@ -1,7 +1,7 @@
 // Musique : albums, artistes, titres ; la lecture continue pendant la navigation (lecteur en bas de l'écran)
 import { api } from '../api.js';
 import { h, icon, img, placeholder } from '../ui.js';
-import { go, setTitle } from '../app.js';
+import { go, setTitle } from '../core.js';
 import { playList, addToQueue, onAudioChange, nowPlaying } from '../audio.js';
 
 const fmt = (s) => { s = Math.round(s || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };

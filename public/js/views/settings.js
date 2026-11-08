@@ -1,7 +1,7 @@
 // Réglages : mon profil (tous) + administration du serveur (administrateur)
 import { api, auth, preferredQuality, setPreferredQuality, prefs, hoverMode, heroTrailers, detailsTrailers } from '../api.js';
 import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet, passwordProblem, passwordMeter } from '../ui.js';
-import { state, switchProfile, go, liteSetting, applyLite } from '../app.js';
+import { state, switchProfile, go, liteSetting, applyLite } from '../core.js';
 import { openSourceWizard } from './source-wizard.js';
 import { NAV_ITEMS, menuPrefs, saveMenuPrefs, resetMenuPrefs, labelOf, iconOf } from '../menu.js';
 import { PLANETS, currentPlanet, setPlanet, planetMarkup, glassMode, setGlassMode, sunInfo, LAYOUTS, layoutOf } from '../themes.js';

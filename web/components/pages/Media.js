@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useParams } from 'next/navigation';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, toast, img, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
@@ -12,8 +12,8 @@ import { Placeholder } from '../Card';
 import { PageError, PageLoading } from '../PageState';
 
 const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
-const audio = () => legacy().imp('audio.js');
-const isBack = (e) => legacy().ui.isBack(e);
+const audio = () => shared().imp('audio.js');
+const isBack = (e) => shared().ui.isBack(e);
 
 // ================================================================ MUSIQUE
 const fmt = (s) => { s = Math.round(s || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
@@ -285,10 +285,10 @@ export function Books() {
 export function Reader() {
   const { id: raw } = useParams();
   const [id, setId] = useState(/^\d+$/.test(dec(raw)) ? Number(dec(raw)) : null);
-  useEffect(() => { if (!id) legacy().app.resolveParams({ slug: dec(raw) }).then((p) => setId(p.id)).catch((e) => { toast(e.message, true); go('/livres', { replace: true }); }); }, [raw]);
+  useEffect(() => { if (!id) shared().app.resolveParams({ slug: dec(raw) }).then((p) => setId(p.id)).catch((e) => { toast(e.message, true); go('/livres', { replace: true }); }); }, [raw]);
   const { data: b, error } = useApi(id ? `/api/books/${id}` : null);
   useTitle(b ? b.title : undefined);
-  useEffect(() => { if (b) legacy().app.showSlug('lire', b.slug); }, [b]);
+  useEffect(() => { if (b) shared().app.showSlug('lire', b.slug); }, [b]);
   if (error) return <PageError error={error} />;
   if (!b) return <main className="with-nav" />;
   return <main className="with-nav"><div className="rd-spacer" /><ReaderView b={b} id={id} /></main>;

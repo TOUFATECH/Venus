@@ -1,13 +1,13 @@
 'use client';
 // Téléchargements : vidéos préparées pour regarder sans réseau (train, avion…), et choix de la version à télécharger
 import { useEffect, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useTitle, api, toast, img, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
 
 const fmtSize = (b) => (!b ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
-const token = () => encodeURIComponent(legacy().api.auth.token || '');
+const token = () => encodeURIComponent(shared().api.auth.token || '');
 const STATE = { queued: 'En attente', working: 'Préparation', ready: 'Prêt', error: 'Échec' };
 
 export default function Downloads() {
@@ -21,7 +21,7 @@ export default function Downloads() {
       if (dead) return;
       setJobs(list);
       if (list.some((j) => j.state === 'working' || j.state === 'queued')) timer = setTimeout(() => setN((x) => x + 1), 2000);
-    }).catch((e) => { if (!dead) { setJobs([]); toast(e.message, true); } }).finally(() => legacy().app.hideBoot());
+    }).catch((e) => { if (!dead) { setJobs([]); toast(e.message, true); } }).finally(() => shared().app.hideBoot());
     return () => { dead = true; clearTimeout(timer); };
   }, [n, tick]);
   const del = async (j) => { await api(`/api/downloads/${j.id}`, { method: 'DELETE' }); setN((x) => x + 1); };

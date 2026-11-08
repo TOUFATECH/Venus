@@ -2,7 +2,7 @@
 // En dessous : les téléchargements en cours (progression), rafraîchis toutes les 15 s.
 import { api } from '../api.js';
 import { h, icon, toast } from '../ui.js';
-import { go, state } from '../app.js';
+import { go, state } from '../core.js';
 
 const KINDS = [['movie', 'Films', 'film'], ['show', 'Séries', 'tv'], ['anime', 'Animés', 'spark']];
 

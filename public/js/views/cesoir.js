@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { dayPart, todayIcon } from '../menu.js';
 const greeting = () => { const hr = new Date().getHours(); return hr >= 18 || hr < 4 ? 'Bonsoir' : 'Bonjour'; };
 import { h, icon, img, picture, placeholder, fmtRuntime } from '../ui.js';
-import { go, state } from '../app.js';
+import { go, state } from '../core.js';
 import { playItem } from './home.js';
 import { tintFrom } from '../ambiance.js';
 

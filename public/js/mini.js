@@ -5,7 +5,7 @@
 //  - il survit au rechargement de la page (la lecture reprend au même endroit) ; seule la croix l'arrête
 import { api, auth, deviceCaps } from './api.js';
 import { h, icon, toast } from './ui.js';
-import { go } from './app.js';
+import { go } from './core.js';
 import { loadHls } from './live.js';
 import { queueAround } from './queue.js';
 

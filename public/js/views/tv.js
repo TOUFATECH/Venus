@@ -2,7 +2,7 @@
 // plein écran) + mosaïque des chaînes avec leur image actuelle. Un clic lance la chaîne, le survol ne fait rien.
 import { api, auth, deviceCaps } from '../api.js';
 import { h, icon, img } from '../ui.js';
-import { go, state } from '../app.js';
+import { go, state } from '../core.js';
 import { toast } from '../ui.js';
 import { playPath } from '../components.js';
 import { attachStream, numberZapper } from '../live.js';

@@ -1,6 +1,6 @@
 // Composants partagés : cartes, rangées, actions de lecture
 import { h, icon, img, picture, placeholder, fmtDate, daysSince, fadeIn, sheet, toast } from './ui.js';
-import { go, state } from './app.js';
+import { go, state, hostHooks } from './core.js';
 import { api, auth, prefs, hoverMode, prefetch } from './api.js';
 import { trailerPlayer, trailerUrl, playTrailer } from './trailer.js';
 import { setQueue } from './queue.js';
@@ -381,15 +381,15 @@ export function quickMenu(item) {
       const r = await api(`/api/items/${titleId}/mylist`, { method: 'POST' });
       toast(r.inList ? 'Ajouté à ma liste' : 'Retiré de ma liste', { type: r.inList ? 'success' : 'info', action: { label: 'Annuler', onClick: () => api(`/api/items/${titleId}/mylist`, { method: 'POST' }).then(() => toast(r.inList ? 'Retiré de ma liste' : 'Ajouté à ma liste')) } });
     }),
-    item.type !== 'channel' ? opt('list', 'Ajouter à une liste…', async () => { const m = await import('./views/collections.js'); m.addToSheet(item); }) : null,
+    item.type !== 'channel' ? opt('list', 'Ajouter à une liste…', async () => { if (hostHooks.addToList) { hostHooks.addToList(item); return; } const m = await import('./views/collections.js'); m.addToSheet(item); }) : null,
     opt('eye', seen ? 'Marquer comme non vu' : 'Marquer comme vu', async () => {
       await api(`/api/items/${item.id}/watched`, { method: 'POST', body: { watched: !seen } });
       toast(seen ? `« ${item.title} » : non vu` : `« ${item.title} » : vu`, { type: 'success', action: { label: 'Annuler', onClick: () => api(`/api/items/${item.id}/watched`, { method: 'POST', body: { watched: seen } }) } });
     }),
     item.trailer ? opt('film', 'Bande-annonce', () => playTrailer(item.trailer, item.title)) : null,
     item.type !== 'channel' ? opt('cast', 'Envoyer vers un autre écran…', () => sendTo(item)) : null,
-    (item.type === 'movie' || isEp) && !(state.profile && state.profile.perms && state.profile.perms.download === false) ? opt('down', 'Télécharger', async () => { const m = await import('./views/downloads.js'); m.openDownload({ id: item.id, title: item.title, duration: (item.runtime || 0) * 60 }); }) : null,
-    state.profile && state.profile.isAdmin && item.type !== 'channel' ? opt('trash', item.type === 'show' ? 'Supprimer la série' : 'Supprimer la vidéo', () => deleteVideo({ id: item.id, what: isEp ? `l’épisode S${item.season} É${item.episode}` : item.type === 'show' ? `la série « ${item.title} »` : `« ${item.title} »`, onDone: () => window.dispatchEvent(new HashChangeEvent('hashchange')) })) : null));
+    (item.type === 'movie' || isEp) && !(state.profile && state.profile.perms && state.profile.perms.download === false) ? opt('down', 'Télécharger', async () => { const d = { id: item.id, title: item.title, duration: (item.runtime || 0) * 60 }; if (hostHooks.download) { hostHooks.download(d); return; } const m = await import('./views/downloads.js'); m.openDownload(d); }) : null,
+    state.profile && state.profile.isAdmin && item.type !== 'channel' ? opt('trash', item.type === 'show' ? 'Supprimer la série' : 'Supprimer la vidéo', () => deleteVideo({ id: item.id, what: isEp ? `l’épisode S${item.season} É${item.episode}` : item.type === 'show' ? `la série « ${item.title} »` : `« ${item.title} »`, onDone: () => hostHooks.refresh() })) : null));
 }
 
 // Administration : supprimer une vidéo (fichier effacé du disque). Confirmation obligatoire, « Annuler » par défaut.

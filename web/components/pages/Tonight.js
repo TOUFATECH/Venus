@@ -1,7 +1,7 @@
 'use client';
 // « Que regarder ce soir ? » : trois questions (envie, temps, avec qui), trois idées argumentées
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, img, go } from '../../lib/hooks';
 import { Icon } from '../Icon';
 import { Picture, Placeholder } from '../Card';
@@ -45,7 +45,7 @@ function score(i, a, TIMES) {
     if (len > t[3]) return null;
     if (a.time === '120' && i.type === 'movie' && len >= 100) s += 2;
     if (a.time === '30' && i.type !== 'movie') s += 2;
-    reasons.push(i.type === 'show' ? `Épisodes de ${len} min` : `${legacy().ui.fmtRuntime(len)}, fini à ${finishAt(len)}`);
+    reasons.push(i.type === 'show' ? `Épisodes de ${len} min` : `${shared().ui.fmtRuntime(len)}, fini à ${finishAt(len)}`);
   }
   if (a.who === 'famille') {
     if (i.age == null || i.age > 10) return null;
@@ -62,14 +62,14 @@ function score(i, a, TIMES) {
 }
 
 export async function playItem(item) {
-  const { components } = legacy();
+  const { components } = shared();
   if (item.type === 'movie') return go(components.playPath(item.id));
   const d = await api(`/api/items/${item.id}`);
   if (d.nextUp) go(components.playPath(d.nextUp.id)); else go(`/titre/${item.id}`);
 }
 
 export default function Tonight() {
-  const { menu, app } = legacy();
+  const { menu, app } = shared();
   const soir = menu.dayPart() === 'soir';
   useTitle(soir ? 'Ce soir' : 'Aujourd’hui');
   const { data: items, error } = useApi('/api/library');
@@ -89,7 +89,7 @@ export default function Tonight() {
     const fresh = ranked.filter((r) => !shown.current.has(r.item.id));
     const p = (fresh.length >= 3 ? fresh : ranked).slice(0, 3);
     p.forEach((x) => shown.current.add(x.item.id));
-    if (p[0]) legacy().imp('ambiance.js').then((m) => m.tintFrom(img(p[0].item.backdrop || p[0].item.poster))).catch(() => {});
+    if (p[0]) shared().imp('ambiance.js').then((m) => m.tintFrom(img(p[0].item.backdrop || p[0].item.poster))).catch(() => {});
     setPicks(p);
   };
   const answer = (key, id) => {

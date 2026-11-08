@@ -2,7 +2,7 @@
 // Tableau de bord de l'administrateur : lectures en cours (pause, arrêt, message), code de connexion,
 // appareils, tâches de fond, santé du serveur, activité récente, médiathèques à vérifier.
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useTitle, api, toast, img, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon, Avatar } from '../Icon';
@@ -25,7 +25,7 @@ const ago = (t) => {
   return d < 30 ? `il y a ${d} j` : new Date(t).toLocaleDateString('fr-FR');
 };
 const fmtUptime = (s) => { const d = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), mm = Math.floor((s % 3600) / 60); return d ? `${d} j ${hh} h` : hh ? `${hh} h ${mm} min` : `${mm} min`; };
-const fmtTime = (s) => legacy().ui.fmtTime(s);
+const fmtTime = (s) => shared().ui.fmtTime(s);
 const Meter = ({ pct, cls = '' }) => <div className={`meter ${cls}${pct > 90 ? ' hot' : pct > 75 ? ' warm' : ''}`}><i style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} /></div>;
 const ACT_ICON = { play: 'play', stop: 'stop', login: 'key', message: 'chat', control: 'pause', device: 'exit', server: 'power', scan: 'refresh', seerr: 'down' };
 const NAV = [
@@ -35,11 +35,11 @@ const NAV = [
 ];
 const WHERE = { playing: ['apercu', 'lectures'], code: ['apercu', 'appareils'], tasks: ['apercu', 'taches'], devices: ['appareils'], system: ['sante'], activity: ['activite'], libs: ['medias', 'sante'] };
 const TABS = NAV.flatMap(([, l]) => l).filter(([k]) => !k.startsWith('/'));
-const confirm = (m, l) => legacy().ui.confirmSheet(m, l);
+const confirm = (m, l) => shared().ui.confirmSheet(m, l);
 
 export default function Dashboard() {
   useTitle('Tableau de bord');
-  const admin = legacy().app.state.profile.isAdmin;
+  const admin = shared().app.state.profile.isAdmin;
   const { search } = useVenus();
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
@@ -49,7 +49,7 @@ export default function Dashboard() {
     busy.current = true;
     try { setD(await api('/api/admin/dashboard')); } catch (e) { setD((x) => { if (!x) setError(e); return x; }); }
     busy.current = false;
-    legacy().app.hideBoot();
+    shared().app.hideBoot();
   };
   useEffect(() => {
     if (!admin) return undefined;

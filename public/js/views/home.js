@@ -4,7 +4,7 @@ import { trailerPlayer } from '../trailer.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, toast } from '../ui.js';
 import { row, playPath, metaLine, frameImage } from '../components.js';
 import { attachStream } from '../live.js';
-import { go, state, currentPath, hasCat, openAll } from '../app.js';
+import { go, state, currentPath, hasCat, openAll } from '../core.js';
 import { tintFrom } from '../ambiance.js';
 import { sections } from '../menu.js';
 

@@ -2,7 +2,7 @@
 // Écran du téléphone (#/vote?code=ABCD) et fenêtre de l'écran principal (startVote).
 import { api, openStream } from '../api.js';
 import { h, icon, img, qrSvg, sheet, toast } from '../ui.js';
-import { go, back } from '../app.js';
+import { go, back } from '../core.js';
 import { playItem } from './home.js';
 
 const clientId = (() => { try { let c = sessionStorage.getItem('vn_vote_client'); if (!c) { c = Math.random().toString(36).slice(2); sessionStorage.setItem('vn_vote_client', c); } return c; } catch { return Math.random().toString(36).slice(2); } })();

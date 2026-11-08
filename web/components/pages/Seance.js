@@ -2,7 +2,7 @@
 // Rejoindre une séance à plusieurs avec son code (ou via le lien d'invitation)
 import { useEffect, useRef, useState } from 'react';
 import { useTitle, api, go } from '../../lib/hooks';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
 
@@ -19,7 +19,7 @@ export default function Seance() {
     if (c.length !== 4) { setErr('Le code fait 4 lettres.'); return; }
     try { const r = await api(`/api/rooms/${c}`); go(`/lecture/${r.itemId}?salle=${r.code}`, { replace: true }); } catch (e2) { setErr(e2.message); }
   };
-  useEffect(() => { legacy().app.hideBoot(); if (code.length === 4) join(); else setTimeout(() => input.current && input.current.focus(), 50); }, []);
+  useEffect(() => { shared().app.hideBoot(); if (code.length === 4) join(); else setTimeout(() => input.current && input.current.focus(), 50); }, []);
   return (
     <main className="with-nav page-in">
       <div className="page">
