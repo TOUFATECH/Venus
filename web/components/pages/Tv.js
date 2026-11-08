@@ -321,7 +321,7 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
     else if (r && r.hidden) { setStatus(`Chaîne hors service (${r.error || 'aucune image'}) : retirée de la liste. Elle reviendra si elle remarche.`); onDead(ch); S.playing = false; setPlaying(false); }
     else if (r) { setStatus('La chaîne répond au test : nouvelle tentative…'); setTimeout(() => { if (S.ch === ch) start(ch, { noRelay: true }); }, 800); }
   };
-  const start = async (ch, { noRelay = false } = {}) => {
+  const start = async (ch, { noRelay = false, again = false } = {}) => {
     S.ch = ch; S.playing = true; setPlaying(true);
     setStatus('Connexion à la chaîne…');
     const prev = S.session;
@@ -333,7 +333,8 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
       S.session = info.sessionId; S.relay = info.mode === 'relay' ? info.sessionId : null;
       S.detach = await live.attachStream(video.current, info.url, {
         live: true, dvr: !!S.relay,
-        onError: () => { if (S.ch !== ch) return; if (S.relay && !noRelay) { start(ch, { noRelay: true }); return; } failed(ch); },
+        // Image figée après un moment : on relance la chaîne telle quelle une fois, puis sans le relais
+        onError: (d) => { if (S.ch !== ch) return; if (d && d.type === 'stalled' && !again) { setStatus('Image figée : je relance la chaîne…'); start(ch, { noRelay, again: true }); return; } if (S.relay && !noRelay) { start(ch, { noRelay: true }); return; } failed(ch); },
       });
       S.hls = (S.detach && S.detach.hls) || null;
     } catch (e) { if (S.ch === ch) { setStatus(e.message); failed(ch, false); } }

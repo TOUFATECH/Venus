@@ -3574,9 +3574,11 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
 .sheet-react { display: contents; }
 
 /* ---- TV : catégories, favoris ---- */
-@media (hover: hover) and (pointer: fine) {
-  /* À la souris, les catégories passent à la ligne au lieu de dépasser (pas de défilement horizontal caché) */
+@media (min-width: 761px), (hover: hover) and (pointer: fine) {
+  /* Ordinateur, tablette, souris : toutes les catégories visibles, sur plusieurs lignes (pas de défilement caché).
+     Le bloc ne reste plus collé en haut : avec plusieurs lignes, il cacherait les chaînes. */
   .tvx-tools .chips { flex-wrap: wrap; overflow: visible; }
+  .tvx-tools { position: static; }
 }
 .chip-n { margin-left: 6px; opacity: .6; font-size: .78em; font-variant-numeric: tabular-nums; }
 .chip.on .chip-n { opacity: .8; }
