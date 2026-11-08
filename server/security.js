@@ -142,6 +142,8 @@ const LIMITS = {
 };
 function bucket(kind, ip) {
   const key = `${kind}|${ip}`;
+  // Les adresses des jours passés (et sans blocage en cours) sont oubliées : la table ne grossit pas sans fin
+  if (fails.size > 2000) { const d = today(), now = Date.now(); for (const [k, v] of fails) if (v.day !== d && v.lockedUntil < now) fails.delete(k); }
   let b = fails.get(key);
   if (!b || b.day !== today()) { b = { list: [], lockedUntil: 0, locks: b && b.day === today() ? b.locks : 0, day: today(), dayCount: 0 }; fails.set(key, b); }
   return b;

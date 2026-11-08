@@ -122,7 +122,6 @@ export async function listShares({ proto, host, user, pass }) {
 
 // ------------------------------------------------------------------ montage
 function cleanHost(h) { return String(h || '').trim().replace(/^(smb|nfs|cifs):\/\//i, '').replace(/^\\\\/, '').replace(/[\\/].*$/, ''); }
-function cleanShare(s) { return String(s || '').trim().replace(/^[\\/]+|[\\/]+$/g, '').replace(/\\/g, '/'); }
 
 export function describe(remote) {
   if (!remote) return null;

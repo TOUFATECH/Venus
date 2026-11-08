@@ -2,7 +2,7 @@
 import { h, icon, img, picture, placeholder, fmtDate, daysSince, fadeIn, sheet, toast } from './ui.js';
 import { go, state, hostHooks } from './core.js';
 import { api, auth, prefs, hoverMode, prefetch } from './api.js';
-import { trailerPlayer, trailerUrl, playTrailer } from './trailer.js';
+import { trailerPlayer, playTrailer } from './trailer.js';
 import { setQueue } from './queue.js';
 import { startMini, miniActive } from './mini.js';
 

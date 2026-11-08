@@ -7,17 +7,16 @@ import os from 'node:os';
 import { Router, HttpError, readBody, sendJson, sendFile } from './http.js';
 import { db, all, get, run, tx, itemsVersion, getSetting, setSetting } from './db.js';
 import { slugFor, resolveSlug, cleanName, pathFor, resolveEpisode } from './slugs.js';
-import { V, validate, passwordProblem, logSecurity, securityLog, listBans, unbanIp, banIp, attemptStats, isSecure, safeJoin, safeFileName, httpsMode } from './security.js';
+import { V, validate, passwordProblem, logSecurity, securityLog, listBans, unbanIp, banIp, attemptStats, isSecure, httpsMode } from './security.js';
 import { twofaOn, startChallenge, verifyChallenge, resendChallenge, twofaEmail, twofaStats, maskEmail } from './twofa.js';
 import { sendMail, smtpConf, smtpOn } from './smtp.js';
 import { lastAudit, runSecurityAudit } from './audit.js';
 import { config } from './config.js';
 import {
   hashSecret, verifySecret, createToken, requireDevice, requireProfile, requireAdmin,
-  isSetup, checkRate, failRate, resetRate, publicProfile, needsRehash, tokenKey, revokeToken, revokeOtherTokens, setTokenProfile, sessionCookie,
+  isSetup, checkRate, failRate, resetRate, publicProfile, needsRehash, revokeToken, revokeOtherTokens, setTokenProfile, sessionCookie,
 } from './auth.js';
-import { scanAll, scanState, watchLibraries, scheduleScan, events } from './scanner.js';
-import { pipeline } from 'node:stream/promises';
+import { scanAll, scanState, watchLibraries, events } from './scanner.js';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
 import { saveRemoteImage, freePosterCandidates, fillMissingPosters, fillMissingBackdrops, testSources, redoFreePosters } from './posters.js';
 import { findTrailerFor } from './youtube.js';
@@ -43,12 +42,12 @@ import {
 import { detectHardware } from './hw.js';
 import { probeLive, readChapters, cachedProbe } from './probe.js';
 import { runTask, listTasks } from './tasks.js';
-import { versionLabel, groupVersions } from './versions.js';
+import { versionLabel } from './versions.js';
 import { permsOf, accessProblem, libraryClause, validPerms } from './perms.js';
 import { logLines, logText } from './logbuf.js';
 import { createApiKey, listApiKeys, revokeApiKey } from './apikeys.js';
 import { HOOK_EVENTS, listHooks, saveHooks, testHook, emitHook } from './webhooks.js';
-import { programsBetween, programById, nowNext, epgState, refreshEpg } from './epg.js';
+import { programsBetween, programById, nowNext, epgState } from './epg.js';
 import { lyricsOf, epubPackage, cbzPages } from './media.js';
 import { zipRead } from './zip.js';
 import { schedule as scheduleRecording, cancel as cancelRecording, listRecordings, listRules, addRule, removeRule, dvrDir } from './dvr.js';
@@ -2405,6 +2404,8 @@ router.post('/api/admin/libraries', async (ctx) => {
       writable: !!r.writable,
     };
     if (!remote.host || !remote.share) throw new HttpError(400, 'Choisissez un appareil et un partage');
+    // Nom d'appareil ou adresse IP seulement : rien d'autre ne doit atteindre la commande de montage
+    if (!/^[A-Za-z0-9._-]{1,253}$/.test(remote.host)) throw new HttpError(400, 'Adresse de l’appareil invalide');
     if (remote.proto === 'nfs' && !remote.share.startsWith('/')) remote.share = `/${remote.share}`;
     const dup = all('SELECT * FROM libraries WHERE remote IS NOT NULL').find((l) => { const x = remoteOf(l); return x && x.host === remote.host && x.share === remote.share && (x.sub || '') === remote.sub && l.type === b.type; });
     if (dup) throw new HttpError(409, 'Ce partage est déjà ajouté pour ce type de contenu');

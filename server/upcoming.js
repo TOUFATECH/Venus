@@ -7,7 +7,7 @@
 //    et le programme TVmaze (États-Unis, France, plateformes de streaming) pour les autres séries ;
 //  - animés : la même chose, et le programme de diffusion d'AniList pour les animés de la saison ;
 //  - films : le calendrier et les suggestions de Radarr (tendances, populaires), et TMDB si une clé est donnée.
-import { db, all, get, run } from './db.js';
+import { db, all, run } from './db.js';
 import { getJson } from './posters.js';
 import { anilist } from './ratings.js';
 import { tmdb, tmdbKey, lang } from './metadata.js';

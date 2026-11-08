@@ -103,6 +103,8 @@ export async function filmography(name) {
   }));
   const out = list.filter((x) => x.title);
   cache.set(key, { at: Date.now(), list: out });
+  // 500 personnes gardées au plus : les plus anciennes sortent en premier
+  while (cache.size > 500) cache.delete(cache.keys().next().value);
   return out;
 }
 

@@ -230,9 +230,10 @@ npm run web:build         # construction de production (servie ensuite par Venus
 
 ```bash
 npm run web:build && npm test   # 75 tests dans un vrai navigateur (Playwright)
+cd tests && npm run analyse     # analyse du code (variables inconnues, règles React…)
 ```
 
-Les tests démarrent un Venus jetable avec de petites vidéos, de la musique et des photos générées par ffmpeg, puis vérifient chaque page sur **ordinateur**, **téléphone** et **télévision** (navigation aux flèches de la télécommande) : connexion et code PIN, lecture d'un film, épisode suivant, mini-lecteur, recherche, Ma liste, musique, réglages, assistant d'ajout de source. Une page qui lève une erreur JavaScript fait échouer son test. Sur GitHub, ils tournent à chaque envoi, avec la construction et le démarrage de l'image Docker.
+Les tests démarrent un Venus jetable avec de petites vidéos, de la musique et des photos générées par ffmpeg, puis vérifient chaque page sur **ordinateur**, **téléphone** et **télévision** (navigation aux flèches de la télécommande) : connexion et code PIN, lecture d'un film, épisode suivant, mini-lecteur, recherche, Ma liste, musique, réglages, assistant d'ajout de source. Une page qui lève une erreur JavaScript fait échouer son test. Sur GitHub, l'analyse et les tests tournent à chaque envoi, avec la construction et le démarrage de l'image Docker.
 
 ---
 

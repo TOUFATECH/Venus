@@ -30,8 +30,8 @@ function App({ children }) {
   const [tick, setTick] = useState(0);
   const [, setChrome] = useState(0);
 
-  // Clé de la page : change à chaque vraie navigation et à chaque « actualiser », mais pas quand l'ancienne
-  // interface remplace seulement l'adresse affichée (/titre/12 → /films/Inception.2010)
+  // Clé de la page : change à chaque vraie navigation et à chaque « actualiser », mais pas quand le code
+  // partagé remplace seulement l'adresse affichée (/titre/12 → /films/Inception.2010)
   const keyRef = useRef({ url, key: url, tick });
   if (keyRef.current.url !== url) {
     if (typeof window !== 'undefined' && window.__vnSilent && sameUrl(window.__vnSilent, url)) window.__vnSilent = null;

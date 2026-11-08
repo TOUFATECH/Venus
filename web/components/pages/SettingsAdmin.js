@@ -136,7 +136,7 @@ export function PerfBoxes() {
   const [error, setError] = useState(null);
   const [measuring, setMeasuring] = useState(false);
   const load = async () => { try { perfCache = await api('/api/admin/perf'); setD(perfCache); } catch (e) { setError(e); } };
-  useEffect(() => { load(); const iv = setInterval(load, 10000); return () => clearInterval(iv); }, []);
+  useEffect(() => { load(); const iv = setInterval(() => { if (!document.hidden) load(); }, 10000); return () => clearInterval(iv); }, []);
   if (error && !d) return <section className="box"><p className="error-text">{error.message}</p></section>;
   if (!d) return <section className="box"><p className="muted">Chargement…</p></section>;
   const o = d.optimize; const t = d.transcode; const n = d.nas;
@@ -793,7 +793,11 @@ export function ServerBox({ a }) {
           if (pass && problem(pass)) { toast(`Mot de passe : ${problem(pass).toLowerCase()}`, true); return; }
           if (!(Number(interval.current.value) >= 5)) { toast('Vérification : 5 minutes minimum', true); return; }
           try {
-            await putSettings({ serverName: name.current.value.trim().slice(0, 40), password: pass || undefined, scanInterval: Number(interval.current.value) });
+            const serverName = name.current.value.trim().slice(0, 40);
+            await putSettings({ serverName, password: pass || undefined, scanInterval: Number(interval.current.value) });
+            // Nouveau nom : visible tout de suite dans l'onglet du navigateur
+            const { app } = shared();
+            if (app.state.status) { app.state.status.name = serverName || 'Venus'; app.setTitle('Réglages'); }
             toast(pass ? 'Mot de passe changé : les autres appareils devront se reconnecter' : 'Réglages enregistrés', { type: 'success' });
             setPass('');
           } catch (e) { toast(e.message, true); }

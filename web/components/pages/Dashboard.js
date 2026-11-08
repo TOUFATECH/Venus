@@ -54,7 +54,8 @@ export default function Dashboard() {
   useEffect(() => {
     if (!admin) return undefined;
     refresh();
-    const poll = setInterval(refresh, 4000);
+    // Onglet caché : pas de mise à jour (le serveur et la batterie se reposent)
+    const poll = setInterval(() => { if (!document.hidden) refresh(); }, 4000);
     return () => clearInterval(poll);
   }, []);
   const [tab, setTab] = useState(() => { const t = (search && search.get('vue')) || (() => { try { return sessionStorage.getItem('vn_dash_tab'); } catch { return null; } })() || 'apercu'; return TABS.some(([k]) => k === t) ? t : 'apercu'; });

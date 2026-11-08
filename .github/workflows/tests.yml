@@ -1,4 +1,4 @@
-# Tests de Venus à chaque envoi : construction de l'interface Next.js, tests dans un vrai navigateur
+# Tests de Venus à chaque envoi : analyse du code, construction de l'interface Next.js, tests dans un vrai navigateur
 # (ordinateur, téléphone, télécommande) et construction de l'image Docker.
 name: Tests
 on:
@@ -15,6 +15,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  analyse:
+    name: Analyse du code
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Outils
+        working-directory: tests
+        run: npm ci --no-audit --no-fund
+      - name: Variables inconnues, code inatteignable, règles React
+        working-directory: tests
+        run: npm run analyse
+
   navigateur:
     name: Pages et parcours (navigateur)
     runs-on: ubuntu-latest

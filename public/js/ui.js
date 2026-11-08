@@ -229,9 +229,15 @@ export function sheet(title, content, { onClose, keepBackspace = false, wide = f
   const prevFocus = document.activeElement;
   const box = h('div', { class: `sheet${wide ? ' wide' : ''}${side ? ' side' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title }, title ? h('h2', {}, title) : null, content);
   const wrap = h('div', { class: `sheet-wrap${side ? ' side' : ''}` }, box);
+  // Une seule fermeture, même si plusieurs causes arrivent ensemble (Échap, clic à côté, changement de page)
+  let closed = false;
   const close = () => {
+    if (closed) return;
+    closed = true;
     wrap.remove(); document.removeEventListener('keydown', onKey, true);
-    onClose && onClose(); prevFocus && prevFocus.focus && prevFocus.focus();
+    onClose && onClose();
+    // Le focus revient à l'élément d'origine seulement s'il est encore à l'écran
+    if (prevFocus && prevFocus.isConnected && prevFocus.focus) prevFocus.focus();
   };
   const onKey = (e) => { if (keepBackspace && e.key === 'Backspace') return; if (isBack(e)) { e.preventDefault(); e.stopPropagation(); close(); } };
   wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });

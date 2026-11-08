@@ -33,7 +33,7 @@ function RequestView({ st }) {
     if (!st.radarr && !st.sonarr) return undefined;
     setTimeout(() => input.current && input.current.focus(), 50);
     loadQueue();
-    const iv = setInterval(loadQueue, 15000);
+    const iv = setInterval(() => { if (!document.hidden) loadQueue(); }, 15000);
     return () => clearInterval(iv);
   }, []);
   useEffect(() => {
