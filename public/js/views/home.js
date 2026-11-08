@@ -1,7 +1,7 @@
 // Accueil : grande affiche + rangées. L'affiche suit la carte sélectionnée (télécommande ou souris).
 import { api, auth, heroTrailers, deviceCaps } from '../api.js';
 import { trailerPlayer } from '../trailer.js';
-import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, toast } from '../ui.js';
+import { h, icon, img, picture, ageBadge, fmtRuntime, toast } from '../ui.js';
 import { row, playPath, metaLine, frameImage } from '../components.js';
 import { attachStream } from '../live.js';
 import { go, state, currentPath, hasCat, openAll } from '../core.js';

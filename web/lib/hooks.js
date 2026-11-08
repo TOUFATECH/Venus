@@ -12,13 +12,24 @@ export function useApi(path, { deps = [], keep = false } = {}) {
   const tick = venus ? venus.tick : 0;
   const [state, setState] = useState({ data: undefined, error: null, loading: !!path });
   const [n, setN] = useState(0);
+  const shown = useRef(null); // adresse dont les données sont affichées
   useEffect(() => {
     if (!path) { setState({ data: undefined, error: null, loading: false }); return undefined; }
     let dead = false;
     if (!keep) setState((s) => ({ ...s, loading: true }));
     shared().api.api(path)
-      .then((data) => { if (!dead) setState({ data, error: null, loading: false }); })
-      .catch((error) => { if (!dead) setState({ data: undefined, error, loading: false }); })
+      .then((data) => { if (!dead) { shown.current = path; setState({ data, error: null, loading: false }); } })
+      .catch((error) => {
+        if (dead) return;
+        // Actualisation ratée (réseau coupé un instant…) : la page affichée reste, un message prévient
+        if (shown.current === path && ![401, 403, 404].includes(error.status)) {
+          setState((s) => ({ ...s, loading: false }));
+          shared().ui.toast(error.message, true);
+          return;
+        }
+        shown.current = null;
+        setState({ data: undefined, error, loading: false });
+      })
       .finally(() => shared().app.hideBoot());
     return () => { dead = true; };
   }, [path, tick, n, ...deps]);

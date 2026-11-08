@@ -44,10 +44,13 @@ export default function Settings() {
   const [a, setA] = useState(null);
   const [error, setError] = useState(null);
   const timer = useRef(0);
+  const loaded = useRef(false);
   const refresh = async () => {
     clearTimeout(timer.current);
+    // Onglet caché : on vérifie plus tard, sans interroger le serveur
+    if (document.hidden && loaded.current) { timer.current = setTimeout(refresh, 20000); return; }
     let x = null;
-    try { x = await api('/api/admin'); setA(x); } catch (e) { setA((old) => { if (!old) setError(e); return old; }); }
+    try { x = await api('/api/admin'); setA(x); loaded.current = true; } catch (e) { setA((old) => { if (!old) setError(e); return old; }); }
     timer.current = setTimeout(refresh, x && (x.scan.running || x.sessions.length) ? 4000 : 20000);
   };
   useEffect(() => {

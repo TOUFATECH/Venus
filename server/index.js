@@ -36,7 +36,7 @@ import { mountAll, watchMounts } from './netshare.js';
 import { runtime } from './env.js';
 import { getSetting, setSetting, all } from './db.js';
 import fs from 'node:fs';
-import { contentSecurityPolicy, clientIp, isSecure, inspectRequest, isBanned, applyHeaders, handlePreflight, checkCsrf, checkHpp, rateLimit, requireHttps, publicError, suspicious, logSecurity, onSecurityAlert } from './security.js';
+import { contentSecurityPolicy, clientIp, isSecure, inspectRequest, isBanned, applyHeaders, handlePreflight, checkCsrf, checkHpp, rateLimit, requireHttps, publicError, suspicious, onSecurityAlert } from './security.js';
 import { tlsOptions } from './tls.js';
 import { notify } from './notify.js';
 import { startSecurityAudit } from './audit.js';
@@ -98,7 +98,7 @@ async function handle(req, res) {
     if (!(next && page) && serveStatic(req, res, publicDir, url.pathname)) return;
     // Fichier absent (police, image, script…) : vraie erreur 404, pas la page d'accueil à sa place
     if (/\.(woff2?|ttf|otf|eot|m?js|css|map|png|jpe?g|gif|webp|avif|svg|ico|json|webmanifest|xml|txt)$/.test(url.pathname)) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-cache' }); return res.end('Fichier introuvable'); }
-    if (next) return await proxyToNext(req, res, { buildId: buildId(publicDir), csp: (nonce) => contentSecurityPolicy(secure, nonce) });
+    if (next && await proxyToNext(req, res, { buildId: buildId(publicDir), csp: (nonce) => contentSecurityPolicy(secure, nonce) })) return;
     // Application monopage (ancienne interface) : toute autre route renvoie l'interface
     serveStatic(req, res, publicDir, '/index.html');
   } catch (e) {

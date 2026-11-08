@@ -6,7 +6,7 @@ import { focusEl } from '../nav.js';
 import { castSupported, loadCast, castContext, castMedia, remote } from '../cast.js';
 import { ambilight, ambianceOn } from '../ambiance.js';
 import { joinParty, partyPanel, showInvite, floatReaction } from '../party.js';
-import { scrollArrows, ratingChips, playPath } from '../components.js';
+import { ratingChips, playPath } from '../components.js';
 import { numberZapper } from '../live.js';
 import { queueAround, toggleShuffle } from '../queue.js';
 import { startMini, closeMini } from '../mini.js';

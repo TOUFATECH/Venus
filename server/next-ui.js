@@ -91,7 +91,8 @@ async function launch() {
 // Fichiers /_next/static/… : noms uniques par version, gardés un an par le navigateur
 export function nextStaticFile(pathname) {
   if (!state.staticDir || !pathname.startsWith('/_next/static/')) return null;
-  const rel = decodeURIComponent(pathname.slice('/_next/static/'.length));
+  let rel;
+  try { rel = decodeURIComponent(pathname.slice('/_next/static/'.length)); } catch { return null; } // adresse mal encodée
   const full = path.join(state.staticDir, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));
   if (!full.startsWith(state.staticDir + path.sep)) return null;
   return full;
@@ -100,10 +101,12 @@ export function nextStaticFile(pathname) {
 const HOP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'proxy-connection', 'te', 'trailer']);
 // Page demandée à l'interface Next.js. La politique de sécurité (CSP) porte un nonce neuf à chaque page :
 // seuls les scripts de Next et ceux de public/index.html (marqués du même nonce) peuvent s'exécuter.
+// Renvoie false si l'interface Next.js n'a pas répondu du tout : l'appelant sert alors l'interface classique.
 export function proxyToNext(req, res, { buildId, csp }) {
   return new Promise((resolve) => {
     const nonce = crypto.randomBytes(16).toString('base64');
     const policy = csp(nonce);
+    const before = res.getHeader('Content-Security-Policy');
     res.setHeader('Content-Security-Policy', policy);
     const headers = {};
     for (const [k, v] of Object.entries(req.headers)) if (!HOP.has(k) && !k.startsWith('x-venus-')) headers[k] = v;
@@ -126,13 +129,19 @@ export function proxyToNext(req, res, { buildId, csp }) {
       }
       res.writeHead(r.statusCode || 502, out);
       if (z) r.pipe(z).pipe(res); else r.pipe(res);
-      r.on('end', resolve);
-      r.on('error', resolve);
+      r.on('end', () => resolve(true));
+      r.on('error', () => resolve(true));
     });
     up.on('timeout', () => up.destroy(new Error('délai dépassé')));
-    up.on('error', (e) => {
-      if (!res.headersSent) { res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(`Interface momentanément indisponible (${e.message}). Rechargez la page.`); } else res.end();
-      resolve();
+    up.on('error', () => {
+      // Interface Next.js injoignable (relance en cours…) : rien n'est encore envoyé, l'interface classique prend le relais
+      if (!res.headersSent && (req.method === 'GET' || req.method === 'HEAD')) {
+        if (before) res.setHeader('Content-Security-Policy', before); else res.removeHeader('Content-Security-Policy');
+        resolve(false);
+        return;
+      }
+      if (!res.headersSent) { res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end('Interface momentanément indisponible. Rechargez la page.'); } else res.end();
+      resolve(true);
     });
     res.on('close', () => up.destroy());
     if (req.method === 'GET' || req.method === 'HEAD') up.end(); else req.pipe(up);

@@ -25,16 +25,24 @@ function ItemLink({ it, path, className = '' }) {
   return <NavLink href={it.href} label={menu.labelOf(it)} icon={menu.iconOf(it)} path={path} className={className} />;
 }
 
-// Badge de l'administrateur : lectures en cours sur le serveur (caché quand personne ne regarde)
+// Badge de l'administrateur : lectures en cours sur le serveur (caché quand personne ne regarde).
+// Un seul suivi pour tous les badges (rail et mobile), en pause quand l'onglet est caché.
+const live = { n: 0, subs: new Set(), timer: 0 };
+function pollLive() {
+  if (document.hidden) return;
+  shared().api.api('/api/admin/live').then((r) => { live.n = r.playing || 0; live.subs.forEach((fn) => fn(live.n)); }).catch(() => {});
+}
 function LiveBadge({ cls }) {
-  const [n, setN] = useState(0);
+  const [n, setN] = useState(live.n);
   useEffect(() => {
-    const { api } = shared();
-    let dead = false;
-    const tick = () => api.api('/api/admin/live').then((r) => { if (!dead) setN(r.playing || 0); }).catch(() => {});
-    const first = setTimeout(tick, 1500);
-    const t = setInterval(tick, 30000);
-    return () => { dead = true; clearTimeout(first); clearInterval(t); };
+    live.subs.add(setN);
+    if (live.subs.size === 1) {
+      const first = setTimeout(pollLive, 1500);
+      const iv = setInterval(pollLive, 30000);
+      document.addEventListener('visibilitychange', pollLive);
+      live.timer = () => { clearTimeout(first); clearInterval(iv); document.removeEventListener('visibilitychange', pollLive); };
+    }
+    return () => { live.subs.delete(setN); if (!live.subs.size && live.timer) { live.timer(); live.timer = 0; } };
   }, []);
   return (
     <Link href="/dashboard" className={`${cls} f`} hidden={!n} title="Lectures en cours">
