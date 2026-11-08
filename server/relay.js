@@ -221,7 +221,9 @@ export async function serveSegmentRelay(ctx, id) {
   const ctrl = new AbortController();
   ctx.req.on('close', () => ctrl.abort());
   const headers = { ...r.headers, ...(ctx.req.headers.range ? { Range: ctx.req.headers.range } : {}) };
-  const res = await fetch(url, { headers, redirect: 'follow', signal: ctrl.signal }).catch((e) => { throw new HttpError(502, `Morceau injoignable (${e.message})`); });
+  // Serveur de la chaîne muet : on abandonne au bout de 15 s (le lecteur redemande aussitôt) au lieu de bloquer
+  const slow = setTimeout(() => ctrl.abort(), 15000);
+  const res = await fetch(url, { headers, redirect: 'follow', signal: ctrl.signal }).catch((e) => { throw new HttpError(502, `Morceau injoignable (${e.message})`); }).finally(() => clearTimeout(slow));
   if (!res.ok && res.status !== 206) throw new HttpError(502, `La chaîne répond ${res.status}`);
   await checkFinal(r, res);
   r.hosts.add(new URL(res.url || url.href).host);

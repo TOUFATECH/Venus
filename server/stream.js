@@ -158,7 +158,7 @@ class HlsSession {
       // Direct : segments de 2 s (le premier d'1 s) pour que l'image arrive vite
       '-f', 'hls', '-hls_time', String(live ? 2 : config.segmentSeconds),
       ...(live
-        ? ['-hls_init_time', '1', '-hls_list_size', '10', '-hls_flags', 'delete_segments+temp_file+independent_segments+omit_endlist']
+        ? ['-hls_init_time', '1', '-hls_list_size', '10', '-hls_flags', `delete_segments+temp_file+independent_segments+omit_endlist${this.restarts ? '+append_list+discont_start' : ''}`]
         : ['-hls_list_size', '0', '-hls_playlist_type', 'event', '-hls_flags', 'temp_file+independent_segments']),
       ...(this.fmp4 ? ['-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4'] : ['-hls_segment_type', 'mpegts']),
       '-hls_segment_filename', path.join(this.dir, this.fmp4 ? 'seg%05d.m4s' : 'seg%05d.ts'),
@@ -169,6 +169,15 @@ class HlsSession {
     this.proc.stderr.on('data', (d) => { this.log = (this.log + d).slice(-4000); });
     this.proc.on('exit', (code, signal) => {
       if (this.killed) return;
+      // Direct : la chaîne a coupé (fin de flux, coupure réseau) alors qu'elle marchait → ffmpeg repart tout
+      // seul et la liste continue (même numérotation, discontinuité signalée) : l'image ne reste pas figée
+      if (this.live && this.segmentCount() > 0 && (this.restarts || 0) < 30 && Date.now() - this.lastAccess < 60000) {
+        if (Date.now() - this.startedAt > 300000) this.restarts = 0; // a bien tourné 5 min : compteur remis à zéro
+        this.restarts = (this.restarts || 0) + 1;
+        console.warn(`[direct] ${this.item.title} : flux coupé, reprise ${this.restarts}${this.log ? ` (${this.log.trim().split('\n').pop().slice(0, 160)})` : ''}`);
+        this.log = '';
+        return void setTimeout(() => { if (!this.killed) this.start(); }, Math.min(10000, 1000 * this.restarts));
+      }
       if (code !== 0 && signal == null) {
         const produced = this.segmentCount();
         if (produced === 0 && this.pipelineIdx < this.pipelines.length - 1) {

@@ -31,11 +31,34 @@ export async function attachStream(video, url, { live = false, dvr = false, onEr
   const cfg = dvr ? { liveSyncDurationCount: 2, manifestLoadingMaxRetry: 1, backBufferLength: 7200, maxBufferLength: 20, startFragPrefetch: true }
     : live ? { liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 6, manifestLoadingMaxRetry: 0, backBufferLength: 10, maxBufferLength: 10, startFragPrefetch: true } : {};
   const hls = new Hls(cfg);
-  hls.on(Hls.Events.ERROR, (_e, data) => { if (data.fatal && onError) onError(data); });
+  // Erreurs graves : on répare d'abord sur place (rechargement, reprise du décodage) avant d'abandonner.
+  // Beaucoup de chaînes coupent quelques secondes (pubs, changement de programme) : sans cela, l'image restait figée.
+  let netTries = 0, mediaTries = 0, gaveUp = false;
+  const giveUp = (data) => { if (gaveUp) return; gaveUp = true; if (onError) onError(data); };
+  hls.on(Hls.Events.ERROR, (_e, data) => {
+    if (!data.fatal) return;
+    if (data.type === Hls.ErrorTypes.NETWORK_ERROR && netTries < 4) { netTries++; setTimeout(() => { if (!gaveUp) hls.startLoad(); }, 1000 * netTries); return; }
+    if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaTries < 2) { mediaTries++; if (mediaTries === 2) hls.swapAudioCodec(); hls.recoverMediaError(); return; }
+    giveUp(data);
+  });
+  hls.on(Hls.Events.FRAG_BUFFERED, () => { netTries = 0; });
   hls.loadSource(url);
   hls.attachMedia(video);
   video.play().catch(() => {});
-  const off = () => { hls.destroy(); video.removeAttribute('src'); video.load(); };
+  // Direct : image figée alors qu'on ne l'a pas mise en pause → on saute au direct, puis on relance le
+  // décodage, et en dernier recours on prévient la page (qui relance la chaîne)
+  let lastT = -1, stuckFor = 0, step = 0;
+  const dog = live ? setInterval(() => {
+    if (gaveUp || video.paused || video.seeking || document.hidden) { stuckFor = 0; return; }
+    if (video.currentTime !== lastT) { lastT = video.currentTime; stuckFor = 0; if (step && video.readyState >= 3) { step = 0; mediaTries = 0; } return; }
+    stuckFor += 2;
+    if (stuckFor < 8) return;
+    stuckFor = 0; step++;
+    if (step === 1) { const e = hls.liveSyncPosition; if (Number.isFinite(e) && e > video.currentTime + 1) video.currentTime = e; else hls.startLoad(); }
+    else if (step === 2) hls.recoverMediaError();
+    else giveUp({ type: 'stalled', fatal: true, details: 'Image figée' });
+  }, 2000) : null;
+  const off = () => { clearInterval(dog); gaveUp = true; hls.destroy(); video.removeAttribute('src'); video.load(); };
   off.hls = hls;
   return off;
 }
