@@ -263,8 +263,8 @@ export async function render(main, { id, query }) {
       // Épisodes diffusés mais absents des dossiers (d'après TMDB), à leur place dans l'ordre
       if (epFilter === 'all' && prefs.get('showMissing') !== false && s.missing && s.missing.length) {
         for (const m of s.missing) {
-          const ghost = h('div', { class: 'episode missing', 'data-ep': m.number, title: `Épisode ${m.number}${m.title ? ` — ${m.title}` : ''} : diffusé${m.air ? ` le ${fmtDate(m.air)}` : ''}, mais pas dans vos dossiers` },
-            h('div', { class: 'thumb' }, m.still ? h('img', { src: m.still, alt: '', loading: 'lazy' }) : h('span', { class: 'miss-num' }, String(m.number)), h('span', { class: 'miss-tag' }, 'Manquant')),
+          const ghost = h('div', { class: `episode missing${m.future ? ' future' : ''}`, 'data-ep': m.number, title: `Épisode ${m.number}${m.title ? ` — ${m.title}` : ''} : ${m.future ? (m.air ? `diffusé le ${fmtDate(m.air)}` : 'date pas encore connue') : `diffusé${m.air ? ` le ${fmtDate(m.air)}` : ''}, mais pas dans vos dossiers`}` },
+            h('div', { class: 'thumb' }, m.still ? h('img', { src: m.still, alt: '', loading: 'lazy' }) : h('span', { class: 'miss-num' }, String(m.number)), h('span', { class: 'miss-tag' }, m.future ? 'À venir' : 'Manquant')),
             h('div', { class: 'ep-line' }, h('b', {}, `Épisode ${m.number}`), m.air ? h('span', {}, fmtDate(m.air)) : null));
           const after = [...epList.children].find((el) => Number(el.dataset.ep || el.querySelector('[data-ep]')?.dataset.ep) > m.number);
           if (after) epList.insertBefore(ghost, after); else epList.append(ghost);

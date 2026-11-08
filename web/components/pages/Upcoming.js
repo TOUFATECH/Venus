@@ -48,13 +48,15 @@ function UpcomingView({ d, kind, tabs }) {
     const on = favs.has(e.key);
     try {
       if (on) {
-        await api(`/api/wanted?key=${encodeURIComponent(e.key)}`, { method: 'DELETE' });
-        setFavs((s) => { const n = new Set(s); n.delete(e.key); return n; }); toast(`« ${nameOf(e)} » retiré de vos favoris`);
+        if (e.venusAdded && !(await shared().ui.confirmSheet(`Retirer « ${nameOf(e)} » de vos favoris ? Venus l’avait fait télécharger : les téléchargements en cours seront annulés et les fichiers supprimés du NAS.`, 'Retirer et supprimer'))) return;
+        const rm = await api(`/api/wanted?key=${encodeURIComponent(e.key)}`, { method: 'DELETE' });
+        setFavs((s) => { const n = new Set(s); n.delete(e.key); return n; }); toast(rm && rm.removed ? `« ${nameOf(e)} » retiré : téléchargements annulés et fichiers supprimés du NAS` : `« ${nameOf(e)} » retiré de vos favoris`);
       } else {
         const r = await api('/api/wanted', { method: 'POST', body: payload(e, true) });
         setFavs((s) => new Set(s).add(e.key));
         if (r.sent && !r.sent.error) setArr((s) => new Set(s).add(e.key));
         toast(r.sent && r.sent.error ? `Ajouté aux favoris, mais ${d.app} a répondu : ${r.sent.error}`
+          : r.nas ? `« ${nameOf(e)} » ajouté à vos favoris (déjà sur le NAS : rien à télécharger)`
           : r.sent ? `« ${nameOf(e)} » en favori : ${r.sent.already ? `déjà suivi par ${d.app}` : 'le téléchargement est lancé'}`
             : `« ${nameOf(e)} » ajouté à vos favoris${kids ? '' : d.arr ? '' : ` (reliez ${d.app} pour le téléchargement automatique)`}`, { type: r.sent && r.sent.error ? undefined : 'success' });
       }
@@ -113,7 +115,7 @@ function UpcomingView({ d, kind, tabs }) {
         {!shown.length ? (
           <div className="grid-empty">
             <p>{filter === 'fav' ? 'Aucun favori à venir.' : filter === 'nas' ? 'Rien de disponible pour ces jours-ci.' : 'Rien d’annoncé pour l’instant.'}</p>
-            {kind === 'movie' && !d.arr && !d.tmdb ? <p className="muted">Les sorties de films viennent de Radarr (ou de TMDB) : reliez Radarr dans Réglages → Demandes.</p> : null}
+            {kind === 'movie' && !d.arr && !d.tmdb ? <p className="muted">Venus n’a pas pu joindre les catalogues de sorties (Cinemeta, sans clé). Pour plus de films annoncés, reliez Radarr ou ajoutez une clé TMDB dans les Réglages.</p> : null}
           </div>
         ) : null}
       </div>
@@ -238,7 +240,12 @@ export function Wishes({ tabs }) {
   const { d, wanted } = state;
   const today = new Date().toISOString().slice(0, 10);
   const n = d.items.length + wanted.length;
-  const removeWanted = async (w) => { await api(`/api/wanted?key=${encodeURIComponent(w.key)}`, { method: 'DELETE' }); setState((s) => ({ ...s, wanted: s.wanted.filter((x) => x !== w) })); toast('Retiré de mes favoris'); };
+  const removeWanted = async (w) => {
+    if (w.venusAdded && !(await shared().ui.confirmSheet(`Retirer « ${w.title} » de vos favoris ? Venus l’avait fait télécharger : les téléchargements en cours seront annulés et les fichiers supprimés du NAS.`, 'Retirer et supprimer'))) return;
+    const rm = await api(`/api/wanted?key=${encodeURIComponent(w.key)}`, { method: 'DELETE' });
+    setState((s) => ({ ...s, wanted: s.wanted.filter((x) => x !== w) }));
+    toast(rm && rm.removed ? `« ${w.title} » retiré : téléchargements annulés et fichiers supprimés du NAS` : 'Retiré de mes favoris');
+  };
   const removeWish = async (w) => { await api(`/api/wishlist/${w.type}/${w.tmdbId}`, { method: 'DELETE' }); setState((s) => ({ ...s, d: { ...s.d, items: s.d.items.filter((x) => x !== w) } })); toast('Retiré de mes envies'); };
   return (
     <div className="page">

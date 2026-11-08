@@ -1,5 +1,6 @@
 // Parcours principaux sur ordinateur : regarder un film, mini-lecteur, recherche, ma liste, musique, réglages
-import { test, expect, ouvrir } from './outils.mjs';
+import path from 'node:path';
+import { test, expect, ouvrir, etat } from './outils.mjs';
 
 test('film : fiche, lecture, retour et mini-lecteur', async ({ page }) => {
   await ouvrir(page, '/films');
@@ -117,4 +118,29 @@ test('séries : chaque saison a sa propre affiche', async ({ page, api }) => {
   await expect(page.locator('.season-card img')).toHaveCount(2);
   const imgs = await page.locator('.season-card img').evaluateAll((l) => l.map((i) => i.getAttribute('src')));
   expect(new Set(imgs).size).toBeGreaterThanOrEqual(2);
+});
+
+test('séries : saisons absentes et épisodes manquants ou à venir affichés', async ({ page, api }) => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const lib = await api('/api/library?type=show');
+  const show = (Array.isArray(lib) ? lib : lib.items).find((x) => /Brigade Nord/.test(x.title));
+  const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  // TMDB connaît 3 saisons ; la saison 2 a un épisode 2 diffusé et un épisode 3 à venir
+  db.prepare('UPDATE items SET tmdb_seasons = ? WHERE id = ?').run(JSON.stringify([{ n: 1, count: 2, air: day(-400) }, { n: 2, count: 3, air: day(-30) }, { n: 3, count: 4, air: day(-10), name: 'Saison 3' }]), show.id);
+  db.prepare("UPDATE items SET tmdb_eps = ? WHERE type = 'season' AND show_id = ? AND season_num = 2").run(JSON.stringify([{ n: 1, air: day(-30) }, { n: 2, air: day(-20), title: 'Le retour' }, { n: 3, air: day(15) }]), show.id);
+  db.close();
+  const d = await api(`/api/items/${show.id}`);
+  expect(d.seasons.length).toBe(2);
+  expect(d.absentSeasons.map((s) => s.number)).toEqual([3]);
+  expect(d.absentSeasons[0].missing.length).toBe(4);
+  const s2 = d.seasons.find((s) => s.number === 2);
+  expect(s2.missing.map((m) => [m.number, !!m.future])).toEqual([[2, false], [3, true]]);
+  await ouvrir(page, show.path);
+  await expect(page.locator('.season-card')).toHaveCount(3);
+  await page.locator('.season-card', { hasText: 'Saison 2' }).click();
+  await expect(page.locator('.episode.missing')).toHaveCount(2);
+  await expect(page.locator('.episode.missing.future .miss-tag')).toHaveText('À venir');
+  await page.locator('.season-card.absent').click();
+  await expect(page.locator('.episode.missing')).toHaveCount(4);
 });

@@ -3600,3 +3600,6 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
 .chip-x:hover { opacity: 1; }
 .world-add { display: flex; flex-wrap: wrap; gap: 8px; }
 .world-add .input { flex: 1 1 280px; min-width: 0; }
+.episode.missing.future .miss-tag { background: rgb(var(--night-rgb) / .85); color: var(--sulfur); }
+.season-card.absent .season-pic { opacity: .5; filter: grayscale(.7); }
+.season-card.absent > span:last-child { color: var(--haze); }
