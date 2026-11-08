@@ -161,11 +161,12 @@ function DeviceBox() {
       <Switch label="Bande-annonce en fond des fiches (films, séries, animés)" checked={detailsTrailers()} onChange={pref('detailsTrailer')} />
       <Switch label="Montrer les épisodes manquants dans les saisons (diffusés mais pas dans vos dossiers)" checked={prefs.get('showMissing') !== false} onChange={pref('showMissing')} />
       <Switch label="Avec le son" checked={!!prefs.get('detailsSound')} onChange={pref('detailsSound')} />
+      <Switch label="Mode nuit dans le lecteur : explosions moins fortes, dialogues plus clairs (suit votre profil)" checked={!!prefs.get('nightMode')} onChange={pref('nightMode')} />
       <div className="two-cols wide">
-        <Field label="Sous-titres"><Select opts={[['text', 'Texte blanc seul'], ['box', 'Texte sur fond noir']]} value={prefs.get('subStyle')} onChange={pref('subStyle')} /></Field>
+        <Field label="Sous-titres"><Select opts={[['text', 'Texte avec contour'], ['soft', 'Texte sur fond léger'], ['box', 'Texte sur fond noir']]} value={prefs.get('subStyle')} onChange={pref('subStyle')} /></Field>
         <Field label="Taille"><Select opts={[['small', 'Petite'], ['medium', 'Moyenne'], ['large', 'Grande'], ['xlarge', 'Très grande']]} value={prefs.get('subSize')} onChange={pref('subSize')} /></Field>
-        <Field label="Couleur"><Select opts={[['white', 'Blanc'], ['yellow', 'Jaune']]} value={prefs.get('subColor')} onChange={pref('subColor')} /></Field>
-        <Field label="Position"><Select opts={[['normal', 'En bas de l’image'], ['high', 'Un peu plus haut']]} value={prefs.get('subPos')} onChange={pref('subPos')} /></Field>
+        <Field label="Couleur"><Select opts={[['white', 'Blanc'], ['yellow', 'Jaune'], ['cyan', 'Cyan'], ['green', 'Vert']]} value={prefs.get('subColor')} onChange={pref('subColor')} /></Field>
+        <Field label="Position"><Select opts={[['normal', 'En bas de l’image'], ['high', 'Un peu plus haut'], ['top', 'En haut de l’image']]} value={prefs.get('subPos')} onChange={pref('subPos')} /></Field>
       </div>
       <Switch label="Passer automatiquement les génériques (opening, ending)" checked={!!prefs.get('autoSkip')} onChange={pref('autoSkip')} />
       <Switch label="Mini-lecteur : la vidéo continue en petit quand on quitte le lecteur" checked={!!prefs.get('miniPlayer')} onChange={pref('miniPlayer')} />
@@ -219,8 +220,9 @@ function PushRow() {
 // ---------------------------------------------------------------- thème : une planète du système solaire
 function ThemeBox() {
   const T = shared().themes;
-  const [cur, setCur] = useState(T.currentPlanet());
+  const [cur, setCur] = useState(T.chosenPlanet());
   const [glass, setGlass] = useState(T.glassMode());
+  const [auto, setAuto] = useState(T.autoTheme());
   const box = useRef(null);
   const choose = (id, e) => {
     const t = T.PLANETS[id];
@@ -244,6 +246,18 @@ function ThemeBox() {
           </button>
         ))}
       </div>
+      {/* Passage automatique au clair (Blanc) : le jour, ou quand l'appareil est en mode clair */}
+      {!T.PLANETS[cur].glass && !T.PLANETS[cur].light ? (
+        <div className="glass-mode">
+          <div className="seg" role="radiogroup" aria-label="Thème automatique">
+            {[['off', `Toujours ${T.PLANETS[cur].name}`], ['sun', 'Clair le jour, sombre le soir'], ['system', 'Selon l’appareil']].map(([v, l]) => (
+              <button key={v} className={`seg-b f${auto === v ? ' on' : ''}`} role="radio" aria-checked={String(auto === v)} onClick={() => { T.setAutoTheme(v); setAuto(v); }}>{l}</button>
+            ))}
+          </div>
+          {auto === 'sun' ? <small>{`Clair (thème Blanc) de ${hm(T.sunInfo().rise)} à ${hm(T.sunInfo().set)}, puis ${T.PLANETS[cur].name}.`}</small> : auto === 'system' ? <small>Clair quand votre téléphone ou ordinateur est en mode clair, sinon {T.PLANETS[cur].name}.</small> : null}
+          <small>Votre thème suit votre profil sur tous vos appareils.</small>
+        </div>
+      ) : null}
       {/* Thème Verre : clair le jour, sombre la nuit (au soleil), ou toujours l'un des deux */}
       {T.PLANETS[cur].glass ? (
         <div className="glass-mode">

@@ -139,6 +139,7 @@ export function publicProfile(p) {
     subtitleLang: p.subtitle_lang, audioLang: p.audio_lang,
     perms: (({ admin, ...rest }) => rest)(permsOf(p)),
     dailyLeft: dailyLeftOf(p),
+    uiPrefs: (() => { try { return JSON.parse(p.ui_prefs || '{}') || {}; } catch { return {}; } })(),
   };
 }
 

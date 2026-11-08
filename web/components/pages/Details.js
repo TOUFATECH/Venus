@@ -157,8 +157,9 @@ function DetailsView({ d: initial }) {
   useEffect(() => { requestAnimationFrame(() => { if (ov.current) setLong(ov.current.scrollHeight > ov.current.clientHeight + 2); }); }, [d.overview]);
 
   const age = ui.ageBadge(d);
+  const amb = useAmbient(d.poster && !isClip ? img(d.poster, 185) : d.backdrop ? img(d.backdrop, 300) : null);
   return (
-    <div className="details" ref={root}>
+    <div className={`details${amb ? ' amb' : ''}`} ref={root} style={amb ? { '--amb': amb } : undefined}>
       <div className="details-bg" ref={bgRef}>
         {d.backdrop ? <Picture src={img(d.backdrop, 1280)} title={d.title} lazy={false} /> : <img src={`/api/items/${d.id}/thumb?size=big`} alt="" />}
       </div>
@@ -240,6 +241,41 @@ function ThumbImg({ src, title }) {
 }
 
 // Temps d'écran : prévenir avant de lancer plutôt que couper au milieu
+// Teinte de la fiche : couleur dominante de l'affiche (moyenne des pixels assez colorés, sur une petite image)
+const ambCache = new Map();
+function useAmbient(src) {
+  const [c, setC] = useState(() => (src && ambCache.get(src)) || null);
+  useEffect(() => {
+    if (!src || !/^\/img\//.test(src)) { setC(null); return undefined; } // images d'ailleurs : illisibles pour le canevas
+    if (ambCache.has(src)) { setC(ambCache.get(src)); return undefined; }
+    let dead = false;
+    const im = new Image();
+    im.decoding = 'async';
+    im.onload = () => {
+      if (dead) return;
+      try {
+        const cv = document.createElement('canvas'); cv.width = 24; cv.height = 36;
+        const x = cv.getContext('2d', { willReadFrequently: true }); x.drawImage(im, 0, 0, 24, 36);
+        const px = x.getImageData(0, 0, 24, 36).data;
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let i = 0; i < px.length; i += 4) {
+          const R = px[i], G = px[i + 1], B = px[i + 2], mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+          if (mx < 40 || mx - mn < 28) continue; // trop sombre ou trop gris
+          const w = (mx - mn) / 255; r += R * w; g += G * w; b += B * w; n += w;
+        }
+        if (n < 1) { ambCache.set(src, null); return; }
+        // Couleur assombrie pour garder le texte lisible
+        const k = 0.55 / Math.max(1, Math.max(r, g, b) / n / 160);
+        const v = `${Math.round((r / n) * k)} ${Math.round((g / n) * k)} ${Math.round((b / n) * k)}`;
+        ambCache.set(src, v); setC(v);
+      } catch { /* image non lisible */ }
+    };
+    im.src = src;
+    return () => { dead = true; };
+  }, [src]);
+  return c;
+}
+
 function ScreenTimeNote({ d, target, isShow }) {
   const left = shared().app.state.profile.dailyLeft;
   const need = isShow ? (target && target.runtime) || (d.nextUp && d.nextUp.runtime) || 0 : d.runtime || 0;

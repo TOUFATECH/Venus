@@ -60,6 +60,7 @@ function App({ children }) {
     if (!st.authenticated) return show('login');
     if (!st.profile) return show('profiles');
     app.state.profile = st.profile;
+    L.api.applyProfilePrefs(st.profile); L.themes.useProfileTheme(st.profile);
     await app.refreshCategories();
     setPhase('ready');
     // Mini-lecteur laissé ouvert avant un rechargement : il reprend
@@ -123,7 +124,7 @@ function App({ children }) {
       <div id="app">
         <Gate key={`gate-${gate}`} kind={gate} done={(profile) => {
           const { app } = shared();
-          if (profile) { app.state.profile = profile; app.refreshCategories().then(() => setPhase('ready')); } else { setPhase('loading'); start(); }
+          if (profile) { app.state.profile = profile; shared().api.applyProfilePrefs(profile); shared().themes.useProfileTheme(profile); app.refreshCategories().then(() => setPhase('ready')); } else { setPhase('loading'); start(); }
         }} />
       </div>
     );

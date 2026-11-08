@@ -2975,6 +2975,20 @@ export async function sendTvReminders() {
     await notify({ title: mins ? `Dans ${mins} min sur ${r.ch}` : `Ça commence sur ${r.ch}`, body: r.title, url: item ? `/tv/${channelNumber(item)}-${slugFor(item.id)}` : '/tv?vue=guide', tag: `rappel-${r.id}` }, { profileId: r.profile_id }).catch(() => {});
   }
 }
+// Réglages de l'interface qui suivent le profil (thème, apparence des sous-titres, mode nuit)
+const UI_PREFS = { theme: /^[a-z]{2,20}$/, themeAuto: /^(off|sun|system)$/, subSize: /^(small|medium|large|xlarge)$/, subColor: /^(white|yellow|cyan|green)$/, subStyle: /^(text|soft|box)$/, subPos: /^(normal|high|top)$/, nightMode: 'bool' };
+router.put('/api/profile/ui-prefs', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req, 4096);
+  let cur = {}; try { cur = JSON.parse(get('SELECT ui_prefs FROM profiles WHERE id = ?', p.id).ui_prefs || '{}') || {}; } catch { /* */ }
+  for (const [k, rule] of Object.entries(UI_PREFS)) {
+    if (!(k in b)) continue;
+    const v = b[k];
+    if (rule === 'bool' ? typeof v === 'boolean' : typeof v === 'string' && rule.test(v)) cur[k] = v;
+  }
+  run('UPDATE profiles SET ui_prefs = ? WHERE id = ?', JSON.stringify(cur), p.id);
+  sendJson(ctx.res, { ok: true, uiPrefs: cur });
+});
 router.get('/api/epg/now', (ctx) => {
   const p = requireProfile(ctx);
   const age = ageClause(p);

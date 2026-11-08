@@ -49,9 +49,38 @@ export const PLANETS = {
 export const DEFAULT_PLANET = 'venus';
 const KEY = 'vn_theme';
 
-export function currentPlanet() {
+// Planète choisie (sans le passage automatique au clair)
+export function chosenPlanet() {
   try { const v = localStorage.getItem(KEY); if (v && PLANETS[v]) return v; } catch { /* */ }
   return DEFAULT_PLANET;
+}
+// Thème automatique : « sun » = clair (Blanc) le jour, la planète choisie la nuit ; « system » = selon l'appareil
+export const autoTheme = () => { try { return localStorage.getItem('vn_theme_auto') || 'off'; } catch { return 'off'; } };
+export function setAutoTheme(m) { try { localStorage.setItem('vn_theme_auto', m); } catch { /* */ } applyTheme(); syncProfileTheme(); window.dispatchEvent(new CustomEvent('vn:theme')); }
+// Thème du profil : gardé sur le serveur, il suit la personne sur tous ses appareils
+let syncT = null;
+function syncProfileTheme() {
+  clearTimeout(syncT);
+  syncT = setTimeout(() => { import('./api.js').then((m) => m.saveProfilePrefs({ theme: chosenPlanet(), themeAuto: autoTheme() })).catch(() => {}); }, 400);
+}
+/** Profil choisi : son thème (s'il en a un) remplace celui de l'appareil */
+export function useProfileTheme(p) {
+  const u = (p && p.uiPrefs) || {};
+  let changed = false;
+  try {
+    if (u.theme && PLANETS[u.theme] && localStorage.getItem(KEY) !== u.theme) { localStorage.setItem(KEY, u.theme); changed = true; }
+    if (u.themeAuto && localStorage.getItem('vn_theme_auto') !== u.themeAuto) { localStorage.setItem('vn_theme_auto', u.themeAuto); changed = true; }
+  } catch { /* */ }
+  if (changed) { applyTheme(); window.dispatchEvent(new CustomEvent('vn:theme')); }
+}
+const systemLight = () => { try { return matchMedia('(prefers-color-scheme: light)').matches; } catch { return false; } };
+export function currentPlanet() {
+  const base = chosenPlanet();
+  if (PLANETS[base].glass || PLANETS[base].light) return base; // Verre gère déjà jour / nuit ; Blanc reste clair
+  const m = autoTheme();
+  if (m === 'system') return systemLight() ? 'blanc' : base;
+  if (m === 'sun') return sunState().state === 'day' ? 'blanc' : base;
+  return base;
 }
 export const planet = () => PLANETS[currentPlanet()];
 export const brandName = () => (planet().brand || planet().name).toUpperCase();
@@ -201,6 +230,14 @@ export function glassNow() {
   if (now < today.set) return { state: 'day', next: today.set };
   return { state: 'night', next: tomorrow.rise };
 }
+// Jour ou nuit chez vous, et heure du prochain changement
+export function sunState() {
+  const now = Date.now(), c = coords();
+  const today = sunTimes(new Date(now), c), tomorrow = sunTimes(new Date(now + 864e5), c);
+  if (now < today.rise) return { state: 'night', next: today.rise };
+  if (now < today.set) return { state: 'day', next: today.set };
+  return { state: 'night', next: tomorrow.rise };
+}
 export function sunInfo() { const t = sunTimes(new Date(), coords()); return t; }
 export function setGlassMode(m) { try { localStorage.setItem('vn_glass_mode', m); } catch { /* */ } applyTheme(); }
 
@@ -243,6 +280,11 @@ export function applyTheme(id = currentPlanet()) {
     try { localStorage.setItem('vn_glass', `${g.state}|${g.next || 0}`); } catch { /* */ }
     // Bascule toute seule au lever / coucher du soleil
     if (g.next) glassTimer = setTimeout(() => applyTheme(), Math.min(2 ** 31 - 1, Math.max(1000, g.next - Date.now() + 1000)));
+  } else if (autoTheme() === 'sun') {
+    // Thème automatique au soleil : bascule au lever et au coucher
+    const nx = sunState().next;
+    if (nx) glassTimer = setTimeout(() => { applyTheme(); window.dispatchEvent(new CustomEvent('vn:theme')); }, Math.min(2 ** 31 - 1, Math.max(1000, nx - Date.now() + 1000)));
+    delete document.documentElement.dataset.glass;
   } else {
     delete document.documentElement.dataset.glass;
     try { localStorage.removeItem('vn_glass'); } catch { /* */ }
@@ -282,6 +324,10 @@ export function setPlanet(id, origin = null) {
     document.body.append(w);
     setTimeout(() => w.remove(), 1300);
   }
-  applyTheme(id);
+  applyTheme();
+  syncProfileTheme();
   window.dispatchEvent(new CustomEvent('vn:theme', { detail: id }));
 }
+
+// Thème « selon l'appareil » : suit le passage clair / sombre du téléphone ou de l'ordinateur
+try { matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => { if (autoTheme() === 'system') { applyTheme(); window.dispatchEvent(new CustomEvent('vn:theme')); } }); } catch { /* ancien navigateur */ }

@@ -7,7 +7,6 @@ import { state, go } from '../core.js';
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('small', {}, hint) : null);
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const LEVEL = { ok: ['ok', 'OK'], warn: ['warn', 'À améliorer'], bad: ['bad', 'À corriger'] };
-const SEV = { info: 'Info', warn: 'Attention', high: 'Alerte' };
 const KIND = {
   connexion: 'Connexion', 'echec-login': 'Mot de passe faux', 'echec-code': 'Code faux', 'echec-pin': 'PIN faux', 'echec-2fa': 'Code e-mail faux', 'echec-join': 'Code de séance faux',
   'force-brute': 'Force brute', 'force-brute-repartie': 'Force brute répartie', ban: 'Adresse bloquée', deblocage: 'Adresse débloquée', suspect: 'Requête suspecte',

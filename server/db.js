@@ -140,6 +140,7 @@ db.exec('CREATE TABLE IF NOT EXISTS track_prefs (profile_id INTEGER, show_id INT
 db.exec('CREATE TABLE IF NOT EXISTS watch_time (profile_id INTEGER, day TEXT, seconds REAL DEFAULT 0, PRIMARY KEY(profile_id, day))');
 if (!cols('profiles').includes('perms')) db.exec('ALTER TABLE profiles ADD COLUMN perms TEXT');
 if (!cols('profiles').includes('email')) db.exec('ALTER TABLE profiles ADD COLUMN email TEXT');
+if (!cols('profiles').includes('ui_prefs')) db.exec('ALTER TABLE profiles ADD COLUMN ui_prefs TEXT');
 if (!cols('libraries').includes('remote')) db.exec('ALTER TABLE libraries ADD COLUMN remote TEXT');
 const libSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'libraries'").get();
 if (libSql && /CHECK/.test(libSql.sql)) {
