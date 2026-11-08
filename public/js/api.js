@@ -137,12 +137,28 @@ export function openStream(path, handlers) {
 
 // Préférences de cet appareil (aperçu au survol, plein écran au lancement, volume)
 const PREF_DEFAULTS = { hoverPreview: true, hoverSound: true, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true, chatSound: true, autoSkip: false, hoverMode: null, heroTrailer: null, detailsTrailer: null, detailsSound: false, subStyle: 'text', subSize: 'medium', subColor: 'white', subPos: 'normal', showMissing: true, miniPlayer: true, notifyBrowser: true };
+// Réglages qui suivent le profil sur tous ses appareils (gardés aussi sur le serveur)
+const PROFILE_PREFS = new Set(['subSize', 'subColor', 'subStyle', 'subPos', 'nightMode']);
 export const prefs = {
   get(k) {
     try { const v = localStorage.getItem(`vn_pref_${k}`); return v == null ? PREF_DEFAULTS[k] : JSON.parse(v); } catch { return PREF_DEFAULTS[k]; }
   },
-  set(k, v) { try { localStorage.setItem(`vn_pref_${k}`, JSON.stringify(v)); } catch { /* navigation privée */ } },
+  set(k, v) {
+    try { localStorage.setItem(`vn_pref_${k}`, JSON.stringify(v)); } catch { /* navigation privée */ }
+    if (PROFILE_PREFS.has(k)) saveProfilePrefs({ [k]: v });
+  },
 };
+let pending = {}, pendT = null;
+export function saveProfilePrefs(obj) {
+  Object.assign(pending, obj);
+  clearTimeout(pendT);
+  pendT = setTimeout(() => { const body = pending; pending = {}; raw('/api/profile/ui-prefs', { method: 'PUT', body }).catch(() => {}); }, 500);
+}
+/** Profil choisi : ses réglages (sous-titres, mode nuit…) remplacent ceux de l'appareil */
+export function applyProfilePrefs(p) {
+  const u = (p && p.uiPrefs) || {};
+  for (const k of PROFILE_PREFS) if (u[k] !== undefined) { try { localStorage.setItem(`vn_pref_${k}`, JSON.stringify(u[k])); } catch { /* */ } }
+}
 
 // Aperçu au survol : « trailer » (bande-annonce, sinon extrait), « extract » (extrait de la vidéo) ou « off »
 export function hoverMode() {

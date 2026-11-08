@@ -145,14 +145,13 @@ export async function pollDownloads() {
       now.set(key, cur);
     }
   }
-  let sent = 0;
   for (const [key, i] of now) {
     const progress = i.size ? Math.round(((i.size - i.left) / i.size) * 100) : null;
     // Mise à jour tous les 25 % (Telegram limite les modifications)
     const bucket = progress == null ? 0 : Math.floor(progress / 25) * 25;
     const state = i.imported ? 'downloaded' : 'downloading';
     const eta = i.eta ? i.eta.replace(/^00:/, '').replace(/^(\d+):(\d+):\d+$/, (_, h, m) => `${Number(h)} h ${m}`).replace(/^(\d+):\d+$/, (_, m) => `${Number(m)} min`) : null;
-    try { await upsert(key, { ...i, state, progress: state === 'downloading' ? bucket : null, eta: state === 'downloading' ? eta : null, url: null }, null, i.poster); sent++; } catch (e) { console.warn('[telegram]', e.message); }
+    try { await upsert(key, { ...i, state, progress: state === 'downloading' ? bucket : null, eta: state === 'downloading' ? eta : null, url: null }, null, i.poster); } catch (e) { console.warn('[telegram]', e.message); }
   }
   // Disparus de la file sans être encore dans Venus : téléchargés, en cours d'import
   for (const [key] of lastQueue) {

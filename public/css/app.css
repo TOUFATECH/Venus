@@ -434,6 +434,10 @@ html:not(.touch) .card:hover .shot { transform: scale(1.03); }
 .player.sub-yellow .p-subs span { color: #ffe44d; }
 .player.sub-high .p-subs { bottom: 12%; }
 .player.sub-high.ui-on .p-subs { bottom: 24%; }
+.player.sub-cyan .p-subs span { color: #7ff3ff; }
+.player.sub-green .p-subs span { color: #8dff9a; }
+.player.sub-top .p-subs, .player.sub-top.ui-on .p-subs { top: 9%; bottom: auto; }
+.player.sub-soft .p-subs span { padding: .06em .3em; background: rgba(0,0,0,.32); border-radius: 4px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 /* Option « avec fond » pour ceux qui préfèrent l'ancien style */
 .player.sub-box .p-subs span { padding: .08em .32em; background: rgba(0,0,0,.6); border-radius: 3px; text-shadow: none; -webkit-text-stroke: 0; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 .p-next { position: absolute; right: max(var(--gutter), env(safe-area-inset-right, 0px)); bottom: 150px; width: min(380px, 80vw); background: rgb(var(--deep-rgb) / .96); border: 1px solid var(--edge); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
@@ -3625,3 +3629,8 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
 .mv-bar .input { flex: 1; min-width: 0; height: 38px; padding: 0 10px; }
 .mv-bar .pv-c.on { background: var(--sulfur); color: var(--night); }
 @media (max-width: 760px) { .mv-grid { grid-template-columns: 1fr; } }
+
+/* Fiche teintée de la couleur dominante de l'affiche */
+.details.amb { background: radial-gradient(120% 70% at 30% 0%, rgb(var(--amb) / .55), transparent 70%), linear-gradient(180deg, rgb(var(--amb) / .28), transparent 900px); transition: background .6s ease; }
+html[data-tone="light"] .details.amb { background: radial-gradient(120% 70% at 30% 0%, rgb(var(--amb) / .22), transparent 70%); }
+@media (prefers-reduced-motion: reduce) { .details.amb { transition: none; } }

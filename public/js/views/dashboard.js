@@ -106,13 +106,6 @@ export async function render(main, { query } = {}) {
     const missing = d.libraries.filter((l) => !l.exists || (l.network && l.network.ok === false)).length;
     const issues = [loadPct > 100 && 'processeur saturé', memPct > 90 && 'mémoire presque pleine', diskPct > 90 && 'disque presque plein', missing && `${missing} médiathèque${missing > 1 ? 's' : ''} introuvable${missing > 1 ? 's' : ''}`].filter(Boolean);
     const level = diskPct > 95 || missing || loadPct > 150 ? 'bad' : issues.length ? 'warn' : 'good';
-    const more = () => {
-      const go2 = (path) => () => { sh.close(); go(path); };
-      const opt = (ic, label, sub, fn) => h('button', { class: 'opt f', onclick: fn }, icon(ic), h('span', {}, h('b', {}, label), h('small', {}, sub)));
-      const sh = sheet('Administration', h('div', { class: 'dash-menu' },
-        opt('film', 'Qualité', 'Conversions, formats, accélération', go2('/qualite')), opt('lock', 'Sécurité', 'Accès, mots de passe, appareils', go2('/securite')),
-        opt('server', 'Serveur', `Venus ${sv.version} · ${sv.host} (${sv.os}) · Node ${sv.node.replace(/^v/, '')}`, go2('/serveur')), opt('gear', 'Réglages', 'Médiathèques, sources, menu', go2('/reglages'))));
-    };
     head.replaceChildren(
       h('div', {},
         h('div', { class: 'dash-h1' }, h('h1', {}, 'Tableau de bord'), h('span', { class: `status-chip ${level}` }, h('i'), level === 'good' ? 'Tout va bien' : issues.join(' · '))),

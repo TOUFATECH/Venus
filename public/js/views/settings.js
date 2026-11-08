@@ -4,7 +4,7 @@ import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet, pass
 import { state, switchProfile, go, liteSetting, applyLite } from '../core.js';
 import { openSourceWizard } from './source-wizard.js';
 import { NAV_ITEMS, menuPrefs, saveMenuPrefs, resetMenuPrefs, labelOf, iconOf } from '../menu.js';
-import { PLANETS, currentPlanet, setPlanet, planetMarkup, glassMode, setGlassMode, sunInfo, LAYOUTS, layoutOf } from '../themes.js';
+import { PLANETS, chosenPlanet, setPlanet, planetMarkup, glassMode, setGlassMode, sunInfo, LAYOUTS, layoutOf } from '../themes.js';
 
 const AGES = [['', 'Aucune limite'], ['3', '3 ans et +'], ['7', '7 ans et +'], ['10', '10 ans et +'], ['12', '12 ans et +'], ['16', '16 ans et +']];
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
@@ -76,10 +76,10 @@ export async function render(main, { query } = {}) {
     h('label', { class: 'switch' }, h('span', {}, 'Avec le son'),
       h('input', { type: 'checkbox', class: 'f', checked: !!prefs.get('detailsSound'), onchange: (e) => { prefs.set('detailsSound', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
     h('div', { class: 'two-cols wide' },
-      field('Sous-titres', select([['text', 'Texte blanc seul'], ['box', 'Texte sur fond noir']], prefs.get('subStyle'), { onchange: (e) => { prefs.set('subStyle', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
-      field('Taille', select([['small', 'Petite'], ['medium', 'Moyenne'], ['large', 'Grande'], ['xlarge', 'Très grande']], prefs.get('subSize'), { onchange: (e) => { prefs.set('subSize', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
-      field('Couleur', select([['white', 'Blanc'], ['yellow', 'Jaune']], prefs.get('subColor'), { onchange: (e) => { prefs.set('subColor', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
-      field('Position', select([['normal', 'En bas de l’image'], ['high', 'Un peu plus haut']], prefs.get('subPos'), { onchange: (e) => { prefs.set('subPos', e.target.value); toast('Préférence enregistrée pour cet appareil'); } }))),
+      field('Sous-titres', select([['text', 'Texte avec contour'], ['soft', 'Texte sur fond léger'], ['box', 'Texte sur fond noir']], prefs.get('subStyle'), { onchange: (e) => { prefs.set('subStyle', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
+      field('Taille', select([['small', 'Petite'], ['medium', 'Moyenne'], ['large', 'Grande'], ['xlarge', 'Très grande']], prefs.get('subSize'), { onchange: (e) => { prefs.set('subSize', e.target.value); toast('Préférence enregistrée pour votre profil'); } })),
+      field('Couleur', select([['white', 'Blanc'], ['yellow', 'Jaune'], ['cyan', 'Cyan'], ['green', 'Vert']], prefs.get('subColor'), { onchange: (e) => { prefs.set('subColor', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
+      field('Position', select([['normal', 'En bas de l’image'], ['high', 'Un peu plus haut'], ['top', 'En haut de l’image']], prefs.get('subPos'), { onchange: (e) => { prefs.set('subPos', e.target.value); toast('Préférence enregistrée pour cet appareil'); } }))),
     prefSwitch('autoSkip', 'Passer automatiquement les génériques (opening, ending)'),
     prefSwitch('miniPlayer', 'Mini-lecteur : la vidéo continue en petit quand on quitte le lecteur'),
     pushRow());
@@ -1002,7 +1002,7 @@ function pushRow() {
 function themeEditor() {
   const box = h('section', { class: 'box' });
   const paint = () => {
-    const cur = currentPlanet();
+    const cur = chosenPlanet();
     const markOf = (id) => { const t = document.createElement('template'); t.innerHTML = planetMarkup(id).trim(); return t.content.firstChild; };
     box.replaceChildren(h('h2', {}, 'Thème'),
       h('p', {}, 'Choisissez votre planète : tout le site change sur cet appareil — couleurs, logo, mais aussi la place du menu, la forme des affiches et des boutons. « Verre » est clair le jour et sombre la nuit, comme un téléphone.'),
@@ -1059,7 +1059,7 @@ const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` 
 // Doublons : films présents plusieurs fois ; on garde la meilleure version d'un clic
 async function openDuplicates() {
   const body = h('div', { class: 'dup-list' }, h('p', { class: 'muted' }, 'Recherche…'));
-  const s = sheet('Doublons', body, { wide: true });
+  sheet('Doublons', body, { wide: true });
   const paint = async () => {
     const r = await api('/api/admin/duplicates');
     if (!r.groups.length) { body.replaceChildren(h('p', { class: 'muted' }, 'Aucun film en double. Les versions voulues (4K et 1080p d’un même film) apparaissent ici aussi : ne supprimez que ce qui est de trop.')); return; }
@@ -1121,7 +1121,7 @@ function importArchive() {
 // Corbeille : vidéos supprimées depuis Venus, gardées 7 jours, restaurables
 async function openTrash() {
   const body = h('div', { class: 'dup-list' }, h('p', { class: 'muted' }, 'Chargement…'));
-  const s = sheet('Corbeille', body, { wide: true });
+  sheet('Corbeille', body, { wide: true });
   const paint = async () => {
     const r = await api('/api/admin/trash');
     if (!r.items.length) { body.replaceChildren(h('p', { class: 'muted' }, `La corbeille est vide. Les vidéos supprimées depuis Venus y restent ${r.keepDays} jours avant d’être effacées du disque.`)); return; }

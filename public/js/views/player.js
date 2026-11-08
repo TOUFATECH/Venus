@@ -101,6 +101,10 @@ export async function render(main, { id, query }) {
   const castBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'Diffuser sur un Chromecast', onclick: () => startCast() }, icon('cast'));
   const airBtn = h('button', { class: 'p-icon f', hidden: true, 'aria-label': 'AirPlay', onclick: () => video.webkitShowPlaybackTargetPicker && video.webkitShowPlaybackTargetPicker() }, icon('airplay'));
   const fsBtn = h('button', { class: 'p-icon f', 'aria-label': 'Plein écran', onclick: () => toggleFullscreen() }, icon('fs'));
+  // Image dans l'image (fenêtre du système, au-dessus des autres applications)
+  const pipBtn = h('button', { class: 'p-icon f', hidden: !document.pictureInPictureEnabled, 'aria-label': 'Image dans l’image', title: 'Image dans l’image', onclick: () => togglePip() }, icon('pip'));
+  // Mode nuit : sons forts adoucis, dialogues plus présents (compresseur audio dans le navigateur)
+  const nightBtn = h('button', { class: `p-icon f${prefs.get('nightMode') ? ' on' : ''}`, 'aria-label': 'Mode nuit (son égalisé)', 'aria-pressed': String(!!prefs.get('nightMode')), title: 'Mode nuit : explosions moins fortes, dialogues plus clairs', onclick: () => setNight(!prefs.get('nightMode')) }, icon('moon'));
   const shareBtn = h('button', { class: 'p-icon f p-share', 'aria-label': 'Partager un extrait', title: 'Partager un extrait (GIF ou vidéo de quelques secondes)', onclick: () => openShare() }, icon('send'));
   const sleepBtn = h('button', { class: 'p-icon f p-sleep', 'aria-label': 'Minuterie de sommeil', title: 'Minuterie de sommeil', onclick: () => openSleep() }, icon('moon'), h('small', { class: 'p-sleep-left', hidden: true }));
   const lockBtn = h('button', { class: 'p-icon f p-lockbtn', 'aria-label': 'Verrouiller l’écran tactile', title: 'Verrouiller l’écran', onclick: () => setLocked(true) }, icon('lock'));
@@ -146,7 +150,7 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, recBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, shareBtn, fitBtn, ambBtn, castBtn, airBtn, fsBtn)),
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, recBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, shareBtn, fitBtn, ambBtn, nightBtn, pipBtn, castBtn, airBtn, fsBtn)),
     nextPanel, overlay, volOsd, skipBtn, chPanel, below, lockLayer);
   main.append(root);
   document.body.style.overflow = 'hidden';
@@ -162,11 +166,58 @@ export async function render(main, { id, query }) {
   applyVolume();
 
   function applySubLook() {
-    root.classList.remove('sub-box', 'sub-small', 'sub-medium', 'sub-large', 'sub-xlarge', 'sub-yellow', 'sub-high');
+    root.classList.remove('sub-box', 'sub-soft', 'sub-small', 'sub-medium', 'sub-large', 'sub-xlarge', 'sub-yellow', 'sub-cyan', 'sub-green', 'sub-high', 'sub-top');
     root.classList.toggle('sub-box', prefs.get('subStyle') === 'box');
+    root.classList.toggle('sub-soft', prefs.get('subStyle') === 'soft');
     root.classList.add(`sub-${prefs.get('subSize') || 'medium'}`);
-    root.classList.toggle('sub-yellow', prefs.get('subColor') === 'yellow');
+    const col = prefs.get('subColor');
+    if (['yellow', 'cyan', 'green'].includes(col)) root.classList.add(`sub-${col}`);
     root.classList.toggle('sub-high', prefs.get('subPos') === 'high');
+    root.classList.toggle('sub-top', prefs.get('subPos') === 'top');
+  }
+
+  // ---------------------------------------------------------------- image dans l'image, mode nuit
+  async function togglePip() {
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await video.requestPictureInPicture();
+    } catch (e) { toast(`Image dans l’image indisponible : ${e.message}`, true); }
+  }
+  video.addEventListener('enterpictureinpicture', () => pipBtn.classList.add('on'));
+  video.addEventListener('leavepictureinpicture', () => pipBtn.classList.remove('on'));
+  // Le son passe par un compresseur seulement après un geste (sinon le navigateur couperait le son) ;
+  // le circuit est créé une seule fois par élément vidéo (il suit la vidéo dans le mini-lecteur)
+  function nightGraph() {
+    if (video.__vnAudio) return video.__vnAudio;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    const ctx = new AC();
+    const src = ctx.createMediaElementSource(video);
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -32; comp.knee.value = 24; comp.ratio.value = 6; comp.attack.value = 0.004; comp.release.value = 0.28;
+    const gain = ctx.createGain(); gain.gain.value = 1.7;
+    comp.connect(gain); gain.connect(ctx.destination);
+    video.__vnAudio = { ctx, src, comp, gain, on: false };
+    return video.__vnAudio;
+  }
+  function wireNight(on) {
+    const g = (on || video.__vnAudio) ? nightGraph() : null;
+    if (!g) return;
+    g.src.disconnect();
+    g.src.connect(on ? g.comp : g.ctx.destination);
+    g.on = on;
+    if (g.ctx.state === 'suspended') g.ctx.resume().catch(() => {});
+  }
+  function setNight(on) {
+    prefs.set('nightMode', on);
+    nightBtn.classList.toggle('on', on); nightBtn.setAttribute('aria-pressed', String(on));
+    wireNight(on);
+    toast(on ? 'Mode nuit : sons forts adoucis, dialogues plus clairs' : 'Mode nuit désactivé');
+  }
+  if (prefs.get('nightMode')) {
+    const arm = () => { root.removeEventListener('pointerdown', arm, true); document.removeEventListener('keydown', arm, true); if (prefs.get('nightMode')) wireNight(true); };
+    if (navigator.userActivation && navigator.userActivation.isActive) wireNight(true);
+    else { root.addEventListener('pointerdown', arm, true); document.addEventListener('keydown', arm, true); }
   }
 
   // ---------------------------------------------------------------- utilitaires de temps
@@ -993,10 +1044,10 @@ export async function render(main, { id, query }) {
     const paintSample = () => { if (!subsLayer.childNodes.length || subsLayer.dataset.sample) { subsLayer.dataset.sample = '1'; lastCue = '__exemple'; subsLayer.replaceChildren(h('div', {}, h('span', {}, 'Voici à quoi ressemblent les sous-titres.'))); } };
     const s = sheet('Apparence des sous-titres', h('div', { class: 'look' },
       row('Taille', 'subSize', [['small', 'Petite'], ['medium', 'Moyenne'], ['large', 'Grande'], ['xlarge', 'Très grande']], 'medium'),
-      row('Couleur', 'subColor', [['white', 'Blanc'], ['yellow', 'Jaune']]),
-      row('Style', 'subStyle', [['text', 'Contour'], ['box', 'Fond noir']]),
-      row('Position', 'subPos', [['normal', 'En bas'], ['high', 'Plus haut']]),
-      h('p', { class: 'muted' }, 'Réglage gardé sur cet appareil. Aussi dans Réglages → Lecture sur cet appareil.')), { onClose: () => { if (subsLayer.dataset.sample) { delete subsLayer.dataset.sample; subsLayer.replaceChildren(); } lastCue = null; paintSubs(); } });
+      row('Couleur', 'subColor', [['white', 'Blanc'], ['yellow', 'Jaune'], ['cyan', 'Cyan'], ['green', 'Vert']]),
+      row('Style', 'subStyle', [['text', 'Contour'], ['soft', 'Fond léger'], ['box', 'Fond noir']]),
+      row('Position', 'subPos', [['normal', 'En bas'], ['high', 'Plus haut'], ['top', 'En haut']]),
+      h('p', { class: 'muted' }, 'Réglage gardé pour votre profil, sur tous vos appareils. Aussi dans Réglages → Lecture.')), { onClose: () => { if (subsLayer.dataset.sample) { delete subsLayer.dataset.sample; subsLayer.replaceChildren(); } lastCue = null; paintSubs(); } });
     paintSample();
     return s;
   }

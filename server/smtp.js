@@ -32,7 +32,7 @@ export function sendMail({ to, subject, text, html }, conf = smtpConf()) {
     const wantStartTls = conf.secure === 'starttls' || (conf.secure === 'auto' && !implicitTls);
     let sock = implicitTls ? tls.connect({ host: conf.host, port: conf.port, servername: conf.host }) : net.connect({ host: conf.host, port: conf.port });
     sock.setTimeout(20000);
-    let buf = '', step = 'greet', upgraded = implicitTls, waiting = null;
+    let buf = '', upgraded = implicitTls, waiting = null;
     const fail = (e) => { try { sock.destroy(); } catch { /* */ } reject(e instanceof Error ? e : new Error(String(e))); };
     const send = (line) => sock.write(`${line}\r\n`);
     const expect = (code) => new Promise((res, rej) => { waiting = { code, res, rej }; });

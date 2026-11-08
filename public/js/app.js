@@ -1,11 +1,11 @@
 // Venus — interface classique (sans Next.js) : coque de navigation, affichage des pages et démarrage.
 // Elle sert quand l'interface Next.js n'est pas construite, avec VENUS_UI=classic, et pour la démo.
 // L'état, les adresses et la navigation sont dans core.js, partagé avec l'interface Next.js.
-import { api } from './api.js';
+import { api, applyProfilePrefs } from './api.js';
 import { h, icon, avatar, toast, logoMark, brand } from './ui.js';
 import { focusFirst } from './nav.js';
 import { menuItems, menuPrefs, labelOf, iconOf, dayPart, RAIL_MAX } from './menu.js';
-import { currentPlanet } from './themes.js';
+import { currentPlanet, useProfileTheme } from './themes.js';
 import {
   state, setHost, matchRoute, resolveParams, parseHash, go, hasCat, openAll, openRemote, switchProfile,
   setTitle, refreshCategories, hideBoot, isBooted, listenEvents, memory, notify,
@@ -283,7 +283,7 @@ async function showGate(kind) {
   const mod = await GATES[kind]();
   const view = await mod.render(main, {
     done: async (profile) => {
-      if (profile) { state.profile = profile; route(); }
+      if (profile) { state.profile = profile; applyProfilePrefs(profile); useProfileTheme(profile); route(); }
       else boot();
     },
   });
@@ -311,6 +311,7 @@ async function startApp() {
   if (!state.status.authenticated) return showGate('login');
   if (!state.status.profile) return showGate('profiles');
   state.profile = state.status.profile;
+  applyProfilePrefs(state.profile); useProfileTheme(state.profile);
   route();
   // Mini-lecteur laissé ouvert avant un rechargement : il reprend
   if (!/^\/(lecture|films|clips|series|animes)\//.test(location.pathname) || !/\/(lecture|S\d+E\d+)$/i.test(location.pathname)) import('./mini.js').then((m) => m.resumeMini()).catch(() => {});
