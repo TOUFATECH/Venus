@@ -1,7 +1,7 @@
 {
   "name": "venus",
   "version": "1.0.0",
-  "description": "Venus — serveur multimédia personnel léger et auto-hébergé, interface Next.js / React",
+  "description": "Venus — serveur multimédia personnel léger et auto-hébergé, interface Next.js",
   "type": "module",
   "main": "server/index.js",
   "scripts": {
@@ -10,7 +10,8 @@
     "web:build": "cd web && npm ci --no-audit --no-fund && npm run build",
     "web:dev": "cd web && VENUS_API=http://localhost:8096 npm run dev",
     "security": "node scripts/security-check.mjs",
-    "audit": "npm audit --omit=dev && node scripts/security-check.mjs"
+    "audit": "npm audit --omit=dev && node scripts/security-check.mjs",
+    "test": "cd tests && npm ci --no-audit --no-fund && npx playwright test"
   },
   "engines": {
     "node": ">=22.13"

@@ -10,3 +10,8 @@ docker-compose.updater.yml
 web/.next/
 web-dist/
 web/next-env.d.ts
+tests/node_modules/
+tests/test-results/
+tests/playwright-report/
+tests/.venus-test.json
+tests/.auth.json

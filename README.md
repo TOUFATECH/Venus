@@ -7,6 +7,7 @@ Un serveur multimédia léger et auto-hébergé, avec une interface de salle de 
 
 ![Node.js](https://img.shields.io/badge/Node.js-%E2%89%A5%2022.13-3c873a?logo=node.js&logoColor=white)
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)
+[![Tests](https://github.com/TOUFATECH/Venus/actions/workflows/tests.yml/badge.svg)](https://github.com/TOUFATECH/Venus/actions/workflows/tests.yml)
 ![Docker](https://img.shields.io/badge/Docker-pr%C3%AAt-2496ed?logo=docker&logoColor=white)
 ![Licence MIT](https://img.shields.io/badge/licence-MIT-f4cf9c)
 
@@ -223,6 +224,14 @@ npm start                 # serveur Venus (port 8096)
 npm run web:dev           # interface en direct sur http://localhost:3100 (API prise sur le port 8096)
 npm run web:build         # construction de production (servie ensuite par Venus)
 ```
+
+### Tests
+
+```bash
+npm run web:build && npm test   # 75 tests dans un vrai navigateur (Playwright)
+```
+
+Les tests démarrent un Venus jetable avec de petites vidéos, de la musique et des photos générées par ffmpeg, puis vérifient chaque page sur **ordinateur**, **téléphone** et **télévision** (navigation aux flèches de la télécommande) : connexion et code PIN, lecture d'un film, épisode suivant, mini-lecteur, recherche, Ma liste, musique, réglages, assistant d'ajout de source. Une page qui lève une erreur JavaScript fait échouer son test. Sur GitHub, ils tournent à chaque envoi, avec la construction et le démarrage de l'image Docker.
 
 ---
 
