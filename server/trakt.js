@@ -13,7 +13,7 @@ export const traktId = () => String(getSetting('trakt_client_id', '') || process
 // Source des affiches : tmdb (Trakt seulement si TMDB n'en a pas) | trakt (Trakt d'abord)
 export const posterSource = () => String(getSetting('poster_source', 'tmdb'));
 
-async function traktGet(pathname, params = {}, id = traktId()) {
+export async function traktGet(pathname, params = {}, id = traktId()) {
   const u = new URL(API + pathname);
   for (const [k, v] of Object.entries(params)) if (v != null && v !== '') u.searchParams.set(k, String(v));
   const res = await fetch(u, {

@@ -291,9 +291,12 @@ function Opinion({ d }) {
 }
 
 // ---------------------------------------------------------------- saisons et épisodes
-function Seasons({ d, setD, showDone, wantEp }) {
+function Seasons({ d: full, setD, showDone, wantEp }) {
   const L = shared();
   const { app, ui, components, api: A } = L;
+  // Saisons absentes des dossiers (montrées avec leurs épisodes manquants), sauf si on a choisi de les cacher
+  const d = L.api.prefs.get('showMissing') === false || !(full.absentSeasons && full.absentSeasons.length) ? full
+    : { ...full, seasons: [...full.seasons, ...full.absentSeasons].sort((a, b) => (a.number === 0) - (b.number === 0) || a.number - b.number) };
   const profile = app.state.profile;
   const memoKey = `vn_season_${d.id}`;
   const [filter, setFilter] = useState('all');
@@ -301,7 +304,7 @@ function Seasons({ d, setD, showDone, wantEp }) {
   const [curId, setCurId] = useState(() => {
     let remembered = null;
     try { remembered = d.seasons.find((s) => String(s.id) === sessionStorage.getItem(memoKey)); } catch { /* */ }
-    return (fromPlayer || remembered || d.seasons.find((s) => d.nextUp && s.episodes.some((e) => e.id === d.nextUp.id)) || d.seasons[0]).id;
+    return (fromPlayer || remembered || d.seasons.find((s) => d.nextUp && s.episodes.some((e) => e.id === d.nextUp.id)) || d.seasons.find((s) => !s.absent) || d.seasons[0]).id;
   });
   const [focusId, setFocusId] = useState(fromPlayer ? wantEp : null);
   const cur = d.seasons.find((s) => s.id === curId) || d.seasons[0];
@@ -355,9 +358,9 @@ function Seasons({ d, setD, showDone, wantEp }) {
   if (filter === 'all' && L.api.prefs.get('showMissing') !== false && cur.missing) {
     for (const m of cur.missing) {
       rows.push({ n: m.number - 0.5, el: (
-        <div key={`m${m.number}`} className="episode missing" data-ep={m.number} title={`Épisode ${m.number}${m.title ? ` — ${m.title}` : ''} : diffusé${m.air ? ` le ${ui.fmtDate(m.air)}` : ''}, mais pas dans vos dossiers`}>
-          <div className="thumb">{m.still ? <img src={m.still} alt="" loading="lazy" /> : <span className="miss-num">{m.number}</span>}<span className="miss-tag">Manquant</span></div>
-          <div className="ep-line"><b>{`Épisode ${m.number}`}</b>{m.air ? <span>{ui.fmtDate(m.air)}</span> : null}</div>
+        <div key={`m${m.number}`} className={`episode missing${m.future ? ' future' : ''}`} data-ep={m.number} title={`Épisode ${m.number}${m.title ? ` — ${m.title}` : ''} : ${m.future ? (m.air ? `diffusé le ${ui.fmtDate(m.air)}` : 'date de diffusion pas encore connue') : `diffusé${m.air ? ` le ${ui.fmtDate(m.air)}` : ''}, mais pas dans vos dossiers`}`}>
+          <div className="thumb">{m.still ? <img src={m.still} alt="" loading="lazy" /> : <span className="miss-num">{m.number}</span>}<span className="miss-tag">{m.future ? 'À venir' : 'Manquant'}</span></div>
+          <div className="ep-line"><b>{`Épisode ${m.number}${m.title && !/^(TBA|TBD|Episode \d+|Épisode \d+)$/i.test(m.title) ? ` · ${m.title}` : ''}`}</b>{m.air ? <span>{m.future ? `Le ${ui.fmtDate(m.air)}` : ui.fmtDate(m.air)}</span> : m.future ? <span>Date à venir</span> : null}</div>
         </div>
       ) });
     }
@@ -404,21 +407,21 @@ function Seasons({ d, setD, showDone, wantEp }) {
               const sn = s.episodes.filter(isSeen).length, st = s.episodes.length, on = s === cur;
               const pic = s.poster || d.poster;
               return (
-                <button key={s.id} className={`season-card f${on ? ' on' : ''}${sn === st && st ? ' done' : ''}`} role="tab" aria-selected={String(on)} data-id={s.id} onClick={() => showSeason(s)}>
+                <button key={s.id} className={`season-card f${on ? ' on' : ''}${sn === st && st ? ' done' : ''}${s.absent ? ' absent' : ''}`} role="tab" aria-selected={String(on)} data-id={s.id} onClick={() => showSeason(s)}>
                   <span className="season-pic">
                     {pic ? <img src={img(pic, 342)} alt="" loading="lazy" /> : <span className="season-ph">{s.number}</span>}
                     <i className="season-prog"><i style={{ width: `${st ? (sn / st) * 100 : 0}%` }} /></i>
                   </span>
                   <b>{seasonName(s)}</b>
-                  <span>{sn === st && st ? 'Vue en entier' : sn ? `${sn} / ${st} vus` : `${st} épisode${st > 1 ? 's' : ''}`}</span>
+                  <span>{s.absent ? `${s.missing.length} épisode${s.missing.length > 1 ? 's' : ''} · absente` : sn === st && st ? 'Vue en entier' : sn ? `${sn} / ${st} vus` : `${st} épisode${st > 1 ? 's' : ''}`}</span>
                 </button>
               );
             })}
           </div>
         ) : null}
         <div className="season-head">
-          <div className="sh-info"><b>{seasonName(cur)}</b><span>{[`${total} épisode${total > 1 ? 's' : ''}`, mins ? ui.fmtRuntime(mins) : null, seen && !all ? `${total - seen} à voir` : null].filter(Boolean).join(' · ')}</span></div>
-          <div className="sh-actions">
+          <div className="sh-info"><b>{seasonName(cur)}</b><span>{cur.absent ? `${cur.missing.length} épisode${cur.missing.length > 1 ? 's' : ''}, pas dans vos dossiers` : [`${total} épisode${total > 1 ? 's' : ''}`, cur.missing && cur.missing.length ? `${cur.missing.length} manquant${cur.missing.length > 1 ? 's' : ''} ou à venir` : null, mins ? ui.fmtRuntime(mins) : null, seen && !all ? `${total - seen} à voir` : null].filter(Boolean).join(' · ')}</span></div>
+          {cur.absent ? null : <div className="sh-actions">
             {next ? <button className="btn btn-small f" onClick={() => go(components.playPath(next.id))}><Icon name="play" />{all ? 'Revoir la saison' : seen ? `Continuer É${next.episode}` : 'Lire la saison'}</button> : null}
             <button className={`btn btn-small btn-ghost f${all ? ' is-on' : ''}`} onClick={() => markSeason(cur, !all)}><Icon name="eye" />{all ? 'Saison vue' : 'Marquer la saison vue'}</button>
             {profile.perms && profile.perms.download === false ? null : <button className="btn btn-small btn-ghost btn-icon f" aria-label="Télécharger la saison" title="Télécharger la saison" onClick={() => openDownload({ id: cur.id, title: seasonName(cur), season: true })}><Icon name="down" /></button>}
@@ -426,17 +429,17 @@ function Seasons({ d, setD, showDone, wantEp }) {
               id: cur.id, what: `${seasonName(cur).toLowerCase().startsWith('saison') ? 'la ' : ''}${seasonName(cur)}`, detail: `Les ${total} épisode${total > 1 ? 's' : ''} de cette saison seront supprimés.`,
               onDone: (r) => (r.gone && d.seasons.length === 1 ? go(libOf(d), { replace: true }) : refresh()),
             })}><Icon name="trash" /></button> : null}
-          </div>
+          </div>}
         </div>
         <div className="episodes" ref={list}>
           {rows.length ? rows.map((r) => r.el) : <p className="grid-empty">{filter === 'unseen' ? 'Tous les épisodes de cette saison sont vus.' : 'Aucun épisode vu dans cette saison.'}</p>}
           {nextS ? (
             <button className="next-season f" onClick={() => { showSeason(nextS); bar.current && bar.current.scrollIntoView({ block: 'start', behavior: 'smooth' }); }}>
-              <span><small>{idx === d.seasons.length - 1 ? 'Reprendre depuis le début' : 'Ensuite'}</small><b>{seasonName(nextS)}</b><em>{`${nextS.episodes.length} épisodes`}</em></span><Icon name="fwd" />
+              <span><small>{idx === d.seasons.length - 1 ? 'Reprendre depuis le début' : 'Ensuite'}</small><b>{seasonName(nextS)}</b><em>{`${nextS.absent ? nextS.missing.length : nextS.episodes.length} épisodes${nextS.absent ? ' (absente)' : ''}`}</em></span><Icon name="fwd" />
             </button>
           ) : null}
         </div>
-        {d.missingSeasons && d.missingSeasons.length && L.api.prefs.get('showMissing') !== false
+        {d.missingSeasons && d.missingSeasons.length && L.api.prefs.get('showMissing') !== false && !d.seasons.some((x) => x.absent)
           ? <p className="missing-seasons">{`Pas dans vos dossiers : ${d.missingSeasons.map((x) => `${x.title || `Saison ${x.number}`} (${x.count} épisodes)`).join(', ')}.`}</p> : null}
       </section>
     </>

@@ -97,7 +97,7 @@ export async function arrAdd(kind, id) {
     if (!m) throw new HttpError(404, 'Film introuvable');
     if (m.id) return { already: true, title: m.title };
     const added = await call(app, '/api/v3/movie', { method: 'POST', body: { ...m, qualityProfileId: profile, rootFolderPath: root, monitored: true, minimumAvailability: 'released', addOptions: { searchForMovie: true } } });
-    return { added: true, title: added.title };
+    return { added: true, title: added.title, arrId: added.id };
   }
   const found = await call(app, `/api/v3/series/lookup?term=${encodeURIComponent(`tvdb:${Number(id)}`)}`);
   const sr = (found || [])[0];
@@ -105,10 +105,30 @@ export async function arrAdd(kind, id) {
   if (sr.id) return { already: true, title: sr.title };
   const added = await call(app, '/api/v3/series', { method: 'POST', body: {
     ...sr, qualityProfileId: profile, languageProfileId: 1, rootFolderPath: root, monitored: true, seasonFolder: true,
+    // Toutes les saisons, et les suivantes dès qu'elles sont annoncées
+    monitorNewItems: 'all',
     seriesType: kind === 'anime' ? 'anime' : 'standard',
     addOptions: { monitor: 'all', searchForMissingEpisodes: true, searchForCutoffUnmetEpisodes: false },
   } });
-  return { added: true, title: added.title };
+  return { added: true, title: added.title, arrId: added.id };
+}
+
+// Retire un film / une série ajouté(e) par Venus : téléchargements en cours annulés, fichiers supprimés
+export async function arrRemove(app, arrId) {
+  const id = Number(arrId);
+  if (!arrOn(app) || !id) return false;
+  const field = app === 'radarr' ? 'movieId' : 'seriesId';
+  try {
+    for (let page = 1; page <= 10; page++) {
+      const q = await call(app, `/api/v3/queue?page=${page}&pageSize=200`);
+      const recs = (q && q.records) || [];
+      for (const r of recs.filter((x) => x[field] === id)) await call(app, `/api/v3/queue/${r.id}?removeFromClient=true&blocklist=false`, { method: 'DELETE' }).catch(() => {});
+      if (recs.length < 200) break;
+    }
+  } catch { /* file d'attente illisible : on supprime quand même */ }
+  await call(app, app === 'radarr' ? `/api/v3/movie/${id}?deleteFiles=true&addImportExclusion=false` : `/api/v3/series/${id}?deleteFiles=true&addImportListExclusion=false`, { method: 'DELETE' });
+  forgetKnown();
+  return true;
 }
 
 // Téléchargements en cours dans Radarr et Sonarr

@@ -930,20 +930,23 @@ router.get('/api/items/:id', async (ctx) => {
     const today = new Date().toISOString().slice(0, 10);
     // Sans données TMDB : guide des épisodes de TVmaze (sans clé), attendu au plus 3,5 s
     const noTmdb = !seasons.some((s) => parseJson(s.tmdb_eps, []).length);
-    const guide = noTmdb ? await guideFor(item.id).catch(() => []) : [];
+    // Guide TVmaze aussi quand des saisons entières manquent (TMDB ne donne que leur nombre d'épisodes)
+    const tmdbMissingSeasons = parseJson(item.tmdb_seasons, []).some((x) => x.n > 0 && !seasons.some((s) => s.season_num === x.n) && x.count > 0);
+    const guide = noTmdb || tmdbMissingSeasons ? await guideFor(item.id).catch(() => []) : [];
     out.seasons = seasons.map((s) => {
       const list = eps.filter((e) => e.parent_id === s.id);
       // Épisodes déjà diffusés (d'après TMDB, sinon TVmaze) mais absents des dossiers
       const have = new Set(list.flatMap((e) => { const a = []; for (let n = e.episode_num; n <= (e.episode_end || e.episode_num); n++) a.push(n); return a; }));
-      let missing = parseJson(s.tmdb_eps, []).filter((x) => x.n && !have.has(x.n) && x.air && x.air <= today)
-        .map((x) => ({ number: x.n, title: x.title, air: x.air, overview: x.overview, still: x.still ? `https://image.tmdb.org/t/p/w300${x.still}` : null }));
+      // Diffusés mais absents, et à venir (date future ou pas encore fixée) : tous les épisodes de la saison apparaissent
+      let missing = parseJson(s.tmdb_eps, []).filter((x) => x.n && !have.has(x.n))
+        .map((x) => ({ number: x.n, title: x.title, air: x.air, overview: x.overview, still: x.still ? `https://image.tmdb.org/t/p/w300${x.still}` : null, future: !x.air || x.air > today }));
       if (!missing.length && guide.length && s.season_num > 0) {
         const g = guide.filter((x) => x.s === s.season_num);
         // Numérotation compatible seulement (les animés numérotés en continu, 1 à 153, ne sont pas comparés)
         const maxHave = Math.max(0, ...have);
         if (g.length && maxHave <= g.length + 1) {
-          missing = g.filter((x) => !have.has(x.n) && x.air && x.air <= today)
-            .map((x) => ({ number: x.n, title: x.title, air: x.air, still: x.still, source: 'tvmaze' }));
+          missing = g.filter((x) => !have.has(x.n))
+            .map((x) => ({ number: x.n, title: x.title, air: x.air, still: x.still, source: 'tvmaze', future: !x.air || x.air > today }));
         }
       }
       return {
@@ -967,6 +970,18 @@ router.get('/api/items/:id', async (ctx) => {
         const bySeason = new Map();
         for (const x of guide) if (x.air && x.air <= today) { const b = bySeason.get(x.s) || { count: 0, air: x.air }; b.count++; bySeason.set(x.s, b); }
         out.missingSeasons = [...bySeason].filter(([n]) => !haveSeasons.has(n)).map(([n, b]) => ({ number: n, title: `Saison ${n}`, count: b.count, air: b.air, source: 'tvmaze' }));
+      }
+    }
+    // Saisons entières absentes des dossiers : montrées comme les autres, tous leurs épisodes « manquants »
+    // (titres et dates d'après TVmaze quand il les a, sinon numérotés d'après TMDB)
+    // (à part : la liste « seasons » ne contient que ce qui est dans les dossiers, pour le lecteur et les compteurs)
+    out.absentSeasons = [];
+    if (out.missingSeasons.length) {
+      for (const ms of out.missingSeasons) {
+        const g = guide.filter((x) => x.s === ms.number);
+        const list = g.length ? g.map((x) => ({ number: x.n, title: x.title, air: x.air, still: x.still, future: !x.air || x.air > today }))
+          : Array.from({ length: ms.count || 0 }, (_v, i) => ({ number: i + 1, title: null, air: null, future: false }));
+        out.absentSeasons.push({ id: `absente-${ms.number}`, number: ms.number, title: ms.title || `Saison ${ms.number}`, poster: null, overview: null, episodes: [], missing: list, absent: true });
       }
     }
     // Prochain épisode à regarder
@@ -1091,7 +1106,12 @@ router.post('/api/wanted', async (ctx) => {
   const b = await wantedBody(ctx);
   sendJson(ctx.res, await addWanted(p, b, { download: b.download !== false }));
 });
-router.del('/api/wanted', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, removeWanted(p.id, String(ctx.url.searchParams.get('key') || ''))); });
+router.del('/api/wanted', async (ctx) => {
+  const p = requireProfile(ctx);
+  const r = await removeWanted(p.id, String(ctx.url.searchParams.get('key') || ''));
+  if (r.removed) setTimeout(() => scanAll(), 5000); // fichiers supprimés : la médiathèque se met à jour
+  sendJson(ctx.res, r);
+});
 router.post('/api/wanted/grab', async (ctx) => {
   const p = arrUser(ctx);
   const b = await wantedBody(ctx);

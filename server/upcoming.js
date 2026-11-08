@@ -7,11 +7,12 @@
 //    et le programme TVmaze (États-Unis, France, plateformes de streaming) pour les autres séries ;
 //  - animés : la même chose, et le programme de diffusion d'AniList pour les animés de la saison ;
 //  - films : le calendrier et les suggestions de Radarr (tendances, populaires), et TMDB si une clé est donnée.
-import { db, all, run } from './db.js';
-import { getJson } from './posters.js';
+import { db, all, get, run } from './db.js';
+import { getJson, CINEMETA } from './posters.js';
+import { traktId, traktGet } from './trakt.js';
 import { anilist } from './ratings.js';
 import { tmdb, tmdbKey, lang } from './metadata.js';
-import { arrOn, call as arrCall, arrKnown, arrGrab } from './arr.js';
+import { arrOn, call as arrCall, arrKnown, arrGrab, arrRemove } from './arr.js';
 import { logActivity } from './activity.js';
 import { notify } from './notify.js';
 
@@ -42,6 +43,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS wanted (
   PRIMARY KEY (profile_id, key)
 )`);
 try { db.exec('ALTER TABLE wanted ADD COLUMN notified_at INTEGER'); } catch { /* déjà là */ }
+// venus_added = 1 : Venus l'a ajouté à Radarr / Sonarr (rien sur le NAS avant) → retiré des favoris, il est supprimé
+for (const c of ['venus_added INTEGER', 'arr_id INTEGER', 'arr_app TEXT']) { try { db.exec(`ALTER TABLE wanted ADD COLUMN ${c}`); } catch { /* déjà là */ } }
 // Un favori est arrivé sur le NAS : notification (téléphone, application ouverte) à la personne qui l'a demandé
 export async function wantedArrivals() {
   const lib = libIndex();
@@ -62,7 +65,7 @@ export function wantedOf(profileId) {
   const lib = libIndex();
   return all('SELECT * FROM wanted WHERE profile_id = ? ORDER BY added_at DESC', profileId).map((r) => ({
     key: r.key, kind: r.kind, title: r.title, year: r.year, poster: r.poster, image: r.image, date: r.date,
-    tmdb: r.tmdb_id, tvdb: r.tvdb_id, anilist: r.anilist_id, added: r.added_at, sent: r.sent_at, error: r.error,
+    tmdb: r.tmdb_id, tvdb: r.tvdb_id, anilist: r.anilist_id, added: r.added_at, sent: r.sent_at, error: r.error, venusAdded: !!r.venus_added,
     nas: (r.kind === 'movie' ? lib.movie : lib.show).get(norm(r.title)) || null,
   }));
 }
@@ -73,6 +76,8 @@ async function send(profile, w) {
   try {
     const r = await arrGrab({ kind: w.kind, tmdb: w.tmdb, tvdb: w.tvdb, imdb: /^imdb:/.test(w.key) ? w.key.slice(5) : null, title: w.title, year: w.year });
     run('UPDATE wanted SET sent_at = ?, error = NULL WHERE profile_id = ? AND key = ?', Date.now(), profile.id, w.key);
+    // Ajouté par Venus (pas déjà suivi par Radarr / Sonarr) : on le note pour pouvoir le retirer plus tard
+    if (r && r.added && r.arrId) run('UPDATE wanted SET venus_added = 1, arr_id = ?, arr_app = ? WHERE key = ?', r.arrId, appOf(w.kind), w.key);
     logActivity('request', `${profile.name} a demandé « ${r.title} »${r.already ? ' (déjà demandé)' : ''}`);
     return r;
   } catch (e) {
@@ -84,10 +89,27 @@ export async function addWanted(profile, w, { download = true } = {}) {
   run(`INSERT INTO wanted(profile_id, key, kind, title, year, poster, image, date, tmdb_id, tvdb_id, anilist_id, added_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(profile_id, key) DO UPDATE SET title = excluded.title, poster = COALESCE(excluded.poster, poster), image = COALESCE(excluded.image, image), date = COALESCE(excluded.date, date)`,
   profile.id, w.key, w.kind, String(w.title || '').slice(0, 300), w.year || null, w.poster || null, w.image || null, w.date || null, w.tmdb || null, w.tvdb || null, w.anilist || null, Date.now());
-  const sent = download ? await send(profile, w) : null;
-  return { wanted: true, sent };
+  // Déjà sur le NAS (au moins un épisode, ou le film) : le favori ne télécharge rien et ne supprimera rien
+  const lib = libIndex();
+  const onNas = (w.kind === 'movie' ? (w.tmdb && lib.tmdbMovie.get(Number(w.tmdb))) || lib.movie.get(norm(w.title)) : lib.show.get(norm(w.title))) || null;
+  // Un autre profil l'a déjà fait ajouter par Venus : même suivi
+  const other = get('SELECT venus_added, arr_id, arr_app FROM wanted WHERE key = ? AND venus_added = 1 LIMIT 1', w.key);
+  if (other) run('UPDATE wanted SET venus_added = 1, arr_id = ?, arr_app = ? WHERE profile_id = ? AND key = ?', other.arr_id, other.arr_app, profile.id, w.key);
+  const sent = download && !onNas && !other ? await send(profile, w) : null;
+  return { wanted: true, sent, nas: !!onNas };
 }
-export function removeWanted(profileId, key) { run('DELETE FROM wanted WHERE profile_id = ? AND key = ?', profileId, key); return { wanted: false }; }
+// Retiré des favoris : si Venus l'avait fait télécharger (rien sur le NAS avant) et que plus personne ne l'a en
+// favori, Radarr / Sonarr l'oublient : téléchargements en cours annulés et fichiers supprimés du NAS.
+export async function removeWanted(profileId, key) {
+  const row = get('SELECT * FROM wanted WHERE profile_id = ? AND key = ?', profileId, key);
+  run('DELETE FROM wanted WHERE profile_id = ? AND key = ?', profileId, key);
+  if (!row || !row.venus_added || !row.arr_id || get('SELECT 1 FROM wanted WHERE key = ?', key)) return { wanted: false, removed: false };
+  try {
+    const removed = await arrRemove(row.arr_app || appOf(row.kind), row.arr_id);
+    if (removed) logActivity('request', `« ${row.title} » retiré des favoris : supprimé de ${row.arr_app === 'radarr' ? 'Radarr' : 'Sonarr'} et du NAS`);
+    return { wanted: false, removed };
+  } catch (e) { return { wanted: false, removed: false, error: e.message }; }
+}
 export async function grab(profile, w) {
   if (!arrOn(appOf(w.kind))) throw Object.assign(new Error(`${w.kind === 'movie' ? 'Radarr' : 'Sonarr'} n’est pas relié (Réglages → Demandes)`), { status: 400 });
   const r = await arrGrab({ kind: w.kind, tmdb: w.tmdb, tvdb: w.tvdb, imdb: /^imdb:/.test(w.key) ? w.key.slice(5) : null, title: w.title, year: w.year });
@@ -269,8 +291,57 @@ export async function upcomingMovies(profile) {
         poster: x.poster_path ? `${TMDB_IMG}/w342${x.poster_path}` : null, overview: x.overview, arr: known.movies.has(x.id), pop: x.popularity || 0 });
     }
   }
+  // Sans Radarr ni clé TMDB : Trakt (si son identifiant client est renseigné), puis Cinemeta (Stremio, sans clé)
+  if (out.size < 12 && traktId()) {
+    const fx = (d) => iso(d);
+    const cal = await safe(() => cached(`trakt:cal:${iso(now)}`, 6 * 3600e3, () => traktGet(`/calendars/all/movies/${fx(now - 7 * DAY)}/33`, { extended: 'full,images' })), []);
+    const ant = await safe(() => cached('trakt:anticipated', 12 * 3600e3, () => traktGet('/movies/anticipated', { extended: 'full,images', limit: 100 })), []);
+    const imgOf = (a) => { const v = Array.isArray(a) ? a[0] : a; return v ? (/^https?:/.test(v) ? v : `https://${String(v).replace(/^\/+/, '')}`) : null; };
+    for (const x of [...(cal || []), ...(ant || [])]) {
+      const m = x.movie || x; const date = x.released || m.released;
+      if (!m || !m.title || !date || date < iso(from) || date > iso(to)) continue;
+      const im = m.images || {};
+      add({ date, release: 'Sortie', title: m.title, year: m.year, tmdb: m.ids && m.ids.tmdb, imdb: m.ids && m.ids.imdb, image: imgOf(im.fanart), poster: imgOf(im.poster),
+        overview: m.overview || null, arr: false, pop: (x.list_count || 0) + (m.votes || 0), genres: m.genres || [] });
+    }
+  }
+  if (out.size < 12) for (const m of await safe(() => cinemetaUpcoming(from, to), [])) add(m);
   const entries = [...out.values()].map((m) => ({ ...m, kind: 'movie', nas: nasOf(m) }));
   return finish(profile, entries, 'movie');
+}
+
+// Films annoncés, d'après Cinemeta (catalogue public de Stremio, sans clé) : films de cette année et de la
+// suivante, classés par popularité ; la date de sortie vient de leur fiche (gardée 24 h)
+async function cinemetaUpcoming(from, to) {
+  const years = [...new Set([new Date(from).getUTCFullYear(), new Date().getUTCFullYear(), new Date(to).getUTCFullYear()])];
+  const metas = [];
+  for (const y of years) for (const skip of [0, 100, 200]) {
+    const d = await safe(() => cached(`cm:${y}:${skip}`, 12 * 3600e3, () => getJson(`${CINEMETA}/catalog/movie/year/genre=${y}${skip ? `&skip=${skip}` : ''}.json`)), null);
+    const list = (d && d.metas) || [];
+    metas.push(...list.map((m, i) => ({ ...m, rank: metas.length + i })));
+    if (list.length < 50) break;
+  }
+  const seen = new Set();
+  const todo = metas.filter((m) => m && m.id && /^tt\d+$/.test(m.id) && !seen.has(m.id) && seen.add(m.id));
+  const out = [];
+  let i = 0;
+  const worker = async () => {
+    while (i < Math.min(todo.length, 240)) {
+      const m = todo[i++];
+      let released = m.released;
+      if (!released) {
+        const full = await safe(() => cached(`cm:meta:${m.id}`, 24 * 3600e3, () => getJson(`${CINEMETA}/meta/movie/${m.id}.json`)), null);
+        const fm = full && full.meta;
+        if (fm) { released = fm.released; m.background = m.background || fm.background; m.description = m.description || fm.description; m.genres = m.genres || fm.genres; }
+      }
+      const date = released ? iso(Date.parse(released)) : null;
+      if (!date || date < iso(from) || date > iso(to)) continue;
+      out.push({ date, release: 'Sortie', title: m.name, year: Number(date.slice(0, 4)), imdb: m.id, image: m.background || null, poster: m.poster || null,
+        overview: m.description || null, arr: false, pop: 1e5 - m.rank, genres: m.genres || [] });
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+  return out;
 }
 
 // ------------------------------------------------------------------ mise en forme commune
@@ -278,7 +349,8 @@ function finish(profile, all_, kind) {
   // Profils enfants : seulement ce qui est déjà sur le NAS (et autorisé pour leur âge)
   const entries = profile.max_age != null ? all_.filter((e) => e.nas) : all_;
   const wanted = wantedKeys(profile.id);
-  for (const e of entries) e.wanted = wanted.has(e.key);
+  const byVenus = new Set(all('SELECT key FROM wanted WHERE profile_id = ? AND venus_added = 1', profile.id).map((r) => r.key));
+  for (const e of entries) { e.wanted = wanted.has(e.key); if (byVenus.has(e.key)) e.venusAdded = true; }
   entries.sort((a, b) => (a.at || Date.parse(`${a.date}T12:00:00Z`)) - (b.at || Date.parse(`${b.date}T12:00:00Z`)) || (b.pop || 0) - (a.pop || 0));
   // Propositions : les titres les plus suivis qui ne sont ni sur le NAS ni déjà demandés (un par titre)
   const seen = new Set();

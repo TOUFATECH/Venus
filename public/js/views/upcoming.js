@@ -3,7 +3,7 @@
 //  - mis en favori ♡ : il rejoint « Ma liste → Mes envies » et part tout de suite en téléchargement (Radarr / Sonarr) ;
 //  - téléchargé directement (bouton ⬇), sans passer par les favoris.
 import { api } from '../api.js';
-import { h, icon, img, toast, sheet, fmtDate } from '../ui.js';
+import { h, icon, img, toast, sheet, fmtDate, confirmSheet } from '../ui.js';
 import { playPath } from '../components.js';
 import { go } from '../core.js';
 
@@ -44,13 +44,15 @@ export async function renderUpcoming(page, kind, tabs) {
     const on = favs.has(e.key);
     try {
       if (on) {
-        await api(`/api/wanted?key=${encodeURIComponent(e.key)}`, { method: 'DELETE' });
-        favs.delete(e.key); toast(`« ${nameOf(e)} » retiré de vos favoris`);
+        if (e.venusAdded && !(await confirmSheet(`Retirer « ${nameOf(e)} » de vos favoris ? Venus l’avait fait télécharger : les téléchargements en cours seront annulés et les fichiers supprimés du NAS.`, 'Retirer et supprimer'))) return;
+        const rm = await api(`/api/wanted?key=${encodeURIComponent(e.key)}`, { method: 'DELETE' });
+        favs.delete(e.key); toast(rm && rm.removed ? `« ${nameOf(e)} » retiré : téléchargements annulés et fichiers supprimés du NAS` : `« ${nameOf(e)} » retiré de vos favoris`);
       } else {
         const r = await api('/api/wanted', { method: 'POST', body: payload(e, true) });
         favs.add(e.key);
         if (r.sent && !r.sent.error) { e.arr = true; markArr(e); }
         toast(r.sent && r.sent.error ? `Ajouté aux favoris, mais ${d.app} a répondu : ${r.sent.error}`
+          : r.nas ? `« ${nameOf(e)} » ajouté à vos favoris (déjà sur le NAS : rien à télécharger)`
           : r.sent ? `« ${nameOf(e)} » en favori : ${r.sent.already ? `déjà suivi par ${d.app}` : 'le téléchargement est lancé'}`
             : `« ${nameOf(e)} » ajouté à vos favoris${kids ? '' : d.arr ? '' : ` (reliez ${d.app} pour le téléchargement automatique)`}`, { type: r.sent && r.sent.error ? undefined : 'success' });
       }
@@ -179,7 +181,7 @@ export async function renderUpcoming(page, kind, tabs) {
     }
     if (!shown.length) {
       body.append(h('div', { class: 'grid-empty' }, h('p', {}, filter === 'fav' ? 'Aucun favori à venir.' : filter === 'nas' ? 'Rien de disponible pour ces jours-ci.' : 'Rien d’annoncé pour l’instant.'),
-        kind === 'movie' && !d.arr && !d.tmdb ? h('p', { class: 'muted' }, 'Les sorties de films viennent de Radarr (ou de TMDB) : reliez Radarr dans Réglages → Demandes.') : null));
+        kind === 'movie' && !d.arr && !d.tmdb ? h('p', { class: 'muted' }, 'Venus n’a pas pu joindre les catalogues de sorties (Cinemeta, sans clé). Pour plus de films annoncés, reliez Radarr ou ajoutez une clé TMDB dans les Réglages.') : null));
     }
     // Propositions (pas sur le NAS), seulement avec le filtre « Tout » ou « Pas sur le NAS »
     const sugs = (filter === 'all' || filter === 'out') && !kids ? d.suggestions : [];
