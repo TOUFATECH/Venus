@@ -908,10 +908,10 @@ html.touch .row-arrow, html.tv .row-arrow { display: none; }
 .hero-dots button.on i { animation: dotfill var(--rotate, 8s) linear forwards; }
 .hero.paused .hero-dots button.on i { animation-play-state: paused; }
 @keyframes dotfill { to { width: 100%; } }
-.hero-arrow { position: absolute; z-index: 3; top: 42%; transform: translateY(-50%); width: 52px; height: 52px; border-radius: 50%; border: 1px solid rgba(236,234,228,.22); background: rgb(var(--night-rgb) / .45); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--paper); opacity: 0; transition: opacity .25s, background .2s; }
-.hero-arrow svg { width: 24px; height: 24px; }
-.hero-arrow.prev { left: 14px; }
-.hero-arrow.next { right: 14px; }
+.hero-arrow { position: absolute; z-index: 3; top: 42%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(236,234,228,.22); background: rgb(var(--night-rgb) / .45); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--paper); opacity: 0; transition: opacity .25s, background .2s; }
+.hero-arrow svg { width: 22px; height: 22px; }
+.hero-arrow.prev { left: 6px; }
+.hero-arrow.next { right: 6px; }
 .hero:hover .hero-arrow { opacity: 1; }
 .hero-arrow:hover { background: rgb(var(--night-rgb) / .75); }
 html.touch .hero-arrow, html.tv .hero-arrow { display: none; }
@@ -2150,7 +2150,6 @@ html.touch .sheet-grab { display: block; width: 42px; height: 5px; border-radius
 .quick-menu .opt:first-child svg { color: var(--sulfur); }
 .card { -webkit-touch-callout: none; }
 .card.lp { transform: scale(.96); transition: transform .15s; }
-.details-poster { view-transition-name: vt-poster; }
 ::view-transition-group(vt-poster) { animation-duration: .45s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .3s; }
 

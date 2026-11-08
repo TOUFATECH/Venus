@@ -374,6 +374,105 @@ export async function fillMissingPosters(onProgress) {
   return n;
 }
 
+// ------------------------------------------------------------------ affiches des saisons
+// Chaque saison (série ou animé) a sa propre affiche. Sans elle, l'interface reprend celle de la série et
+// toutes les saisons se ressemblent. Sources, dans l'ordre :
+//   1. les images rangées à côté des vidéos (comme Plex / Jellyfin / Kodi) : « season01-poster.jpg » dans le
+//      dossier de la série, ou « poster.jpg » / « folder.jpg » / « cover.jpg » dans le dossier de la saison ;
+//   2. la liste des saisons déjà connue de TMDB (images publiques, sans clé) ;
+//   3. TVmaze (gratuit, sans clé) ;
+//   4. la page de la saison sur le site de TMDB (sans clé).
+const IMG_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
+function localSeasonImage(season) {
+  const ep = get("SELECT path FROM items WHERE type = 'episode' AND parent_id = ? AND path IS NOT NULL LIMIT 1", season.id);
+  if (!ep || !ep.path) return null;
+  const seasonDir = path.dirname(ep.path);
+  const showDir = path.dirname(seasonDir);
+  const n = Number(season.season_num) || 0;
+  const pads = n === 0 ? ['-specials', '00', '0'] : [String(n).padStart(2, '0'), String(n)];
+  const names = [
+    ...pads.flatMap((x) => IMG_EXT.map((e) => path.join(showDir, `season${x}-poster${e}`))),
+    ...pads.flatMap((x) => IMG_EXT.map((e) => path.join(seasonDir, `season${x}-poster${e}`))),
+    // Dossier propre à la saison (sinon ces noms désignent l'affiche de la série)
+    ...(seasonDir !== showDir && /(saison|season|s\d{1,2}\b|specials?|bonus)/i.test(path.basename(seasonDir))
+      ? ['poster', 'folder', 'cover'].flatMap((b) => IMG_EXT.map((e) => path.join(seasonDir, `${b}${e}`))) : []),
+  ];
+  for (const f of names) {
+    try {
+      if (!fs.statSync(f).isFile()) continue;
+      const st = fs.statSync(f);
+      const name = `l_${crypto.createHash('sha1').update(f + st.mtimeMs).digest('hex').slice(0, 16)}${path.extname(f).toLowerCase()}`;
+      const dest = path.join(imagesDir, name);
+      if (!fs.existsSync(dest)) { fs.mkdirSync(imagesDir, { recursive: true }); fs.copyFileSync(f, dest); }
+      return name;
+    } catch { /* absente */ }
+  }
+  return null;
+}
+async function tvmazeSeasons(show) {
+  let id = show.tvmaze_id;
+  if (!id) {
+    const found = await findShow(show.title, show.year, { anime: show.category === 'anime' }).catch(() => null);
+    id = found && found.tvmazeId;
+    if (id) run('UPDATE items SET tvmaze_id = ? WHERE id = ?', id, show.id);
+  }
+  if (!id) return null;
+  const list = await getJson(`https://api.tvmaze.com/shows/${id}/seasons`);
+  if (!Array.isArray(list)) return null;
+  return new Map(list.filter((x) => x.image && (x.image.original || x.image.medium)).map((x) => [x.number, x.image.original || x.image.medium]));
+}
+async function tmdbWebSeason(show, n) {
+  let id = show.tmdb_id;
+  if (!id) {
+    const html = await getText(`${TMDB_WEB}/search/tv?query=${encodeURIComponent(show.title)}`, BROWSER_UA);
+    const m = html && [...html.matchAll(/href="\/tv\/(\d+)[^"]*"[^>]*>\s*<h2>([^<]+)<\/h2>/g)].find((x) => closeEnough(decode(x[2]), show.title));
+    id = m ? Number(m[1]) : null;
+  }
+  if (!id) return null;
+  const html = await getText(`${TMDB_WEB}/tv/${id}/season/${n}`, BROWSER_UA);
+  const m = html && /class="poster[^"]*"[\s\S]{0,600}?\/t\/p\/[^/"']+\/([A-Za-z0-9_-]+\.(?:jpg|png))/.exec(html);
+  return m ? `https://image.tmdb.org/t/p/w500/${m[1]}` : null;
+}
+
+export const pendingSeasonPosters = () => get(`SELECT COUNT(*) n FROM items s JOIN items sh ON sh.id = s.show_id
+  WHERE s.type = 'season' AND (s.poster IS NULL OR s.poster = sh.poster) AND IFNULL(s.poster_tried, 0) < 2`).n;
+export async function fillSeasonPosters(onProgress) {
+  const seasons = all(`SELECT s.id, s.season_num, s.show_id, sh.title, sh.year, sh.category, sh.tvmaze_id, sh.tmdb_id, sh.tmdb_seasons
+    FROM items s JOIN items sh ON sh.id = s.show_id
+    WHERE s.type = 'season' AND (s.poster IS NULL OR s.poster = sh.poster) AND IFNULL(s.poster_tried, 0) < 2
+    ORDER BY sh.added_at DESC, s.season_num LIMIT 400`);
+  const free = getSetting('posters_free', '1') !== '0';
+  const byShow = new Map();
+  for (const x of seasons) { if (!byShow.has(x.show_id)) byShow.set(x.show_id, []); byShow.get(x.show_id).push(x); }
+  let n = 0, done = 0, offline = false;
+  const netFail = (e) => { if (/fetch failed|timeout|ENOTFOUND|ECONN|EAI_AGAIN/i.test(e && e.message)) offline = true; return null; };
+  for (const list of byShow.values()) {
+    const show = { id: list[0].show_id, title: list[0].title, year: list[0].year, category: list[0].category, tvmaze_id: list[0].tvmaze_id, tmdb_id: list[0].tmdb_id };
+    let tmdbKnown = null, maze;
+    try { tmdbKnown = new Map((JSON.parse(list[0].tmdb_seasons || '[]') || []).filter((x) => x.poster).map((x) => [x.n, x.poster])); } catch { /* */ }
+    for (const season of list) {
+      let poster = localSeasonImage(season);
+      try {
+        if (poster || offline) { /* image locale trouvée, ou services injoignables : on n'interroge pas Internet */ }
+        else if (tmdbKnown && tmdbKnown.get(season.season_num)) poster = await saveRemoteImage(`https://image.tmdb.org/t/p/w500${tmdbKnown.get(season.season_num)}`);
+        if (!poster && !offline && free) {
+          if (maze === undefined) maze = await tvmazeSeasons(show).catch(netFail);
+          if (maze && maze.get(season.season_num)) poster = await saveRemoteImage(maze.get(season.season_num));
+        }
+        if (!poster && !offline && free) { const u = await tmdbWebSeason(show, season.season_num).catch(netFail); if (u) poster = await saveRemoteImage(u); await sleep(350); }
+      } catch (e) {
+        // Hors ligne : on continue avec les images locales et on réessaiera plus tard
+        if (/fetch failed|timeout|ENOTFOUND|ECONN/i.test(e.message)) { offline = true; console.warn(`[affiches] service injoignable : ${e.message}`); }
+      }
+      if (poster) { run('UPDATE items SET poster = ?, poster_tried = 0 WHERE id = ?', poster, season.id); n++; }
+      else if (!offline) run('UPDATE items SET poster_tried = IFNULL(poster_tried, 0) + 1 WHERE id = ?', season.id);
+      onProgress && onProgress(++done, seasons.length);
+    }
+  }
+  if (n) console.log(`[affiches] ${n} affiche(s) de saison trouvée(s)`);
+  return n;
+}
+
 // Diagnostic (Réglages → Affiches → « Tester les sources ») : chaque service est interrogé pour un titre,
 // avec le temps de réponse, le code HTTP et ce qu'il a trouvé. Permet de voir quel service est bloqué.
 export async function testSources(title, year, type = 'movie') {

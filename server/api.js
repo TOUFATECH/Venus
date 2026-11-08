@@ -18,7 +18,7 @@ import {
 } from './auth.js';
 import { scanAll, scanState, watchLibraries, events } from './scanner.js';
 import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmdb, applyCustom } from './metadata.js';
-import { saveRemoteImage, freePosterCandidates, fillMissingPosters, fillMissingBackdrops, testSources, redoFreePosters } from './posters.js';
+import { saveRemoteImage, freePosterCandidates, fillMissingPosters, fillMissingBackdrops, fillSeasonPosters, testSources, redoFreePosters } from './posters.js';
 import { findTrailerFor } from './youtube.js';
 import { guideFor, ensureGuide } from './guide.js';
 import { checkChannels, checkState, channelHealth, FREE_TV, reportChannelFailure } from './free-tv.js';
@@ -563,6 +563,31 @@ router.get('/api/categories', (ctx) => {
   sendJson(ctx.res, Object.fromEntries(rows.map((r) => [r.cat, r.n])));
 });
 
+const HERO_MIX = [['anime', 5], ['movie', 3], ['show', 2]];
+// Ordre d'affichage : mélangé pour que les animés ne se suivent pas tous
+const HERO_ORDER = ['anime', 'movie', 'anime', 'show', 'anime', 'movie', 'anime', 'show', 'anime', 'movie'];
+function newHero(base) {
+  const lastEp = new Map(all("SELECT show_id, MAX(added_at) AS at FROM items WHERE type = 'episode' GROUP BY show_id").map((r) => [r.show_id, r.at]));
+  const freshness = (i) => Math.max(i.added_at || 0, (i.type === 'show' && lastEp.get(i.id)) || 0);
+  const kind = (i) => (i.type === 'movie' ? 'movie' : i.type === 'show' ? (i.category === 'anime' ? 'anime' : 'show') : null);
+  const pools = { anime: [], movie: [], show: [] };
+  for (const i of base) { const k = kind(i); if (k && !i.version_of) pools[k].push(i); }
+  // Le plus récent d'abord ; à égalité, celui qui a une image de fond
+  for (const k of Object.keys(pools)) pools[k].sort((a, b) => freshness(b) - freshness(a) || (!!b.backdrop - !!a.backdrop));
+  const tagOf = (i, k) => (k === 'movie' ? 'Nouveau film' : k === 'anime' ? (lastEp.get(i.id) > (i.added_at || 0) ? 'Nouvel épisode' : 'Nouvel animé') : (lastEp.get(i.id) > (i.added_at || 0) ? 'Nouvel épisode' : 'Nouvelle série'));
+  const want = Object.fromEntries(HERO_MIX);
+  const taken = Object.fromEntries(HERO_MIX.map(([k, n]) => [k, pools[k].slice(0, n)]));
+  // Places laissées libres par une catégorie trop courte : données aux autres, les plus récents d'abord
+  let missing = HERO_MIX.reduce((n, [k]) => n + (want[k] - taken[k].length), 0);
+  const extra = Object.keys(pools).flatMap((k) => pools[k].slice(taken[k].length).map((i) => ({ i, k }))).sort((a, b) => freshness(b.i) - freshness(a.i));
+  for (const { i, k } of extra) { if (missing <= 0) break; taken[k].push(i); missing--; }
+  const out = [];
+  const cursor = { anime: 0, movie: 0, show: 0 };
+  for (const k of HERO_ORDER) { const it = taken[k][cursor[k]++]; if (it) out.push({ item: it, tag: tagOf(it, k) }); }
+  for (const k of Object.keys(taken)) for (const it of taken[k].slice(cursor[k])) out.push({ item: it, tag: tagOf(it, k) });
+  return out.slice(0, 10);
+}
+
 router.get('/api/home', (ctx) => {
   const p = requireProfile(ctx);
   const age = ageClause(p);
@@ -731,11 +756,13 @@ router.get('/api/home', (ctx) => {
     rows.push({ id: `g:${g}`, title: g, items: seededShuffle(list, day + g.length).slice(0, 24).map((i) => C(i)) });
   }
 
-  const heroPool = base.filter((i) => i.backdrop && i.type !== 'clip');
-  let hero = seededShuffle(heroPool.length ? heroPool : base.filter((i) => i.type !== 'clip'), day + 7).slice(0, 6).map((i) => C(i));
+  // À la une : les nouveautés qui défilent en haut de l'accueil — 3 films, 5 animés et 2 séries, les plus
+  // récemment arrivés (pour une série ou un animé : son dernier épisode ajouté). Une catégorie qui en a moins
+  // laisse sa place aux autres.
+  let hero = newHero(base).map((x) => ({ ...C(x.item), heroTag: x.tag }));
   if (heroResume) {
     const r = heroResume.item;
-    hero = [r, ...hero.filter((x) => x.id !== r.id && x.id !== r.showId)].slice(0, 6);
+    hero = [r, ...hero.filter((x) => x.id !== r.id && x.id !== r.showId)];
   }
   // Administrateur sans clé TMDB : l'accueil le lui rappelle (sans elle, pas d'affiches ni de résumés)
   const noPosters = !!p.is_admin && !tmdbKey() && base.some((i) => i.type === 'movie' || i.type === 'show') && !base.some((i) => i.poster);
@@ -3071,8 +3098,10 @@ router.post('/api/admin/posters/run', async (ctx) => {
   // Lancement à la main : on redonne leur chance aux titres déjà cherchés sans succès
   run("UPDATE items SET poster_tried = 0 WHERE poster IS NULL AND type IN ('movie','show')");
   run("UPDATE items SET backdrop_tried = 0 WHERE backdrop IS NULL AND type = 'show'");
+  run("UPDATE items SET poster_tried = 0 WHERE type = 'season'");
   const n = await fillMissingPosters();
   fillMissingBackdrops().catch(() => {});
+  fillSeasonPosters().catch(() => {});
   sendJson(ctx.res, { found: n });
 });
 // Oublier les affiches trouvées sans clé (ancienne correspondance trop large) et les rechercher strictement

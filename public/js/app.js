@@ -199,7 +199,15 @@ async function mount(viewModule, params, { withNav, path }) {
   const from = window.__vtFrom; window.__vtFrom = null;
   if (from && from.isConnected && document.startViewTransition && !reduce && /^\/titre\//.test(path)) {
     from.style.viewTransitionName = 'vt-poster';
-    document.startViewTransition(() => { from.style.viewTransitionName = ''; place(main); window.scrollTo(0, 0); });
+    // Le nom n'est posé que sur les deux affiches concernées, le temps de l'animation (jamais deux à la fois)
+    const vt = document.startViewTransition(() => {
+      from.style.viewTransitionName = '';
+      place(main); window.scrollTo(0, 0);
+      const to = main.querySelector('.details-poster');
+      if (to) to.style.viewTransitionName = 'vt-poster';
+    });
+    vt.finished.finally(() => { const to = main.querySelector('.details-poster'); if (to) to.style.viewTransitionName = ''; }).catch(() => {});
+    vt.ready.catch(() => {});
   } else {
     if (!reduce) {
       main.classList.add('page-in');

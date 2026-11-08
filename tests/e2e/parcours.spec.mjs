@@ -87,3 +87,33 @@ test('réglages : assistant d’ajout de source', async ({ page }) => {
   await expect(page.locator('#xt-server')).toBeVisible();
   await page.keyboard.press('Escape');
 });
+
+test('accueil : les nouveautés défilent à la une (3 films, 5 animés, 2 séries au plus)', async ({ page, api }) => {
+  const home = await api('/api/home');
+  const tags = home.hero.map((h) => h.heroTag).filter(Boolean);
+  expect(tags.length).toBeGreaterThan(0);
+  expect(tags.length).toBeLessThanOrEqual(10);
+  // Données de test : 3 films et 1 série, pas d'animé
+  expect(home.hero.filter((h) => h.type === 'movie').length).toBe(3);
+  const series = home.hero.filter((h) => h.type === 'show' && h.category !== 'anime').length;
+  expect(series).toBeGreaterThanOrEqual(1);
+  expect(series).toBeLessThanOrEqual(2);
+  expect(home.hero.filter((h) => h.category === 'anime').length).toBeLessThanOrEqual(5);
+  await ouvrir(page, '/');
+  await expect(page.locator('.hero-kicker').first()).toHaveText(/Nouveau film|Nouvel animé|Nouvelle série|Nouvel épisode|Reprendre|À suivre/);
+  await expect(page.locator('.hero-dots button, .hero-dots [role=tab]')).toHaveCount(home.hero.length);
+});
+
+test('séries : chaque saison a sa propre affiche', async ({ page, api }) => {
+  const lib = await api('/api/library?type=show');
+  const show = (Array.isArray(lib) ? lib : lib.items).find((x) => /Brigade Nord/.test(x.title));
+  const d = await api(`/api/items/${show.id}`);
+  const posters = d.seasons.map((s) => s.poster);
+  expect(posters.length).toBe(2);
+  expect(posters.every(Boolean), 'une affiche par saison').toBeTruthy();
+  expect(new Set(posters).size, 'affiches différentes').toBe(2);
+  await ouvrir(page, show.path || `/titre/${show.id}`);
+  await expect(page.locator('.season-card img')).toHaveCount(2);
+  const imgs = await page.locator('.season-card img').evaluateAll((l) => l.map((i) => i.getAttribute('src')));
+  expect(new Set(imgs).size).toBeGreaterThanOrEqual(2);
+});

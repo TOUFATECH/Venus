@@ -156,7 +156,9 @@ export async function render(main, { id, query }) {
   import('../audio.js').then((m) => { if (m.nowPlaying().playing) m.toggle(); }).catch(() => {});
   // Plein écran dès le lancement (réglable dans Réglages). Demandé tout de suite, pendant que le clic
   // sur « Lecture » compte encore comme une action de l'utilisateur.
-  if (prefs.get('fullscreenOnPlay') && document.documentElement.requestFullscreen && !document.fullscreenElement) enterFullscreen();
+  // Déjà demandé au clic sur « Lecture » (core.js) ; sinon seulement si le navigateur compte encore le geste de l'utilisateur
+  const gesture = !navigator.userActivation || navigator.userActivation.isActive;
+  if (prefs.get('fullscreenOnPlay') && document.documentElement.requestFullscreen && !document.fullscreenElement && gesture && Date.now() - (window.__vnFsAt || 0) > 3000) enterFullscreen();
   applyVolume();
 
   function applySubLook() {

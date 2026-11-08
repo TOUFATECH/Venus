@@ -28,6 +28,7 @@ function makeMedia(dir) {
     ['films', 'Orage (2018).mp4'],
     ['series', 'Brigade Nord', 'Saison 01', 'Brigade Nord S01E01.mp4'],
     ['series', 'Brigade Nord', 'Saison 01', 'Brigade Nord S01E02.mp4'],
+    ['series', 'Brigade Nord', 'Saison 02', 'Brigade Nord S02E01.mp4'],
     ['clips', 'Zaza - Soleil.mp4'],
   ]) fs.copyFileSync(base, m(...f));
   fs.rmSync(base);
@@ -36,6 +37,9 @@ function makeMedia(dir) {
       '-metadata', 'artist=Zaza', '-metadata', 'album=Premier Album', '-metadata', `title=${n.slice(5, -4)}`, m('musique', 'Zaza', 'Premier Album', n));
   }
   ff('-f', 'lavfi', '-i', 'testsrc2=size=1200x800', '-frames:v', '1', m('photos', 'Vacances', 'plage.jpg'));
+  // Affiches propres à chaque saison, rangées comme chez Plex / Jellyfin
+  ff('-f', 'lavfi', '-i', 'color=c=red:size=400x600', '-frames:v', '1', m('series', 'Brigade Nord', 'season01-poster.jpg'));
+  ff('-f', 'lavfi', '-i', 'color=c=blue:size=400x600', '-frames:v', '1', m('series', 'Brigade Nord', 'Saison 02', 'poster.jpg'));
   ff('-f', 'lavfi', '-i', 'mandelbrot=size=1200x800', '-frames:v', '1', m('photos', 'Vacances', 'coucher.jpg'));
 }
 
