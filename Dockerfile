@@ -8,7 +8,7 @@ COPY public ./public
 COPY scripts/minify.mjs ./minify.mjs
 RUN (npm install --no-save --no-audit --no-fund --loglevel=error esbuild@0.24.2 && node minify.mjs public) || echo "Interface non minifiée (esbuild indisponible)"
 
-# Étape 2 : interface Next.js (React), construite en serveur autonome léger (~20 Mo, sans dossier node_modules complet)
+# Étape 2 : interface Next.js, construite en serveur autonome léger (~20 Mo, sans dossier node_modules complet)
 FROM node:24-bookworm-slim AS next
 WORKDIR /w/web
 ENV NEXT_TELEMETRY_DISABLED=1

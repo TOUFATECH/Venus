@@ -1,0 +1,13 @@
+{
+  "name": "venus-tests",
+  "private": true,
+  "description": "Tests de bout en bout de Venus (navigateur réel) : npm test",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:rapport": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}
