@@ -123,6 +123,46 @@ function IptvTools({ libs, refresh }) {
           }}><Icon name="live" />Ajouter les chaînes gratuites</button>
         )}
       </Actions>
+      <WorldLists refresh={refresh} />
+    </div>
+  );
+}
+
+// Chaînes du monde (iptv-org) : listes par pays, langue ou catégorie, réunies sans doublon
+const LIST_LABEL = { countries: 'Pays', languages: 'Langue', categories: 'Catégorie', regions: 'Région', subdivisions: 'Région', cities: 'Ville' };
+function WorldLists({ refresh }) {
+  const d = useLoad('/api/admin/iptv-org');
+  const [lists, setLists] = useState(null);
+  const [add, setAdd] = useState('');
+  const cur = lists || (d.data && d.data.lists) || [];
+  if (!d.data) return null;
+  const norm = (v) => { const m = /(countries|languages|categories|regions|subdivisions|cities)\/([a-z0-9_-]{2,40})(\.m3u)?\s*$/i.exec(v.trim()); return m ? `${m[1].toLowerCase()}/${m[2].toLowerCase()}` : null; };
+  const push = () => {
+    const v = norm(add);
+    if (!v) { toast('Collez une adresse iptv-org, par exemple https://iptv-org.github.io/iptv/countries/fr.m3u', true); return; }
+    if (!cur.includes(v)) setLists([...cur, v]);
+    setAdd('');
+  };
+  const save = async () => {
+    try { await api('/api/admin/iptv-org', { method: 'PUT', body: { lists: cur } }); toast('Listes enregistrées : les chaînes se chargent et seront vérifiées une par une', { type: 'success' }); setLists(null); d.reload && d.reload(); refresh(); }
+    catch (e) { toast(e.message, true); }
+  };
+  return (
+    <div className="world-lists">
+      <h3 className="box-sub">Chaînes du monde (iptv-org)</h3>
+      <p className="muted">Les listes choisies sont réunies sans doublon (ni entre elles, ni avec vos autres chaînes), rangées par catégorie, puis vérifiées : les chaînes qui ne donnent pas d’image sont cachées.</p>
+      <div className="chips">
+        {cur.map((l) => (
+          <span key={l} className="chip on">{`${LIST_LABEL[l.split('/')[0]] || ''} : ${l.split('/')[1]}`}
+            <button className="chip-x f" type="button" aria-label={`Retirer ${l}`} onClick={() => setLists(cur.filter((x) => x !== l))}>×</button>
+          </span>
+        ))}
+      </div>
+      <form className="world-add" onSubmit={(e) => { e.preventDefault(); push(); }}>
+        <input className="input" value={add} onChange={(e) => setAdd(e.target.value)} placeholder="https://iptv-org.github.io/iptv/countries/be.m3u" aria-label="Adresse d’une liste iptv-org" />
+        <button className="btn btn-small btn-ghost f" type="submit">Ajouter</button>
+        <button className="btn btn-small f" type="button" disabled={!lists} onClick={save}>Enregistrer et charger</button>
+      </form>
     </div>
   );
 }

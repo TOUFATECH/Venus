@@ -119,6 +119,90 @@ export async function buildFreeTv() {
   return out.join('\n');
 }
 
+// ---------------------------------------------------------------- chaînes du monde (iptv-org)
+// Source « venus:iptv-org » : plusieurs listes publiques d'iptv-org (par pays, langue ou catégorie) réunies
+// en une seule, sans doublon (ni entre elles, ni avec les chaînes déjà présentes dans Venus), avec leur
+// catégorie. Les chaînes qui ne marchent pas sont ensuite cachées par la vérification habituelle.
+export const IPTV_WORLD = 'venus:iptv-org';
+const IPTV_SITE = process.env.VENUS_IPTVORG_SITE || 'https://iptv-org.github.io/iptv';
+const IPTV_DB = process.env.VENUS_IPTVORG_DB || 'https://raw.githubusercontent.com/iptv-org/database/master/data/channels.csv';
+export const IPTV_WORLD_DEFAULT = ['countries/fr', 'languages/fra', 'countries/jp', 'languages/jpn', 'categories/animation', 'countries/in', 'languages/hin', 'categories/movies', 'categories/sports'];
+/** « countries/fr », « fr.m3u », ou l'adresse complète https://iptv-org.github.io/iptv/countries/fr.m3u → « countries/fr » */
+export function iptvListName(v) {
+  const m = /(countries|languages|categories|regions|subdivisions|cities)\/([a-z0-9_-]{2,40})(\.m3u)?\s*$/i.exec(String(v || '').trim());
+  return m ? `${m[1].toLowerCase()}/${m[2].toLowerCase()}` : null;
+}
+export const iptvWorldLists = () => { const v = getSetting('iptvorg_lists', null); return Array.isArray(v) && v.length ? v : IPTV_WORLD_DEFAULT; };
+// Flux non autorisés que l'on écarte aussi de ces listes : chaînes privées japonaises (leur direct n'est pas
+// diffusé hors du Japon : les flux trouvés sont des retransmissions) et bouquets sportifs payants
+const JP_PRIVATE = /fuji ?tv|tv tokyo|nippon ?tv|\bntv\b|tv asahi|\btbs\b|\bmbs\b|gaki no tsukai|nhk (general|g\b|e ?tele|educational)|\bjo[a-z]{2}-?dtv\b/i;
+const PAY_SPORT = /dazn|sky ?sport|\bespn|tnt sports|star sports|sony (ten|six|sports)|supersport|ptv sports|ten sports|willow|sportsnet|fox sports|arena sport|setanta|premier sports|viaplay|eleven sports|canal\+ sport/i;
+function parseCsvLine(line) {
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (q) { if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; }
+    else if (ch === '"') q = true; else if (ch === ',') { out.push(cur); cur = ''; } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+const RES = (n) => { const m = /\((\d{3,4})[pi]\)/i.exec(n); return m ? Number(m[1]) : 0; };
+export async function buildIptvWorld() {
+  // Catégories et chaînes pour adultes, d'après la base d'iptv-org (identifiant de la chaîne → catégories)
+  const db = new Map();
+  try {
+    const rows = (await text(IPTV_DB)).split(/\r?\n/);
+    const head = parseCsvLine(rows[0]); const iId = head.indexOf('id'), iCat = head.indexOf('categories'), iNsfw = head.indexOf('is_nsfw');
+    for (const r of rows.slice(1)) { if (!r) continue; const c = parseCsvLine(r); db.set(c[iId], { cats: (c[iCat] || '').split(';').filter(Boolean), nsfw: c[iNsfw] === 'TRUE' }); }
+  } catch (e) { console.warn('[iptv-org] base des chaînes :', e.message); }
+  // Chaînes déjà dans Venus (autres listes) : pas de doublon
+  const have = new Set(), haveUrl = new Set();
+  for (const c of all("SELECT i.title, i.stream_url FROM items i JOIN libraries l ON l.id = i.library_id WHERE i.type = 'channel' AND l.path != ?", IPTV_WORLD)) { have.add(key(c.title)); haveUrl.add(c.stream_url); }
+  const best = new Map(); // nom simplifié → meilleure version (plus haute définition)
+  let read = 0, skipped = 0;
+  for (const list of iptvWorldLists()) {
+    let t = '';
+    try { t = await text(`${IPTV_SITE}/${list}.m3u`); }
+    catch (e) {
+      // Site injoignable : pour un pays, la liste brute du dépôt fait l'affaire
+      const cc = /^countries\/([a-z]{2})$/.exec(list);
+      if (!cc) { console.warn(`[iptv-org] ${list} :`, e.message); continue; }
+      try { t = await text(`${IPTV_ORG}/${cc[1]}.m3u`); } catch (e2) { console.warn(`[iptv-org] ${list} :`, e2.message); continue; }
+    }
+    let info = null, opts = [];
+    for (const raw of t.split(/\r?\n/)) {
+      const line = raw.trim();
+      if (line.startsWith('#EXTINF')) { info = line; opts = []; }
+      else if (line.startsWith('#EXTVLCOPT')) opts.push(line);
+      else if (info && /^https?:\/\//i.test(line)) {
+        read++;
+        const name = info.slice(info.lastIndexOf(',') + 1).trim();
+        const id = ((/tvg-id="([^"]*)"/i.exec(info) || [])[1] || '');
+        const meta = db.get(id.split('@')[0]) || { cats: [], nsfw: false };
+        const group = ((/group-title="([^"]*)"/i.exec(info) || [])[1] || '').split(';')[0] || meta.cats[0] || '';
+        const k = key(name);
+        const bad = !k || meta.nsfw || /xxx|adult/i.test(group) || /\[Geo-blocked\]/i.test(name) || PAY_TV.test(name) || PAY_SPORT.test(name) || JP_PRIVATE.test(name) || opts.some((o) => /mov3\.co/i.test(o));
+        if (bad || have.has(k) || haveUrl.has(line)) { skipped++; info = null; continue; }
+        const prev = best.get(k);
+        if (!prev || RES(name) > RES(prev.name)) best.set(k, { name, url: line, opts, id, group: group.replace(/^undefined$/i, ''), logo: (/tvg-logo="([^"]*)"/i.exec(info) || [])[1] || '' });
+        info = null;
+      }
+    }
+  }
+  const out = ['#EXTM3U'];
+  for (const c of best.values()) out.push(`#EXTINF:-1 tvg-id="${c.id}" tvg-logo="${c.logo}" group-title="${c.group}",${clean(c.name)}`, ...c.opts, c.url);
+  console.log(`[iptv-org] ${best.size} chaînes (sur ${read} lues ; ${skipped} doublons ou écartées)`);
+  return out.join('\n');
+}
+
+export function ensureIptvWorld() {
+  if (getSetting('iptv_world_added', '0') === '1') return null;
+  setSetting('iptv_world_added', '1');
+  if (get('SELECT 1 FROM libraries WHERE path = ?', IPTV_WORLD)) return null;
+  return Number(run('INSERT INTO libraries(name, type, path) VALUES(?, ?, ?)', 'Chaînes du monde (iptv-org)', 'iptv', IPTV_WORLD).lastInsertRowid);
+}
+
 // Une chaîne fonctionne si ffmpeg en lit 4 secondes d'images, sans s'arrêter, en moins de 25 s.
 // (une seule image ne suffit pas : beaucoup de flux donnent une image puis se coupent)
 export function testOne(url) {

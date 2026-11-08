@@ -162,6 +162,9 @@ function ChannelsView({ all, nn, admin }) {
   const inGroup = (c) => !group || (group === FAV ? favs.has(c.id) : (c.cat || 'Autres') === group);
   const visible = channels.filter((c) => inGroup(c) && (!q.trim() || norm(`${c.title} ${c.group || ''} ${c.cat || ''}`).includes(norm(q.trim()))));
   const visRef = useRef(visible); visRef.current = visible;
+  // Des milliers de chaînes possibles : on en affiche 120, puis « Afficher plus »
+  const [limit, setLimit] = useState(120);
+  useEffect(() => setLimit(120), [group, q]);
   const chRef = useRef(channels); chRef.current = channels;
   const choose = (c, focus = true) => { try { localStorage.setItem('vn.tv.last', String(c.id)); } catch { /* */ } setSelected(c); player.current && player.current.play(c, focus); };
   // Les vignettes se rafraîchissent toutes les 2 minutes
@@ -221,7 +224,7 @@ function ChannelsView({ all, nn, admin }) {
               ) : null}
             </div>
             <div className="tiles" ref={grid}>
-              {visible.length ? visible.map((c) => (
+              {visible.length ? visible.slice(0, Math.max(limit, visible.findIndex((c) => selected && c.id === selected.id) + 1)).map((c) => (
                 <div className="tile-wrap" key={c.id}>
                 <button className={`tile f${selected && selected.id === c.id ? ' on' : ''}${playingId === c.id ? ' playing' : ''}`} data-id={c.id} aria-label={`${c.number ? `${c.number}, ` : ''}${c.title}, ${c.group || 'en direct'} — mettre en lecture en haut`} onClick={() => choose(c)} onKeyDown={gridKeys}>
                   <div className="tile-img">
@@ -236,6 +239,7 @@ function ChannelsView({ all, nn, admin }) {
                 </div>
               )) : <p className="grid-empty">{group === FAV && !q.trim() ? 'Aucune chaîne favorite : touchez l’étoile d’une chaîne pour l’ajouter ici, ou importez une liste M3U.' : channels.length ? 'Aucune chaîne ne correspond.' : ''}</p>}
             </div>
+            {visible.length > limit ? <button className="btn btn-ghost tv-more f" onClick={() => setLimit((n) => n + 240)}>{`Afficher plus de chaînes (${visible.length - limit} autres)`}</button> : null}
           </div>
         </div>
       </div>

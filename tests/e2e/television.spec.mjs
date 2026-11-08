@@ -149,3 +149,12 @@ test('TV : catégories, Mayotte La 1ère en tête, favoris et liste M3U', async 
   const last = await page.locator('.tv-cats .chip').last().boundingBox();
   expect(last.x + last.width).toBeLessThanOrEqual(list.x + list.width + 1);
 });
+
+test('TV : listes iptv-org (adresse collée reconnue, liste vide refusée)', async ({ request }) => {
+  const { token } = etat();
+  const h = { authorization: `Bearer ${token}` };
+  const g = await (await request.get('/api/admin/iptv-org', { headers: h })).json();
+  expect(g.lists).toContain('categories/animation');
+  const bad = await request.put('/api/admin/iptv-org', { headers: h, data: { lists: ['nimporte quoi'] } });
+  expect(bad.status()).toBe(400);
+});

@@ -3591,3 +3591,10 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
 .pv-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .pv-title-row .pv-name { margin: 0; }
 .pv-fav.on { color: var(--sulfur); }
+.tv-more { display: block; margin: 18px auto 0; }
+.world-lists { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+.world-lists .chip { display: inline-flex; align-items: center; gap: 6px; }
+.chip-x { border: 0; background: none; color: inherit; font-size: 1.1em; line-height: 1; cursor: pointer; padding: 0 2px; opacity: .7; }
+.chip-x:hover { opacity: 1; }
+.world-add { display: flex; flex-wrap: wrap; gap: 8px; }
+.world-add .input { flex: 1 1 280px; min-width: 0; }
