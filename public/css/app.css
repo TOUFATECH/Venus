@@ -1546,7 +1546,9 @@ button.kpi:hover, button.kpi:focus-visible { border-color: rgba(236,234,228,.35)
 @media (max-width: 760px) { body:has(.tabbar) .msg-stack { bottom: calc(86px + env(safe-area-inset-bottom, 0px)); } .msg-stack { right: 16px; left: 16px; width: auto; } }
 body:has(.player) .msg-stack, :fullscreen .msg-stack { bottom: 120px; }
 @media (prefers-reduced-motion: reduce) { .msg-note, .msg-note.out { animation: none; } }
-.login-actions { justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.login-actions { flex-direction: column-reverse; align-items: stretch; gap: 14px; }
+.login-actions .btn { width: 100%; justify-content: center; }
+.login-actions .linkish { align-self: center; text-align: center; }
 .field small.muted { display: block; margin-top: 8px; font-size: .84rem; line-height: 1.45; }
 
 /* ================================================================ lecteur : téléphone tenu droit

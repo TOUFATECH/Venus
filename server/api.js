@@ -2488,7 +2488,9 @@ router.get('/api/admin/fs', (ctx) => {
     const tries = process.platform === 'win32' ? ['/']
       : process.platform === 'darwin' ? [path.join(home, 'Movies'), '/Volumes', home]
         : ['/media', '/mnt', '/srv', home];
-    asked = tries.find((t) => { try { return t === '/' || fs.statSync(t).isDirectory(); } catch { return false; } }) || '/';
+    // Un dossier vide (/media sur une machine neuve) n'aide pas : on prend le premier qui contient des sous-dossiers
+    const useful = (t) => { try { return fs.readdirSync(t, { withFileTypes: true }).some((e) => e.isDirectory() && !e.name.startsWith('.')); } catch { return false; } };
+    asked = tries.find(useful) || '/';
   }
   // Windows : la racine liste les lecteurs (C:, D:…) et les dossiers de partage déjà connectés
   if (process.platform === 'win32' && (asked === '/' || asked === '\\' || asked === '')) {
