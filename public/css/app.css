@@ -141,6 +141,7 @@ main.with-nav { padding-left: var(--rail); }
   transition: opacity 0.45s ease, visibility 0.45s;
 }
 .boot.out { opacity: 0; visibility: hidden; }
+.boot.quick { transition-duration: 0.18s; }
 .boot-inner { display: flex; flex-direction: column; align-items: center; gap: 28px; }
 .planet {
   width: 110px; aspect-ratio: 1; border-radius: 50%; position: relative; overflow: hidden;

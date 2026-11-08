@@ -7,13 +7,23 @@ export const auth = {
 
 export class ApiError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 
+// Réponse déjà demandée par la page HTML au démarrage (index.html) : utilisée une seule fois, si elle est récente
+function preloaded(path) {
+  const P = window.__vnPre;
+  if (!P || !P[path] || Date.now() - P.at > 15000) return null;
+  const p = P[path];
+  delete P[path];
+  return p;
+}
+
 async function raw(path, { method = 'GET', body, signal } = {}) {
+  const pre = method === 'GET' && body === undefined && !signal ? preloaded(path) : null;
   const headers = {};
   if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res;
   try {
-    res = await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal, credentials: 'same-origin' });
+    res = (pre && await pre.catch(() => null)) || await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal, credentials: 'same-origin' });
   } catch (e) {
     if (e.name === 'AbortError') throw e;
     throw new ApiError(0, 'Serveur injoignable. Vérifiez que Venus tourne et que vous êtes sur le même réseau.');

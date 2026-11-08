@@ -266,12 +266,13 @@ export function hideBoot() {
   window.__vnBooted = true;
   const el = document.querySelector('.boot');
   if (!el) return;
-  // Seulement « VENUS », le temps de l'apercevoir (un peu plus à la première ouverture)
+  // Première ouverture de la session : l'intro « VENUS », le temps de l'apercevoir ; ensuite, la page dès qu'elle est prête
   const first = document.documentElement.classList.contains('first-open');
-  const wait = Math.max(first ? 1300 - performance.now() : 0, host.next ? 250 : (first ? 500 : 250));
+  const wait = first ? Math.max(1300 - performance.now(), 500) : 0;
   setTimeout(() => {
+    if (!first) el.classList.add('quick');
     el.classList.add('out');
-    setTimeout(() => { if (host.next) el.style.display = 'none'; else el.remove(); document.documentElement.classList.remove('first-open'); }, 500);
+    setTimeout(() => { if (host.next) el.style.display = 'none'; else el.remove(); document.documentElement.classList.remove('first-open'); }, first ? 500 : 200);
   }, wait);
 }
 export const isBooted = () => bootDone;

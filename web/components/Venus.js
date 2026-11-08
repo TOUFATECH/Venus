@@ -8,6 +8,9 @@ import Shell from './Shell';
 import Gate from './Gates';
 
 const Ctx = createContext(null);
+// Le code partagé commence à se charger dès l'arrivée de ce fichier, sans attendre le premier affichage React
+if (typeof window !== 'undefined') loadShared().catch(() => {});
+let statusAt = 0;
 const sameUrl = (a, b) => { try { return decodeURI(a) === decodeURI(b); } catch { return a === b; } };
 export const useVenus = () => useContext(Ctx);
 
@@ -49,6 +52,7 @@ function App({ children }) {
     let st;
     try { st = await api.api('/api/status'); } catch (e) { setError(e); setPhase('error'); app.hideBoot(); return; }
     app.state.status = st;
+    statusAt = Date.now();
     app.setTitle();
     const show = (kind) => { setGate(kind); setPhase('gate'); };
     if (/^\/invitation\/[A-Za-z0-9_-]+$/.test(location.pathname) && st.setup) return show('invitation');
@@ -98,7 +102,8 @@ function App({ children }) {
       window.__vnPairing = true;
       L.imp('remote-screen.js').then((m) => m.startPairing()).catch(() => {});
     }
-    if (path === '/' || app.state.profile?.dailyLeft != null) {
+    // État frais (lecture en cours ailleurs, temps d'écran) ; inutile s'il vient d'être lu au démarrage
+    if ((path === '/' || app.state.profile?.dailyLeft != null) && Date.now() - statusAt > 3000) {
       api.api('/api/status').then((st) => {
         if (!st) return;
         if (app.state.status) app.state.status.elsewhere = st.elsewhere;
