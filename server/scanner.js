@@ -278,7 +278,7 @@ export function watchLibraries() {
 }
 
 // ---------------------------------------------------------------- IPTV : liste de lecture M3U (adresse ou fichier)
-import { FREE_TV, buildFreeTv, checkChannels } from './free-tv.js';
+import { FREE_TV, buildFreeTv, IPTV_WORLD, buildIptvWorld, checkChannels } from './free-tv.js';
 export function parseM3u(text) {
   const out = [];
   let cur = null;
@@ -307,6 +307,7 @@ export function parseM3u(text) {
 async function scanIptv(lib) {
   let text;
   if (lib.path === FREE_TV) text = await buildFreeTv();
+  else if (lib.path === IPTV_WORLD) text = await buildIptvWorld();
   else if (/^https?:\/\//i.test(lib.path)) {
     const res = await fetch(lib.path, { signal: AbortSignal.timeout(30000), headers: { 'User-Agent': 'Venus/1.0' } });
     if (!res.ok) throw new Error(`liste inaccessible (${res.status})`);

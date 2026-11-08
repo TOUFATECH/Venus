@@ -22,7 +22,7 @@ import { tmdbKey, testKey, searchTmdb, matchMovie, matchShow, downloadImage, tmd
 import { saveRemoteImage, freePosterCandidates, fillMissingPosters, fillMissingBackdrops, fillSeasonPosters, testSources, redoFreePosters } from './posters.js';
 import { findTrailerFor } from './youtube.js';
 import { guideFor, ensureGuide } from './guide.js';
-import { checkChannels, checkState, channelHealth, FREE_TV, reportChannelFailure } from './free-tv.js';
+import { checkChannels, checkState, channelHealth, FREE_TV, IPTV_WORLD, IPTV_WORLD_DEFAULT, iptvWorldLists, iptvListName, reportChannelFailure } from './free-tv.js';
 import { canRelay, startRelay, stopRelay, holdRelay, servePlaylistRelay, serveSegmentRelay } from './relay.js';
 import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue } from './arr.js';
 import { filmography, personPhoto } from './credits-free.js';
@@ -1517,6 +1517,22 @@ router.post('/api/channels/:id/failed', async (ctx) => {
   sendJson(ctx.res, { ok: true, hidden: r && !r.ok && !keep, keep: !!(r && !r.ok && keep), error: r && !r.ok ? r.error : null });
 });
 
+// ---------------------------------------------------------------- chaînes du monde (iptv-org) : listes choisies
+router.get('/api/admin/iptv-org', (ctx) => {
+  requireAdmin(ctx);
+  sendJson(ctx.res, { lists: iptvWorldLists(), defaults: IPTV_WORLD_DEFAULT, added: !!get('SELECT 1 FROM libraries WHERE path = ?', IPTV_WORLD) });
+});
+router.put('/api/admin/iptv-org', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req);
+  const lists = [...new Set((Array.isArray(b.lists) ? b.lists : []).map(iptvListName).filter(Boolean))].slice(0, 40);
+  if (!lists.length) throw new HttpError(400, 'Choisissez au moins une liste (pays, langue ou catégorie)');
+  setSetting('iptvorg_lists', lists);
+  if (!get('SELECT 1 FROM libraries WHERE path = ?', IPTV_WORLD)) run('INSERT INTO libraries(name, type, path) VALUES(?, ?, ?)', 'Chaînes du monde (iptv-org)', 'iptv', IPTV_WORLD);
+  scanAll();
+  sendJson(ctx.res, { ok: true, lists });
+});
+
 // ---------------------------------------------------------------- chaînes favorites (par profil)
 const channelFavs = (pid) => { const v = getSetting(`tv_favs:${pid}`, []); return Array.isArray(v) ? v.map(Number).filter(Boolean) : []; };
 router.get('/api/channels/favorites', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, { ids: channelFavs(p.id), categories: CATEGORIES }); });
@@ -2468,7 +2484,7 @@ const maskUrl = (u) => String(u).replace(/(password=)[^&]*/i, '$1••••').
 function publicLibrary(l) {
   const r = remoteOf(l);
   const st = netState.get(l.id);
-  const exists = l.type === 'iptv' && (/^https?:/i.test(l.path) || l.path === FREE_TV) ? true : fs.existsSync(l.path) && (!r || !st || st.ok);
+  const exists = l.type === 'iptv' && (/^https?:/i.test(l.path) || l.path === FREE_TV || l.path === IPTV_WORLD) ? true : fs.existsSync(l.path) && (!r || !st || st.ok);
   return {
     id: l.id, name: l.name, type: l.type, path: l.type === 'iptv' ? maskUrl(l.path) : l.path, exists, ...diskInfo(l),
     network: r ? { proto: r.proto, address: describe(r), user: r.user || null, writable: !!r.writable, ok: st ? st.ok : null, error: st ? st.error : null } : null,
@@ -2547,8 +2563,8 @@ router.post('/api/admin/libraries', async (ctx) => {
       const { server, user, pass } = b.xtream;
       if (!server || !user || !pass) throw new HttpError(400, 'Indiquez le serveur, l’identifiant et le mot de passe fournis par votre abonnement');
       p = xtreamUrl({ server, user, pass });
-    } else if (p === FREE_TV) {
-      // Liste des chaînes gratuites construite par Venus
+    } else if (p === FREE_TV || p === IPTV_WORLD) {
+      // Listes construites par Venus (chaînes gratuites, chaînes du monde)
     } else if (!/^https?:\/\//i.test(p)) {
       p = path.resolve(p);
       if (!fs.existsSync(p) || !fs.statSync(p).isFile()) throw new HttpError(400, 'Indiquez l’adresse de la liste M3U (http…) ou le chemin d’un fichier .m3u');

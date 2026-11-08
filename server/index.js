@@ -24,7 +24,7 @@ import { router, customCss } from './api.js';
 import { together } from './together.js';
 import { detectHardware } from './hw.js';
 import { scanAll, watchLibraries, events } from './scanner.js';
-import { ensureFreeTv, checkChannels } from './free-tv.js';
+import { ensureFreeTv, ensureIptvWorld, checkChannels } from './free-tv.js';
 import { libraryAdded } from './notify.js';
 import { runWatch } from './watch.js';
 import { schedulePending } from './segments.js';
@@ -228,6 +228,8 @@ async function main() {
   // Scan au démarrage puis périodique (filet de sécurité pour les partages réseau)
   // Chaînes gratuites (France et Outre-mer, Mayotte La 1ère en tête) ajoutées à la première mise en route
   try { if (ensureFreeTv()) console.log('[iptv] chaînes gratuites ajoutées'); } catch (e) { console.warn('[iptv]', e.message); }
+  // Chaînes du monde (iptv-org : France, Japon, Inde, animé, films, sport…), ajoutées une fois
+  try { if (process.env.VENUS_IPTV_WORLD !== '0' && ensureIptvWorld()) console.log('[iptv] chaînes du monde ajoutées'); } catch (e) { console.warn('[iptv]', e.message); }
   setTimeout(() => scanAll(), 2000);
   // Les partages réseau ne signalent pas les nouveaux fichiers : vérification toutes les 10 minutes
   setInterval(() => { if (all("SELECT 1 FROM libraries WHERE remote IS NOT NULL LIMIT 1").length) scanAll(); }, 10 * 60000).unref();
