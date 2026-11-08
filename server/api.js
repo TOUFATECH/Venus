@@ -1,6 +1,7 @@
 // Routes de l'API
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { channelCat, neverHide, CATEGORIES } from './channel-cats.js';
 import { execFile, spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -801,16 +802,28 @@ router.get('/api/library', (ctx) => {
     if (type === 'channel') {
       // État de la chaîne d'après la dernière vérification (images reçues ou non)
       const health = new Map(items.map((i) => [i.id, i]));
-      for (const c of cards) { const i = health.get(c.id); if (i && i.ch_ok === 0) { c.down = true; c.downWhy = i.ch_error || 'Aucune image reçue'; } }
-      cards.sort((a, b) => (a.number || 0) - (b.number || 0));
+      for (const c of cards) {
+        const i = health.get(c.id);
+        c.cat = channelCat(c.title, c.group);
+        // Mayotte La 1ère et les autres La 1ère restent toujours visibles (programmes parfois non diffusés sur Internet)
+        if (i && i.ch_ok === 0) { if (neverHide(c.title)) c.flaky = i.ch_error || 'Aucune image reçue'; else { c.down = true; c.downWhy = i.ch_error || 'Aucune image reçue'; } }
+      }
+      // Mayotte La 1ère en tête de la liste
+      const pin = (c) => (/mayotte/i.test(c.title) && neverHide(c.title) ? 0 : 1);
+      cards.sort((a, b) => pin(a) - pin(b) || (a.number || 0) - (b.number || 0));
       // Captures de toutes les chaînes préparées d'avance : la mosaïque s'affiche d'un coup
-      warmSnapshots(items.filter((i) => i.ch_ok !== 0));
+      warmSnapshots(cards.filter((c) => !c.down).map((c) => health.get(c.id)));
     }
     base = { v: itemsVersion, cards };
     if (libraryCache.size > 24) libraryCache.clear();
     libraryCache.set(key, base);
   }
   const idx = statusIndex(p.id);
+  if (type === 'channel') {
+    // Favoris du profil : jamais cachés, marqués « fav »
+    const favs = new Set(channelFavs(p.id));
+    return sendJson(ctx.res, base.cards.map((c) => { const x = { ...c }; if (favs.has(c.id)) { x.fav = true; if (x.down) { x.flaky = x.downWhy; delete x.down; delete x.downWhy; } } return x; }));
+  }
   sendJson(ctx.res, base.cards.map((c) => withStatus({ ...c }, idx)));
 });
 
@@ -1495,9 +1508,69 @@ router.get('/api/items/:id/trickplay/:n', (ctx) => {
 
 // La chaîne n'a pas démarré chez quelqu'un : retest immédiat, cachée si elle échoue encore
 router.post('/api/channels/:id/failed', async (ctx) => {
-  requireProfile(ctx);
-  const r = await reportChannelFailure(Number(ctx.params.id));
-  sendJson(ctx.res, { ok: true, hidden: r ? !r.ok : false, error: r && !r.ok ? r.error : null });
+  const p = requireProfile(ctx);
+  const id = Number(ctx.params.id);
+  const r = await reportChannelFailure(id);
+  const it = get("SELECT title FROM items WHERE id = ? AND type = 'channel'", id);
+  // Favori, ou La 1ère : la chaîne reste dans la liste même si elle ne répond pas pour le moment
+  const keep = (it && neverHide(it.title)) || channelFavs(p.id).includes(id);
+  sendJson(ctx.res, { ok: true, hidden: r && !r.ok && !keep, keep: !!(r && !r.ok && keep), error: r && !r.ok ? r.error : null });
+});
+
+// ---------------------------------------------------------------- chaînes favorites (par profil)
+const channelFavs = (pid) => { const v = getSetting(`tv_favs:${pid}`, []); return Array.isArray(v) ? v.map(Number).filter(Boolean) : []; };
+router.get('/api/channels/favorites', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, { ids: channelFavs(p.id), categories: CATEGORIES }); });
+router.post('/api/channels/:id/favorite', async (ctx) => {
+  const p = requireProfile(ctx);
+  const id = Number(ctx.params.id), b = await readBody(ctx.req);
+  const ch = get("SELECT * FROM items WHERE id = ? AND type = 'channel'", id);
+  if (!ch || !visible(p, ch)) throw new HttpError(404, 'Chaîne introuvable');
+  const list = channelFavs(p.id).filter((x) => x !== id);
+  if (b.on !== false) list.push(id);
+  setSetting(`tv_favs:${p.id}`, list.slice(-500));
+  sendJson(ctx.res, { ok: true, fav: b.on !== false, ids: list });
+});
+// Les favoris en liste M3U (VLC, Kodi, une autre application IPTV…)
+const m3uEsc = (s) => String(s || '').replace(/[\r\n"]/g, ' ').trim();
+router.get('/api/channels/favorites.m3u', (ctx) => {
+  const p = requireProfile(ctx);
+  const ids = channelFavs(p.id);
+  const rows = ids.length ? all(`SELECT * FROM items WHERE type = 'channel' AND id IN (${ids.map(() => '?').join(',')})`, ...ids).filter((c) => visible(p, c) && c.stream_url) : [];
+  rows.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+  const out = ['#EXTM3U'];
+  for (const c of rows) {
+    let o = {}; try { o = JSON.parse(c.stream_opts || '{}') || {}; } catch { /* */ }
+    const logo = /^https?:\/\//i.test(c.poster || '') ? c.poster : '';
+    out.push(`#EXTINF:-1 tvg-id="${m3uEsc(c.key)}" tvg-chno="${channelNumber(c) || ''}" tvg-logo="${m3uEsc(logo)}" group-title="${m3uEsc(channelCat(c.title, c.grp))}",${m3uEsc(c.title)}`);
+    if (o.ua) out.push(`#EXTVLCOPT:http-user-agent=${m3uEsc(o.ua)}`);
+    if (o.referer) out.push(`#EXTVLCOPT:http-referrer=${m3uEsc(o.referer)}`);
+    out.push(c.stream_url);
+  }
+  ctx.res.writeHead(200, { 'Content-Type': 'audio/x-mpegurl; charset=utf-8', 'Content-Disposition': 'attachment; filename="venus-chaines-favorites.m3u"', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  ctx.res.end(out.join('\n') + '\n');
+});
+// Importer une liste M3U dans les favoris : chaque chaîne de la liste déjà connue de Venus (même adresse ou même nom) devient favorite
+router.post('/api/channels/favorites/import', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req, 2 * 1024 * 1024);
+  const text = String(b.m3u || '');
+  if (!/#EXTM3U|#EXTINF/i.test(text)) throw new HttpError(400, 'Ce fichier n’est pas une liste M3U');
+  const key = (t) => String(t || '').replace(/^\d+\.\s*/, '').replace(/\s*[[(].*?[\])]/g, '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '');
+  const chans = all("SELECT * FROM items WHERE type = 'channel'").filter((c) => visible(p, c));
+  const byUrl = new Map(chans.map((c) => [c.stream_url, c.id])), byName = new Map(chans.map((c) => [key(c.title), c.id]));
+  const list = channelFavs(p.id);
+  let name = null, found = 0, missing = 0;
+  for (const raw of text.split(/\r?\n/)) {
+    const l = raw.trim();
+    if (l.startsWith('#EXTINF')) name = l.slice(l.lastIndexOf(',') + 1);
+    else if (l && !l.startsWith('#')) {
+      const id = byUrl.get(l) || (name && byName.get(key(name)));
+      if (id) { if (!list.includes(id)) list.push(id); found++; } else missing++;
+      name = null;
+    }
+  }
+  setSetting(`tv_favs:${p.id}`, list.slice(-500));
+  sendJson(ctx.res, { ok: true, found, missing, ids: list });
 });
 // TV en direct : le flux est relu par ffmpeg et servi en HLS (copie de la vidéo quand c'est possible)
 async function playChannel(ctx, p, item, b) {
@@ -1546,7 +1619,9 @@ router.get('/api/channels/:id/preview.jpg', async (ctx) => {
   const p = requireProfile(ctx);
   const item = get("SELECT * FROM items WHERE id = ? AND type = 'channel'", Number(ctx.params.id));
   if (!item || !visible(p, item)) throw new HttpError(404, 'Chaîne introuvable');
-  const file = await channelSnapshot(item);
+  // Jamais plus de 2,5 s d'attente : sinon « 204 » (pas encore d'image), la page redemande plus tard
+  const file = await channelSnapshot(item, { maxWait: 2500, urgent: true });
+  if (!file) { ctx.res.writeHead(204, { 'Cache-Control': 'no-store', 'Retry-After': '15' }); return void ctx.res.end(); }
   sendFile(ctx.req, ctx.res, file, { cache: 'private, max-age=60' });
 });
 

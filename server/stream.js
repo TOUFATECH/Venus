@@ -395,16 +395,24 @@ fs.mkdirSync(liveShots, { recursive: true });
 const shotInflight = new Map();
 let shotBusy = 0;
 const shotQueue = [];
-export function channelSnapshot(item, { wait = false } = {}) {
+// maxWait : la page n'attend pas plus longtemps la première capture (null = pas encore prête). Une image qui
+// attendrait 15 s occuperait une des 6 connexions du navigateur vers Venus : à plusieurs, elles bloquaient la page.
+export function channelSnapshot(item, { wait = false, maxWait = 0, urgent = false } = {}) {
   const out = path.join(liveShots, `ch_${item.id}.jpg`);
   // Une capture existe : elle part tout de suite (même ancienne) ; on la rafraîchit en arrière-plan si elle a plus de 3 min
   let age = Infinity; try { age = Date.now() - fs.statSync(out).mtimeMs; } catch { /* pas encore de capture */ }
   if (age < 180000) return Promise.resolve(out);
   if (age < Infinity && !wait) { if (!shotInflight.has(out)) captureShot(item, out).catch(() => {}); return Promise.resolve(out); }
-  return captureShot(item, out);
+  const p = captureShot(item, out, urgent);
+  if (!maxWait) return p;
+  p.catch(() => {});
+  return Promise.race([p.catch(() => null), new Promise((r) => setTimeout(() => r(null), maxWait))]);
 }
-function captureShot(item, out) {
+const SHOT_QUEUE_MAX = 40;
+function captureShot(item, out, urgent = false) {
   if (shotInflight.has(out)) return shotInflight.get(out);
+  // File pleine : on ne garde que les demandes de la page (les préparations d'avance attendront la prochaine fois)
+  if (shotBusy >= 4 && shotQueue.length >= SHOT_QUEUE_MAX && !urgent) return Promise.reject(new HttpError(503, 'Occupé'));
   const p = new Promise((resolve, reject) => {
     const job = () => {
       shotBusy++;
@@ -420,7 +428,11 @@ function captureShot(item, out) {
         resolve(out);
       });
     };
-    if (shotBusy < 6) job(); else shotQueue.push(job);
+    // Retirée de la file (trop de demandes) : la promesse échoue et la chaîne pourra être redemandée
+    job.drop = () => { shotInflight.delete(out); reject(new HttpError(503, 'Occupé')); };
+    if (shotBusy < 4) job();
+    else if (urgent) { shotQueue.unshift(job); if (shotQueue.length > SHOT_QUEUE_MAX) shotQueue.pop().drop(); }
+    else shotQueue.push(job);
   });
   shotInflight.set(out, p);
   return p;
@@ -429,7 +441,8 @@ function captureShot(item, out) {
 let warmAt = 0;
 export function warmSnapshots(items) {
   if (Date.now() - warmAt < 180000) return; warmAt = Date.now();
-  for (const it of items) if (it.stream_url) channelSnapshot(it, { wait: true }).catch(() => {});
+  // Les 40 premières seulement : avec des centaines de chaînes, ffmpeg tournerait sans arrêt et ralentirait la chaîne regardée
+  for (const it of items.filter((i) => i.stream_url).slice(0, SHOT_QUEUE_MAX)) channelSnapshot(it, { wait: true }).catch(() => {});
 }
 
 export { hw };

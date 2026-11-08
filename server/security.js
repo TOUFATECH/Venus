@@ -188,7 +188,8 @@ export function attemptStats() {
 const reqCount = new Map();
 export function rateLimit(ip, pathname) {
   if (!ip || isLoopback(ip)) return;
-  if (/^\/api\/(hls|stream|subs)\//.test(pathname) || pathname.startsWith('/img/')) return; // flux vidéo : beaucoup de petites requêtes
+  // Flux vidéo et direct (relais), images et aperçus des chaînes : beaucoup de petites requêtes, normales
+  if (/^\/api\/(hls|stream|subs|live)\//.test(pathname) || pathname.startsWith('/img/') || /^\/api\/(channels|items)\/\d+\/(preview\.jpg|thumb|trickplay)/.test(pathname)) return;
   const now = Date.now();
   let c = reqCount.get(ip);
   if (!c || now - c.t > 60000) { c = { n: 0, t: now }; reqCount.set(ip, c); }
@@ -220,7 +221,7 @@ export function contentSecurityPolicy(secure, nonce = null) {
     `script-src 'self' ${nonce ? `'nonce-${nonce}'` : scriptHashes().join(' ')} https://www.gstatic.com`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
-    "media-src 'self' blob:",
+    "media-src 'self' blob: data:", // data: : piste de sous-titres vide créée par le lecteur HLS
     "connect-src 'self'",
     "worker-src 'self' blob:",
     "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com",

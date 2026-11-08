@@ -25,7 +25,8 @@ export async function render(main, { query } = {}) {
   let nn = {};
   try { nn = await api('/api/epg/now'); } catch { /* pas de guide */ }
   const hm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  const groups = [...new Set(channels.map((c) => c.group).filter(Boolean))];
+  const CAT_ORDER = ['Outre-mer', 'Info', 'Généraliste', 'Films', 'Séries', 'Animé / Manga', 'Jeunesse', 'Documentaire', 'Histoire', 'Culture', 'Sport', 'Musique', 'Cuisine & maison', 'Japon', 'Autres'];
+  const groups = CAT_ORDER.filter((k) => channels.some((c) => (c.cat || 'Autres') === k));
   let group = '';
   let selected = null, session = null, detach = null, switchTimer = null, destroyed = false, muted = true, visible = [];
 
@@ -128,7 +129,7 @@ export async function render(main, { query } = {}) {
   function stopPreview() {
     if (detach) { detach(); detach = null; }
     hlsRef = null;
-    if (session) { fetch(relay ? `/api/live/${session}` : `/api/hls/${session}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {}); session = null; }
+    if (session) { fetch(relay ? `/api/live/${session}` : `/api/hls/${session}`, { method: 'DELETE', keepalive: true, headers: auth.token ? { Authorization: `Bearer ${auth.token}` } : {} }).catch(() => {}); session = null; }
     relay = null; heldAt = 0;
   }
   function stopPlayback() {
@@ -160,7 +161,7 @@ export async function render(main, { query } = {}) {
     if (detach) { detach(); detach = null; } hlsRef = null;
     try {
       const info = await api(`/api/play/${ch.id}`, { method: 'POST', body: { caps: deviceCaps(), preview: true, replace: prev || undefined, noRelay } });
-      if (destroyed || selected !== ch || !playing) { fetch(info.mode === 'relay' ? `/api/live/${info.sessionId}` : `/api/hls/${info.sessionId}`, { method: 'DELETE' }).catch(() => {}); return; }
+      if (destroyed || selected !== ch || !playing) { fetch(info.mode === 'relay' ? `/api/live/${info.sessionId}` : `/api/hls/${info.sessionId}`, { method: 'DELETE', keepalive: true, headers: auth.token ? { Authorization: `Bearer ${auth.token}` } : {} }).catch(() => {}); return; }
       session = info.sessionId; relay = info.mode === 'relay' ? info.sessionId : null;
       detach = await attachStream(video, info.url, {
         live: true, dvr: !!relay,
@@ -220,7 +221,7 @@ export async function render(main, { query } = {}) {
 
   const paint = () => {
     const q = norm(input.value.trim());
-    const list = channels.filter((c) => (!group || c.group === group) && (!q || norm(c.title).includes(q)));
+    const list = channels.filter((c) => (!group || (c.cat || 'Autres') === group) && (!q || norm(c.title).includes(q)));
     visible = list;
     grid.replaceChildren(...list.map(tile));
     count.textContent = `${list.length} chaîne${list.length > 1 ? 's' : ''}`;
@@ -248,7 +249,7 @@ export async function render(main, { query } = {}) {
   const slash = (e) => { if (e.key === '/' && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName || '')) { e.preventDefault(); input.focus(); input.select(); } };
   document.addEventListener('keydown', slash);
 
-  const chips = groups.length > 1 ? h('div', { class: 'chips', role: 'group', 'aria-label': 'Groupes de chaînes' },
+  const chips = groups.length > 1 ? h('div', { class: 'chips', role: 'group', 'aria-label': 'Catégories de chaînes' },
     [['', 'Toutes'], ...groups.map((g) => [g, g])].map(([id, label]) => {
       const b = h('button', { class: `chip f${id === group ? ' on' : ''}`, onclick: () => {
         group = id; [...chips.children].forEach((c) => c.classList.toggle('on', c === b)); paint();

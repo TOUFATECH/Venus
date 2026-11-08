@@ -1,5 +1,5 @@
 // Télévision : tout se fait aux flèches, OK (Entrée) et Retour, sans souris
-import { test, expect, ouvrir, pret } from './outils.mjs';
+import { test, expect, ouvrir, pret, etat } from './outils.mjs';
 
 // Élément sélectionné : où il est, s'il est visible à l'écran
 const selection = (page) => page.evaluate(() => {
@@ -114,4 +114,38 @@ test('lecteur : commandes aux flèches, Retour quitte', async ({ page }) => {
   await expect(page.locator('.player')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Nuit Blanche' }).first()).toBeVisible();
   await expect(page.locator('.mini-player.on')).toBeVisible();
+});
+
+test('TV : catégories, Mayotte La 1ère en tête, favoris et liste M3U', async ({ page, api }) => {
+  const chans = await api('/api/library?type=channel');
+  const mine = chans.filter((c) => /^http:\/\/127/.test(c.streamUrl || '') || ['France 24', 'Mayotte La 1ère', 'Mangas TV', 'Ciné Classique', 'Histoire Plus', 'Arte'].includes(c.title));
+  const cat = Object.fromEntries(mine.map((c) => [c.title, c.cat]));
+  expect(cat['France 24']).toBe('Info');
+  expect(cat['Mayotte La 1ère']).toBe('Outre-mer');
+  expect(cat['Mangas TV']).toBe('Animé / Manga');
+  expect(cat['Ciné Classique']).toBe('Films');
+  expect(cat['Histoire Plus']).toBe('Histoire');
+  expect(chans[0].title).toBe('Mayotte La 1ère');
+  // Favori : ajouté, exporté en M3U, réimporté
+  const arte = mine.find((c) => c.title === 'Arte');
+  await api(`/api/channels/${arte.id}/favorite`, { method: 'POST', body: { on: true } });
+  const m3u = await page.request.get('/api/channels/favorites.m3u', { headers: { authorization: `Bearer ${etat().token}` } });
+  expect(m3u.ok()).toBeTruthy();
+  const txt = await m3u.text();
+  expect(txt).toContain('#EXTM3U');
+  expect(txt).toContain(',Arte');
+  await api(`/api/channels/${arte.id}/favorite`, { method: 'POST', body: { on: false } });
+  const imp = await api('/api/channels/favorites/import', { method: 'POST', body: { m3u: txt } });
+  expect(imp.found).toBe(1);
+  // Page : les catégories et le filtre Favoris
+  await ouvrir(page, '/tv');
+  await expect(page.locator('.tv-cats .chip', { hasText: 'Outre-mer' })).toBeVisible();
+  await page.locator('.tv-cats .chip', { hasText: 'Favoris' }).click();
+  await expect(page.locator('.tiles .tile')).toHaveCount(1);
+  await expect(page.locator('.tv-fav-tools a[href="/api/channels/favorites.m3u"]')).toBeVisible();
+  await page.locator('.tv-cats .chip', { hasText: 'Toutes' }).click();
+  // Les catégories restent dans la colonne (pas de débordement à droite)
+  const list = await page.locator('.tvx-list').boundingBox();
+  const last = await page.locator('.tv-cats .chip').last().boundingBox();
+  expect(last.x + last.width).toBeLessThanOrEqual(list.x + list.width + 1);
 });

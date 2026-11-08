@@ -571,7 +571,7 @@ html:not(.touch) .opt:hover { background: var(--raise); }
 .pv-live { z-index: 3; left: 12px; top: 12px; padding: 4px 8px; border-radius: 4px; background: rgb(var(--night-rgb) / .7); }
 .pv-screen:focus-visible { outline: 3px solid var(--sulfur); outline-offset: 3px; }
 .pv-bar { position: absolute; z-index: 4; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 4px; padding: 28px 10px 10px; background: linear-gradient(transparent, rgb(0 0 0 / .72)); opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; }
-.pv-screen.awake .pv-bar, .pv-screen.paused .pv-bar, .pv-screen:focus-within .pv-bar, .pv-screen:hover .pv-bar { opacity: 1; transform: none; }
+.pv-screen.awake .pv-bar, .pv-screen.paused .pv-bar, .pv-screen:has(:focus-visible) .pv-bar, .pv-screen:hover .pv-bar { opacity: 1; transform: none; }
 .pv-c { flex: none; width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 10px; background: rgb(255 255 255 / .08); color: #fff; cursor: pointer; transition: background .15s, transform .15s; }
 .pv-c:hover, .pv-c:focus-visible { background: var(--sulfur); color: var(--night); }
 .pv-c:active { transform: scale(.94); }
@@ -582,6 +582,10 @@ html:not(.touch) .opt:hover { background: var(--raise); }
 .pv-screen:fullscreen video { object-fit: contain; }
 .pv-screen:fullscreen .pv-bar { padding: 40px 24px 24px; }
 .pv-screen:fullscreen .pv-c { width: 48px; height: 48px; }
+/* En grand : les boutons et la souris disparaissent après 3 s sans bouger (ils reviennent au moindre mouvement, en pause ou au clavier) */
+.pv-screen:fullscreen:not(.awake):not(.paused):not(:has(:focus-visible)) { cursor: none; }
+.pv-screen:fullscreen:not(.awake):not(.paused):not(:has(:focus-visible)) .pv-bar,
+.pv-screen:fullscreen:not(.awake):not(.paused):not(:has(:focus-visible)) .pv-status:empty { opacity: 0; transform: translateY(6px); pointer-events: none; }
 @media (max-width: 760px) { .pv-vol { display: none; } .pv-c { width: 36px; height: 36px; } .pv-bar { opacity: 1; transform: none; } }
 html.touch .pv-bar { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) { .pv-bar { transition: none; } }
@@ -3568,3 +3572,22 @@ html.lite:not(.touch) .card:hover .shot, html.lite .card:focus-visible .shot, ht
 .mobile-top .top-actions { display: flex; align-items: center; gap: 4px; }
 .tabs-slot { display: contents; }
 .sheet-react { display: contents; }
+
+/* ---- TV : catégories, favoris ---- */
+@media (hover: hover) and (pointer: fine) {
+  /* À la souris, les catégories passent à la ligne au lieu de dépasser (pas de défilement horizontal caché) */
+  .tvx-tools .chips { flex-wrap: wrap; overflow: visible; }
+}
+.chip-n { margin-left: 6px; opacity: .6; font-size: .78em; font-variant-numeric: tabular-nums; }
+.chip.on .chip-n { opacity: .8; }
+.tv-fav-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.tv-fav-tools label { cursor: pointer; }
+.tile-wrap { position: relative; min-width: 0; }
+.tile-wrap > .tile { width: 100%; }
+.tile-fav { position: absolute; z-index: 4; top: 6px; right: 6px; width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 8px; background: rgb(var(--night-rgb) / .7); color: var(--paper); font-size: 17px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity .15s, background .15s; }
+.tile-wrap:hover .tile-fav, .tile-fav:focus-visible, .tile-fav.on, html.touch .tile-fav { opacity: 1; }
+.tile-fav.on { color: var(--sulfur); }
+.tile-fav:hover { background: var(--sulfur); color: var(--night); }
+.pv-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pv-title-row .pv-name { margin: 0; }
+.pv-fav.on { color: var(--sulfur); }
