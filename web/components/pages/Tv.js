@@ -14,7 +14,6 @@ const day = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', da
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
 const playPath = (id) => shared().components.playPath(id);
-const token = () => encodeURIComponent(shared().api.auth.token || '');
 const confirm = (m, l) => shared().ui.confirmSheet(m, l);
 
 export default function Tv() {
@@ -165,7 +164,7 @@ function ChannelsView({ all, nn, admin }) {
     if (c) choose(c, false);
   };
   const onDead = (ch) => setChannels((l) => l.filter((x) => x !== ch));
-  const pic = (c) => c.preview || `/api/channels/${c.id}/preview.jpg?token=${token()}&t=${stamp}`;
+  const pic = (c) => c.preview || `/api/channels/${c.id}/preview.jpg?t=${stamp}`;
   return (
     <main className="with-nav page-in">
       <div className="page tv-page">

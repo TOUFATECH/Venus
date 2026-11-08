@@ -7,7 +7,6 @@ import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
 
 const fmtSize = (b) => (!b ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
-const token = () => encodeURIComponent(shared().api.auth.token || '');
 const STATE = { queued: 'En attente', working: 'Préparation', ready: 'Prêt', error: 'Échec' };
 
 export default function Downloads() {
@@ -41,7 +40,7 @@ export default function Downloads() {
                 {j.error ? <small className="error-text">{j.error}</small> : null}
               </div>
               <div className="dl-actions">
-                {j.state === 'ready' ? <a className="btn btn-small f" href={`/api/downloads/${j.id}/file?token=${token()}`} download={j.name}><Icon name="down" />Enregistrer</a> : j.state === 'working' ? <span className="dl-pct">{`${j.progress} %`}</span> : null}
+                {j.state === 'ready' ? <a className="btn btn-small f" href={`/api/downloads/${j.id}/file`} download={j.name}><Icon name="down" />Enregistrer</a> : j.state === 'working' ? <span className="dl-pct">{`${j.progress} %`}</span> : null}
                 <button className="btn btn-ghost btn-icon btn-mini f" aria-label="Supprimer" title="Supprimer" onClick={() => del(j)}><Icon name="close" /></button>
               </div>
             </div>
@@ -66,7 +65,7 @@ export function openDownload({ id, title, size, duration, season = false }) {
     return (
       <div className="dl-choices">
         {season ? null : (
-          <a className="opt f" href={`/api/items/${id}/download?token=${token()}`} download="" onClick={() => setTimeout(close, 300)}>
+          <a className="opt f" href={`/api/items/${id}/download`} download="" onClick={() => setTimeout(close, 300)}>
             <Icon name="down" /><span><b>Fichier d’origine</b><small>{['Meilleure qualité', fmtSize(size)].filter(Boolean).join(' · ')}</small></span>
           </a>
         )}

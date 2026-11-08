@@ -282,7 +282,7 @@ export function bootNote(text) { const n = document.querySelector('.boot-note');
 let events = null;
 export function listenEvents() {
   if (events || !window.EventSource || window.__VN_MEMORY_ROUTER) return;
-  events = new EventSource(`/api/events?token=${encodeURIComponent(auth.token || '')}`);
+  events = new EventSource('/api/events'); // session : cookie protégé (jamais le jeton dans l'adresse)
   events.addEventListener('library', (e) => { try { onLibrary(JSON.parse(e.data)); } catch { /* message illisible */ } });
   // Commandes de l'administrateur : message affiché, ou pause / reprise / arrêt (gérés par le lecteur)
   events.addEventListener('control', (e) => {
@@ -290,7 +290,7 @@ export function listenEvents() {
     if (d.cmd === 'message') adminMessage(d);
     // Vidéo envoyée depuis un autre appareil (« Envoyer vers la télé ») : elle s'ouvre ici tout de suite
     if (d.cmd === 'open' && d.url) { toast(`${d.from || 'Quelqu’un'} vous envoie ${d.text ? `« ${d.text} »` : 'une vidéo'}`, { type: 'success' }); if (/^\/[a-z]/i.test(d.url)) go(d.url); return; }
-    if (d.cmd === 'notify') toast(`${d.title} : ${d.text}`, { type: 'success', duration: 7000, action: d.url ? { label: 'Voir', onClick: () => go(d.url) } : null });
+    if (d.cmd === 'notify') toast(`${d.title} : ${d.text}`, { type: 'success', duration: 7000, action: d.url && /^\/[a-z]/i.test(d.url) ? { label: 'Voir', onClick: () => go(d.url) } : null });
     window.dispatchEvent(new CustomEvent('vn:control', { detail: d }));
   });
   events.onerror = () => { /* le navigateur se reconnecte tout seul */ };

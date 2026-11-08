@@ -22,6 +22,8 @@ services:
       - DAC_READ_SEARCH
     security_opt:
       - apparmor:unconfined
+      # Aucun programme du conteneur ne peut gagner de droits supplémentaires (setuid…)
+      - no-new-privileges:true
     environment:
       - TZ=${TZ:-Europe/Paris}
       - PORT=8096

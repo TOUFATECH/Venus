@@ -34,7 +34,8 @@ export const NET_INPUT = (url) => {
   if (!/^https?:/i.test(url)) return [];
   let o = {};
   try { o = JSON.parse((get('SELECT stream_opts FROM items WHERE stream_url = ? AND stream_opts IS NOT NULL LIMIT 1', url) || {}).stream_opts || '{}') || {}; } catch { /* */ }
-  return ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-rw_timeout', '15000000', '-user_agent', o.ua || BROWSER,
+  // Flux web : ffmpeg ne suit que des adresses web (jamais un fichier du serveur glissé dans une liste distante)
+  return ['-protocol_whitelist', 'http,https,tcp,tls,crypto,data', '-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5', '-rw_timeout', '15000000', '-user_agent', o.ua || BROWSER,
     ...(o.referer ? ['-headers', `Referer: ${o.referer}\r\n`] : [])];
 };
 

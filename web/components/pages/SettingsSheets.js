@@ -7,7 +7,6 @@ import { api, toast, go, openSheet } from '../../lib/hooks';
 import { Icon, Avatar } from '../Icon';
 
 export const confirm = (m, l) => shared().ui.confirmSheet(m, l);
-export const token = () => encodeURIComponent(shared().api.auth.token || '');
 export const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
 

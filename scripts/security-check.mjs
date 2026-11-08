@@ -87,6 +87,33 @@ try {
   r = await req('/api/profiles/1/select', { method: 'POST', headers: auth2, body: JSON.stringify({ pin: '4321' }) });
   check('Bon code PIN accepté', r.ok);
 
+  // Appareil connecté mais sans profil : ni vignettes, ni extraits, ni photos (contrôle parental et bibliothèques)
+  r = await req('/api/login', { method: 'POST', body: JSON.stringify({ password: 'Un-Mot-de-passe-solide-42' }) });
+  const auth3 = { authorization: `Bearer ${(await r.json()).token}` };
+  const media = await Promise.all(['/api/items/1/thumb', '/api/items/1/preview', '/api/items/1/trickplay/0', '/api/photo/1'].map((p) => req(p, { headers: auth3 }).then((x) => x.status)));
+  check('Vignettes, extraits et photos réservés à un profil', media.every((c) => c === 403), media.join(','));
+  // Sans session : l'état du serveur ne dit rien de plus que « en marche »
+  r = await req('/api/health');
+  const health = await r.json();
+  check('État du serveur discret sans session', Object.keys(health).join() === 'ok');
+  r = await req('/api/status');
+  check('Version cachée avant connexion', !('version' in (await r.json())));
+  // Import d'une archive piégée (lien vers un dossier du système) : refusé avant toute extraction
+  const trap = fs.mkdtempSync(path.join(os.tmpdir(), 'venus-piege-'));
+  fs.writeFileSync(path.join(trap, 'venus.db'), 'x');
+  fs.symlinkSync('/etc', path.join(trap, 'images'));
+  const tgz = path.join(trap, 'piege.tar.gz');
+  const { spawnSync } = await import('node:child_process');
+  spawnSync('tar', ['-czf', tgz, '-C', trap, 'venus.db', 'images']);
+  r = await fetch(`${B}/api/admin/import`, { method: 'POST', headers: { ...auth, 'content-type': 'application/gzip' }, body: fs.readFileSync(tgz) });
+  check('Archive piégée refusée à l’import', r.status === 400, String(r.status));
+  fs.rmSync(trap, { recursive: true, force: true });
+  // Une vraie archive exportée par Venus reste acceptée
+  r = await fetch(`${B}/api/admin/export`, { headers: auth });
+  const exp = Buffer.from(await r.arrayBuffer());
+  r = await fetch(`${B}/api/admin/import`, { method: 'POST', headers: { ...auth, 'content-type': 'application/gzip' }, body: exp });
+  check('Archive exportée par Venus acceptée à l’import', r.ok, String(r.status));
+
   // Force brute
   const codes = [];
   for (let i = 0; i < 7; i++) codes.push((await req('/api/login', { method: 'POST', body: JSON.stringify({ password: `faux-${i}` }) })).status);

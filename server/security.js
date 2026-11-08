@@ -25,9 +25,10 @@ export function isPrivateIp(ip) {
   if (isLoopback(ip)) return true;
   if (net.isIPv4(ip)) {
     const [a, b] = ip.split('.').map(Number);
-    return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
+    // 0.0.0.0/8 mène à la machine elle-même : traité comme local
+    return a === 0 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127);
   }
-  return /^(fc|fd|fe80)/i.test(ip);
+  return ip === '::' || /^(fc|fd|fe80)/i.test(ip);
 }
 // Derrière un proxy (Caddy, Nginx) sur la même machine — ou TRUST_PROXY=1 — on lit X-Forwarded-For
 const trustProxy = (remote) => isLoopback(remote) || (process.env.TRUST_PROXY === '1' && isPrivateIp(remote));

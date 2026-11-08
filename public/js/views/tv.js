@@ -147,7 +147,7 @@ export async function render(main, { query } = {}) {
       h('button', { class: 'pv-now f', onclick: () => programSheet(cur, ch) }, h('b', {}, cur.title), h('small', {}, `${hm(cur.start)} – ${hm(cur.stop)}${cur.sub ? ` · ${cur.sub}` : ''}`),
         h('span', { class: 'prog-bar' }, h('i', { style: { width: `${Math.min(100, Math.round(((Date.now() - cur.start) / (cur.stop - cur.start)) * 100))}%` } }))),
       nxt ? h('small', { class: 'pv-next' }, `Ensuite à ${hm(nxt.start)} : ${nxt.title}`) : null] : []));
-    still.src = ch.preview || `/api/channels/${ch.id}/preview.jpg?token=${encodeURIComponent(auth.token || '')}&t=${Math.floor(Date.now() / 120000)}`;
+    still.src = ch.preview || `/api/channels/${ch.id}/preview.jpg?t=${Math.floor(Date.now() / 120000)}`;
     still.hidden = false;
     markTiles();
   }
@@ -209,7 +209,7 @@ export async function render(main, { query } = {}) {
 
   const tile = (c) => {
     const logo = c.poster ? h('img', { class: 'tile-logo', src: img(c.poster), alt: '', decoding: 'async', onerror: (e) => e.target.remove() }) : null;
-    const shot = h('img', { class: 'tile-shot', alt: '', decoding: 'async', src: c.preview || `/api/channels/${c.id}/preview.jpg?token=${encodeURIComponent(auth.token || '')}&t=${Math.floor(Date.now() / 120000)}`,
+    const shot = h('img', { class: 'tile-shot', alt: '', decoding: 'async', src: c.preview || `/api/channels/${c.id}/preview.jpg?t=${Math.floor(Date.now() / 120000)}`,
       onerror: (e) => e.target.remove() });
     const el = h('button', { class: 'tile f', 'data-id': c.id, 'aria-label': `${c.number ? `${c.number}, ` : ''}${c.title}, ${c.group || 'en direct'} — mettre en lecture en haut`, onclick: () => choose(c) },
       h('div', { class: 'tile-img' }, h('span', { class: 'ch-initials' }, initials(c.title)), shot, logo, c.number ? h('span', { class: 'ch-num' }, c.number) : null),

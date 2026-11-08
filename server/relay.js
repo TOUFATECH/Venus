@@ -14,6 +14,9 @@ import { Readable } from 'node:stream';
 import { config } from './config.js';
 import { get } from './db.js';
 import { HttpError } from './http.js';
+import dns from 'node:dns/promises';
+import net from 'node:net';
+import { isPrivateIp } from './security.js';
 
 const BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const relays = new Map(); // id → { itemId, url, hosts:Set, headers, touched }
@@ -40,12 +43,39 @@ export function stopRelay(id) { const r = relays.get(id); if (r) dropHold(id, r)
 // Un relais sans activité est fermé (en pause, l'enregistrement le garde ouvert jusqu'à 2 h)
 setInterval(() => { const now = Date.now(); for (const [k, r] of relays) if (now - r.touched > (r.hold ? HOLD_MAX : IDLE)) stopRelay(k); }, 30000).unref();
 
-function relayOf(id, u) {
+// Adresse du réseau local (box, NAS, cette machine) ? Résultat gardé pour la durée du relais.
+async function isLocalHost(r, hostname) {
+  if (!r.local) r.local = new Map();
+  if (r.local.has(hostname)) return r.local.get(hostname);
+  const h = hostname.replace(/^\[|\]$/g, '');
+  let local;
+  if (net.isIP(h)) local = isPrivateIp(h);
+  else if (/^(localhost|.*\.local|.*\.lan|.*\.internal|.*\.home\.arpa)$/i.test(h)) local = true;
+  else { try { local = (await dns.lookup(h, { all: true })).some((a) => isPrivateIp(a.address)); } catch { local = false; } }
+  r.local.set(hostname, local);
+  return local;
+}
+// Types de contenu relayés : vidéo, audio, listes HLS, binaire. Jamais une page ni un script venus d'ailleurs
+// (ils seraient servis depuis l'adresse de Venus, avec ses droits).
+function safeType(t) {
+  const v = String(t || '').split(';')[0].trim().toLowerCase();
+  return /^(video|audio)\/[\w.+-]+$|^application\/(octet-stream|mp4|vnd\.apple\.mpegurl|x-mpegurl|mp2t|pkcs7-mime|binary)$|^binary\/octet-stream$/.test(v) ? v : 'application/octet-stream';
+}
+// Redirection vers le réseau local depuis une chaîne sur Internet : refusée
+async function checkFinal(r, res) {
+  if (!res.url) return;
+  const f = new URL(res.url);
+  if (await isLocalHost(r, f.hostname) && !(await isLocalHost(r, new URL(r.url).hostname))) throw new HttpError(403, 'Adresse du réseau local refusée');
+}
+async function relayOf(id, u) {
   const r = relays.get(id);
   if (!r) throw new HttpError(404, 'Relais expiré');
   let url;
   try { url = new URL(u); } catch { throw new HttpError(400, 'Adresse invalide'); }
   if (!/^https?:$/.test(url.protocol) || !r.hosts.has(url.host)) throw new HttpError(403, 'Serveur non annoncé par la chaîne');
+  // Une chaîne sur Internet ne peut pas faire passer le relais vers le réseau local (box, NAS…) :
+  // seule une chaîne elle-même locale (tuner, Tvheadend…) y a droit
+  if (await isLocalHost(r, url.hostname) && !(await isLocalHost(r, new URL(r.url).hostname))) throw new HttpError(403, 'Adresse du réseau local refusée');
   r.touched = Date.now();
   return { r, url };
 }
@@ -155,7 +185,7 @@ function dropHold(id, r) {
 }
 
 export async function servePlaylistRelay(ctx, id) {
-  const { r, url } = relayOf(id, ctx.url.searchParams.get('u'));
+  const { r, url } = await relayOf(id, ctx.url.searchParams.get('u'));
   const key = url.href;
   // Liste de morceaux déjà suivie et en pause : on sert la liste allongée (sans réinterroger la chaîne si on l'a à jour)
   if (r.hold && r.media.has(key)) {
@@ -164,6 +194,7 @@ export async function servePlaylistRelay(ctx, id) {
   }
   const res = await fetch(url, { headers: r.headers, redirect: 'follow', signal: AbortSignal.timeout(12000) }).catch((e) => { throw new HttpError(502, `Chaîne injoignable (${e.message})`); });
   if (!res.ok) throw new HttpError(res.status === 404 ? 404 : 502, `La chaîne répond ${res.status}`);
+  await checkFinal(r, res);
   const final = new URL(res.url || url.href); r.hosts.add(final.host);
   const text = await res.text();
   if (!/^\s*#EXTM3U/.test(text)) throw new HttpError(502, 'Ce n’est pas un flux HLS');
@@ -179,12 +210,12 @@ function sendPl(ctx, text) {
 }
 
 export async function serveSegmentRelay(ctx, id) {
-  const { r, url } = relayOf(id, ctx.url.searchParams.get('u'));
+  const { r, url } = await relayOf(id, ctx.url.searchParams.get('u'));
   // Où en est le spectateur (pour savoir quoi garder pendant une pause)
   for (const st of r.media.values()) { const s = st.segs.find((x) => x.uri === url.href); if (s) { r.servedSeq.set(st, Math.max(r.servedSeq.get(st) ?? -1, s.seq)); break; } }
   const cached = r.cache.get(url.href);
   if (cached && fs.existsSync(cached.file)) {
-    ctx.res.writeHead(200, { 'Content-Type': cached.type, 'Cache-Control': 'no-store', 'Content-Length': fs.statSync(cached.file).size });
+    ctx.res.writeHead(200, { 'Content-Type': safeType(cached.type), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Length': fs.statSync(cached.file).size });
     return void fs.createReadStream(cached.file).pipe(ctx.res);
   }
   const ctrl = new AbortController();
@@ -192,8 +223,9 @@ export async function serveSegmentRelay(ctx, id) {
   const headers = { ...r.headers, ...(ctx.req.headers.range ? { Range: ctx.req.headers.range } : {}) };
   const res = await fetch(url, { headers, redirect: 'follow', signal: ctrl.signal }).catch((e) => { throw new HttpError(502, `Morceau injoignable (${e.message})`); });
   if (!res.ok && res.status !== 206) throw new HttpError(502, `La chaîne répond ${res.status}`);
+  await checkFinal(r, res);
   r.hosts.add(new URL(res.url || url.href).host);
-  const h = { 'Content-Type': res.headers.get('content-type') || 'video/mp2t', 'Cache-Control': 'no-store' };
+  const h = { 'Content-Type': safeType(res.headers.get('content-type') || 'video/mp2t'), 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
   for (const k of ['content-length', 'content-range', 'accept-ranges']) { const v = res.headers.get(k); if (v) h[k] = v; }
   ctx.res.writeHead(res.status, h);
   if (!res.body) return ctx.res.end();
