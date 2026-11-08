@@ -3,7 +3,7 @@
 // notes des sites, saisons et épisodes, distribution et équipe (avec photos), à propos, fiche technique,
 // emplacement sur le NAS, bonus, saga, titres proches et « Avec (acteur) ».
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, api, toast, img, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon, Avatar } from '../Icon';
@@ -23,19 +23,19 @@ const chLabel = (n) => (n >= 8 ? '7.1' : n >= 6 ? '5.1' : n === 2 ? 'Stéréo' :
 const STATUS = { 'Returning Series': 'En cours de diffusion', Ended: 'Terminée', Canceled: 'Annulée', 'In Production': 'En production', Planned: 'Prévue', Released: 'Sorti', 'Post Production': 'En post-production' };
 let regionNames = null;
 const country = (c) => { try { regionNames = regionNames || new Intl.DisplayNames(['fr'], { type: 'region' }); return regionNames.of(c); } catch { return c; } };
-const refresh = () => window.__VN_NEXT.refresh();
+const refresh = () => shared().app.hostHooks.refresh();
 const isSeen = (e) => !!(e.progress && e.progress.watched);
 const seasonName = (s) => s.title || (s.number === 0 ? 'Bonus' : `Saison ${s.number}`);
 
 export default function Details({ id }) {
-  const { app } = legacy();
+  const { app } = shared();
   const from = useRef(app.currentUrl());
   const { data: d, error } = useApi(id ? `/api/items/${id}` : null);
   useEffect(() => {
     if (!d) return;
     app.setTitle(d.title);
     app.showPath(d.path, ['ep'], from.current);
-    legacy().imp('ambiance.js').then((m) => m.tintFrom(img(d.backdrop || d.poster))).catch(() => {});
+    shared().imp('ambiance.js').then((m) => m.tintFrom(img(d.backdrop || d.poster))).catch(() => {});
   }, [d]);
   if (error) return <main className="with-nav"><div className="page"><div className="empty"><h2>Impossible d’afficher cette fiche</h2><p>{error.message}</p><button className="btn f" onClick={refresh}>Réessayer</button></div></div></main>;
   if (!d) return <main className="with-nav"><DetailsSkeleton /></main>;
@@ -48,7 +48,7 @@ function DetailsSkeleton() {
 }
 
 function DetailsView({ d: initial }) {
-  const L = legacy();
+  const L = shared();
   const { app, ui, components } = L;
   const { search } = useVenus();
   const [d, setD] = useState(initial);
@@ -241,7 +241,7 @@ function ThumbImg({ src, title }) {
 
 // Temps d'écran : prévenir avant de lancer plutôt que couper au milieu
 function ScreenTimeNote({ d, target, isShow }) {
-  const left = legacy().app.state.profile.dailyLeft;
+  const left = shared().app.state.profile.dailyLeft;
   const need = isShow ? (target && target.runtime) || (d.nextUp && d.nextUp.runtime) || 0 : d.runtime || 0;
   if (left == null || !need) return null;
   if (left <= 0) return <p className="resume-note warn"><Icon name="clock" /> Temps d’écran du jour épuisé : la lecture reprendra demain.</p>;
@@ -252,7 +252,7 @@ function ScreenTimeNote({ d, target, isShow }) {
 
 // « Vu jusqu'à 42 min sur l'iPhone, hier »
 function ResumeNote({ d, isShow }) {
-  const { ui } = legacy();
+  const { ui } = shared();
   const last = isShow ? d.lastWatch : (d.progress && d.progress.position > 20 && !d.progress.watched ? d.progress : null);
   if (!last || !last.updated) return null;
   const iso = new Date(last.updated).toISOString();
@@ -292,7 +292,7 @@ function Opinion({ d }) {
 
 // ---------------------------------------------------------------- saisons et épisodes
 function Seasons({ d, setD, showDone, wantEp }) {
-  const L = legacy();
+  const L = shared();
   const { app, ui, components, api: A } = L;
   const profile = app.state.profile;
   const memoKey = `vn_season_${d.id}`;
@@ -445,7 +445,7 @@ function Seasons({ d, setD, showDone, wantEp }) {
 
 // Épisode en vignette compacte : « Épisode 2 » et la durée ; le titre au survol
 function EpisodeRow({ e, current, onToggle }) {
-  const { ui, components } = legacy();
+  const { ui, components } = shared();
   const p = e.progress;
   const pct = p && p.duration ? Math.min(100, (p.position / p.duration) * 100) : 0;
   const dur = e.runtime || (e.duration ? Math.round(e.duration / 60) : null);
@@ -494,7 +494,7 @@ const Dl = ({ list }) => <dl className="info-list">{list.map(([k, v], i) => [<dt
 const copy = (txt, msg) => navigator.clipboard?.writeText(txt).then(() => toast(msg), () => {});
 
 function About({ d, cr, isShow }) {
-  const { ui, app } = legacy();
+  const { ui, app } = shared();
   const pairs = [];
   const names = (list) => (list || []).map((p) => p.name).join(', ');
   if (cr.directors && cr.directors.length) pairs.push(['Réalisation', names(cr.directors)]);
@@ -556,7 +556,7 @@ function About({ d, cr, isShow }) {
 
 // ---------------------------------------------------------------- bande-annonce en fond (son, vidéo, revoir)
 function BackdropTrailer({ d, bgRef, rootRef, apiRef }) {
-  const L = legacy();
+  const L = shared();
   const prefs = L.api.prefs;
   const [sound, setSound] = useState(!!prefs.get('detailsSound'));
   const [video, setVideo] = useState(L.api.detailsTrailers());

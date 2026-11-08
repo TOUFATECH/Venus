@@ -4,7 +4,7 @@
 // téléchargé automatiquement par Radarr / Sonarr) ou téléchargé directement (⬇).
 // Et l'onglet « Mes envies » de Ma liste.
 import { useEffect, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, api, toast, img, go, openSheet } from '../../lib/hooks';
 import { Icon } from '../Icon';
 
@@ -15,7 +15,7 @@ const localDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${pa
 const dayOf = (e) => (e.at ? localDay(e.at) : e.date);
 const nameOf = (e) => e.show || e.title;
 const epLabel = (e) => (e.kind === 'movie' ? [e.release, e.year].filter(Boolean).join(' · ') : `${e.season != null ? `S${e.season}:É${e.episode}` : `Épisode ${e.episode}`}${e.epTitle ? ` - ${e.epTitle}` : ''}`);
-const fmtDate = (d, y) => legacy().ui.fmtDate(d, y);
+const fmtDate = (d, y) => shared().ui.fmtDate(d, y);
 
 export default function Upcoming({ kind, tabs }) {
   const { data: d, error } = useApi(`/api/upcoming?type=${kind}`);
@@ -175,7 +175,7 @@ function Details({ e, ctx: initial }) {
 }
 
 function UpCard({ e, ctx }) {
-  const { components } = legacy();
+  const { components } = shared();
   const out = !e.nas;
   const ok = e.kind === 'movie' ? !!e.nas : !!e.epId;
   const open = () => { if (e.epId) go(components.playPath(e.epId)); else if (e.nas) go(`/titre/${e.nas}`); else details(e, ctx); };
@@ -231,7 +231,7 @@ export function Wishes({ tabs }) {
   const [state, setState] = useState(null);
   const [err, setErr] = useState(null);
   useEffect(() => {
-    Promise.all([api('/api/wishlist'), api('/api/wanted').catch(() => [])]).then(([d, wanted]) => setState({ d, wanted })).catch((e) => setErr(e)).finally(() => legacy().app.hideBoot());
+    Promise.all([api('/api/wishlist'), api('/api/wanted').catch(() => [])]).then(([d, wanted]) => setState({ d, wanted })).catch((e) => setErr(e)).finally(() => shared().app.hideBoot());
   }, []);
   if (err) return <div className="page"><div className="empty"><h2>Impossible d’afficher vos envies</h2><p>{err.message}</p></div></div>;
   if (!state) return <div className="page" aria-busy="true"><i className="sk" style={{ width: 220, height: 48 }} /></div>;

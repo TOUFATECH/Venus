@@ -1,5 +1,6 @@
 'use client';
 // États communs d'une page : chargement (silhouette) et erreur (avec « Réessayer »)
+import { shared } from '../lib/shared';
 export function PageLoading({ children = null }) {
   const bar = (w, hgt = 14) => <i className="sk" style={{ width: w, height: hgt }} />;
   return (
@@ -13,7 +14,7 @@ export function PageError({ error, title = 'Impossible d’afficher cette page' 
   if (error && (error.status === 401 || error.message === 'Choisissez un profil')) return <main className="with-nav" />;
   return (
     <main className="with-nav">
-      <div className="page"><div className="empty"><h2>{title}</h2><p>{(error && error.message) || 'Erreur inattendue'}</p><button className="btn f" onClick={() => window.__VN_NEXT.refresh()}>Réessayer</button></div></div>
+      <div className="page"><div className="empty"><h2>{title}</h2><p>{(error && error.message) || 'Erreur inattendue'}</p><button className="btn f" onClick={() => shared().app.hostHooks.refresh()}>Réessayer</button></div></div>
     </main>
   );
 }

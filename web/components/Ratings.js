@@ -1,9 +1,9 @@
 'use client';
 // Notes des sites (IMDb, Rotten Tomatoes, Metacritic, TMDB, AniList…) et liens vers ceux sans note publique
-import { legacy } from '../lib/legacy';
+import { shared } from '../lib/shared';
 
 export default function Ratings({ ratings, links = {} }) {
-  const { components } = legacy();
+  const { components } = shared();
   const r = ratings || {};
   const chips = components.RATING_SOURCES.filter(([k]) => r[k] && r[k].v).map(([k, label]) => {
     const x = { ...r[k], src: k };

@@ -1,7 +1,7 @@
 // Séance à plusieurs : lecture synchronisée entre écrans, chat et réactions en direct
 import { api, openStream } from './api.js';
 import { h, icon, avatar, toast, qrSvg, copyText, sheet } from './ui.js';
-import { state } from './app.js';
+import { state } from './core.js';
 
 export const REACTIONS = ['😂', '😮', '❤️', '👏', '😱', '🔥'];
 const clientId = Math.random().toString(36).slice(2, 10);

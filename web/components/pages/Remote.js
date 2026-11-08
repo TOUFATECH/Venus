@@ -1,7 +1,7 @@
 'use client';
 // Le téléphone devient une télécommande : croix directionnelle, lecture, recherche au clavier, lancement d'un titre
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useTitle, api, toast, img } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
@@ -21,7 +21,7 @@ export default function Remote() {
     setLink(r.link);
   };
   useEffect(() => {
-    legacy().app.hideBoot();
+    shared().app.hideBoot();
     const saved = ls.get('vn_remote_link');
     // QR code scanné : on relie ce téléphone avec le code qu'il contient (même s'il l'était déjà)
     if (qrCode) pair(qrCode).catch((e) => { if (saved) setLink(saved); else { setMsg(e.message); setLink(''); } });
@@ -39,7 +39,7 @@ export default function Remote() {
 }
 
 function Top({ children, back = true }) {
-  return <div className="remote-top">{back ? <button className="p-icon f" aria-label="Retour" onClick={() => legacy().app.back('/')}><Icon name="back" /></button> : null}{children}</div>;
+  return <div className="remote-top">{back ? <button className="p-icon f" aria-label="Retour" onClick={() => shared().app.back('/')}><Icon name="back" /></button> : null}{children}</div>;
 }
 
 function PairForm({ msg, onPair }) {

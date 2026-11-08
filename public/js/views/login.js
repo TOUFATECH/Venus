@@ -2,7 +2,7 @@
 // (le code ne sert qu'une fois : il change à chaque connexion)
 import { api, auth } from '../api.js';
 import { h, brand } from '../ui.js';
-import { state } from '../app.js';
+import { state } from '../core.js';
 
 export function render(main, { done }) {
   let mode = 'password';

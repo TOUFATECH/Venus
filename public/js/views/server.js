@@ -1,7 +1,7 @@
 // Administration du serveur (comme Jellyfin) : tâches planifiées, journal du serveur, clés API, webhooks, personnalisation
 import { api } from '../api.js';
 import { h, icon, toast, sheet, confirmSheet } from '../ui.js';
-import { go, state, setTitle } from '../app.js';
+import { go, state, setTitle } from '../core.js';
 
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'jamais');
 const dur = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60000)} min`);

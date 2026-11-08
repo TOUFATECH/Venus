@@ -100,7 +100,7 @@ test('guide des programmes aux flèches', async ({ page }) => {
 
 test('lecteur : commandes aux flèches, Retour quitte', async ({ page }) => {
   await ouvrir(page, '/films');
-  await page.locator('.card', { hasText: 'Nuit Blanche' }).first().click();
+  await page.locator('.card', { hasText: 'Nuit Blanche' }).first().locator('.cap').click();
   await expect(page.locator('.actions .btn-play')).toBeVisible();
   await page.locator('.actions .btn-play').focus();
   await touche(page, 'Enter');

@@ -15,6 +15,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund --loglevel=error
 COPY web ./
+# Code partagé (public/js) : embarqué par Next.js dans ses propres fichiers
+COPY public/js /w/public/js
 RUN npm run build \
  && mkdir -p /out \
  && cp -r .next/standalone/. /out/ \

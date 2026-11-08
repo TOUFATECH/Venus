@@ -1,7 +1,7 @@
 'use client';
 // Administration du serveur : mise à jour, tâches planifiées, journal du serveur, clés API, webhooks, personnalisation
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useTitle, api, toast, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
@@ -9,14 +9,14 @@ import { Icon } from '../Icon';
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'jamais');
 const dur = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60000)} min`);
 const TABS = [['maj', 'Mise à jour'], ['taches', 'Tâches planifiées'], ['journal', 'Journal du serveur'], ['cles', 'Clés API'], ['webhooks', 'Webhooks'], ['perso', 'Personnalisation']];
-const confirm = (m, l) => legacy().ui.confirmSheet(m, l);
+const confirm = (m, l) => shared().ui.confirmSheet(m, l);
 
 export default function Server() {
   useTitle('Serveur');
   const { search } = useVenus();
-  const admin = legacy().app.state.profile.isAdmin;
+  const admin = shared().app.state.profile.isAdmin;
   const [tab, setTab] = useState(() => { const t = (search && search.get('onglet')) || 'taches'; return TABS.some(([k]) => k === t) ? t : 'taches'; });
-  useEffect(() => { legacy().app.hideBoot(); }, []);
+  useEffect(() => { shared().app.hideBoot(); }, []);
   if (!admin) return <main className="with-nav"><div className="empty"><h2>Réservé à l’administrateur</h2></div></main>;
   const Tab = { maj: UpdateTab, taches: TasksTab, journal: LogsTab, cles: KeysTab, webhooks: HooksTab, perso: BrandTab }[tab];
   return (

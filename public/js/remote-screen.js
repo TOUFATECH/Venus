@@ -1,7 +1,7 @@
 // Côté écran (TV, ordinateur) : appairage d'un téléphone et exécution de ses commandes
 import { openStream } from './api.js';
 import { h, sheet, qrSvg, toast, icon } from './ui.js';
-import { go, currentPath } from './app.js';
+import { go, currentPath } from './core.js';
 import { playPath } from './components.js';
 import { focusFirst, focusEl } from './nav.js';
 

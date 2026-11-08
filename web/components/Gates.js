@@ -1,13 +1,13 @@
 'use client';
 // Écrans d'entrée : première installation, connexion d'un appareil, « Qui regarde ? », lien d'invitation
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../lib/legacy';
+import { shared } from '../lib/shared';
 import { api, openSheet } from '../lib/hooks';
 import { Icon, Brand, Avatar } from './Icon';
 import { PasswordMeter } from './pages/SettingsSheets';
 
 export default function Gate({ kind, done }) {
-  useEffect(() => { legacy().app.hideBoot(); }, []);
+  useEffect(() => { shared().app.hideBoot(); }, []);
   const View = { setup: Setup, login: Login, profiles: Profiles, invitation: Invitation }[kind];
   return <main><div className="center-screen">{View ? <View done={done} /> : null}</div></main>;
 }
@@ -30,7 +30,7 @@ function Setup({ done }) {
     const el = f.current.elements;
     setErr('');
     if (!el.name.value.trim()) { setErr('Indiquez votre prénom.'); return; }
-    const weak = legacy().ui.passwordProblem(pass);
+    const weak = shared().ui.passwordProblem(pass);
     if (weak) { setErr(`Mot de passe du foyer : ${weak.toLowerCase()}.`); el.pass.focus(); return; }
     if (!/^\d{4}$/.test(el.pin.value)) { setErr('Le code PIN de l’administrateur est obligatoire : 4 chiffres.'); el.pin.focus(); return; }
     setBusy(true);
@@ -39,7 +39,7 @@ function Setup({ done }) {
         name: el.name.value.trim(), password: pass, pin: el.pin.value || null,
         moviesPath: el.movies.value.trim(), showsPath: el.shows.value.trim(), tmdbKey: el.tmdb.value.trim() || null,
       } });
-      legacy().api.auth.token = r.token;
+      shared().api.auth.token = r.token;
       done(await api('/api/me'));
     } catch (e2) { setErr(e2.message); setBusy(false); }
   };
@@ -78,7 +78,7 @@ function Login({ done }) {
   const [wait, setWait] = useState(0); // secondes avant de pouvoir renvoyer le code
   const form = useRef(null);
   const inputs = { password: useRef(null), code: useRef(null), email: useRef(null) };
-  const msg = legacy().app.state.status && legacy().app.state.status.loginMessage;
+  const msg = shared().app.state.status && shared().app.state.status.loginMessage;
   useEffect(() => { setErr(''); setTimeout(() => inputs[mode].current && inputs[mode].current.focus(), 30); }, [mode]);
   useEffect(() => { if (wait <= 0) return undefined; const t = setTimeout(() => setWait((s) => s - 1), 1000); return () => clearTimeout(t); }, [wait]);
   const submit = async (e) => {
@@ -100,7 +100,7 @@ function Login({ done }) {
         setMode('email'); setWait(60);
         return;
       }
-      legacy().api.auth.token = r.token;
+      shared().api.auth.token = r.token;
       done(null);
     } catch (e2) {
       setErr(e2.message); setBusy(false);
@@ -156,7 +156,7 @@ function Profiles({ done }) {
   useEffect(() => { api('/api/profiles').then(setList).catch(setError); }, []);
   useEffect(() => { if (list && first.current) first.current.focus({ preventScroll: true }); }, [list]);
   const select = async (p) => {
-    if (!p.hasPin) { try { done(await api(`/api/profiles/${p.id}/select`, { method: 'POST', body: {} })); } catch (e) { legacy().ui.toast(e.message, true); } return; }
+    if (!p.hasPin) { try { done(await api(`/api/profiles/${p.id}/select`, { method: 'POST', body: {} })); } catch (e) { shared().ui.toast(e.message, true); } return; }
     askPin(p, async (pin) => done(await api(`/api/profiles/${p.id}/select`, { method: 'POST', body: { pin } })));
   };
   if (error) return <div className="panel"><Brand /><h2>Profils indisponibles</h2><p>{error.message}</p><div className="form-actions"><button className="btn btn-play f" onClick={() => done(null)}>Réessayer</button></div></div>;
@@ -174,7 +174,7 @@ function Profiles({ done }) {
         ))}
       </div>
       <div style={{ textAlign: 'center', marginTop: 48 }}>
-        <button className="btn btn-ghost btn-small f" onClick={async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); legacy().api.auth.token = null; done(null); }}><Icon name="exit" />Déconnecter cet appareil</button>
+        <button className="btn btn-ghost btn-small f" onClick={async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); shared().api.auth.token = null; done(null); }}><Icon name="exit" />Déconnecter cet appareil</button>
       </div>
     </div>
   );
@@ -240,7 +240,7 @@ function Invitation({ done }) {
   const toLogin = (e) => { e.preventDefault(); history.replaceState(null, '', '/'); done(null); };
   if (error) return <div className="panel invite-panel"><Brand /><h2>Invitation introuvable</h2><p>{error.message}</p><div className="form-actions"><a className="btn btn-play f" href="/" onClick={toLogin}>Aller à la connexion</a></div></div>;
   if (!inv) return <div className="panel invite-panel"><Brand /><p className="muted">Ouverture de votre invitation…</p></div>;
-  const hues = legacy().ui.AVATAR_HUES;
+  const hues = shared().ui.AVATAR_HUES;
   const submit = async (e) => {
     e.preventDefault();
     const el = f.current.elements;
@@ -252,7 +252,7 @@ function Invitation({ done }) {
     setBusy(true);
     try {
       const r = await api(`/api/invite/${encodeURIComponent(token)}/accept`, { method: 'POST', body: { name: name.trim(), avatar: av, pin: pin || null, audioLang: el.audio.value, subtitleLang: el.subs.value } });
-      legacy().api.auth.token = r.token;
+      shared().api.auth.token = r.token;
       history.replaceState(null, '', '/');
       done(null);
     } catch (e2) { setErr(e2.message); setBusy(false); }

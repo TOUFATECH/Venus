@@ -4,7 +4,7 @@ import { api, prefs, detailsTrailers } from '../api.js';
 import { h, icon, img, picture, placeholder, ageBadge, fmtRuntime, langName, toast, sheet, fmtDate, daysSince, hueOf, avatar } from '../ui.js';
 import { sendTo, row, card, playPath, metaLine, frameImage, framePoster, ratingChips, scrollArrows, deleteVideo } from '../components.js';
 import { trailerUrl, trailerPlayer, playTrailer } from '../trailer.js';
-import { go, state, setTitle, showPath, currentUrl } from '../app.js';
+import { go, state, setTitle, showPath, currentUrl } from '../core.js';
 import { focusEl } from '../nav.js';
 import { tintFrom } from '../ambiance.js';
 

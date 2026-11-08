@@ -2,7 +2,7 @@
 // Une personne (acteur, réalisateur, équipe) : photo, ses titres dans la médiathèque, et le reste de sa
 // filmographie, à mettre en favori (téléchargé automatiquement) ou à télécharger tout de suite.
 import { useEffect, useState } from 'react';
-import { legacy } from '../lib/legacy';
+import { shared } from '../lib/shared';
 import { api, toast, img, openSheet } from '../lib/hooks';
 import Card from './Card';
 import { Icon } from './Icon';
@@ -109,7 +109,7 @@ export function wantPhoto(name, cb) {
 
 // Carte d'une personne : visage (ou initiales), nom, rôle
 export function PersonCard({ p }) {
-  const { ui } = legacy();
+  const { ui } = shared();
   const [photo, setPhoto] = useState(p.photo || null);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => { if (!p.photo && !window.__VN_PREVIEW) wantPhoto(p.name, setPhoto); }, [p.name]);

@@ -4,12 +4,12 @@
 // module JavaScript piloté depuis React, comme on intègre video.js ou Shaka : il garde la main sur
 // l'élément <video>, qu'il confie au mini-lecteur quand on quitte la page sans couper l'image.
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useVenus } from '../Venus';
 import { go } from '../../lib/hooks';
 
 let engine = null;
-const loadEngine = () => (engine || (engine = legacy().imp('views/player.js').catch((e) => { engine = null; throw e; })));
+const loadEngine = () => (engine || (engine = shared().imp('views/player.js').catch((e) => { engine = null; throw e; })));
 
 export default function Player() {
   const { path, search } = useVenus();
@@ -17,7 +17,7 @@ export default function Player() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const { app, ui } = legacy();
+    const { app, ui } = shared();
     let view = null, dead = false;
     const bar = document.querySelector('.route-bar') || document.body.appendChild(Object.assign(document.createElement('div'), { className: 'route-bar' }));
     bar.classList.add('on');

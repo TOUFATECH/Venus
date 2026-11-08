@@ -2,7 +2,7 @@
 // Réglages, partie administrateur : médiathèques, TV, infos et affiches, notes, demandes, foyer,
 // notifications, lecture, performances, mise à jour, serveur et sauvegardes
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { api, toast, go } from '../../lib/hooks';
 import { Icon, Avatar } from '../Icon';
 import { openSourceWizard } from './SourceWizard';
@@ -776,7 +776,7 @@ export function ServerBox({ a }) {
   const [pass, setPass] = useState('');
   const name = useRef(null);
   const interval = useRef(null);
-  const fmtTime = legacy().ui.fmtTime;
+  const fmtTime = shared().ui.fmtTime;
   return (
     <section className="box">
       <h2>Serveur</h2>
@@ -789,7 +789,7 @@ export function ServerBox({ a }) {
       <Field label="Vérifier les nouveautés toutes les (minutes)" hint="Les ajouts sont aussi détectés automatiquement quand c’est possible."><input ref={interval} className="input" type="number" min={5} defaultValue={a.settings.scanInterval} /></Field>
       <Actions>
         <Busy onClick={async () => {
-          const problem = legacy().ui.passwordProblem;
+          const problem = shared().ui.passwordProblem;
           if (pass && problem(pass)) { toast(`Mot de passe : ${problem(pass).toLowerCase()}`, true); return; }
           if (!(Number(interval.current.value) >= 5)) { toast('Vérification : 5 minutes minimum', true); return; }
           try {

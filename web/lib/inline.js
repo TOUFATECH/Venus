@@ -1,5 +1,5 @@
 // Petits scripts « en ligne » de l'interface (thème appliqué avant le premier affichage, filet de sécurité
-// du chargement) : lus dans public/index.html, la seule source, pour ne jamais diverger de l'ancienne interface.
+// du chargement) : lus dans public/index.html, la seule source, pour ne jamais diverger de l'interface classique.
 import fs from 'node:fs';
 import path from 'node:path';
 

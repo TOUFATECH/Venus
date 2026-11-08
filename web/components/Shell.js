@@ -3,7 +3,7 @@
 // chaque thème (planète) la place différemment : rail à gauche, menu en haut, dock en bas… (html[data-layout]).
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../lib/legacy';
+import { shared } from '../lib/shared';
 import { Icon, LogoMark, Brand, Avatar } from './Icon';
 
 const isActive = (href, path) => (href === '/' ? path === '/' : path.startsWith(href));
@@ -18,7 +18,7 @@ function NavLink({ href, label, icon, path, className = '' }) {
 }
 
 function ItemLink({ it, path, className = '' }) {
-  const { menu, app } = legacy();
+  const { menu, app } = shared();
   if (it.action === 'remote') {
     return <button className="rail-item f" onClick={() => app.openRemote()}><Icon name={menu.iconOf(it)} /><span>{menu.labelOf(it)}</span></button>;
   }
@@ -29,7 +29,7 @@ function ItemLink({ it, path, className = '' }) {
 function LiveBadge({ cls }) {
   const [n, setN] = useState(0);
   useEffect(() => {
-    const { api } = legacy();
+    const { api } = shared();
     let dead = false;
     const tick = () => api.api('/api/admin/live').then((r) => { if (!dead) setN(r.playing || 0); }).catch(() => {});
     const first = setTimeout(tick, 1500);
@@ -53,7 +53,7 @@ function TimeLeft({ p, rail }) {
 }
 
 export default function Shell({ path, bare, children }) {
-  const L = legacy();
+  const L = shared();
   const { app, menu } = L;
   const p = app.state.profile;
   const top = useRef(null);

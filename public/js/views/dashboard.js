@@ -3,7 +3,7 @@
 // santé du serveur (processeur, mémoire, disques), activité récente, ajouts récents.
 import { api } from '../api.js';
 import { h, icon, img, toast, sheet, fmtTime, avatar, confirmSheet } from '../ui.js';
-import { go, state } from '../app.js';
+import { go, state } from '../core.js';
 
 const fmtBytes = (b) => {
   if (!b) return '0 o';

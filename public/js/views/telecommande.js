@@ -1,7 +1,7 @@
 // Le téléphone devient une télécommande : croix directionnelle, lecture, recherche au clavier, lancement d'un titre
 import { api } from '../api.js';
 import { h, icon, toast, img } from '../ui.js';
-import { back } from '../app.js';
+import { back } from '../core.js';
 
 const buzz = () => { try { navigator.vibrate && navigator.vibrate(8); } catch { /* */ } };
 

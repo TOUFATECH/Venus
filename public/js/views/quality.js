@@ -2,7 +2,7 @@
 // avec demande d'une meilleure version (ou 4K) à Seerr.
 import { api } from '../api.js';
 import { h, icon, img, toast } from '../ui.js';
-import { go, state } from '../app.js';
+import { go, state } from '../core.js';
 
 const fmtBytes = (b) => (b >= 1e12 ? `${(b / 1e12).toFixed(2).replace('.', ',')} To` : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
 const FILTERS = [['improve', 'À améliorer'], ['all', 'Tout'], ['4K', '4K'], ['1080p', '1080p'], ['720p', '720p'], ['SD', 'SD'], ['hdr', 'HDR']];

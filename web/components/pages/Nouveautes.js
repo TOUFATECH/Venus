@@ -2,7 +2,7 @@
 // Nouveautés : films au cinéma et à venir, séries de la semaine, animés de la saison. Grande affiche qui suit
 // le titre survolé (avec sa bande-annonce), demande via Seerr, et « Mes envies » (♡).
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, toast, go } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
@@ -31,7 +31,7 @@ export default function Nouveautes() {
 }
 
 function NewView({ data, kind }) {
-  const L = legacy();
+  const L = shared();
   const admin = L.app.state.profile.isAdmin;
   const sections = data.sections.filter((s) => s.items.length);
   const [cur, setCur] = useState(sections.length ? sections[0].items[0] : null);
@@ -86,7 +86,7 @@ function NewView({ data, kind }) {
 
 // Grande affiche : fond en fondu, bande-annonce en boucle, état de la demande
 function Spotlight({ x, data, spotRef }) {
-  const L = legacy();
+  const L = shared();
   const [layers, setLayers] = useState([{ k: 0, x, on: false }]);
   const [trailerOn, setTrailerOn] = useState(false);
   const [sound, setSound] = useState(false);
@@ -198,7 +198,7 @@ function WishButton({ x, onRequest }) {
 }
 
 function Actions({ x, data }) {
-  const L = legacy();
+  const L = shared();
   const p = L.app.state.profile;
   const [s, setS] = useState(statusCache.get(x.key) || null);
   const [busy, setBusy] = useState(false);

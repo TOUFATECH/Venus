@@ -3,7 +3,7 @@
 // insensible aux accents. Demandes en français (« un film drôle des années 90 »), recherches récentes,
 // et titres pas encore dans Venus (à ajouter à ses envies).
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { legacy } from '../lib/legacy';
+import { shared } from '../lib/shared';
 import { useVenus } from './Venus';
 import Card from './Card';
 import { Icon } from './Icon';
@@ -18,7 +18,7 @@ function Section({ title, children }) {
 }
 
 export default function Search() {
-  const L = legacy();
+  const L = shared();
   const { api, app } = L;
   const { search, tick } = useVenus();
   const [all, setAll] = useState(null);
@@ -39,7 +39,7 @@ export default function Search() {
 }
 
 function SearchView({ all, initial, initialKind }) {
-  const L = legacy();
+  const L = shared();
   const { api, app, ui } = L;
   const recentKey = `vn_recent_search_${app.state.profile ? app.state.profile.id : 0}`;
   const getRecent = () => { try { return JSON.parse(localStorage.getItem(recentKey)) || []; } catch { return []; } };
@@ -174,7 +174,7 @@ function SearchView({ all, initial, initialKind }) {
 
 // Titre pas encore dans Venus : ♡ l'ajoute à mes envies (demandé à Seerr)
 function OnlineCard({ x }) {
-  const { api, ui, app } = legacy();
+  const { api, ui, app } = shared();
   const [state, setState] = useState('idle');
   const wish = async (e) => {
     e.stopPropagation();

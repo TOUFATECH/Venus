@@ -2,7 +2,7 @@
 // Réglages : mon profil, cet appareil, thème et menu (tous), puis l'administration du serveur (administrateur).
 // Une rubrique à la fois : colonne à gauche sur ordinateur, bande défilante sur téléphone.
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useTitle, api, toast, go } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon, Avatar } from '../Icon';
@@ -19,7 +19,7 @@ const saved = () => toast('Préférence enregistrée pour cet appareil');
 
 export default function Settings() {
   useTitle('Réglages');
-  const L = legacy();
+  const L = shared();
   const me = L.app.state.profile;
   const { search } = useVenus();
   const NAV = [
@@ -120,7 +120,7 @@ export default function Settings() {
 
 // ---------------------------------------------------------------- mon profil
 function MyBox({ me }) {
-  const L = legacy();
+  const L = shared();
   const saveMe = async (body) => {
     try { const p = await api(`/api/profiles/${me.id}`, { method: 'PUT', body }); Object.assign(L.app.state.profile, p); toast('Préférence enregistrée'); }
     catch (e) { toast(e.message, true); }
@@ -145,7 +145,7 @@ function MyBox({ me }) {
 
 // ---------------------------------------------------------------- préférences propres à cet appareil
 function DeviceBox() {
-  const { prefs, hoverMode, heroTrailers, detailsTrailers } = legacy().api;
+  const { prefs, hoverMode, heroTrailers, detailsTrailers } = shared().api;
   const pref = (key) => (e) => { prefs.set(key, e.target.type === 'checkbox' ? e.target.checked : e.target.value); saved(); };
   return (
     <section className="box">
@@ -215,7 +215,7 @@ function PushRow() {
 
 // ---------------------------------------------------------------- thème : une planète du système solaire
 function ThemeBox() {
-  const T = legacy().themes;
+  const T = shared().themes;
   const [cur, setCur] = useState(T.currentPlanet());
   const [glass, setGlass] = useState(T.glassMode());
   const box = useRef(null);
@@ -258,7 +258,7 @@ function ThemeBox() {
 
 // Fluidité : effets complets, mode léger (sans flou ni animations lourdes) ou choix automatique selon l'appareil
 function FluidBox() {
-  const app = legacy().app;
+  const app = shared().app;
   const [cur, setCur] = useState(app.liteSetting());
   const [on, setOn] = useState(() => document.documentElement.classList.contains('lite'));
   const choose = (k) => {
@@ -279,7 +279,7 @@ function FluidBox() {
 
 // Menu de navigation : afficher, masquer et réordonner (propre à ce profil, sur cet appareil)
 function MenuBox({ me }) {
-  const M = legacy().menu;
+  const M = shared().menu;
   const [p, setP] = useState(() => M.menuPrefs(me.id));
   const focus = useRef(null);
   const list = useRef(null);

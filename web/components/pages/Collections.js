@@ -2,16 +2,16 @@
 // Collections (sagas TMDB et collections de l'administrateur) et listes de lecture de chaque profil
 import { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, toast, img, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
 import Card, { Placeholder } from '../Card';
 import { PageError, PageLoading } from '../PageState';
 
-const confirm = (m, l) => legacy().ui.confirmSheet(m, l);
-const refresh = () => window.__VN_NEXT.refresh();
-const runtime = (min) => legacy().ui.fmtRuntime(min);
+const confirm = (m, l) => shared().ui.confirmSheet(m, l);
+const refresh = () => shared().app.hostHooks.refresh();
+const runtime = (min) => shared().ui.fmtRuntime(min);
 
 function Cover({ x }) {
   const imgs = (x.posters || []).slice(0, 4);
@@ -25,7 +25,7 @@ export default function Collections() {
   const { data: d, error } = useApi('/api/collections');
   if (error) return <PageError error={error} />;
   if (!d) return <PageLoading />;
-  const admin = legacy().app.state.profile.isAdmin;
+  const admin = shared().app.state.profile.isAdmin;
   const list = tab === 'collections' ? d.collections : d.playlists;
   return (
     <main className="with-nav page-in">
@@ -96,7 +96,7 @@ export function Playlist() {
 }
 
 function PlaylistView({ d }) {
-  const L = legacy();
+  const L = shared();
   const [items, setItems] = useState(d.items);
   const list = useRef(null);
   const save = (next) => api(`/api/playlists/${d.id}`, { method: 'PUT', body: { order: next.map((i) => i.id) } }).catch((e) => toast(e.message, true));
@@ -209,7 +209,7 @@ export function newCollection(itemId = null) {
 // « Ajouter à… » : une liste de lecture (tous) ou une collection (administrateur)
 export async function addToSheet(item) {
   const d = await api('/api/collections');
-  const admin = legacy().app.state.profile.isAdmin;
+  const admin = shared().app.state.profile.isAdmin;
   openSheet(`Ajouter « ${item.title} »`, (close) => {
     const addPl = async (pl) => {
       try { const r = await api(`/api/playlists/${pl.id}/items`, { method: 'POST', body: { itemId: item.id } }); close(); toast(r.added ? `Ajouté à « ${pl.name} »${r.added > 1 ? ` (${r.added} épisodes)` : ''}` : `Déjà dans « ${pl.name} »`, { type: 'success', action: { label: 'Voir', onClick: () => go(`/liste-lecture/${pl.id}`) } }); }

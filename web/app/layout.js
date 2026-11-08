@@ -32,9 +32,6 @@ export default async function RootLayout({ children }) {
         <link rel="preload" href={`${b}/fonts/archivo.woff2`} as="font" type="font/woff2" crossOrigin="" />
         <link rel="stylesheet" href={`${b}/css/app.css`} />
         <link rel="stylesheet" href="/custom.css" />
-        <link rel="modulepreload" href={`${b}/js/app.js`} />
-        <link rel="modulepreload" href={`${b}/js/api.js`} />
-        <link rel="modulepreload" href={`${b}/js/ui.js`} />
         {(inline.head || []).map(script)}
       </head>
       <body suppressHydrationWarning>

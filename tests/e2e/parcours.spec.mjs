@@ -3,7 +3,9 @@ import { test, expect, ouvrir } from './outils.mjs';
 
 test('film : fiche, lecture, retour et mini-lecteur', async ({ page }) => {
   await ouvrir(page, '/films');
-  await page.locator('.card', { hasText: 'Orage' }).first().click();
+  // Le nom ouvre toujours la fiche (l'image, elle, reprend la lecture d'un film commencé)
+  await page.locator('.card', { hasText: 'Orage' }).first().locator('.cap').click();
+  await expect(page).toHaveURL(/\/films\/orage-2018$/);
   await expect(page.getByRole('heading', { name: 'Orage' }).first()).toBeVisible();
   const fiche = page.url();
   await page.locator('.actions .btn-play').click();

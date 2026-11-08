@@ -1,7 +1,7 @@
 // Guide des programmes TV (grille) et enregistrements, comme Jellyfin
 import { api } from '../api.js';
 import { h, icon, img, toast, sheet, confirmSheet } from '../ui.js';
-import { go, state } from '../app.js';
+import { go, state } from '../core.js';
 import { playPath } from '../components.js';
 
 const PX = 5; // pixels par minute

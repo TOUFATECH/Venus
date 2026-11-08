@@ -3,7 +3,7 @@
 // Films et clips : la même adresse sert à la lecture (notée dans l'historique) ; sinon c'est la fiche.
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import Details from './Details';
 import Player from './Player';
 
@@ -12,7 +12,7 @@ const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } }
 export default function TitleRoute({ param = 'slug' }) {
   const params = useParams();
   const raw = dec(String(params[param] || ''));
-  const L = legacy();
+  const L = shared();
   const playing = typeof window !== 'undefined' && !window.__VN_MEMORY_ROUTER && history.state && history.state.vnPlay;
   const [id, setId] = useState(/^\d+$/.test(raw) ? Number(raw) : null);
   const [error, setError] = useState(null);

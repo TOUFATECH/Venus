@@ -2,7 +2,7 @@
 import { api } from '../api.js';
 import { h, icon, img, toast, sheet, confirmSheet, fmtRuntime, placeholder } from '../ui.js';
 import { card, playPath } from '../components.js';
-import { go, state, setTitle } from '../app.js';
+import { go, state, setTitle } from '../core.js';
 import { setQueue } from '../queue.js';
 
 const cover = (x) => {

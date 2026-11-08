@@ -5,7 +5,7 @@
 import { api } from '../api.js';
 import { h, icon, img, toast, sheet, fmtDate } from '../ui.js';
 import { playPath } from '../components.js';
-import { go } from '../app.js';
+import { go } from '../core.js';
 
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés' };
 const FILTERS = [['all', 'Tout'], ['nas', 'Disponibles'], ['out', 'Pas disponibles'], ['fav', 'Mes favoris']];

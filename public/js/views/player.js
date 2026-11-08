@@ -1,7 +1,7 @@
 // Lecteur vidéo plein écran : lecture directe ou HLS, sous-titres, pistes, qualité, épisode suivant, Chromecast, AirPlay
 import { api, auth, deviceCaps, castCaps, preferredQuality, setPreferredQuality, prefs, clearApiCache } from '../api.js';
 import { h, icon, sheet, fmtTime, langName, toast, img, isBack } from '../ui.js';
-import { showPath, currentUrl, go, back, setTitle } from '../app.js';
+import { showPath, currentUrl, go, back, setTitle } from '../core.js';
 import { focusEl } from '../nav.js';
 import { castSupported, loadCast, castContext, castMedia, remote } from '../cast.js';
 import { ambilight, ambianceOn } from '../ambiance.js';

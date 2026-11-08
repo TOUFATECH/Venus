@@ -4,7 +4,7 @@
 // Onglets « À venir » (Films, Séries, Animés) et « Mes envies » (Ma liste) : voir pages/Upcoming.js.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { legacy } from '../lib/legacy';
+import { shared } from '../lib/shared';
 import { useVenus } from './Venus';
 import Card, { Picture, FramePoster } from './Card';
 import { Icon } from './Icon';
@@ -50,7 +50,7 @@ export default function Browse({ kind }) {
   const vue = search ? search.get('vue') : null;
   const upcomingTab = (kind === 'show' || kind === 'anime' || kind === 'movie') && vue === 'avenir';
   const wishTab = kind === 'mylist' && vue === 'envies';
-  const { app } = legacy();
+  const { app } = shared();
   useEffect(() => { app.setTitle(TITLES[kind]); }, [kind]);
 
   const tab = (on, label, path) => (
@@ -70,7 +70,7 @@ export default function Browse({ kind }) {
 }
 
 function Library({ kind, tabs }) {
-  const L = legacy();
+  const L = shared();
   const { api, app, ui, components, queue: Q } = L;
   const isClip = kind === 'clip';
   const key = `vn_filters_${kind}`;
@@ -103,7 +103,7 @@ function SkeletonGrid() {
 }
 
 function LibraryView({ kind, items, tabs, wantGenre, storeKey }) {
-  const L = legacy();
+  const L = shared();
   const { app, components, queue: Q } = L;
   const isClip = kind === 'clip';
 
@@ -316,7 +316,7 @@ function LibraryView({ kind, items, tabs, wantGenre, storeKey }) {
 
 // Une ligne de la vue « Liste »
 function ListRow({ item: i }) {
-  const { ui, components, app } = legacy();
+  const { ui, components, app } = shared();
   const score = norm(i);
   const p = i.progress;
   const pct = p && p.duration && !p.watched ? Math.min(100, (p.position / p.duration) * 100) : 0;

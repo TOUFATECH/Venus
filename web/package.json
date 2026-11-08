@@ -2,9 +2,12 @@
   "name": "venus-web",
   "private": true,
   "version": "1.0.0",
-  "description": "Interface de Venus en Next.js (React), servie par le serveur Venus",
+  "description": "Interface de Venus en Next.js, servie par le serveur Venus",
   "scripts": {
+    "partage": "node scripts/partage.mjs",
+    "predev": "node scripts/partage.mjs",
     "dev": "next dev --port 3100",
+    "prebuild": "node scripts/partage.mjs",
     "build": "next build",
     "lint": "next lint"
   },

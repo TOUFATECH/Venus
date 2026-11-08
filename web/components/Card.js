@@ -2,7 +2,7 @@
 // Carte d'un titre (affiche ou vignette) en React : nom, sous-titre, note, progression, « vu »,
 // nombre d'épisodes. L'aperçu vidéo au survol et le menu rapide (clic droit, appui long) sont ceux de Venus.
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { legacy } from '../lib/legacy';
+import { shared } from '../lib/shared';
 import { Icon } from './Icon';
 
 // Image avec fondu à l'arrivée ; aplat de couleur si elle manque
@@ -18,7 +18,7 @@ export function Picture({ src, title, className = '', lazy = true }) {
 }
 
 export function Placeholder({ title, cls = 'ph', text = false }) {
-  return <div className={cls} style={{ '--h': legacy().ui.hueOf(title) }}>{text ? title : null}</div>;
+  return <div className={cls} style={{ '--h': shared().ui.hueOf(title) }}>{text ? title : null}</div>;
 }
 
 // Image tirée de la vidéo (pas d'affiche ni de fond connus)
@@ -31,7 +31,7 @@ export function FramePoster({ item }) {
 }
 
 export default function Card({ item: initial, poster = false, rank = null, queue = null, onFocus = null, children = null }) {
-  const L = legacy();
+  const L = shared();
   const { ui, components, api, app, queue: Q } = L;
   const [item, setItem] = useState(initial);
   const ref = useRef(null);
@@ -76,8 +76,10 @@ export default function Card({ item: initial, poster = false, rank = null, queue
     if (isClip) { if (queue) Q.setQueue(queue(), { startId: item.id }); return app.go(components.playPath(item.id)); }
     const toTitle = onTitle || !(resume || isEp);
     if (toTitle) window.__vtFrom = ref.current && ref.current.querySelector('.shot');
-    if (onTitle) return app.go(isEp ? `/titre/${item.showId}?ep=${item.id}` : `/titre/${item.id}`);
-    return resume || isEp ? app.go(components.playPath(item.id, item.next ? 0 : undefined)) : app.go(`/titre/${item.id}`);
+    // Adresse lisible donnée par le serveur (/films/inception-2010), sinon le numéro
+    const fiche = item.path && !isEp ? item.path : `/titre/${item.id}`;
+    if (onTitle) return app.go(isEp ? `/titre/${item.showId}?ep=${item.id}` : fiche);
+    return resume || isEp ? app.go(components.playPath(item.id, item.next ? 0 : undefined)) : app.go(fiche);
   };
 
   // Vu / non vu d'un clic, sans ouvrir la fiche

@@ -3,7 +3,7 @@
 // Une seule couleur (celle du thème), plus ou moins intense selon la valeur ; chaque barre a sa valeur au survol.
 import { api } from '../api.js';
 import { h, img } from '../ui.js';
-import { go, state } from '../app.js';
+import { go, state } from '../core.js';
 
 const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const MONTHS_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];

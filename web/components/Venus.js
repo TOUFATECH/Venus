@@ -1,10 +1,9 @@
 'use client';
-// Application Venus (React) : démarrage, écrans d'accueil (installation, connexion, profils),
-// coque de navigation et page en cours. Les pages déjà réécrites sont des composants React (Films, Séries,
-// Animés, Clips, Ma liste, Recherche) ; les autres sont les vues de l'ancienne interface, montées telles quelles.
+// Application Venus (Next.js) : démarrage, écrans d'entrée (installation, connexion, profils),
+// coque de navigation et page en cours. Le code partagé (état, accès au serveur, navigation…) vient de lib/shared.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, Suspense } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { loadLegacy, legacy } from '../lib/legacy';
+import { loadShared, shared } from '../lib/shared';
 import Shell from './Shell';
 import Gate from './Gates';
 
@@ -45,7 +44,7 @@ function App({ children }) {
   const start = useCallback(async () => {
     setError(null);
     let L;
-    try { L = await loadLegacy(); } catch (e) { setError(e); setPhase('error'); return; }
+    try { L = await loadShared(); } catch (e) { setError(e); setPhase('error'); return; }
     const { app, api } = L;
     let st;
     try { st = await api.api('/api/status'); } catch (e) { setError(e); setPhase('error'); app.hideBoot(); return; }
@@ -63,13 +62,17 @@ function App({ children }) {
     if (!/\/(lecture|S\d+E\d+)$/i.test(location.pathname)) L.imp('mini.js').then((m) => m.resumeMini()).catch(() => {});
   }, []);
 
-  // Pont avec l'ancienne interface : navigation, actualisation, écrans d'accueil
-  if (typeof window !== 'undefined') {
-    window.__VN_NEXT = Object.assign(window.__VN_NEXT || {}, {
+  // Next.js affiche les pages : le code partagé navigue avec son routeur, et lui confie l'actualisation,
+  // les écrans d'entrée, le redémarrage et deux fenêtres (ajout à une liste, téléchargement)
+  const L0 = typeof window !== 'undefined' ? shared() : null;
+  if (L0) {
+    L0.app.setHost({
       go: (p, { replace = false } = {}) => (replace ? router.replace(p) : router.push(p)),
       refresh,
-      gate: (kind) => { const L = legacy(); if (L) L.app.state.profile = null; setGate(kind); setPhase('gate'); },
+      gate: (kind) => { L0.app.state.profile = null; setGate(kind); setPhase('gate'); },
       reboot: () => { setPhase('loading'); start(); },
+      addToList: (item) => import('./pages/Collections').then((m) => m.addToSheet(item)),
+      download: (d) => import('./pages/Downloads').then((m) => m.openDownload(d)),
     });
   }
 
@@ -86,7 +89,7 @@ function App({ children }) {
   // À chaque page : profil enfant, nouveautés en temps réel, état frais sur l'accueil
   useEffect(() => {
     if (phase !== 'ready') return;
-    const L = legacy();
+    const L = shared();
     const { app, api } = L;
     try { sessionStorage.setItem('vn_nav', '1'); } catch { /* */ }
     document.documentElement.classList.toggle('kids', !!app.state.profile?.isKids);
@@ -113,14 +116,14 @@ function App({ children }) {
     return (
       <div id="app">
         <Gate key={`gate-${gate}`} kind={gate} done={(profile) => {
-          const { app } = legacy();
+          const { app } = shared();
           if (profile) { app.state.profile = profile; app.refreshCategories().then(() => setPhase('ready')); } else { setPhase('loading'); start(); }
         }} />
       </div>
     );
   }
   if (phase !== 'ready') return null;
-  const L = legacy();
+  const L = shared();
   const bare = L.app.isBare(path);
   return (
     <Ctx.Provider value={{ path, search, url, viewKey, tick, refresh }}>
@@ -134,7 +137,7 @@ function App({ children }) {
 function PageKey({ children }) { return children; }
 
 function StartError({ error, retry }) {
-  useEffect(() => { const L = legacy(); if (L) L.app.hideBoot(); else { const b = document.querySelector('.boot'); if (b) b.style.display = 'none'; } }, []);
+  useEffect(() => { const L = shared(); if (L) L.app.hideBoot(); else { const b = document.querySelector('.boot'); if (b) b.style.display = 'none'; } }, []);
   return (
     <div id="app">
       <div className="center-screen">

@@ -2,7 +2,7 @@
 // Vote en famille : chacun choisit sur son téléphone parmi les idées de « Ce soir ».
 // Écran du téléphone (/vote?code=ABCD) et fenêtre de l'écran principal (startVote).
 import { useEffect, useRef, useState } from 'react';
-import { legacy } from '../../lib/legacy';
+import { shared } from '../../lib/shared';
 import { useTitle, api, toast, img, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon, Qr } from '../Icon';
@@ -10,7 +10,7 @@ import { playItem } from './Tonight';
 
 const clientId = () => { try { let c = sessionStorage.getItem('vn_vote_client'); if (!c) { c = Math.random().toString(36).slice(2); sessionStorage.setItem('vn_vote_client', c); } return c; } catch { return Math.random().toString(36).slice(2); } };
 const voteLink = (code) => `${location.origin}/vote?code=${code}`;
-const stream = (path, handlers) => legacy().api.openStream(path, handlers);
+const stream = (path, handlers) => shared().api.openStream(path, handlers);
 
 // ---------------------------------------------------------------- écran principal
 export async function startVote(itemIds) {
@@ -56,7 +56,7 @@ export default function Vote() {
   const [asking, setAsking] = useState(true);
   const [mine, setMine] = useState(null);
   const input = useRef(null);
-  useEffect(() => { legacy().app.hideBoot(); }, []);
+  useEffect(() => { shared().app.hideBoot(); }, []);
   useEffect(() => {
     if (!code) { setAsking(true); return undefined; }
     if (!/^[A-Z0-9]{4}$/.test(code)) { setMsg('Le code fait 4 lettres.'); setAsking(true); return undefined; }
@@ -66,7 +66,7 @@ export default function Vote() {
     return () => { dead = true; if (stop) stop(); };
   }, [code]);
   useEffect(() => { if (asking) setTimeout(() => input.current && input.current.focus(), 50); }, [asking]);
-  const top = <div className="remote-top"><button className="p-icon f" aria-label="Retour" onClick={() => legacy().app.back('/')}><Icon name="back" /></button><b>Vote en famille</b></div>;
+  const top = <div className="remote-top"><button className="p-icon f" aria-label="Retour" onClick={() => shared().app.back('/')}><Icon name="back" /></button><b>Vote en famille</b></div>;
   let body;
   if (asking || !st) {
     body = (
