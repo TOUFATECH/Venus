@@ -31,6 +31,9 @@ export function h(tag, attrs = {}, ...children) {
 }
 
 const P = {
+  bell: '<path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.6 2H4.4z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/><path d="M10 20.5a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="2" fill="none"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
+  multi: '<rect x="3" y="4" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="13" y="4" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="3" y="13" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="13" y="13" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/>',
   wifi: '<path d="M2.5 9a14 14 0 0 1 19 0M5.5 12.3a9.5 9.5 0 0 1 13 0M8.6 15.5a5 5 0 0 1 6.8 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/>',
   server: '<rect x="3.5" y="4" width="17" height="7" rx="1.8" stroke="currentColor" stroke-width="2" fill="none"/><rect x="3.5" y="13" width="17" height="7" rx="1.8" stroke="currentColor" stroke-width="2" fill="none"/><circle cx="7.5" cy="7.5" r="1.1" fill="currentColor"/><circle cx="7.5" cy="16.5" r="1.1" fill="currentColor"/>',
   people: '<circle cx="9" cy="8.5" r="3.2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M3.5 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="16.5" cy="9.5" r="2.5" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M15.5 14.2c2.6-.3 4.5 1.3 5 4.3" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/>',

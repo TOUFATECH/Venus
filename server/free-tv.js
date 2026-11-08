@@ -147,6 +147,10 @@ function parseCsvLine(line) {
   out.push(cur);
   return out;
 }
+const EPG_SHARE = process.env.VENUS_EPGSHARE_URL || 'https://epgshare01.online/epgshare01';
+const EPG_MJH = process.env.VENUS_EPGMJH_URL || 'https://i.mjh.nz';
+// Langue → pays dont le guide couvre le mieux ses chaînes
+const LANG_COUNTRY = { fra: 'FR', jpn: 'JP', hin: 'IN', eng: 'UK', spa: 'ES', por: 'PT', deu: 'DE', ita: 'IT', ara: 'AE', kor: 'KR', zho: 'HK', tur: 'TR', nld: 'NL' };
 const RES = (n) => { const m = /\((\d{3,4})[pi]\)/i.exec(n); return m ? Number(m[1]) : 0; };
 export async function buildIptvWorld() {
   // Catégories et chaînes pour adultes, d'après la base d'iptv-org (identifiant de la chaîne → catégories)
@@ -190,7 +194,18 @@ export async function buildIptvWorld() {
       }
     }
   }
-  const out = ['#EXTM3U'];
+  // Guides des programmes gratuits (XMLTV) pour ces chaînes : EPGShare01 par pays, et les guides des chaînes
+  // Pluto TV / Samsung TV Plus ; Venus les relie aux chaînes par identifiant ou par nom
+  const guides = new Set();
+  for (const l of iptvWorldLists()) {
+    const [kind, code] = l.split('/');
+    const cc = kind === 'countries' ? code.toUpperCase() : kind === 'languages' ? LANG_COUNTRY[code] : null;
+    if (cc) guides.add(`${EPG_SHARE}/epg_ripper_${cc}1.xml.gz`);
+  }
+  const names = [...best.values()].map((c) => c.name).join('\n');
+  if (/pluto tv/i.test(names)) guides.add(`${EPG_MJH}/PlutoTV/all.xml.gz`);
+  if (/samsung|rakuten/i.test(names)) { guides.add(`${EPG_MJH}/SamsungTVPlus/all.xml.gz`); guides.add(`${EPG_MJH}/Plex/all.xml.gz`); }
+  const out = [`#EXTM3U${guides.size ? ` url-tvg="${[...guides].join(',')}"` : ''}`];
   for (const c of best.values()) out.push(`#EXTINF:-1 tvg-id="${c.id}" tvg-logo="${c.logo}" group-title="${c.group}",${clean(c.name)}`, ...c.opts, c.url);
   console.log(`[iptv-org] ${best.size} chaînes (sur ${read} lues ; ${skipped} doublons ou écartées)`);
   return out.join('\n');

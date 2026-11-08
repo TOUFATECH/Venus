@@ -40,7 +40,15 @@ function makeMedia(dir) {
   // Petite liste de chaînes (adresses injoignables : on teste la page, pas les flux)
   fs.writeFileSync(m('tv', 'chaines.m3u'), ['#EXTM3U',
     ...[['France 24', 'Infos'], ['Mayotte La 1ère', 'France TV'], ['Mangas TV', 'Divertissement'], ['Ciné Classique', ''], ['Histoire Plus', ''], ['Arte', 'TNT']]
-      .flatMap(([n, g], i) => [`#EXTINF:-1 tvg-chno="${i + 1}" group-title="${g}",${n}`, `http://127.0.0.1:9/ch${i}.m3u8`])].join('\n'));
+      .flatMap(([n, g], i) => [`#EXTINF:-1 tvg-chno="${i + 1}" group-title="${g}",${n}`, `http://127.0.0.1:9/ch${i}.m3u8`]),
+    ...[['Test Bleu', 'a', 41], ['Test Vert', 'b', 42]].flatMap(([n, k, no]) => [`#EXTINF:-1 tvg-chno="${no}" group-title="Test",${n}`, `http://127.0.0.1:${Number(process.env.VENUS_TEST_PORT || 18765) + 2}/${k}/index.m3u8`])].join('\n'));
+  // Deux vraies chaînes (HLS servi par un petit serveur local) : lecture, zapping, multi-écran
+  for (const [k, c] of [['a', 'blue'], ['b', 'green']]) {
+    fs.mkdirSync(m('hls', k), { recursive: true });
+    ff('-f', 'lavfi', '-i', `testsrc2=size=480x270:rate=25:duration=40`, '-f', 'lavfi', '-i', 'sine=frequency=330:duration=40', '-vf', `drawbox=c=${c}@0.6:t=fill:w=120:h=60`,
+      '-c:v', 'libx264', '-preset', 'ultrafast', '-g', '50', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest',
+      '-f', 'hls', '-hls_time', '2', '-hls_list_size', '0', '-hls_segment_filename', path.join(m('hls', k), 'seg%03d.ts'), path.join(m('hls', k), 'index.m3u8'));
+  }
   // Affiches propres à chaque saison, rangées comme chez Plex / Jellyfin
   ff('-f', 'lavfi', '-i', 'color=c=red:size=400x600', '-frames:v', '1', m('series', 'Brigade Nord', 'season01-poster.jpg'));
   ff('-f', 'lavfi', '-i', 'color=c=blue:size=400x600', '-frames:v', '1', m('series', 'Brigade Nord', 'Saison 02', 'poster.jpg'));
@@ -60,6 +68,9 @@ export default async function globalSetup() {
     env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0' },
   });
   srv.unref();
+  // Petit serveur des chaînes de test (dossier media/hls)
+  const hls = spawn('python3', ['-m', 'http.server', String(port + 2), '--bind', '127.0.0.1', '--directory', path.join(media, 'hls')], { detached: true, stdio: 'ignore' });
+  hls.unref();
 
   const api = async (p, o = {}) => {
     const r = await fetch(base + p, { ...o, body: o.body ? JSON.stringify(o.body) : undefined, headers: { 'content-type': 'application/json', ...(o.token ? { authorization: `Bearer ${o.token}` } : {}) } });
@@ -93,7 +104,7 @@ export default async function globalSetup() {
     if (i > 120) throw new Error('Interface Next.js absente : lancez « npm run web:build » à la racine de Venus avant les tests.');
     await wait(500);
   }
-  fs.writeFileSync(STATE, JSON.stringify({ base, token, pid: srv.pid, dir, logFile }, null, 2));
+  fs.writeFileSync(STATE, JSON.stringify({ base, token, pid: srv.pid, hlsPid: hls.pid, dir, logFile }, null, 2));
   // Session des tests : l'appareil est déjà connecté sur le profil administrateur
   fs.writeFileSync(path.resolve(here, '..', '.auth.json'), JSON.stringify({ cookies: [], origins: [{ origin: base, localStorage: [{ name: 'vn_token', value: token }] }] }));
   process.env.VENUS_BASE = base;

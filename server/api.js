@@ -822,7 +822,8 @@ router.get('/api/library', (ctx) => {
   if (type === 'channel') {
     // Favoris du profil : jamais cachés, marqués « fav »
     const favs = new Set(channelFavs(p.id));
-    return sendJson(ctx.res, base.cards.map((c) => { const x = { ...c }; if (favs.has(c.id)) { x.fav = true; if (x.down) { x.flaky = x.downWhy; delete x.down; delete x.downWhy; } } return x; }));
+    const recent = new Map((getSetting(`tv_recent:${p.id}`, []) || []).map((id, i) => [id, i]));
+    return sendJson(ctx.res, base.cards.map((c) => { const x = { ...c }; if (recent.has(c.id)) x.recent = recent.get(c.id); if (favs.has(c.id)) { x.fav = true; if (x.down) { x.flaky = x.downWhy; delete x.down; delete x.downWhy; } } return x; }));
   }
   sendJson(ctx.res, base.cards.map((c) => withStatus({ ...c }, idx)));
 });
@@ -1609,12 +1610,20 @@ router.post('/api/channels/favorites/import', async (ctx) => {
   sendJson(ctx.res, { ok: true, found, missing, ids: list });
 });
 // TV en direct : le flux est relu par ffmpeg et servi en HLS (copie de la vidéo quand c'est possible)
+// Dernières chaînes regardées par profil (12 au plus, la plus récente d'abord)
+function rememberRecentChannel(pid, id) {
+  const list = (getSetting(`tv_recent:${pid}`, []) || []).filter((x) => x !== id);
+  setSetting(`tv_recent:${pid}`, [id, ...list].slice(0, 12));
+}
 async function playChannel(ctx, p, item, b) {
   if (!visible(p, item)) throw new HttpError(403, 'Contenu non autorisé pour ce profil');
   // Chaîne déjà au format web (HLS) : relayée telle quelle, sans ffmpeg = démarrage quasi instantané.
   // Sauf si on la sait en HEVC / AC-3 (illisible par le navigateur), ou si le relais vient d'échouer (noRelay).
   const known = cachedProbe(item.stream_url);
   const webOk = !known || ((!known.video || known.video.codec === 'h264') && !(known.audio || []).some((a) => /^(ac3|eac3|dts|truehd|mp2)$/i.test(a.codec || '')));
+  // Zapping instantané : chaîne voisine préparée d'avance (relais seulement : jamais de conversion pour rien)
+  if (b.warm && (b.noRelay || !canRelay(item.stream_url) || !webOk)) return sendJson(ctx.res, { mode: 'none' });
+  if (!b.warm) rememberRecentChannel(p.id, item.id);
   if (!b.noRelay && canRelay(item.stream_url) && webOk) {
     if (!known) probeLive(item.stream_url).catch(() => {}); // pour la prochaine fois
     if (b.replace) { sessions.get(b.replace)?.stop(); stopRelay(b.replace); }
@@ -2929,9 +2938,43 @@ router.get('/api/epg', (ctx) => {
   const progs = programsBetween(from, to, chans.map((c) => c.id));
   const recs = new Map(all("SELECT channel_id, start, id, status FROM recordings WHERE status IN ('scheduled','recording') AND stop > ?", from).map((r) => [`${r.channel_id}:${r.start}`, r]));
   const by = {};
-  for (const x of progs) { const r = recs.get(`${x.channel}:${x.start}`); (by[x.channel] ||= []).push({ ...x, rec: r ? { id: r.id, status: r.status } : null }); }
+  const rems = new Map(all('SELECT id, channel_id, start FROM tv_reminders WHERE profile_id = ? AND start > ?', p.id, from).map((r) => [`${r.channel_id}:${r.start}`, r.id]));
+  for (const x of progs) { const r = recs.get(`${x.channel}:${x.start}`); (by[x.channel] ||= []).push({ ...x, rec: r ? { id: r.id, status: r.status } : null, rem: rems.get(`${x.channel}:${x.start}`) || null }); }
   sendJson(ctx.res, { from, to, now: Date.now(), state: { last: epgState().last, sources: epgState().sources.length }, channels: chans.map((c) => ({ id: c.id, title: c.title, logo: c.poster, number: channelNumber(c), group: c.grp })), programs: by });
 });
+// ---------------------------------------------------------------- rappels de programmes (notification 5 min avant)
+db.exec(`CREATE TABLE IF NOT EXISTS tv_reminders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
+  channel_id INTEGER, start INTEGER, stop INTEGER, title TEXT, notified INTEGER DEFAULT 0, UNIQUE(profile_id, channel_id, start))`);
+router.get('/api/epg/reminders', (ctx) => {
+  const p = requireProfile(ctx);
+  sendJson(ctx.res, all('SELECT r.id, r.channel_id AS channel, r.start, r.stop, r.title, i.title AS channelTitle FROM tv_reminders r LEFT JOIN items i ON i.id = r.channel_id WHERE r.profile_id = ? AND r.stop > ? ORDER BY r.start', p.id, Date.now()));
+});
+router.post('/api/epg/reminders', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req);
+  const pr = programById(Number(b.programId));
+  if (!pr) throw new HttpError(404, 'Programme introuvable');
+  if (pr.start < Date.now() - 60000) throw new HttpError(400, 'Ce programme a déjà commencé');
+  run('INSERT INTO tv_reminders(profile_id, channel_id, start, stop, title) VALUES(?, ?, ?, ?, ?) ON CONFLICT(profile_id, channel_id, start) DO UPDATE SET title = excluded.title, notified = 0', p.id, pr.channel, pr.start, pr.stop, pr.title);
+  const r = get('SELECT id FROM tv_reminders WHERE profile_id = ? AND channel_id = ? AND start = ?', p.id, pr.channel, pr.start);
+  sendJson(ctx.res, { ok: true, id: r.id });
+});
+router.del('/api/epg/reminders/:id', (ctx) => {
+  const p = requireProfile(ctx);
+  run('DELETE FROM tv_reminders WHERE id = ? AND profile_id = ?', Number(ctx.params.id), p.id);
+  sendJson(ctx.res, { ok: true });
+});
+export async function sendTvReminders() {
+  const now = Date.now();
+  run('DELETE FROM tv_reminders WHERE stop < ?', now - 3600e3);
+  for (const r of all('SELECT r.*, i.title AS ch, i.id AS cid FROM tv_reminders r LEFT JOIN items i ON i.id = r.channel_id WHERE r.notified = 0 AND r.start <= ? AND r.stop > ?', now + 5 * 60000, now)) {
+    run('UPDATE tv_reminders SET notified = 1 WHERE id = ?', r.id);
+    const mins = Math.max(0, Math.round((r.start - now) / 60000));
+    const item = r.cid ? get('SELECT * FROM items WHERE id = ?', r.cid) : null;
+    await notify({ title: mins ? `Dans ${mins} min sur ${r.ch}` : `Ça commence sur ${r.ch}`, body: r.title, url: item ? `/tv/${channelNumber(item)}-${slugFor(item.id)}` : '/tv?vue=guide', tag: `rappel-${r.id}` }, { profileId: r.profile_id }).catch(() => {});
+  }
+}
 router.get('/api/epg/now', (ctx) => {
   const p = requireProfile(ctx);
   const age = ageClause(p);
