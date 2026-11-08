@@ -157,6 +157,7 @@ export async function render(main) {
     const playBtn = h('button', { class: 'btn btn-play f', 'data-autofocus': true, onclick: () => playItem(item) }, icon('play'), 'Lecture');
     body.classList.remove('resume');
     body.replaceChildren(...[
+      item.heroTag ? h('div', { class: 'hero-kicker' }, icon('spark'), item.heroTag) : null,
       item.logo ? h('img', { class: 'hero-logo', src: img(item.logo), alt: item.title }) : h('h1', { class: 'hero-title' }, item.title),
       h('div', { class: 'meta' }, meta),
       item.overview ? h('p', { class: 'hero-overview' }, item.overview) : null,

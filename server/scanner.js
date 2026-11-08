@@ -6,7 +6,7 @@ import { probeFile, findExternalSubs } from './probe.js';
 import { downloadedSubs } from './subtitles.js';
 import { parseMovie, parseEpisode, normKey, sortTitle } from './parse.js';
 import { refreshMissing, copyLocalImage } from './metadata.js';
-import { fillMissingPosters } from './posters.js';
+import { fillMissingPosters, fillSeasonPosters } from './posters.js';
 import { remoteReady } from './netshare.js';
 import { movieNfo, showNfo } from './nfo.js';
 import { groupVersions } from './versions.js';
@@ -210,6 +210,9 @@ export async function scanAll({ force = false } = {}) {
     // Sans clé TMDB (ou titres que TMDB ne connaît pas) : affiches et résumés depuis des services gratuits
     scanState.phase = 'Recherche des affiches';
     await fillMissingPosters((d, t) => { scanState.done = d; scanState.total = t; });
+    // Une affiche par saison (sinon toutes les saisons reprennent celle de la série)
+    scanState.phase = 'Affiches des saisons';
+    await fillSeasonPosters((d, t) => { scanState.done = d; scanState.total = t; });
     groupVersions();
     scanState.lastScan = Date.now();
     if (added.length) {

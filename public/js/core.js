@@ -1,7 +1,7 @@
 // Venus — cœur partagé par l'interface Next.js (web/) et l'interface classique (app.js) :
 // état, adresses et navigation, titre de l'onglet, mode léger, nouveautés en temps réel, changement de profil.
 // Aucun affichage de page ici : l'interface qui affiche les pages se déclare avec setHost().
-import { api, auth, clearApiCache } from './api.js';
+import { api, auth, clearApiCache, prefs } from './api.js';
 import { h, icon, toast, logoMark, sheet, overlayHost } from './ui.js';
 import { initNav } from './nav.js';
 import { labelOf, iconOf, sections } from './menu.js';
@@ -106,8 +106,18 @@ export function parseHash() {
 export const currentPath = () => parseHash().path;
 export const currentUrl = () => (memory ? stack[stack.length - 1] : here());
 
+// Plein écran au lancement d'une vidéo (Réglages → Cet appareil) : demandé pendant le clic sur « Lecture »,
+// seul moment où le navigateur l'accepte (après le changement de page, il le refuserait)
+const isPlayerPath = (p) => /^\/(lecture|tv\/\d+-)/.test(p) || /^\/(films|clips)\/[^/]+\/lecture$/.test(p) || /\/S\d{1,3}E\d{1,4}$/i.test(p.split('?')[0]);
+function fullscreenForPlayer(path) {
+  if (!isPlayerPath(path) || !prefs.get('fullscreenOnPlay') || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
+  if (navigator.userActivation && !navigator.userActivation.isActive) return;
+  window.__vnFsAt = Date.now();
+  document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+}
 export function go(path, { replace = false } = {}) {
   ss.set('vn_nav', '1');
+  fullscreenForPlayer(path);
   if (host.go) { window.__vnSilent = null; if (path === here() && !replace) host.refresh(); else host.go(path, { replace }); return; }
   if (memory) { if (replace) stack[stack.length - 1] = path; else stack.push(path); notify(); return; }
   if (path === here() && !replace) { notify(); return; }
@@ -433,6 +443,8 @@ document.addEventListener('keydown', (e) => {
 });
 window.addEventListener('unhandledrejection', (e) => {
   if (e.reason && e.reason.status === 401) return;
+  // Animation de transition interrompue par le navigateur : purement visuelle, rien à signaler
+  if (e.reason && /view.?transition|transition was skipped/i.test(String(e.reason.message || ''))) { e.preventDefault(); return; }
   console.error(e.reason);
   if (e.reason && e.reason.message && e.reason.name !== 'AbortError') toast(e.reason.message, true);
 });

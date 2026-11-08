@@ -303,6 +303,7 @@ function HeroBody({ item, bodyRef, swap }) {
   }
   return (
     <div className="hero-body" ref={ref}>
+      {item.heroTag ? <div className="hero-kicker"><Icon name="spark" />{item.heroTag}</div> : null}
       {item.logo ? <img className="hero-logo" src={img(item.logo)} alt={item.title} /> : <h1 className="hero-title">{item.title}</h1>}
       <Meta item={item} />
       {item.overview ? <p className="hero-overview">{item.overview}</p> : null}
