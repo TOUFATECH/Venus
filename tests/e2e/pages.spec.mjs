@@ -4,7 +4,7 @@ import { test, expect, ouvrir } from './outils.mjs';
 const PAGES = [
   '/', '/films', '/films?vue=avenir', '/series', '/animes', '/clips', '/liste', '/liste?vue=envies', '/recherche', '/nouveautes',
   '/tv', '/tv?vue=guide', '/tv?vue=enregistrements', '/cesoir', '/vote', '/seance', '/telecommande', '/collections',
-  '/musique', '/photos', '/livres', '/stats', '/telechargements', '/nouveau', '/reglages', '/dashboard', '/qualite', '/securite', '/serveur',
+  '/musique', '/photos', '/livres', '/stats', '/retrospective', '/tv?vue=multi', '/telechargements', '/nouveau', '/reglages', '/dashboard', '/qualite', '/securite', '/serveur',
 ];
 
 const PLEIN_ECRAN = ['/vote', '/telecommande'];
