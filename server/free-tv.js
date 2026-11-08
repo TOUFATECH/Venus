@@ -37,7 +37,7 @@ const clean = (name) => String(name).replace(/^\d+\.\s*/, '').replace(/\s*\[(SSA
 
 const NOT_FRENCH = /\b(arabic|english|espa[nñ]ol|spanish|deutsch|german|germany|italiano|italian|portugu[eê]s|portuguese|greek|hungarian|hungary|russian|russia|czechia|spain|turkiye|latina?|latin america|asia|\bAR\b|\bEN\b|\bES\b|\bDE\b)\b/i;
 // Chaînes payantes (bouquets Canal+, Orange…) : leurs flux « publics » sont des rediffusions non autorisées, on ne les reprend pas
-const PAY_TV = /canal\s*\+(?!\s*en clair)|cin[eé]\s*\+|ocs|syfy|disney|nickelodeon|\bmtv\b|eurosport|mezzo|golf\s*\+|sony one|fashion\s*tv|trace|\bmcm\b|caillou|m6 music|nrj hits|equidia|national geographic|nat\s*geo|discovery|paramount|\bbein\b|rmc sport|tcm|warner|13e rue|planete\+|ushua[iï]a|histoire tv|toute l.histoire|seasons|game one|j-one|boomerang|cartoon/i;
+const PAY_TV = /canal\s*\+(?!\s*en clair)|cin[eé]\s*\+|ocs|syfy|disney|nickelodeon|\bmtv\b|eurosport|mezzo|golf\s*\+|sony one|fashion\s*tv|trace|\bmcm\b|caillou|m6 music|nrj hits|equidia|national geographic|nat\s*geo|discovery|paramount|\bbein\b|rmc sport|tcm|warner|13 ?e(me)? ?rue|sci.?fi|planete\+|ushua[iï]a|histoire tv|toute l.histoire|seasons|game one|j-one|boomerang|cartoon/i;
 export async function buildFreeTv() {
   // Le guide des programmes gratuit (XML-TV-Fr) est déclaré dans l'en-tête : Venus le télécharge tout seul
   const out = ['#EXTM3U url-tvg="venus:guide-fr"'];

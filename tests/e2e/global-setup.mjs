@@ -37,6 +37,10 @@ function makeMedia(dir) {
       '-metadata', 'artist=Zaza', '-metadata', 'album=Premier Album', '-metadata', `title=${n.slice(5, -4)}`, m('musique', 'Zaza', 'Premier Album', n));
   }
   ff('-f', 'lavfi', '-i', 'testsrc2=size=1200x800', '-frames:v', '1', m('photos', 'Vacances', 'plage.jpg'));
+  // Petite liste de chaînes (adresses injoignables : on teste la page, pas les flux)
+  fs.writeFileSync(m('tv', 'chaines.m3u'), ['#EXTM3U',
+    ...[['France 24', 'Infos'], ['Mayotte La 1ère', 'France TV'], ['Mangas TV', 'Divertissement'], ['Ciné Classique', ''], ['Histoire Plus', ''], ['Arte', 'TNT']]
+      .flatMap(([n, g], i) => [`#EXTINF:-1 tvg-chno="${i + 1}" group-title="${g}",${n}`, `http://127.0.0.1:9/ch${i}.m3u8`])].join('\n'));
   // Affiches propres à chaque saison, rangées comme chez Plex / Jellyfin
   ff('-f', 'lavfi', '-i', 'color=c=red:size=400x600', '-frames:v', '1', m('series', 'Brigade Nord', 'season01-poster.jpg'));
   ff('-f', 'lavfi', '-i', 'color=c=blue:size=400x600', '-frames:v', '1', m('series', 'Brigade Nord', 'Saison 02', 'poster.jpg'));
@@ -69,7 +73,7 @@ export default async function globalSetup() {
   const { token } = await api('/api/setup', { method: 'POST', body: { name: 'Admin', password: PASSWORD, pin: PIN, moviesPath: path.join(media, 'films'), showsPath: path.join(media, 'series') } });
   // Pas de recherche d'affiches sur Internet pendant les tests : plus rapide et reproductible
   await api('/api/admin/settings', { method: 'PUT', token, body: { postersFree: false } });
-  for (const [type, name, p] of [['clips', 'Clips', 'clips'], ['music', 'Musique', 'musique'], ['photos', 'Photos', 'photos']]) {
+  for (const [type, name, p] of [['clips', 'Clips', 'clips'], ['music', 'Musique', 'musique'], ['photos', 'Photos', 'photos'], ['iptv', 'Chaînes de test', path.join('tv', 'chaines.m3u')]]) {
     await api('/api/admin/libraries', { method: 'POST', token, body: { type, name, path: path.join(media, p) } });
   }
   await api('/api/profiles', { method: 'POST', token, body: { name: 'Lina', avatar: 3 } });

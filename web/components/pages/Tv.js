@@ -14,6 +14,14 @@ const day = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', da
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
 const playPath = (id) => shared().components.playPath(id);
+// Ordre des catégories (le serveur les déduit du nom de la chaîne et de son groupe)
+const CAT_ORDER = ['Outre-mer', 'Info', 'Généraliste', 'Films', 'Séries', 'Animé / Manga', 'Jeunesse', 'Documentaire', 'Histoire', 'Culture', 'Sport', 'Musique', 'Cuisine & maison', 'Japon', 'Autres'];
+const FAV = '★';
+// Arrêt d'une lecture en cours (le jeton accompagne la demande : une suppression sans lui serait refusée)
+const stopSession = (id, relay) => {
+  const t = shared().api.auth.token;
+  fetch(relay ? `/api/live/${id}` : `/api/hls/${id}`, { method: 'DELETE', keepalive: true, credentials: 'same-origin', headers: t ? { Authorization: `Bearer ${t}` } : {} }).catch(() => {});
+};
 const confirm = (m, l) => shared().ui.confirmSheet(m, l);
 
 export default function Tv() {
@@ -124,8 +132,26 @@ function ChannelsView({ all, nn, admin }) {
   const L = shared();
   const [channels, setChannels] = useState(() => all.filter((c) => !c.down));
   const down = all.filter((c) => c.down);
-  const groups = [...new Set(channels.map((c) => c.group).filter(Boolean))];
-  const [group, setGroup] = useState('');
+  const [favs, setFavs] = useState(() => new Set(all.filter((c) => c.fav).map((c) => c.id)));
+  const counts = channels.reduce((m, c) => m.set(c.cat || 'Autres', (m.get(c.cat || 'Autres') || 0) + 1), new Map());
+  const cats = CAT_ORDER.filter((k) => counts.has(k));
+  const [group, setGroupS] = useState(() => { try { return localStorage.getItem('vn.tv.cat') || ''; } catch { return ''; } });
+  const setGroup = (g) => { setGroupS(g); try { localStorage.setItem('vn.tv.cat', g); } catch { /* */ } };
+  const toggleFav = async (c) => {
+    if (!c) return;
+    const on = !favs.has(c.id);
+    setFavs((f) => { const n = new Set(f); if (on) n.add(c.id); else n.delete(c.id); return n; });
+    try { await api(`/api/channels/${c.id}/favorite`, { method: 'POST', body: { on } }); toast(on ? `${c.title} ajoutée aux favoris` : `${c.title} retirée des favoris`); }
+    catch (e) { toast(e.message, true); setFavs((f) => { const n = new Set(f); if (on) n.delete(c.id); else n.add(c.id); return n; }); }
+  };
+  const importFavs = async (file) => {
+    if (!file) return;
+    try {
+      const r = await api('/api/channels/favorites/import', { method: 'POST', body: { m3u: await file.text() } });
+      setFavs(new Set(r.ids)); setGroup(FAV);
+      toast(`${r.found} chaîne${r.found > 1 ? 's' : ''} ajoutée${r.found > 1 ? 's' : ''} aux favoris${r.missing ? ` (${r.missing} absente${r.missing > 1 ? 's' : ''} de vos listes)` : ''}`, { type: 'success' });
+    } catch (e) { toast(e.message, true); }
+  };
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState(() => { let id = 0; try { id = Number(localStorage.getItem('vn.tv.last')) || 0; } catch { /* */ } return channels.find((c) => c.id === id) || channels[0]; });
   const [stamp, setStamp] = useState(Math.floor(Date.now() / 120000));
@@ -133,7 +159,8 @@ function ChannelsView({ all, nn, admin }) {
   const player = useRef(null);
   const input = useRef(null);
   const grid = useRef(null);
-  const visible = channels.filter((c) => (!group || c.group === group) && (!q.trim() || norm(c.title).includes(norm(q.trim()))));
+  const inGroup = (c) => !group || (group === FAV ? favs.has(c.id) : (c.cat || 'Autres') === group);
+  const visible = channels.filter((c) => inGroup(c) && (!q.trim() || norm(`${c.title} ${c.group || ''} ${c.cat || ''}`).includes(norm(q.trim()))));
   const visRef = useRef(visible); visRef.current = visible;
   const chRef = useRef(channels); chRef.current = channels;
   const choose = (c, focus = true) => { try { localStorage.setItem('vn.tv.last', String(c.id)); } catch { /* */ } setSelected(c); player.current && player.current.play(c, focus); };
@@ -150,7 +177,7 @@ function ChannelsView({ all, nn, admin }) {
   const gridKeys = (e) => {
     const tiles = [...grid.current.querySelectorAll('.tile')], i = tiles.indexOf(e.currentTarget);
     if (i < 0) return;
-    const top = tiles[i].offsetTop, cols = Math.max(1, tiles.filter((x) => x.offsetTop === top).length);
+    const y = (x) => Math.round(x.getBoundingClientRect().top), top = y(tiles[i]), cols = Math.max(1, tiles.filter((x) => y(x) === top).length);
     const j = e.key === 'ArrowRight' ? i + 1 : e.key === 'ArrowLeft' ? i - 1 : e.key === 'ArrowDown' ? i + cols : e.key === 'ArrowUp' ? i - cols : null;
     if (j == null) return;
     e.preventDefault();
@@ -174,37 +201,60 @@ function ChannelsView({ all, nn, admin }) {
         </div>
         {down.length && admin ? <DownNote down={down} /> : null}
         <div className="tvx">
-          <div className="tvx-player"><TvPlayer ref={player} selected={selected} nn={nn} onZap={zap} onDead={onDead} still={selected ? pic(selected) : null} onPlaying={setPlayingId} /></div>
+          <div className="tvx-player"><TvPlayer ref={player} selected={selected} nn={nn} onZap={zap} onDead={onDead} still={selected ? pic(selected) : null} onPlaying={setPlayingId} fav={!!selected && favs.has(selected.id)} onFav={() => toggleFav(selected)} /></div>
           <div className="tvx-list">
             <div className="tvx-tools">
               <div className="search-box small"><Icon name="search" />
                 <input ref={input} type="search" id="tv-search" placeholder="Chercher une chaîne (touche /)" aria-label="Chercher une chaîne" autoComplete="off" value={q} onChange={(e) => setQ(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (visible[0]) choose(visible[0]); } else if (e.key === 'ArrowDown') { e.preventDefault(); grid.current.querySelector('.tile')?.focus(); } else if (e.key === 'Escape') setQ(''); }} />
               </div>
-              {groups.length > 1 ? (
-                <div className="chips" role="group" aria-label="Groupes de chaînes">
-                  {[['', 'Toutes'], ...groups.map((g) => [g, g])].map(([id, label]) => <button key={id || 'all'} className={`chip f${id === group ? ' on' : ''}`} onClick={() => setGroup(id)}>{label}</button>)}
+              <div className="chips tv-cats" role="group" aria-label="Catégories de chaînes">
+                {[['', 'Toutes', channels.length], [FAV, '★ Favoris', favs.size], ...cats.map((k) => [k, k, counts.get(k)])].map(([id, label, n]) => (
+                  <button key={id || 'all'} className={`chip f${id === group ? ' on' : ''}`} aria-pressed={String(id === group)} onClick={() => setGroup(id)}>{label}<small className="chip-n">{n}</small></button>
+                ))}
+              </div>
+              {group === FAV ? (
+                <div className="tv-fav-tools">
+                  <a className="btn btn-ghost btn-small f" href="/api/channels/favorites.m3u" download="venus-chaines-favorites.m3u"><Icon name="download" />Télécharger mes favoris (M3U)</a>
+                  <label className="btn btn-ghost btn-small f"><Icon name="upload" />Importer une liste M3U<input type="file" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl,text/plain" hidden onChange={(e) => { importFavs(e.target.files[0]); e.target.value = ''; }} /></label>
                 </div>
               ) : null}
             </div>
             <div className="tiles" ref={grid}>
               {visible.length ? visible.map((c) => (
-                <button key={c.id} className={`tile f${selected && selected.id === c.id ? ' on' : ''}${playingId === c.id ? ' playing' : ''}`} data-id={c.id} aria-label={`${c.number ? `${c.number}, ` : ''}${c.title}, ${c.group || 'en direct'} — mettre en lecture en haut`} onClick={() => choose(c)} onKeyDown={gridKeys}>
+                <div className="tile-wrap" key={c.id}>
+                <button className={`tile f${selected && selected.id === c.id ? ' on' : ''}${playingId === c.id ? ' playing' : ''}`} data-id={c.id} aria-label={`${c.number ? `${c.number}, ` : ''}${c.title}, ${c.group || 'en direct'} — mettre en lecture en haut`} onClick={() => choose(c)} onKeyDown={gridKeys}>
                   <div className="tile-img">
                     <span className="ch-initials">{initials(c.title)}</span>
-                    <HideOnError src={pic(c)} className="tile-shot" />
+                    <ShotImg src={pic(c)} />
                     {c.poster ? <HideOnError src={img(c.poster)} className="tile-logo" /> : null}
                     {c.number ? <span className="ch-num">{c.number}</span> : null}
                   </div>
                   <div className="tile-cap"><b>{c.title}</b>{nn[c.id] && nn[c.id][0] ? <small className="tile-now">{nn[c.id][0].title}</small> : c.group ? <small>{c.group}</small> : null}</div>
                 </button>
-              )) : <p className="grid-empty">{channels.length ? 'Aucune chaîne ne correspond.' : ''}</p>}
+                <button className={`tile-fav f${favs.has(c.id) ? ' on' : ''}`} type="button" aria-pressed={String(favs.has(c.id))} aria-label={favs.has(c.id) ? `Retirer ${c.title} des favoris` : `Ajouter ${c.title} aux favoris`} title={favs.has(c.id) ? 'Retirer des favoris' : 'Ajouter aux favoris'} onClick={() => toggleFav(c)}>{favs.has(c.id) ? '★' : '☆'}</button>
+                </div>
+              )) : <p className="grid-empty">{group === FAV && !q.trim() ? 'Aucune chaîne favorite : touchez l’étoile d’une chaîne pour l’ajouter ici, ou importez une liste M3U.' : channels.length ? 'Aucune chaîne ne correspond.' : ''}</p>}
             </div>
           </div>
         </div>
       </div>
     </main>
   );
+}
+
+// Capture d'une chaîne : chargée seulement quand elle est visible ; pas encore prête (réponse vide),
+// elle est redemandée un peu plus tard (3 fois au plus)
+function ShotImg({ src }) {
+  const [tries, setTries] = useState(0);
+  const [gone, setGone] = useState(false);
+  useEffect(() => { setGone(false); setTries(0); }, [src]);
+  useEffect(() => {
+    if (!gone || tries >= 3) return undefined;
+    const t = setTimeout(() => { setTries((n) => n + 1); setGone(false); }, 15000 + tries * 15000);
+    return () => clearTimeout(t);
+  }, [gone, tries]);
+  return gone ? null : <img className="tile-shot" src={tries ? `${src}&r=${tries}` : src} alt="" loading="lazy" decoding="async" onError={() => setGone(true)} />;
 }
 
 function HideOnError({ src, className }) {
@@ -231,7 +281,7 @@ function DownNote({ down }) {
 
 // Lecteur de la page TV : pause = direct différé (le serveur garde le flux), ±10 s, retour au direct,
 // chaîne précédente / suivante, son, plein écran. Il reste visible pendant qu'on choisit une autre chaîne.
-const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, still, onPlaying }, ref) {
+const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, still, onPlaying, fav, onFav }, ref) {
   const L = shared();
   const video = useRef(null);
   const screen = useRef(null);
@@ -254,7 +304,7 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
   const stopPreview = () => {
     if (S.detach) { S.detach(); S.detach = null; }
     S.hls = null;
-    if (S.session) { fetch(S.relay ? `/api/live/${S.session}` : `/api/hls/${S.session}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${L.api.auth.token}` } }).catch(() => {}); S.session = null; }
+    if (S.session) { stopSession(S.session, !!S.relay); S.session = null; }
     S.relay = null; S.heldAt = 0;
   };
   const stopPlayback = () => { stopPreview(); S.playing = false; setPlaying(false); setPaused(false); setStillOn(true); setStatus(''); };
@@ -263,7 +313,8 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
     if (say) setStatus('Cette chaîne ne répond pas : je la reteste…');
     const r = await api(`/api/channels/${ch.id}/failed`, { method: 'POST' }).catch(() => null);
     if (S.ch !== ch) return;
-    if (r && r.hidden) { setStatus(`Chaîne hors service (${r.error || 'aucune image'}) : retirée de la liste. Elle reviendra si elle remarche.`); onDead(ch); S.playing = false; setPlaying(false); }
+    if (r && r.keep) { setStatus(`Chaîne momentanément indisponible (${r.error || 'aucune image'}). Certains programmes ne sont pas diffusés sur Internet : réessayez dans un moment.`); S.playing = false; setPlaying(false); }
+    else if (r && r.hidden) { setStatus(`Chaîne hors service (${r.error || 'aucune image'}) : retirée de la liste. Elle reviendra si elle remarche.`); onDead(ch); S.playing = false; setPlaying(false); }
     else if (r) { setStatus('La chaîne répond au test : nouvelle tentative…'); setTimeout(() => { if (S.ch === ch) start(ch, { noRelay: true }); }, 800); }
   };
   const start = async (ch, { noRelay = false } = {}) => {
@@ -274,7 +325,7 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
     try {
       const live = await L.imp('live.js');
       const info = await api(`/api/play/${ch.id}`, { method: 'POST', body: { caps: L.api.deviceCaps(), preview: true, replace: prev || undefined, noRelay } });
-      if (S.dead || S.ch !== ch || !S.playing) { fetch(info.mode === 'relay' ? `/api/live/${info.sessionId}` : `/api/hls/${info.sessionId}`, { method: 'DELETE' }).catch(() => {}); return; }
+      if (S.dead || S.ch !== ch || !S.playing) { stopSession(info.sessionId, info.mode === 'relay'); return; }
       S.session = info.sessionId; S.relay = info.mode === 'relay' ? info.sessionId : null;
       S.detach = await live.attachStream(video.current, info.url, {
         live: true, dvr: !!S.relay,
@@ -374,7 +425,10 @@ const TvPlayer = forwardRef(function TvPlayer({ selected, nn, onZap, onDead, sti
         </div>
       </div>
       <div className="pv-info">
-        <h2 className="pv-name">{selected ? (selected.number ? `${selected.number}. ${selected.title}` : selected.title) : ''}</h2>
+        <div className="pv-title-row">
+          <h2 className="pv-name">{selected ? (selected.number ? `${selected.number}. ${selected.title}` : selected.title) : ''}</h2>
+          {selected && onFav ? <button className={`btn btn-ghost btn-small pv-fav f${fav ? ' on' : ''}`} type="button" aria-pressed={String(!!fav)} onClick={onFav}>{fav ? '★ Favori' : '☆ Ajouter aux favoris'}</button> : null}
+        </div>
         <p className="pv-group">{(selected && selected.group) || 'TV en direct'}</p>
         <div className="pv-prog">
           {cur ? (
