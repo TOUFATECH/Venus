@@ -1,5 +1,5 @@
 // Service worker : l'interface s'ouvre instantanément (cache), les données restent toujours fraîches.
-const VERSION = 'venus-v11';
+const VERSION = 'venus-v12';
 // Les fichiers de l'interface sont servis sous /b/<version>/ : chaque mise à jour a ses propres adresses
 const SHELL = ['/', '/icons/favicon.svg', '/hors-ligne.html'];
 
@@ -43,7 +43,9 @@ self.addEventListener('push', (e) => {
 });
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
-  const url = (e.notification.data && e.notification.data.url) || '/';
+  // Seulement une page de Venus (« /titre/… ») : jamais un autre site, même si la notification le demandait
+  const asked = (e.notification.data && e.notification.data.url) || '/';
+  const url = /^\/(?![\/\\])/.test(asked) ? asked : '/';
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
     for (const c of list) { if ('focus' in c) { c.navigate(url).catch(() => {}); return c.focus(); } }
     return self.clients.openWindow(url);

@@ -433,7 +433,7 @@ export async function render(main, { query } = {}) {
         'Une image toutes les 10 secondes, au survol de la barre. Environ 1 Mo par heure de vidéo.'),
       h('div', { class: 'field', style: { marginTop: '8px' } }, h('label', {}, 'Changer de machine'),
         h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
-          h('a', { class: 'btn btn-small f', href: `/api/admin/export?token=${encodeURIComponent(auth.token || '')}`, download: '' }, icon('down'), 'Exporter tout (base + images)'),
+          h('a', { class: 'btn btn-small f', href: '/api/admin/export', download: '' }, icon('down'), 'Exporter tout (base + images)'),
           h('button', { class: 'btn btn-small btn-ghost f', onclick: () => importArchive() }, icon('upload'), 'Importer une archive')),
         h('small', {}, 'L’export contient profils, vus, listes, réglages et affiches choisies, jamais les vidéos. Sur la nouvelle machine : installez Venus, puis « Importer ».')),
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, h('button', { class: 'btn btn-small f', onclick: async (e) => {
@@ -718,7 +718,7 @@ export async function render(main, { query } = {}) {
       const r = await api('/api/admin/backups');
       list.replaceChildren(...(r.items.length ? r.items.slice(0, 6).map((b) => h('div', { class: 'list-row' },
         h('div', { class: 'grow' }, h('b', {}, new Date(b.at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })), h('span', {}, `${(b.size / 1048576).toFixed(1).replace('.', ',')} Mo${b.manual ? ' · manuelle' : ''}`)),
-        h('a', { class: 'btn btn-ghost btn-icon btn-mini f', href: `/api/admin/backups/${encodeURIComponent(b.name)}?token=${encodeURIComponent(auth.token || '')}`, download: b.name, title: 'Télécharger', 'aria-label': 'Télécharger' }, icon('down')),
+        h('a', { class: 'btn btn-ghost btn-icon btn-mini f', href: `/api/admin/backups/${encodeURIComponent(b.name)}`, download: b.name, title: 'Télécharger', 'aria-label': 'Télécharger' }, icon('down')),
         h('button', { class: 'btn btn-ghost btn-small f', onclick: async () => {
           if (!(await confirmSheet(`Revenir à la sauvegarde du ${new Date(b.at).toLocaleString('fr-FR')} ? Profils, vus et listes reviendront à cet état (l’état actuel est sauvegardé avant).`, 'Restaurer'))) return;
           const x = await api(`/api/admin/backups/${encodeURIComponent(b.name)}/restore`, { method: 'POST' });

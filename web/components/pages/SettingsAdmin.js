@@ -8,7 +8,7 @@ import { Icon, Avatar } from '../Icon';
 import { openSourceWizard } from './SourceWizard';
 import { fixMatch } from './Details';
 import {
-  Field, Select, Actions, Ext, Busy, Switch, SetSwitch, putSettings, Advice, PasswordMeter, confirm, token,
+  Field, Select, Actions, Ext, Busy, Switch, SetSwitch, putSettings, Advice, PasswordMeter, confirm,
   inviteSheet, editProfile, choosePoster, openDuplicates, openRename, importArchive, openTrash, openBroken,
 } from './SettingsSheets';
 
@@ -292,7 +292,7 @@ export function PlaybackBox({ a, refresh }) {
       <div className="field" style={{ marginTop: 8 }}>
         <label>Changer de machine</label>
         <Actions>
-          <a className="btn btn-small f" href={`/api/admin/export?token=${token()}`} download=""><Icon name="down" />Exporter tout (base + images)</a>
+          <a className="btn btn-small f" href="/api/admin/export" download=""><Icon name="down" />Exporter tout (base + images)</a>
           <button className="btn btn-small btn-ghost f" onClick={importArchive}><Icon name="upload" />Importer une archive</button>
         </Actions>
         <small>L’export contient profils, vus, listes, réglages et affiches choisies, jamais les vidéos. Sur la nouvelle machine : installez Venus, puis « Importer ».</small>
@@ -718,7 +718,7 @@ export function BackupBox({ a }) {
           : r.items.slice(0, 6).map((b) => (
             <div key={b.name} className="list-row">
               <div className="grow"><b>{new Date(b.at).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })}</b><span>{`${(b.size / 1048576).toFixed(1).replace('.', ',')} Mo${b.manual ? ' · manuelle' : ''}`}</span></div>
-              <a className="btn btn-ghost btn-icon btn-mini f" href={`/api/admin/backups/${encodeURIComponent(b.name)}?token=${token()}`} download={b.name} title="Télécharger" aria-label="Télécharger"><Icon name="down" /></a>
+              <a className="btn btn-ghost btn-icon btn-mini f" href={`/api/admin/backups/${encodeURIComponent(b.name)}`} download={b.name} title="Télécharger" aria-label="Télécharger"><Icon name="down" /></a>
               <button className="btn btn-ghost btn-small f" onClick={async () => {
                 if (!(await confirm(`Revenir à la sauvegarde du ${new Date(b.at).toLocaleString('fr-FR')} ? Profils, vus et listes reviendront à cet état (l’état actuel est sauvegardé avant).`, 'Restaurer'))) return;
                 const x = await api(`/api/admin/backups/${encodeURIComponent(b.name)}/restore`, { method: 'POST' });

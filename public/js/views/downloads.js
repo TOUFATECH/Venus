@@ -1,10 +1,10 @@
 // Téléchargements : vidéos préparées pour regarder sans réseau (train, avion…)
-import { api, auth } from '../api.js';
+import { api } from '../api.js';
 import { h, icon, img, sheet, toast } from '../ui.js';
 import { go } from '../core.js';
 
 const fmtSize = (b) => (!b ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
-const fileUrl = (j) => `/api/downloads/${j.id}/file?token=${encodeURIComponent(auth.token || '')}`;
+const fileUrl = (j) => `/api/downloads/${j.id}/file`;
 const STATE = { queued: 'En attente', working: 'Préparation', ready: 'Prêt', error: 'Échec' };
 
 export async function render(main) {
@@ -43,7 +43,7 @@ export function openDownload({ id, title, size, duration, season = false }) {
     } catch (e) { toast(e.message, true); }
   };
   const s = sheet(`Télécharger ${season ? 'la saison' : `« ${title} »`}`, h('div', { class: 'dl-choices' },
-    season ? null : h('a', { class: 'opt f', href: `/api/items/${id}/download?token=${encodeURIComponent(auth.token || '')}`, download: '', onclick: () => setTimeout(() => s.close(), 300) },
+    season ? null : h('a', { class: 'opt f', href: `/api/items/${id}/download`, download: '', onclick: () => setTimeout(() => s.close(), 300) },
       icon('down'), h('span', {}, h('b', {}, 'Fichier d’origine'), h('small', {}, ['Meilleure qualité', fmtSize(size)].filter(Boolean).join(' · ')))),
     h('button', { class: 'opt f', onclick: () => prep('720p') }, icon('film'), h('span', {}, h('b', {}, 'Version légère 720p'), h('small', {}, ['Idéale pour un téléphone ou une tablette', season ? '≈ 0,9 Go par heure' : est(0.9)].filter(Boolean).join(' · ')))),
     h('button', { class: 'opt f', onclick: () => prep('480p') }, icon('film'), h('span', {}, h('b', {}, 'Très légère 480p'), h('small', {}, ['Pour garder de la place', season ? '≈ 0,45 Go par heure' : est(0.45)].filter(Boolean).join(' · ')))),

@@ -668,7 +668,7 @@ export async function render(main, { id, query }) {
     video.pause();
     const at = Math.max(0, position() - 4);
     let len = 8, fmt = 'mp4';
-    const mk = () => `/api/items/${info.itemId}/clip?start=${Math.floor(at)}&duration=${len}&format=${fmt}&token=${encodeURIComponent(auth.token || '')}`;
+    const mk = () => `/api/items/${info.itemId}/clip?start=${Math.floor(at)}&duration=${len}&format=${fmt}`;
     const go2 = h('a', { class: 'btn btn-play f', href: mk(), download: '' }, icon('down'), 'Créer l’extrait');
     const upd = () => { go2.href = mk(); };
     const s = sheet('Partager un extrait', h('div', { class: 'share-box' },
@@ -1014,7 +1014,7 @@ export async function render(main, { id, query }) {
       const b = e.currentTarget; b.disabled = true; b.classList.add('busy');
       try {
         const d = await api(`/api/items/${info.itemId}/subtitles`, { method: 'POST', body: { fileId: x.fileId, lang: x.lang } });
-        const sub = { id: d.sub.id, lang: d.sub.lang, title: 'OpenSubtitles', forced: false, codec: 'subrip', burn: false, url: `/api/subs/${info.itemId}/${d.sub.id}.vtt?token=${encodeURIComponent(auth.token || '')}` };
+        const sub = { id: d.sub.id, lang: d.sub.lang, title: 'OpenSubtitles', forced: false, codec: 'subrip', burn: false, url: `/api/subs/${info.itemId}/${d.sub.id}.vtt` };
         info.subs = [...info.subs.filter((y) => y.id !== sub.id), sub];
         subId = sub.id; tracksBtn.hidden = false;
         s.close(); await loadSubtitles();

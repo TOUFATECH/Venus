@@ -83,6 +83,13 @@ function ageClause(profile, alias = 'i') {
   };
 }
 
+// Images et extraits d'un titre : réservés au profil qui a le droit de voir ce titre (âge, bibliothèques).
+// Le profil vient du jeton de l'appareil (cookie ou en-tête), comme pour la lecture.
+function requireVisible(ctx, item, msg = 'Introuvable') {
+  const p = requireProfile(ctx);
+  if (!item || !visible(p, item)) throw new HttpError(404, msg);
+  return p;
+}
 function visible(profile, item) {
   if (!item) return false;
   const r = permsOf(profile);
@@ -245,7 +252,8 @@ function elsewhereOf(auth) {
 router.get('/api/status', (ctx) => {
   if (ctx.auth && ctx.auth.via === 'header') setCookie(ctx, ctx.auth.token);
   sendJson(ctx.res, {
-    setup: isSetup(), name: getSetting('server_name', 'Venus'), version: config.version,
+    // Version : seulement pour un appareil connecté (inutile à l'écran de connexion, utile à un curieux)
+    setup: isSetup(), name: getSetting('server_name', 'Venus'), version: ctx.auth ? config.version : undefined,
     loginMessage: String(getSetting('login_message', '') || '') || null, customCss: !!getSetting('custom_css', ''),
     authenticated: !!ctx.auth, profile: publicProfile(ctx.auth?.profile),
     // Lecture en cours de ce profil sur un autre appareil (« Vous regardiez X sur la télé il y a 2 min »)
@@ -1449,10 +1457,10 @@ router.get('/api/items/:id/trickplay', (ctx) => {
   sendJson(ctx.res, { ready: !!t, trickplay: t, mode: trickplayMode() });
 });
 router.get('/api/items/:id/trickplay/:n', (ctx) => {
-  requireDevice(ctx);
   const n = Number(String(ctx.params.n).replace(/\.jpg$/, ''));
   if (!Number.isInteger(n) || n < 0 || n > 999) throw new HttpError(400, 'Planche invalide');
-  const item = get('SELECT id, mtime FROM items WHERE id = ?', Number(ctx.params.id));
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  requireVisible(ctx, item, 'Vignettes pas encore prêtes');
   const file = item && trickplaySheet(item, n);
   if (!file) throw new HttpError(404, 'Vignettes pas encore prêtes');
   sendFile(ctx.req, ctx.res, file, { cache: 'private, max-age=2592000, immutable' });
@@ -1577,20 +1585,22 @@ function playableOf(item) {
 }
 
 router.get('/api/items/:id/thumb', async (ctx) => {
-  requireDevice(ctx); // images et aperçus réservés aux appareils connectés (cookie de session)
-  const item = playableOf(get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)));
+  const asked = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  requireVisible(ctx, asked);
+  const item = playableOf(asked);
   if (!item) throw new HttpError(404, 'Introuvable');
   const file = await thumbnail(item, item.duration, { big: ctx.url.searchParams.get('size') === 'big' });
-  sendFile(ctx.req, ctx.res, file, { cache: 'public, max-age=2592000, immutable' });
+  sendFile(ctx.req, ctx.res, file, { cache: 'private, max-age=2592000, immutable' });
 });
 
 // Aperçu muet joué au survol d'une affiche
 router.get('/api/items/:id/preview', async (ctx) => {
-  requireDevice(ctx); // images et aperçus réservés aux appareils connectés (cookie de session)
-  const item = playableOf(get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)));
+  const asked = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  requireVisible(ctx, asked);
+  const item = playableOf(asked);
   if (!item) throw new HttpError(404, 'Introuvable');
   const file = await previewClip(item, { hd: ctx.url.searchParams.get('hd') === '1' });
-  sendFile(ctx.req, ctx.res, file, { cache: 'public, max-age=2592000, immutable' });
+  sendFile(ctx.req, ctx.res, file, { cache: 'private, max-age=2592000, immutable' });
 });
 
 const photoFetch = new Map();
@@ -2943,11 +2953,9 @@ router.get('/api/photos/album', (ctx) => {
 });
 const photoCache = path.join(config.dataDir, 'cache', 'photos');
 router.get('/api/photo/:id', async (ctx) => {
-  requireDevice(ctx);
   const it = get("SELECT * FROM items WHERE id = ? AND type = 'photo'", Number(ctx.params.id));
-  if (!it || !it.path || !fs.existsSync(it.path)) throw new HttpError(404, 'Photo introuvable');
-  const p = ctx.auth.profile;
-  if (p && !visible(p, it)) throw new HttpError(404, 'Photo introuvable');
+  requireVisible(ctx, it, 'Photo introuvable');
+  if (!it.path || !fs.existsSync(it.path)) throw new HttpError(404, 'Photo introuvable');
   const w = Number(ctx.url.searchParams.get('w')) || 0;
   const ext = path.extname(it.path).toLowerCase();
   // Les formats que les navigateurs ne lisent pas (HEIC, TIFF) sont toujours convertis
@@ -3147,6 +3155,13 @@ router.post('/api/admin/import', async (ctx) => {
   fs.mkdirSync(tmp, { recursive: true });
   const file = path.join(tmp, 'import.tar.gz');
   await new Promise((resolve, reject) => { let n = 0; const w = fs.createWriteStream(file); ctx.req.on('data', (c) => { n += c.length; if (n > 4 * 1024 ** 3) { w.destroy(); reject(new HttpError(413, 'Archive trop grosse (4 Go au plus)')); } }); ctx.req.pipe(w); w.on('finish', resolve); w.on('error', reject); });
+  // Contenu vérifié avant d'extraire : fichiers et dossiers ordinaires seulement (aucun lien qui mènerait hors
+  // du dossier, aucun chemin absolu ni « .. »), 20 Go décompressés au plus
+  const listing = await new Promise((resolve) => { let out = ''; const t = spawn('tar', ['-tvzf', file], { stdio: ['ignore', 'pipe', 'ignore'] }); t.stdout.on('data', (d) => { if (out.length < 5e6) out += d; }); t.on('close', (code) => resolve(code === 0 ? out : null)); });
+  const entries = (listing || '').split('\n').filter(Boolean);
+  const unsafe = !listing || entries.some((l) => !/^[-d]/.test(l) || /(^|\s)(\/|\.\.\/)|\/\.\.(\/|$)/.test(l.split(/\s+/).slice(5).join(' ')));
+  const total = entries.reduce((n, l) => n + (Number(l.split(/\s+/)[2]) || 0), 0);
+  if (unsafe || total > 20 * 1024 ** 3) { fs.rmSync(tmp, { recursive: true, force: true }); throw new HttpError(400, unsafe ? 'Archive refusée : elle contient des liens ou des chemins non autorisés' : 'Archive trop grosse une fois décompressée'); }
   const r = await new Promise((resolve) => { const t = spawn('tar', ['-xzf', file, '-C', tmp, '--no-same-owner', '--no-same-permissions'], { stdio: 'ignore' }); t.on('close', (code) => resolve(code)); });
   if (r !== 0 || !fs.existsSync(path.join(tmp, 'venus.db'))) { fs.rmSync(tmp, { recursive: true, force: true }); throw new HttpError(400, 'Archive illisible : attendu un export Venus (.tar.gz)'); }
   // Images et sous-titres : ajoutés sans écraser ; base : restaurée au prochain démarrage (comme une sauvegarde)
@@ -3164,8 +3179,10 @@ router.post('/api/admin/import', async (ctx) => {
   sendJson(ctx.res, { ok: true, restarting: supervised() });
 });
 
-// ---------------------------------------------------------------- état public (box domotique, outil de surveillance) : rien de personnel
+// ---------------------------------------------------------------- état du serveur (outil de surveillance : réponse minimale sans session)
 router.get('/api/health', (ctx) => {
+  // Sans session : seulement « en marche » (ni nom, ni version, ni disque, qui aideraient un curieux)
+  if (!ctx.auth) return sendJson(ctx.res, { ok: true });
   let disk = null;
   try { const st = fs.statfsSync(config.dataDir); disk = { free: st.bavail * st.bsize, total: st.blocks * st.bsize }; } catch { /* */ }
   sendJson(ctx.res, { ok: true, name: getSetting('server_name', 'Venus'), version: config.version, uptime: Math.round(process.uptime()), scanning: scanState.running, lastScan: scanState.lastScan || null, playing: nowPlaying().length, disk });

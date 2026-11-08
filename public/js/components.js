@@ -207,7 +207,7 @@ export function attachPreview(el, item) {
       // Clips : la vidéo elle-même se lance tout de suite (un peu après le début) ; l'extrait préparé par
       // le serveur ne sert que si le navigateur ne sait pas lire le fichier
       const direct = item.type === 'clip' && !window.__VN_PREVIEW;
-      v.src = direct ? `/api/stream/${item.id}/file?token=${encodeURIComponent(auth.token || '')}` : extractUrl;
+      v.src = direct ? `/api/stream/${item.id}/file` : extractUrl;
       if (direct) v.addEventListener('loadedmetadata', () => { if (v.duration > 60) v.currentTime = Math.min(30, v.duration * 0.2); }, { once: true });
       v.addEventListener('playing', () => {
         if (livePreview !== state) return;

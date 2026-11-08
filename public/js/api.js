@@ -127,8 +127,7 @@ export function setPreferredQuality(q) { try { localStorage.setItem('vn_quality'
 // La démo intégrée fournit son propre transport via window.__VN_STREAM.
 export function openStream(path, handlers) {
   if (window.__VN_STREAM) return window.__VN_STREAM(path, handlers);
-  const sep = path.includes('?') ? '&' : '?';
-  const es = new EventSource(`${path}${sep}token=${encodeURIComponent(auth.token || '')}`);
+  const es = new EventSource(path); // session : cookie protégé (jamais le jeton dans l'adresse)
   for (const [type, fn] of Object.entries(handlers)) {
     if (type === 'error') es.onerror = fn;
     else es.addEventListener(type, (e) => { try { fn(JSON.parse(e.data)); } catch { /* message illisible */ } });
