@@ -5,6 +5,33 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { shared } from '../lib/shared';
 import { Icon } from './Icon';
 
+// Affiche → fiche : l'affiche de la carte glisse et grandit jusqu'à sa place sur la fiche (transition de vue).
+// Un seul élément porte le nom à la fois (jamais de doublon), et on n'attend pas la fiche plus de 0,6 s.
+function morphTo(from, path) {
+  const L = shared();
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!from || !document.startViewTransition || reduce || document.documentElement.classList.contains('lite')) { L.app.go(path); return; }
+  const before = document.querySelector('.details-poster');
+  from.style.viewTransitionName = 'vt-poster';
+  let vt;
+  try {
+    vt = document.startViewTransition(() => new Promise((resolve) => {
+      from.style.viewTransitionName = '';
+      L.app.go(path);
+      const t0 = Date.now();
+      const look = () => {
+        const to = document.querySelector('.details-poster');
+        if (to && to !== before) { to.style.viewTransitionName = 'vt-poster'; resolve(); return; }
+        if (Date.now() - t0 > 600) { resolve(); return; }
+        setTimeout(look, 16);
+      };
+      look();
+    }));
+  } catch { from.style.viewTransitionName = ''; L.app.go(path); return; }
+  vt.finished.finally(() => { const to = document.querySelector('.details-poster'); if (to) to.style.viewTransitionName = ''; }).catch(() => {});
+  vt.ready.catch(() => {});
+}
+
 // Fiche préparée d'avance : ses données (cache de l'API) et sa page Next.js
 function prefetchItem(item, isEp) {
   const L = shared();
@@ -86,8 +113,9 @@ export default function Card({ item: initial, poster = false, rank = null, queue
     if (toTitle) window.__vtFrom = ref.current && ref.current.querySelector('.shot');
     // Adresse lisible donnée par le serveur (/films/inception-2010), sinon le numéro
     const fiche = item.path && !isEp ? item.path : `/titre/${item.id}`;
-    if (onTitle) return app.go(isEp ? `/titre/${item.showId}?ep=${item.id}` : fiche);
-    return resume || isEp ? app.go(components.playPath(item.id, item.next ? 0 : undefined)) : app.go(fiche);
+    const shot = ref.current && ref.current.querySelector('.shot');
+    if (onTitle) return isEp ? app.go(`/titre/${item.showId}?ep=${item.id}`) : morphTo(shot, fiche);
+    return resume || isEp ? app.go(components.playPath(item.id, item.next ? 0 : undefined)) : morphTo(shot, fiche);
   };
 
   // Vu / non vu d'un clic, sans ouvrir la fiche

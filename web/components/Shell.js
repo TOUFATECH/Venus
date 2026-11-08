@@ -1,6 +1,7 @@
 'use client';
 // Coque de Venus : rail (ordinateur, TV), barre du haut et onglets (mobile). Mise en page en flexbox ;
 // chaque thème (planète) la place différemment : rail à gauche, menu en haut, dock en bas… (html[data-layout]).
+import Palette from './Palette';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../lib/shared';
@@ -87,7 +88,7 @@ export default function Shell({ path, bare, children }) {
     prevActive.current = a ? a.getAttribute('href') : null;
   }, [path]);
 
-  if (bare || !p) return <div id="app">{children}</div>;
+  if (bare || !p) return <div id="app">{children}{p ? <Palette /> : null}</div>;
 
   const { shown, more } = menu.menuItems(p, app.hasCat);
   const RAIL_MAX = menu.RAIL_MAX;
@@ -118,11 +119,13 @@ export default function Shell({ path, bare, children }) {
         <div className="top-actions">
           {p.isAdmin ? <LiveBadge cls="icon-btn live-badge top" /> : null}
           <TimeLeft p={p} />
+          <button className="icon-btn f" aria-label="Rechercher partout (Ctrl+K)" title="Rechercher partout (Ctrl+K)" onClick={() => window.dispatchEvent(new CustomEvent('vn:palette'))}><Icon name="search" /></button>
           {p.isKids ? null : <Link href="/reglages" className="icon-btn f" aria-label="Réglages"><Icon name="gear" /></Link>}
           <button className="icon-btn f" aria-label={`Changer de profil (${p.name})`} onClick={switchProfile}><Avatar profile={p} cls="sm" /></button>
         </div>
       </header>
       {children}
+      <Palette />
       <nav className="tabbar">
         {tabItems.map((it) => <ItemLink key={it.id} it={it} path={path} />)}
         <button className="f tab-more" aria-label="Toutes les sections" data-more="1" onClick={() => app.openAll(all.filter((it) => !tabItems.includes(it)))}><Icon name="apps" /><span>Tout</span></button>

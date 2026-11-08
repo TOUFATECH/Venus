@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { loadShared, shared } from '../lib/shared';
 import Shell from './Shell';
 import Gate from './Gates';
+import { pageChanged } from '../lib/scroll';
 
 const Ctx = createContext(null);
 // Le code partagé commence à se charger dès l'arrivée de ce fichier, sans attendre le premier affichage React
@@ -135,13 +136,17 @@ function App({ children }) {
   return (
     <Ctx.Provider value={{ path, search, url, viewKey, tick, refresh }}>
       <Shell path={path} bare={bare}>
-        <PageKey key={viewKey}>{children}</PageKey>
+        <PageKey key={viewKey} url={url}>{children}</PageKey>
       </Shell>
     </Ctx.Provider>
   );
 }
 
-function PageKey({ children }) { return children; }
+// Chaque page : position retrouvée en revenant en arrière
+function PageKey({ children, url }) {
+  useEffect(() => { pageChanged(url); }, [url]);
+  return children;
+}
 
 function StartError({ error, retry }) {
   useEffect(() => { const L = shared(); if (L) L.app.hideBoot(); else { const b = document.querySelector('.boot'); if (b) b.style.display = 'none'; } }, []);
