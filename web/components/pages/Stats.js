@@ -27,6 +27,7 @@ export default function Stats() {
   const head = (
     <div className="page-head">
       <div className="head-left"><h1>Mes statistiques</h1><p className="count">{name}</p></div>
+      <button className="btn btn-small f" onClick={() => go(`/retrospective?annee=${year}`)}>{`Ma rétrospective ${year}`}</button>
       {years.length > 1 ? (
         <div className="seg" role="radiogroup" aria-label="Année">
           {years.slice(0, 5).map((y) => <button key={y} className={`seg-b f${y === year ? ' on' : ''}`} role="radio" aria-checked={String(y === year)} onClick={() => go(`/stats?annee=${y}`, { replace: true })}>{y}</button>)}

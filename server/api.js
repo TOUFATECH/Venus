@@ -688,17 +688,21 @@ router.get('/api/home', (ctx) => {
   const lastSeen = all(`SELECT COALESCE(i.show_id, i.id) AS tid, MAX(pr.updated_at) AS t FROM progress pr JOIN items i ON i.id = pr.item_id
       WHERE pr.profile_id = ? AND i.type IN ('movie','episode') GROUP BY tid ORDER BY t DESC LIMIT 3`, p.id);
   const byId = new Map(base.map((i) => [i.id, i]));
-  for (const ls of lastSeen.slice(0, 2)) {
+  const usedBecause = new Set();
+  for (const ls of lastSeen.slice(0, 3)) {
     const ref = byId.get(ls.tid);
     if (!ref) continue;
     const g = parseJson(ref.genres, []), pp = new Set(peopleOf(ref)), col = (credOf.get(ref.id) || {}).collection;
     const sim = unseen.filter((i) => i.id !== ref.id).map((i) => {
       const c = credOf.get(i.id) || {};
       const s = parseJson(i.genres, []).filter((x) => g.includes(x)).length * 2 + peopleOf(i).filter((n) => pp.has(n)).length * 3
-        + (col && c.collection && c.collection.id === col.id ? 8 : 0) + (i.type === ref.type ? 1 : 0) + (i.vote || 0) / 5;
+        + (col && c.collection && c.collection.id === col.id ? 8 : 0) + (i.type === ref.type ? 1 : 0) + (i.vote || 0) / 5
+        // Animé pour un animé, même époque
+        + ((i.category === 'anime') === (ref.category === 'anime') ? 2 : -2) + (i.year && ref.year && Math.abs(i.year - ref.year) <= 5 ? 1 : 0);
       return { i, s };
-    }).filter((x) => x.s >= 4).sort((a, b) => b.s - a.s).slice(0, 18);
-    if (sim.length >= 3) rows.push({ id: `because:${ref.id}`, title: `Parce que vous avez regardé ${ref.title}`, items: sim.map((x) => C(x.i)) });
+    }).filter((x) => x.s >= 4 && !usedBecause.has(x.i.id)).sort((a, b) => b.s - a.s).slice(0, 18);
+    // Une rangée par titre regardé (3 au plus), sans répéter les mêmes propositions
+    if (sim.length >= 2) { sim.forEach((x) => usedBecause.add(x.i.id)); rows.push({ id: `because:${ref.id}`, title: `Parce que vous avez regardé ${ref.title}`, items: sim.map((x) => C(x.i)) }); }
   }
   // L'acteur ou la réalisatrice qu'on regarde le plus, s'il reste des titres à découvrir
   const fav = new Map();
@@ -1161,6 +1165,15 @@ router.get('/api/stats', (ctx) => {
     // Répartition par genre de contenu, jour de la semaine (lundi = 0) et heure de la journée
     byKind: ['movie', 'show', 'anime', 'clip'].map((k) => ({ kind: k, hours: Math.round(sum(yr.filter((r) => (k === 'movie' ? r.type === 'movie' : k === 'clip' ? r.type === 'clip' : r.type === 'episode' && ((r.show_cat === 'anime') === (k === 'anime'))))) / 36) / 100 })),
     weekdays: Array.from({ length: 7 }, (_, w) => ({ w, hours: Math.round(sum(yr.filter((r) => (new Date(r.updated_at).getDay() + 6) % 7 === w)) / 36) / 100 })),
+    // Rétrospective : l'animé le plus regardé, et les séries / animés terminés cette année (tous leurs épisodes vus)
+    completedShows: (() => {
+      const ids = [...shows.keys()];
+      if (!ids.length) return [];
+      const tot = new Map(all(`SELECT show_id AS s, COUNT(*) AS n FROM items WHERE type = 'episode' AND season_num > 0 AND show_id IN (${ids.map(() => '?').join(',')}) GROUP BY show_id`, ...ids).map((r) => [r.s, r.n]));
+      const seen = new Map(all(`SELECT i.show_id AS s, COUNT(*) AS n, MAX(pr.updated_at) AS last FROM progress pr JOIN items i ON i.id = pr.item_id WHERE pr.profile_id = ? AND pr.watched = 1 AND i.type = 'episode' AND i.season_num > 0 GROUP BY i.show_id`, p.id).map((r) => [r.s, r]));
+      return ids.filter((id) => tot.get(id) && seen.get(id) && seen.get(id).n >= tot.get(id) && new Date(seen.get(id).last).getFullYear() === year)
+        .map((id) => { const x = shows.get(id); return { id, title: x.title, poster: x.poster, anime: x.anime, episodes: tot.get(id) }; });
+    })(),
     hoursOfDay: Array.from({ length: 24 }, (_, hr) => ({ h: hr, hours: Math.round(sum(yr.filter((r) => new Date(r.updated_at).getHours() === hr)) / 36) / 100 })),
     // Calendrier : minutes regardées chaque jour de l'année (temps réel de lecture, sinon reconstitué)
     calendar: (() => {

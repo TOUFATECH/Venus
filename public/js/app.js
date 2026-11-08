@@ -22,7 +22,7 @@ const VIEWS = {
   player: () => import('./views/player.js'), request: () => import('./views/request.js'), nouveautes: () => import('./views/nouveautes.js'),
   search: () => import('./views/search.js'), details: () => import('./views/details.js'), settings: () => import('./views/settings.js'),
   dashboard: () => import('./views/dashboard.js'), quality: () => import('./views/quality.js'), security: () => import('./views/security.js'),
-  server: () => import('./views/server.js'), stats: () => import('./views/stats.js'), vote: () => import('./views/vote.js'),
+  server: () => import('./views/server.js'), stats: () => import('./views/stats.js'), recap: () => import('./views/stats.js'), vote: () => import('./views/vote.js'),
   downloads: () => import('./views/downloads.js'), collections: () => import('./views/collections.js'), music: () => import('./views/music.js'),
   photos: () => import('./views/photos.js'), books: () => import('./views/books.js'), cesoir: () => import('./views/cesoir.js'),
   seance: () => import('./views/seance.js'), telecommande: () => import('./views/telecommande.js'),

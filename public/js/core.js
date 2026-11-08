@@ -4,6 +4,7 @@
 import { api, auth, clearApiCache, prefs } from './api.js';
 import { h, icon, toast, logoMark, sheet, overlayHost } from './ui.js';
 import { initNav } from './nav.js';
+import './gamepad.js';
 import { labelOf, iconOf, sections } from './menu.js';
 import { applyTheme, planet } from './themes.js';
 applyTheme();
@@ -53,6 +54,7 @@ export const ROUTES = [
   [/^\/securite$/, 'security'],
   [/^\/serveur$/, 'server'],
   [/^\/stats$/, 'stats'],
+  [/^\/retrospective$/, 'recap'],
   [/^\/vote$/, 'vote'],
   [/^\/telechargements$/, 'downloads'],
   [/^\/collections$/, 'collections', { view: 'all' }],

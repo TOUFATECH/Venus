@@ -17,6 +17,7 @@ const LAZY = {
   'remote-screen.js': () => import('../partage/js/remote-screen.js'),
   'views/search.js': () => import('../partage/js/views/search.js'),
   'views/player.js': () => import('../partage/js/views/player.js'),
+  'voice.js': () => import('../partage/js/voice.js'),
 };
 const imp = (file) => {
   const load = LAZY[file];
