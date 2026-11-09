@@ -2,6 +2,9 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { channelCat, neverHide, CATEGORIES } from './channel-cats.js';
+import { checkSource, importSource } from './import-media.js';
+import { remoteStatus, startRemote } from './remote-access.js';
+import { startLink, pollLink, unlink, linkState, importTrakt, traktWatched, setTraktPush, traktSecret } from './trakt-sync.js';
 import { execFile, spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
@@ -1350,6 +1353,7 @@ router.post('/api/items/:id/watched', async (ctx) => {
   if (!item) throw new HttpError(404, 'Introuvable');
   const targets = item.type === 'show' ? all("SELECT id, duration FROM items WHERE type='episode' AND show_id=?", item.id)
     : item.type === 'season' ? all("SELECT id, duration FROM items WHERE type='episode' AND parent_id=?", item.id) : [item];
+  traktWatched(p.id, targets.map((t) => t.id), b.watched !== false);
   tx(() => {
     for (const t of targets) {
       if (b.watched === false) run('DELETE FROM progress WHERE profile_id=? AND item_id=?', p.id, t.id);
@@ -1368,6 +1372,8 @@ router.post('/api/progress', async (ctx) => {
   const dur = Math.max(0, Number(b.duration) || 0);
   if (!id) throw new HttpError(400, 'itemId requis');
   const watched = dur > 0 && pos / dur > 0.92 ? 1 : 0;
+  // Vu jusqu'au bout pour la première fois : envoyé à Trakt (si le profil a relié son compte)
+  if (watched) { const was = get('SELECT watched FROM progress WHERE profile_id = ? AND item_id = ?', p.id, id); if (!was || !was.watched) traktWatched(p.id, [id], true); }
   // Temps réellement regardé (pour la limite quotidienne) : l'écart depuis la dernière position, borné à 2 min par envoi
   try { const prev = get('SELECT position, updated_at FROM progress WHERE profile_id = ? AND item_id = ?', p.id, id); if (prev && pos > prev.position) addWatchTime(p.id, Math.min(120, pos - prev.position)); } catch (e) { console.warn('[progression] temps d’écran :', e.message); }
   run(`INSERT INTO progress(profile_id, item_id, position, duration, watched, updated_at, device) VALUES(?, ?, ?, ?, ?, ?, ?)
@@ -1566,6 +1572,54 @@ router.put('/api/admin/iptv-org', async (ctx) => {
   scanAll();
   sendJson(ctx.res, { ok: true, lists });
 });
+
+// ---------------------------------------------------------------- import depuis Plex / Jellyfin / Emby
+router.post('/api/admin/import/check', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 4096);
+  const kind = b.kind === 'plex' ? 'plex' : 'jellyfin';
+  try { sendJson(ctx.res, await checkSource(kind, b.url, String(b.token || '').trim())); } catch (e) { throw new HttpError(400, `${kind === 'plex' ? 'Plex' : 'Jellyfin'} : ${e.message}`); }
+});
+router.post('/api/admin/import/run', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 4096);
+  const kind = b.kind === 'plex' ? 'plex' : 'jellyfin';
+  const prof = get('SELECT id, name FROM profiles WHERE id = ?', Number(b.profileId));
+  if (!prof) throw new HttpError(400, 'Choisissez le profil Venus qui reçoit l’historique');
+  if (kind !== 'plex' && !b.user) throw new HttpError(400, 'Choisissez l’utilisateur Jellyfin');
+  try {
+    const r = await importSource(kind, b.url, String(b.token || '').trim(), String(b.user || ''), prof.id);
+    logActivity('admin', `Import ${kind === 'plex' ? 'Plex' : 'Jellyfin'} → ${prof.name} : ${r.watched} vus, ${r.resumed} en cours`);
+    sendJson(ctx.res, r);
+  } catch (e) { throw new HttpError(400, `${kind === 'plex' ? 'Plex' : 'Jellyfin'} : ${e.message}`); }
+});
+
+// ---------------------------------------------------------------- accès hors de la maison (tunnel Cloudflare, Tailscale)
+router.get('/api/admin/remote', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, remoteStatus(ctx.req)); });
+router.post('/api/admin/remote', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 4096);
+  const mode = ['quick', 'token', 'off'].includes(b.mode) ? b.mode : 'off';
+  try {
+    const r = await startRemote(mode, b.token);
+    logActivity('admin', mode === 'off' ? 'Accès hors de la maison coupé' : `Accès hors de la maison activé (${mode === 'quick' ? 'lien rapide' : 'tunnel Cloudflare'})`);
+    sendJson(ctx.res, { ...r, ...remoteStatus(ctx.req), running: r.running, url: r.url, connected: r.connected, error: r.error });
+  } catch (e) { throw new HttpError(400, e.message); }
+});
+
+// ---------------------------------------------------------------- synchronisation Trakt (par profil)
+router.get('/api/trakt', (ctx) => { const p = requireProfile(ctx); sendJson(ctx.res, linkState(p.id)); });
+router.post('/api/trakt/link', async (ctx) => { const p = requireProfile(ctx); try { sendJson(ctx.res, await startLink(p.id)); } catch (e) { throw new HttpError(400, e.message); } });
+router.post('/api/trakt/link/poll', async (ctx) => {
+  const p = requireProfile(ctx);
+  const r = await pollLink(p.id);
+  // Compte relié : l'historique Trakt arrive dans Venus en arrière-plan
+  if (r.linked) importTrakt(p.id).catch((e) => console.warn('[trakt] premier import :', e.message));
+  sendJson(ctx.res, r);
+});
+router.del('/api/trakt/link', async (ctx) => { const p = requireProfile(ctx); await unlink(p.id); sendJson(ctx.res, { ok: true }); });
+router.post('/api/trakt/import', async (ctx) => { const p = requireProfile(ctx); try { sendJson(ctx.res, await importTrakt(p.id)); } catch (e) { throw new HttpError(400, e.message); } });
+router.put('/api/trakt', async (ctx) => { const p = requireProfile(ctx); const b = await readBody(ctx.req); setTraktPush(p.id, b.push !== false); sendJson(ctx.res, linkState(p.id)); });
 
 // ---------------------------------------------------------------- chaînes favorites (par profil)
 const channelFavs = (pid) => { const v = getSetting(`tv_favs:${pid}`, []); return Array.isArray(v) ? v.map(Number).filter(Boolean) : []; };
@@ -2009,7 +2063,7 @@ router.get('/api/admin', (ctx) => {
       serverName: getSetting('server_name', 'Venus'), tmdbConfigured: !!tmdbKey(), hwaccel: getSetting('hwaccel', 'auto'),
       maxSessions: getSetting('max_sessions', 6), scanInterval: getSetting('scan_interval', 60), detectSegments: String(getSetting('detect_segments', '1')) !== '0', trickplay: trickplayMode(),
       kidsAllowUnrated: getSetting('kids_allow_unrated', false), metadataLang: getSetting('metadata_lang', 'fr-FR'),
-      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', tgMedia: String(getSetting('tg_media', '1')) !== '0', tgDownloads: String(getSetting('tg_downloads', '1')) !== '0', notifyEpisodes: String(getSetting('notify_episodes', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', backupCopyDir: getSetting('backup_copy_dir', ''), postersFree: getSetting('posters_free', '1') !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
+      omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), traktSecretConfigured: !!traktSecret(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', tgMedia: String(getSetting('tg_media', '1')) !== '0', tgDownloads: String(getSetting('tg_downloads', '1')) !== '0', notifyEpisodes: String(getSetting('notify_episodes', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', backupCopyDir: getSetting('backup_copy_dir', ''), postersFree: getSetting('posters_free', '1') !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
   });
@@ -2413,7 +2467,8 @@ router.post('/api/admin/items/:id/reset', async (ctx) => {
 
 const SETTINGS_SCHEMA = {
   tmdbKey: V.str({ max: 400 }), omdbKey: V.str({ max: 100 }), simklClientId: V.str({ max: 200 }),
-  traktClientId: V.str({ max: 200, pattern: /^[\w-]*$/, label: 'Client ID Trakt' }), posterSource: V.oneOf(['tmdb', 'trakt']),
+  traktClientId: V.str({ max: 200, pattern: /^[\w-]*$/, label: 'Client ID Trakt' }),
+  traktClientSecret: V.str({ max: 200, pattern: /^[\w-]*$/, label: 'Client Secret Trakt' }), posterSource: V.oneOf(['tmdb', 'trakt']),
   ntfyServer: V.url({ label: 'Serveur ntfy' }), ntfyTopic: V.str({ max: 100, pattern: /^[\w-]+$/, label: 'Sujet ntfy' }),
   discordWebhook: V.url({ https: true, label: 'Webhook Discord' }), telegramToken: V.str({ max: 100, pattern: /^\d+:[\w-]+$/, label: 'Jeton Telegram' }),
   telegramChat: V.str({ max: 40, pattern: /^-?\d+$|^@\w+$/, label: 'Discussion Telegram' }), publicUrl: V.url({ label: 'Adresse publique' }),
@@ -2484,6 +2539,7 @@ router.put('/api/admin/settings', async (ctx) => {
     if (id) { try { await testTrakt(id); } catch (e) { throw new HttpError(400, e.message === 'Identifiant client Trakt refusé' ? e.message : `Trakt injoignable (${e.message})`); } }
     setSetting('trakt_client_id', id); ratingsChanged = true;
   }
+  if (b.traktClientSecret !== undefined) setSetting('trakt_client_secret', String(b.traktClientSecret || '').trim());
   if (b.posterSource) { setSetting('poster_source', b.posterSource); ratingsChanged = true; }
   if (b.seerrUrl !== undefined || b.seerrKey !== undefined) {
     const conf = { url: String(b.seerrUrl ?? seerrConf().url).trim().replace(/\/+$/, ''), key: String(b.seerrKey ?? seerrConf().key).trim() };

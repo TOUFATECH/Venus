@@ -169,6 +169,10 @@ async function main() {
   // Alertes de sécurité envoyées à l'administrateur (notifications, ntfy, Discord, Telegram)
   onSecurityAlert((m) => { notify({ title: m.title, body: m.body, url: m.url, tag: 'securite' }, { adminOnly: true }); emitHook('security.alert', { title: m.title, message: m.body }); });
   startSecurityAudit();
+  // Accès hors de la maison (tunnel) : relancé s'il était activé
+  import('./remote-access.js').then((m) => m.resumeRemote());
+  // Trakt : historique de chaque profil relié importé toutes les 6 h (vérifié toutes les 30 min)
+  import('./trakt-sync.js').then((m) => { const t = () => m.traktSyncAll().catch((e) => console.warn('[trakt]', e.message)); setTimeout(t, 60000).unref(); setInterval(t, 30 * 60000).unref(); });
   // Rappels de programmes TV : notification 5 minutes avant le début
   setInterval(() => sendTvReminders().catch((e) => console.warn('[rappels]', e.message)), 30000).unref();
   // Partages réseau (NAS, PC) : montés avant la première analyse

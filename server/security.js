@@ -34,6 +34,12 @@ export function isPrivateIp(ip) {
 const trustProxy = (remote) => isLoopback(remote) || (process.env.TRUST_PROXY === '1' && isPrivateIp(remote));
 export function clientIp(req) {
   const remote = strip(req.socket.remoteAddress);
+  // Tunnel Cloudflare (cloudflared sur la même machine) : l'adresse réelle du visiteur est dans CF-Connecting-IP ;
+  // sans elle, la demande vient quand même d'Internet : jamais traitée comme « à la maison »
+  if (trustProxy(remote) && req.headers['cf-ray']) {
+    const cf = strip(String(req.headers['cf-connecting-ip'] || '').trim());
+    return net.isIP(cf) ? cf : 'internet';
+  }
   const xff = req.headers['x-forwarded-for'];
   if (xff && trustProxy(remote)) {
     const list = String(xff).split(',').map((x) => strip(x.trim())).filter((x) => net.isIP(x));
@@ -43,7 +49,10 @@ export function clientIp(req) {
 }
 export function isSecure(req) {
   if (req.socket.encrypted) return true;
-  return trustProxy(strip(req.socket.remoteAddress)) && String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+  if (!trustProxy(strip(req.socket.remoteAddress))) return false;
+  // Tunnel Cloudflare : le visiteur est en HTTPS jusqu'à Cloudflare (en-tête CF-Visitor)
+  if (/"scheme"\s*:\s*"https"/.test(String(req.headers['cf-visitor'] || ''))) return true;
+  return String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 }
 
 // ------------------------------------------------------------------ journal de sécurité

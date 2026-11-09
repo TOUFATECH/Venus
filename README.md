@@ -158,7 +158,8 @@ cd /opt/Venus && git pull && bash update.sh
 - **Séries** : saisons, « Reprendre », épisode suivant avec compte à rebours, « Toujours là ? », minuterie de sommeil.
 - **Sous-titres** SRT / ASS / VTT / PGS, intégrés ou externes, recherche en ligne (OpenSubtitles), décalage réglable.
 - **Mini-lecteur** qui continue pendant la navigation, mode **Ambiance** (la lumière du film déborde autour de l'image), partage d'un extrait (GIF ou MP4).
-- **TV en direct** (IPTV M3U / Xtream) avec guide des programmes, numéros de chaîne et **enregistrements**.
+- **TV en direct** (IPTV M3U / Xtream) avec guide des programmes, numéros de chaîne et **enregistrements** ; chaînes rangées par catégorie, favoris (export / import M3U), zapping instantané, **multi-écran** (2 ou 4 chaînes), rappels de programmes, chaînes du monde (iptv-org) sans doublon.
+- **Confort** : mode nuit (son égalisé), image dans l'image, sous-titres à votre goût (gardés par profil), écran de veille sur la TV.
 - **Musique** (paroles synchronisées), **photos** (diaporama, HEIC), **livres** (EPUB, PDF, BD, livres audio).
 
 ### Trouver
@@ -168,12 +169,14 @@ cd /opt/Venus && git pull && bash update.sh
 - **Recherche instantanée** en français : « un film drôle de moins d'1 h 30 des années 90 », acteurs, genres, et titres pas encore dans Venus.
 - **Fiches complètes** : distribution et équipe **avec leurs photos**, filmographie de chaque acteur, notes des sites (IMDb, Rotten Tomatoes, Metacritic, AniList…), emplacement du fichier sur le NAS.
 - **Survol** : contour lumineux animé de l'affiche, bande-annonce, fiche préchargée pour s'ouvrir instantanément.
+- **Ctrl+K** partout : titres, chaînes, personnes, pages et réglages ; **commande vocale** en français (« Mets One Piece », « Chaîne 12 ») ; **manette de jeu**.
 
 ### Toute la maison
 
 - **Comptes** : l'administrateur crée des **comptes locaux** ou **invite par e-mail** (lien personnel, valable 7 jours).
 - **Profils** avec code PIN, langues préférées, **profils enfants** (menu simplifié, temps d'écran, horaires, âge).
 - **Séance à plusieurs** (chacun chez soi, en même temps), **vote en famille** pour choisir le film, **téléphone-télécommande** par QR code.
+- **Trakt** : chaque profil relie son compte (code à saisir sur trakt.tv) ; ce qui est vu part dans Trakt, l'historique Trakt arrive dans Venus. **Rétrospective de l'année** par profil.
 - **Notifications** : Web Push, ntfy, Discord, et **Telegram avec une fiche par nouveauté** (affiche, résumé, date de sortie, « en cours de téléchargement » puis « disponible »).
 
 ### Administrer
@@ -181,6 +184,7 @@ cd /opt/Venus && git pull && bash update.sh
 - **Tableau de bord** : lectures en cours, appareils, tâches planifiées, journal, **santé du NAS**, performances (GPU, mémoire, copies optimisées).
 - **Seerr, Radarr, Sonarr** : envies, séries suivies, nouvelles saisons demandées automatiquement.
 - **Médiathèque** : doublons, renommage façon Plex / Jellyfin, corbeille 7 jours, qualité (4K, HDR, débits), sauvegardes nocturnes restaurables.
+- **Import depuis Plex ou Jellyfin** : épisodes vus et lectures en cours, retrouvés par fichier ou identifiants.
 - **API et webhooks** (`X-Api-Key`, Home Assistant, n8n…), CSS personnalisé, message d'accueil.
 
 ---
@@ -315,7 +319,9 @@ Les noms « sales » (`Film.2019.MULTI.VFF.1080p.BluRay.x264-GRP.mkv`) sont nett
 
 ## Accès depuis l'extérieur (HTTPS)
 
-Le plus simple est [Caddy](https://caddyserver.com), qui obtient le certificat tout seul :
+Le plus simple : **Réglages → Accès hors de la maison**. Venus propose un **lien rapide** (tunnel Cloudflare gratuit, sans compte ni port à ouvrir), **votre propre tunnel Cloudflare** (adresse fixe, avec le jeton du tableau de bord) ou **Tailscale** (réseau privé : vos appareils comme à la maison). Les visites par tunnel sont toujours traitées comme venant d'Internet.
+
+Autre possibilité, [Caddy](https://caddyserver.com), qui obtient le certificat tout seul :
 
 ```
 cinema.mondomaine.fr {
@@ -323,7 +329,7 @@ cinema.mondomaine.fr {
 }
 ```
 
-Sans Caddy, Venus sert aussi HTTPS sur le port **8920** avec un certificat auto-signé (`TLS_CERT` et `TLS_KEY` pour un vrai certificat). Les connexions venant d'Internet en `http://` sont redirigées vers HTTPS ; le réseau local reste accessible en `http://`.
+Venus sert aussi HTTPS (en **HTTP/2**) sur le port **8920** avec un certificat auto-signé (`TLS_CERT` et `TLS_KEY` pour un vrai certificat). Les connexions venant d'Internet en `http://` sont redirigées vers HTTPS ; le réseau local reste accessible en `http://`.
 
 ## Variables d'environnement
 

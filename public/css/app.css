@@ -3699,3 +3699,33 @@ html[data-tone="light"] .details.amb { background: radial-gradient(120% 70% at 3
 .pal-help kbd { font: 700 .72rem var(--sans); border: 1px solid var(--edge); border-radius: 5px; padding: 1px 5px; margin: 0 2px; }
 @media (max-width: 760px) { .palette-wrap { padding-top: 6vh; } .pal-esc, .pal-help { display: none; } }
 @media (prefers-reduced-motion: reduce) { .palette-wrap, .palette, .pal-mic.on, .pal-wave i { animation: none; } }
+
+/* ---- Trakt, import, accès distant ---- */
+.trakt-code { display: flex; flex-direction: column; gap: 8px; }
+.trakt-code-v { font: 900 2.2rem/1 var(--sans); letter-spacing: .18em; font-variant-numeric: tabular-nums; padding: 12px 18px; border-radius: 12px; background: var(--raise); align-self: flex-start; user-select: all; }
+.remote-state { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: var(--raise); margin: 6px 0 4px; }
+.remote-state span { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; word-break: break-all; }
+.import-res { margin-top: 10px; } .import-res ul { margin: 6px 0 0 18px; color: var(--haze); }
+.steps-list { margin: 6px 0 0 20px; display: flex; flex-direction: column; gap: 8px; }
+.steps-list code, .box code { font-size: .86em; padding: 1px 6px; border-radius: 6px; background: var(--raise); word-break: break-all; }
+pre.log { max-height: 220px; overflow: auto; font-size: .78rem; padding: 10px; border-radius: 10px; background: var(--raise); white-space: pre-wrap; word-break: break-all; }
+
+/* ---- Écran de veille ---- */
+.saver { position: fixed; inset: 0; z-index: 9600; background: #000; color: #fff; cursor: none; animation: saverin 1.2s ease; overflow: hidden; }
+.saver.out { opacity: 0; transition: opacity .35s ease; }
+@keyframes saverin { from { opacity: 0; } to { opacity: 1; } }
+.saver-pics, .saver-pic { position: absolute; inset: 0; }
+.saver-pic { background-size: cover; background-position: center; opacity: 0; transform: scale(1.04); transition: opacity 2s ease; }
+.saver-pic.in { opacity: 1; animation: saverkb 11s linear forwards; }
+.saver-pic.alt.in { animation-name: saverkb2; }
+@keyframes saverkb { from { transform: scale(1.04) translate(0, 0); } to { transform: scale(1.14) translate(-2%, -1.5%); } }
+@keyframes saverkb2 { from { transform: scale(1.14) translate(-1.5%, 1%); } to { transform: scale(1.04) translate(1%, 0); } }
+.saver-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgb(0 0 0 / .45), transparent 30%, transparent 60%, rgb(0 0 0 / .7)); }
+.saver-clock { position: absolute; top: 5vh; right: 5vw; text-align: right; text-shadow: 0 2px 20px rgb(0 0 0 / .6); }
+.saver-clock b { display: block; font: 800 clamp(3rem, 8vw, 6rem)/1 var(--sans); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.saver-clock span { font-size: clamp(1rem, 2vw, 1.4rem); text-transform: capitalize; opacity: .9; }
+.saver-cap { position: absolute; left: 5vw; bottom: 7vh; max-width: 60vw; opacity: 0; transform: translateY(10px); transition: opacity .8s ease, transform .8s ease; text-shadow: 0 2px 20px rgb(0 0 0 / .7); }
+.saver-cap.in { opacity: 1; transform: none; }
+.saver-cap b { display: block; font: 900 clamp(1.6rem, 4vw, 3rem)/1.05 var(--sans); font-stretch: var(--wide); }
+.saver-cap span { opacity: .85; font-size: clamp(.95rem, 1.6vw, 1.2rem); }
+@media (prefers-reduced-motion: reduce) { .saver-pic.in { animation: none; } .saver { animation: none; } }
