@@ -2,14 +2,14 @@
 
 # Étape 1 : interface allégée (JS et CSS minifiés). esbuild ne sert qu'ici ; s'il n'est pas téléchargeable,
 # l'interface est gardée telle quelle et la construction continue.
-FROM node:24-bookworm-slim AS web
+FROM node:24-trixie-slim AS web
 WORKDIR /w
 COPY public ./public
 COPY scripts/minify.mjs ./minify.mjs
 RUN (npm install --no-save --no-audit --no-fund --loglevel=error esbuild@0.24.2 && node minify.mjs public) || echo "Interface non minifiée (esbuild indisponible)"
 
 # Étape 2 : interface Next.js, construite en serveur autonome léger (~20 Mo, sans dossier node_modules complet)
-FROM node:24-bookworm-slim AS next
+FROM node:24-trixie-slim AS next
 WORKDIR /w/web
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY web/package.json web/package-lock.json ./
@@ -24,7 +24,7 @@ RUN npm run build \
 
 # Étape 3 : whisper.cpp (sous-titres générés par reconnaissance vocale, hors ligne). Si la compilation échoue,
 # l'image se construit quand même, sans cette fonction.
-FROM debian:bookworm-slim AS whisper
+FROM debian:trixie-slim AS whisper
 RUN set -eux; apt-get update; apt-get install -y --no-install-recommends ca-certificates git cmake g++ make; rm -rf /var/lib/apt/lists/*; \
     mkdir -p /out; \
     ( git clone --depth 1 --branch v1.7.5 https://github.com/ggml-org/whisper.cpp /w && cd /w \
@@ -32,7 +32,7 @@ RUN set -eux; apt-get update; apt-get install -y --no-install-recommends ca-cert
       && cmake --build build -j"$(nproc)" --target whisper-cli \
       && cp build/bin/whisper-cli /out/ ) || echo "whisper.cpp non compilé"
 
-FROM node:24-bookworm-slim
+FROM node:24-trixie-slim
 
 ARG TARGETARCH
 ARG FFMPEG_PKG=jellyfin-ffmpeg7
