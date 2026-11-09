@@ -8,8 +8,10 @@
 //   stream   menu en haut, transparent puis plein au défilement, affiches aux coins nets (plateforme de streaming)
 //   tv       grands onglets centrés en haut, gros textes et contours, pensé pour la télévision
 //   glass    Verre : surfaces givrées (inchangé)
-export const LAYOUTS = { rail: 'Menu d’icônes à gauche', side: 'Grand menu à gauche', dock: 'Barre flottante en bas', stream: 'Menu en haut, style streaming', tv: 'Grands onglets, pour la télé', glass: 'Surfaces givrées' };
-const LAYOUT_OF = { venus: 'rail', pluton: 'rail', uranus: 'rail', mercure: 'side', saturne: 'side', jupiter: 'side', terre: 'dock', neptune: 'dock', mars: 'stream', cinema: 'stream', noir: 'tv', blanc: 'dock', tv: 'tv', verre: 'glass' };
+//   lagon    Lagon et Océan : barre haute avec recherche, bloc « Ce soir » à l'accueil, infos sous les affiches,
+//            coins très arrondis, polices Outfit et Inter (Océan ajoute des vagues animées)
+export const LAYOUTS = { rail: 'Menu d’icônes à gauche', side: 'Grand menu à gauche', dock: 'Barre flottante en bas', stream: 'Menu en haut, style streaming', tv: 'Grands onglets, pour la télé', glass: 'Surfaces givrées', lagon: 'Barre en haut et bloc « Ce soir »' };
+const LAYOUT_OF = { venus: 'rail', pluton: 'rail', uranus: 'rail', mercure: 'side', saturne: 'side', jupiter: 'side', terre: 'dock', neptune: 'dock', mars: 'stream', cinema: 'stream', noir: 'tv', blanc: 'dock', tv: 'tv', verre: 'glass', lagon: 'lagon', ocean: 'lagon', sable: 'lagon' };
 export const layoutOf = (id) => LAYOUT_OF[id] || 'rail';
 export const PLANETS = {
   mercure: { night: '#101113', deep: '#18191d', raise: '#24262b', glow: '#b9b0a4', name: 'Mercure', accent: '#dccdb9', accent2: '#9c8c7e', dir: 'diag',
@@ -45,6 +47,14 @@ export const PLANETS = {
   // « Verre » (inspiré de Free My TV) : surfaces en verre dépoli, clair le jour et sombre la nuit, au rythme du soleil
   verre: { night: '#0b0b0d', deep: '#1c1c1e', raise: '#2c2c2e', glow: '#8fb8ff', name: 'Verre', brand: 'Venus', accent: '#2997ff', accent2: '#5e5ce6', dir: 'diag', glass: true,
     bands: ['#ffffff', '#e4ecf7', '#f6f8fc', '#cddcf0', '#eef3fa', '#b9cbe6', '#e2eaf6', '#9fb4d6'], surface: 'clouds', fx: '#ffffff' },
+  // Lagon : abysse, turquoise et corail (une planète-atoll) ; Océan : bleu profond et vagues qui roulent, même mise en page.
+  // Le jour (thème automatique), ces deux planètes passent sur Sable, leur version claire.
+  lagon: { night: '#06161b', deep: '#0c2229', raise: '#123039', glow: '#2fd4c3', name: 'Lagon', accent: '#2fd4c3', accent2: '#ff8a6a', dir: 'flat', day: 'sable', paper: '#eef3ee', haze: '#9fb3b4', dim: '#5f7577',
+    bands: ['#a6f3ea', '#2fd4c3', '#7fe8dc', '#17a89a', '#5fdfd0', '#0f8a7f', '#3fcdbd', '#0a5b55'], surface: 'atoll', fx: '#ff8a6a' },
+  ocean: { night: '#03101f', deep: '#082038', raise: '#0e2f4f', glow: '#4fa3ff', name: 'Océan', accent: '#4fa3ff', accent2: '#ffb36b', dir: 'flat', day: 'sable', waves: true, paper: '#eaf2fb', haze: '#9db4cc', dim: '#5d7590',
+    bands: ['#a8d4ff', '#4fa3ff', '#7ebfff', '#2d7fe0', '#5facff', '#1f63bd', '#3b8df0', '#143f85'], surface: 'waves', fx: '#eaf6ff' },
+  sable: { night: '#f4efe6', deep: '#ffffff', raise: '#e6ddcf', glow: '#0f9f93', name: 'Sable', accent: '#0f9f93', accent2: '#e0634a', dir: 'flat', light: true, paper: '#10272c', haze: '#51666a', dim: '#7d8f92',
+    bands: ['#fff7ea', '#f4efe6', '#fff3e0', '#e6ddcf', '#fbf1e2', '#d8cbb8', '#efe4d3', '#c9b89f'], surface: 'atoll', fx: '#0f9f93' },
 };
 export const DEFAULT_PLANET = 'venus';
 const KEY = 'vn_theme';
@@ -78,8 +88,9 @@ export function currentPlanet() {
   const base = chosenPlanet();
   if (PLANETS[base].glass || PLANETS[base].light) return base; // Verre gère déjà jour / nuit ; Blanc reste clair
   const m = autoTheme();
-  if (m === 'system') return systemLight() ? 'blanc' : base;
-  if (m === 'sun') return sunState().state === 'day' ? 'blanc' : base;
+  const day = PLANETS[base].day || 'blanc'; // version claire : Sable pour Lagon et Océan, Blanc sinon
+  if (m === 'system') return systemLight() ? day : base;
+  if (m === 'sun') return sunState().state === 'day' ? day : base;
   return base;
 }
 export const planet = () => PLANETS[currentPlanet()];
@@ -96,6 +107,10 @@ function surface(t) {
     case 'spot': return twice((o) => `<ellipse cx="${o + 22}" cy="40" rx="6" ry="3.4" fill="${fx}" fill-opacity=".85"/><ellipse cx="${o + 22}" cy="40" rx="3" ry="1.5" fill="#fff" fill-opacity=".18"/><path d="M${o} 28c10-1 20 1 30 0s14 1 18 0" stroke="#fff" stroke-opacity=".25" stroke-width="1.3" fill="none"/>`);
     case 'stripes': return twice((o) => `<path d="M${o} 27c12-1 24 1 36 0s8 1 12 0" stroke="${fx}" stroke-opacity=".45" stroke-width="1.6" fill="none"/><path d="M${o} 43c10 1 22-1 32 0s12 0 16 0" stroke="#000" stroke-opacity=".1" stroke-width="2" fill="none"/><ellipse cx="${o + 30}" cy="35" rx="5" ry="1.4" fill="${fx}" fill-opacity=".35"/>`);
     case 'heart': return twice((o) => `<path d="M${o + 22} 46c-6-4-10-8-10-12a5 5 0 0 1 10-1 5 5 0 0 1 10 1c0 4-4 8-10 12z" fill="${fx}" fill-opacity=".8"/><circle cx="${o + 40}" cy="25" r="2.4" fill="#000" fill-opacity=".12"/>`);
+    // Atolls : anneaux de récif clairs autour d'un lagon plus pâle, une île corail
+    case 'atoll': return twice((o) => `<ellipse cx="${o + 14}" cy="26" rx="7" ry="4.2" fill="#fff" fill-opacity=".55"/><ellipse cx="${o + 14}" cy="26" rx="4.2" ry="2.3" fill="${t.bands[0]}" fill-opacity=".9"/><ellipse cx="${o + 36}" cy="41" rx="8.5" ry="5" fill="#fff" fill-opacity=".5"/><ellipse cx="${o + 36}" cy="41" rx="5.2" ry="2.8" fill="${t.bands[0]}" fill-opacity=".9"/><path d="M${o + 30} 22c2-1.5 4.5-1 5.5 1s-1 3.5-3 3-3.5-2.5-2.5-4z" fill="${fx}" fill-opacity=".9"/>`);
+    // Vagues : crêtes d'écume qui roulent sur toute la planète
+    case 'waves': return twice((o) => `<path d="M${o} 22c4-3 8-3 12 0s8 3 12 0 8-3 12 0 8 3 12 0" stroke="${fx}" stroke-opacity=".75" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M${o} 34c4-3 8-3 12 0s8 3 12 0 8-3 12 0 8 3 12 0" stroke="${fx}" stroke-opacity=".5" stroke-width="1.8" fill="none" stroke-linecap="round"/><path d="M${o} 46c4-3 8-3 12 0s8 3 12 0 8-3 12 0 8 3 12 0" stroke="${fx}" stroke-opacity=".65" stroke-width="2" fill="none" stroke-linecap="round"/>`);
     default: return '';
   }
 }
@@ -108,6 +123,9 @@ function weather(t) {
     case 'continents': return twice((o) => `<path d="M${o + 2} 19c6-2 11 1 16-1" stroke="#fff" stroke-opacity=".85" stroke-width="2.4" stroke-linecap="round" fill="none"/><path d="M${o + 20} 33c5-1 9 1 13 0" stroke="#fff" stroke-opacity=".7" stroke-width="2" stroke-linecap="round" fill="none"/><path d="M${o + 6} 52c7-2 12 0 17-1" stroke="#fff" stroke-opacity=".6" stroke-width="1.8" stroke-linecap="round" fill="none"/>`);
     case 'clouds': return twice((o) => `<path d="M${o} 33c10-3 20 2 30-1s14-1 18 1" stroke="${c}" stroke-opacity=".45" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M${o + 10} 18c8-2 14 1 20 0" stroke="${c}" stroke-opacity=".35" stroke-width="2" stroke-linecap="round" fill="none"/>`);
     case 'spot': case 'stripes': return twice((o) => `<path d="M${o} 22c12 1 24-1 36 0s8 0 12 0" stroke="${c}" stroke-opacity=".28" stroke-width="1.4" fill="none"/><path d="M${o + 4} 48c10-1 20 1 30 0" stroke="${c}" stroke-opacity=".22" stroke-width="1.2" fill="none"/>`);
+    // Lagon : nuages fins ; Océan : seconde houle, plus rapide, en sens inverse de la première
+    case 'atoll': return twice((o) => `<path d="M${o + 2} 16c8-2 16 1 24-1s12-1 18 1" stroke="#fff" stroke-opacity=".5" stroke-width="2.2" stroke-linecap="round" fill="none"/><path d="M${o + 8} 50c8-2 14 1 22 0" stroke="#fff" stroke-opacity=".35" stroke-width="1.8" stroke-linecap="round" fill="none"/>`);
+    case 'waves': return twice((o) => `<path d="M${o} 28c3 2 6 2 9 0s6-2 9 0 6 2 9 0 6-2 9 0 6 2 9 0" stroke="#fff" stroke-opacity=".35" stroke-width="1.4" fill="none" stroke-linecap="round"/><path d="M${o} 40c3 2 6 2 9 0s6-2 9 0 6 2 9 0 6-2 9 0 6 2 9 0" stroke="#fff" stroke-opacity=".3" stroke-width="1.2" fill="none" stroke-linecap="round"/>`);
     default: return '';
   }
 }
@@ -167,17 +185,17 @@ export function themeVars(id, glassState = glassNow().state) {
     return {
       '--night': t.night, '--deep': t.deep, '--raise': t.raise,
       '--night-rgb': trip(t.night), '--deep-rgb': trip(t.deep), '--raise-rgb': trip(t.raise),
-      '--sulfur': t.accent, '--sulfur-rgb': trip(t.accent), '--dawn': t.accent2, '--glow': t.glow, '--tint': '#7a7a7a',
-      '--paper': '#111111', '--haze': '#4f4f4f', '--dim': '#7d7d7d', '--edge': 'rgb(0 0 0 / .12)',
+      '--sulfur': t.accent, '--sulfur-rgb': trip(t.accent), '--dawn': t.accent2, '--glow': t.glow, '--tint': t.paper ? t.accent : '#7a7a7a',
+      '--paper': t.paper || '#111111', '--haze': t.haze || '#4f4f4f', '--dim': t.dim || '#7d7d7d', '--edge': 'rgb(0 0 0 / .12)',
       '--planet-bands': `linear-gradient(172deg, ${t.bands.map((c, i) => `${c} ${Math.round((i / (t.bands.length - 1)) * 100)}%`).join(', ')})`,
     };
   }
-  const paper = t.mono ? '#f2f2f2' : mix('#eceae4', t.accent, 0.08);
+  const paper = t.paper || (t.mono ? '#f2f2f2' : mix('#eceae4', t.accent, 0.08));
   return {
     '--night': t.night, '--deep': t.deep, '--raise': t.raise,
     '--night-rgb': trip(t.night), '--deep-rgb': trip(t.deep), '--raise-rgb': trip(t.raise),
     '--sulfur': t.accent, '--sulfur-rgb': trip(t.accent), '--dawn': t.accent2, '--glow': t.glow, '--tint': t.accent,
-    '--paper': paper, '--haze': t.mono ? '#a8a8a8' : mix('#a6a9b0', t.accent, 0.16), '--dim': t.mono ? '#727272' : mix('#6e727c', t.accent, 0.14),
+    '--paper': paper, '--haze': t.haze || (t.mono ? '#a8a8a8' : mix('#a6a9b0', t.accent, 0.16)), '--dim': t.dim || (t.mono ? '#727272' : mix('#6e727c', t.accent, 0.14)),
     '--edge': `rgb(${trip(mix('#eceae4', t.accent, 0.4))} / .12)`,
     '--planet-bands': `linear-gradient(${t.dir === 'flat' ? 180 : 172}deg, ${t.bands.map((c, i) => `${c} ${Math.round((i / (t.bands.length - 1)) * 100)}%`).join(', ')})`,
   };
@@ -301,6 +319,9 @@ export function applyTheme(id = currentPlanet()) {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', vars['--night']);
   document.documentElement.dataset.planet = id;
+  // Océan : vagues animées en bas de l'écran (feuille CSS ; coupées si l'appareil demande moins d'animations)
+  if (t.waves) document.documentElement.dataset.waves = '1'; else delete document.documentElement.dataset.waves;
+  try { if (t.waves) localStorage.setItem('vn_waves', '1'); else localStorage.removeItem('vn_waves'); } catch { /* */ }
   // Mise en page propre à la planète (menu, cartes, boutons…) ; retenue pour le prochain démarrage
   const layout = layoutOf(id);
   document.documentElement.dataset.layout = layout;

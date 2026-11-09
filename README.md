@@ -22,7 +22,7 @@ Un serveur multimédia léger et auto-hébergé, avec une interface de salle de 
 | | |
 |---|---|
 | **Léger** | Serveur Node.js **sans aucune dépendance** (base `node:sqlite` intégrée) + ffmpeg. Démarre en quelques secondes. |
-| **Interface moderne** | **Next.js 16**, mise en page en **flexbox**, 14 thèmes « planètes » et 6 dispositions (rail, menu en haut, dock, TV, verre…). |
+| **Interface moderne** | **Next.js 16**, mise en page en **flexbox**, 17 thèmes « planètes » et 7 dispositions (rail, menu en haut, dock, TV, verre…). **Lagon** et **Océan** réorganisent tout le site : barre en haut avec recherche, bloc « Ce soir » (reprendre, sorties du jour, qui regarde, direct), infos sous les affiches, polices Outfit et Inter ; Océan ajoute des vagues qui roulent, et les deux passent sur **Sable** (clair) le jour. |
 | **Partout** | Linux, Windows, Mac, Docker, Proxmox. Navigateur, téléphone (application installable), TV (télécommande), Chromecast, AirPlay. |
 | **Lecture intelligente** | Lecture directe quand l'appareil sait lire le fichier, simple « remux » sinon, conversion matérielle (NVIDIA, Intel, AMD, Apple, Raspberry Pi) en dernier recours. |
 | **Toute la maison** | Profils avec code PIN, comptes locaux ou **invitations par e-mail**, profils enfants (temps d'écran, âge), séances à plusieurs. |
