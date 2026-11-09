@@ -580,14 +580,24 @@ router.get('/api/categories', (ctx) => {
 const HERO_MIX = [['anime', 5], ['movie', 3], ['show', 2]];
 // Ordre d'affichage : mélangé pour que les animés ne se suivent pas tous
 const HERO_ORDER = ['anime', 'movie', 'anime', 'show', 'anime', 'movie', 'anime', 'show', 'anime', 'movie'];
+// Seules les sorties de l'année (film sorti, ou dernier épisode diffusé, il y a moins de douze mois) et présentes sur
+// le NAS ; s'il y en a moins de trois, les arrivées les plus récentes complètent pour que l'accueil ne soit pas vide.
 function newHero(base) {
   const lastEp = new Map(all("SELECT show_id, MAX(added_at) AS at FROM items WHERE type = 'episode' GROUP BY show_id").map((r) => [r.show_id, r.at]));
+  const lastAir = new Map(all("SELECT show_id, MAX(release_date) AS d FROM items WHERE type = 'episode' AND release_date IS NOT NULL GROUP BY show_id").map((r) => [r.show_id, r.d]));
   const freshness = (i) => Math.max(i.added_at || 0, (i.type === 'show' && lastEp.get(i.id)) || 0);
+  const dateOf = (i) => (i.type === 'show' && lastAir.get(i.id)) || i.release_date || (i.year ? `${i.year}-07-01` : '');
+  const cutoff = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
+  const recent = (i) => dateOf(i) >= cutoff;
   const kind = (i) => (i.type === 'movie' ? 'movie' : i.type === 'show' ? (i.category === 'anime' ? 'anime' : 'show') : null);
   const pools = { anime: [], movie: [], show: [] };
-  for (const i of base) { const k = kind(i); if (k && !i.version_of) pools[k].push(i); }
-  // Le plus récent d'abord ; à égalité, celui qui a une image de fond
-  for (const k of Object.keys(pools)) pools[k].sort((a, b) => freshness(b) - freshness(a) || (!!b.backdrop - !!a.backdrop));
+  const old = { anime: [], movie: [], show: [] };
+  for (const i of base) { const k = kind(i); if (k && !i.version_of) (recent(i) ? pools : old)[k].push(i); }
+  // La sortie la plus récente d'abord ; à égalité, la dernière arrivée, puis celle qui a une image de fond
+  for (const k of Object.keys(pools)) pools[k].sort((a, b) => dateOf(b).localeCompare(dateOf(a)) || freshness(b) - freshness(a) || (!!b.backdrop - !!a.backdrop));
+  if (Object.values(pools).reduce((n, l) => n + l.length, 0) < 3) {
+    for (const k of Object.keys(old)) { old[k].sort((a, b) => freshness(b) - freshness(a)); pools[k].push(...old[k]); }
+  }
   const tagOf = (i, k) => (k === 'movie' ? 'Nouveau film' : k === 'anime' ? (lastEp.get(i.id) > (i.added_at || 0) ? 'Nouvel épisode' : 'Nouvel animé') : (lastEp.get(i.id) > (i.added_at || 0) ? 'Nouvel épisode' : 'Nouvelle série'));
   const want = Object.fromEntries(HERO_MIX);
   const taken = Object.fromEntries(HERO_MIX.map(([k, n]) => [k, pools[k].slice(0, n)]));
@@ -803,14 +813,12 @@ router.get('/api/home', (ctx) => {
   // À la une : les nouveautés qui défilent en haut de l'accueil — 3 films, 5 animés et 2 séries, les plus
   // récemment arrivés (pour une série ou un animé : son dernier épisode ajouté). Une catégorie qui en a moins
   // laisse sa place aux autres.
-  let hero = newHero(base).map((x) => ({ ...C(x.item), heroTag: x.tag }));
-  if (heroResume) {
-    const r = heroResume.item;
-    hero = [r, ...hero.filter((x) => x.id !== r.id && x.id !== r.showId)];
-  }
+  // L'affiche à la une ne montre que des sorties ; la lecture en cours a sa rangée « Reprendre » et le bloc « Ce soir »
+  const hero = newHero(base).map((x) => ({ ...C(x.item), heroTag: x.tag }));
+  const resume = heroResume ? heroResume.item : null;
   // Administrateur sans clé TMDB : l'accueil le lui rappelle (sans elle, pas d'affiches ni de résumés)
   const noPosters = !!p.is_admin && !tmdbKey() && base.some((i) => i.type === 'movie' || i.type === 'show') && !base.some((i) => i.poster);
-  sendJson(ctx.res, { hero, rows, empty: base.length === 0 && !channels.length, scanning: scanState.running, noPosters });
+  sendJson(ctx.res, { hero, resume, rows, empty: base.length === 0 && !channels.length, scanning: scanState.running, noPosters });
 });
 
 // Bibliothèque d'une source, avec l'état vu / non vu pour le profil (filtres et tris côté interface)

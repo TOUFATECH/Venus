@@ -16,14 +16,14 @@ function preloaded(path) {
   return p;
 }
 
-async function raw(path, { method = 'GET', body, signal } = {}) {
+async function raw(path, { method = 'GET', body, signal, keepalive = false } = {}) {
   const pre = method === 'GET' && body === undefined && !signal ? preloaded(path) : null;
   const headers = {};
   if (auth.token) headers.Authorization = `Bearer ${auth.token}`;
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res;
   try {
-    res = (pre && await pre.catch(() => null)) || await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal, credentials: 'same-origin' });
+    res = (pre && await pre.catch(() => null)) || await fetch(path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined, signal, credentials: 'same-origin', keepalive });
   } catch (e) {
     if (e.name === 'AbortError') throw e;
     throw new ApiError(0, 'Serveur injoignable. Vérifiez que Venus tourne et que vous êtes sur le même réseau.');
@@ -149,11 +149,19 @@ export const prefs = {
   },
 };
 let pending = {}, pendT = null;
+const flushProfilePrefs = (keepalive = false) => {
+  clearTimeout(pendT); pendT = null;
+  if (!Object.keys(pending).length) return;
+  const body = pending; pending = {};
+  raw('/api/profile/ui-prefs', { method: 'PUT', body, keepalive }).catch(() => {});
+};
 export function saveProfilePrefs(obj) {
   Object.assign(pending, obj);
   clearTimeout(pendT);
-  pendT = setTimeout(() => { const body = pending; pending = {}; raw('/api/profile/ui-prefs', { method: 'PUT', body }).catch(() => {}); }, 500);
+  pendT = setTimeout(flushProfilePrefs, 500);
 }
+// La page se ferme ou se recharge : ce qui attendait part tout de suite (sinon l'ancien réglage reviendrait du profil)
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => flushProfilePrefs(true));
 /** Profil choisi : ses réglages (sous-titres, mode nuit…) remplacent ceux de l'appareil */
 export function applyProfilePrefs(p) {
   const u = (p && p.uiPrefs) || {};
@@ -167,13 +175,11 @@ export function hoverMode() {
   return prefs.get('hoverPreview') === false ? 'off' : 'trailer';
 }
 // Bandes-annonces dans l'affiche d'accueil : activées par défaut sur ordinateur et TV, pas sur téléphone (données mobiles)
-// Bande-annonce en fond des fiches : même réglage par défaut que l'accueil
+// Bande-annonce en fond des fiches (l'accueil, lui, ne montre plus que des affiches)
 export function detailsTrailers() {
   const v = prefs.get('detailsTrailer');
-  return v != null ? !!v : heroTrailers();
-}
-export function heroTrailers() {
-  const v = prefs.get('heroTrailer');
   if (v != null) return !!v;
   return !(document.documentElement.classList.contains('touch') && innerWidth < 900);
 }
+// L'affiche à la une ne lance plus jamais de vidéo : une affiche et un nom, qui changent toutes les 3 secondes
+export const heroTrailers = () => false;

@@ -102,8 +102,33 @@ test('accueil : les nouveautés défilent à la une (3 films, 5 animés, 2 séri
   expect(series).toBeLessThanOrEqual(2);
   expect(home.hero.filter((h) => h.category === 'anime').length).toBeLessThanOrEqual(5);
   await ouvrir(page, '/');
-  await expect(page.locator('.hero-kicker').first()).toHaveText(/Nouveau film|Nouvel animé|Nouvelle série|Nouvel épisode|Reprendre|À suivre/);
+  await expect(page.locator('.hero-kicker').first()).toHaveText(/Nouveau film|Nouvel animé|Nouvelle série|Nouvel épisode/);
   await expect(page.locator('.hero-dots button, .hero-dots [role=tab]')).toHaveCount(home.hero.length);
+  // Plus aucune vidéo dans l'affiche à la une : une affiche et un nom, qui changent toutes les 3 secondes
+  await expect(page.locator('.hero video, .hero iframe')).toHaveCount(0);
+  const first = await page.locator('.hero-title').first().textContent();
+  await page.mouse.move(5, 600); // la souris hors du héros, sinon le défilement attend
+  await expect.poll(() => page.locator('.hero-title').first().textContent(), { timeout: 6000 }).not.toBe(first);
+  await page.waitForTimeout(3500);
+  await expect(page.locator('.hero video, .hero iframe')).toHaveCount(0);
+  expect(await page.locator('.hero-poster img').count()).toBeLessThanOrEqual(1); // la carte-affiche n'existe que si le titre a une affiche
+  expect(home.resume === null || typeof home.resume === 'object').toBe(true);
+  // Côté serveur : seules les sorties de moins d'un an passent à la une dès qu'il y en a trois ; les autres complètent sinon
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
+  const soon = new Date(Date.now() - 20 * 864e5).toISOString().slice(0, 10);
+  db.prepare("UPDATE items SET release_date = ? WHERE type = 'movie' AND title IN ('Nuit Blanche', 'Orage')").run(soon);
+  db.prepare("UPDATE items SET release_date = ? WHERE type = 'episode' AND show_id IN (SELECT id FROM items WHERE title = 'Brigade Nord')").run(soon);
+  db.close();
+  const fresh = await api('/api/home');
+  const titles = fresh.hero.map((h) => h.title);
+  expect(titles).toContain('Nuit Blanche');
+  expect(titles).toContain('Orage');
+  expect(titles).toContain('Brigade Nord');
+  expect(titles).not.toContain('Le Grand Voyage');
+  const db2 = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
+  db2.prepare("UPDATE items SET release_date = NULL WHERE release_date = ?").run(soon);
+  db2.close();
 });
 
 test('séries : chaque saison a sa propre affiche', async ({ page, api }) => {
