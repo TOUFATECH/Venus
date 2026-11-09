@@ -9,7 +9,7 @@ import { useVenus } from '../Venus';
 import { Icon, Avatar } from '../Icon';
 import { Field, Select, Actions, Switch, editProfile } from './SettingsSheets';
 import {
-  LibraryBox, PerfBoxes, UpdateBox, PlaybackBox, ProfilesBox, DevicesBox, RatingsBox, ArrBox, SeerrBox,
+  LibraryBox, PerfBoxes, UpdateBox, PlaybackBox, ProfilesBox, DevicesBox, RatingsBox, ArrBox, SeerrBox, BooksAppBox, MediaMetaBox,
   NotifyBox, MetadataBox, PostersBox, BackupBox, SubtitlesBox, ServerBox,
 } from './SettingsAdmin';
 
@@ -79,7 +79,7 @@ export default function Settings() {
     tv: () => <LibraryBox {...ctx} iptv />,
     infos: () => <><MetadataBox {...ctx} /><PostersBox {...ctx} /></>,
     notes: () => <RatingsBox {...ctx} />,
-    demandes: () => <><ArrBox /><SeerrBox {...ctx} /></>,
+    demandes: () => <><ArrBox /><BooksAppBox /><MediaMetaBox /><SeerrBox {...ctx} /></>,
     famille: () => <><ProfilesBox {...ctx} /><DevicesBox {...ctx} /></>,
     alertes: () => <NotifyBox {...ctx} />,
     lecture: () => <><PlaybackBox {...ctx} /><SubtitlesBox {...ctx} /><TranscribeBox /><LightsBox /></>,

@@ -32,6 +32,8 @@ import { schedulePending } from './segments.js';
 import { schedulePendingScenes, scenesPending, cleanRecaps } from './scenes.js';
 import { schedulePendingDialogues, dialogueStats } from './dialogues.js';
 import { reapSessions } from './lights.js';
+import { runMusicMeta } from './music-meta.js';
+import { runBooksMeta } from './books-meta.js';
 import { refreshRatings } from './ratings.js';
 import { startWatch } from './watch.js';
 import { startBackups } from './backup.js';
@@ -219,6 +221,8 @@ async function main() {
   defineTask('dialogues', { label: 'Index des dialogues', description: 'Les sous-titres de chaque film et épisode sont indexés : on retrouve un titre et une scène à partir d’une réplique.', when: 'Toutes les heures', every: 3600e3, firstDelay: 4 * 60e3, run: async () => { const n = schedulePendingDialogues(); const st = dialogueStats(); return `${n} titre(s) à indexer · ${st.items} titre(s), ${st.lines} réplique(s) dans l’index`; } });
   defineTask('scenes', { label: 'Analyse des scènes', description: 'Changements de plan et volume sonore de chaque épisode et film : pour le « Précédemment dans… » automatique, les meilleurs moments à partager et les chapitres générés.', when: 'Toutes les heures', every: 3600e3, firstDelay: 8 * 60e3, run: async () => { const n = schedulePendingScenes(); const c = cleanRecaps(); return `${n} vidéo(s) en file d’attente${scenesPending() ? ` (${scenesPending()} en cours)` : ''}${c ? `, ${c} résumé(s) nettoyé(s)` : ''}`; } });
   setInterval(reapSessions, 60e3).unref();
+  defineTask('music-meta', { label: 'Musique : albums et discographies', description: 'Reconnaît les albums (MusicBrainz, pochettes Cover Art Archive, empreintes AcoustID pour les fichiers sans étiquette) et met à jour la discographie de chaque artiste pour « À venir ».', when: 'Toutes les 6 h', every: 6 * 3600e3, firstDelay: 90e3, run: () => runMusicMeta() });
+  defineTask('books-meta', { label: 'Livres : fiches et bibliographies', description: 'Complète les fiches des livres (Open Library) et la bibliographie de chaque auteur, avec les parutions annoncées (Google Books) pour « À venir ».', when: 'Toutes les 6 h', every: 6 * 3600e3, firstDelay: 120e3, run: () => runBooksMeta() });
   defineTask('segments', { label: 'Repérage des génériques', description: 'Analyse audio des épisodes pour « Passer l’intro » et « Passer le générique ».', when: 'Toutes les 30 minutes', run: async () => { schedulePending(); return 'Épisodes en attente ajoutés à la file'; } });
   defineTask('backup', { label: 'Sauvegarde de la base', description: 'Profils, vus, listes, envies et réglages (10 dernières gardées).', when: 'Chaque nuit', run: async () => { makeBackup(); return 'Sauvegarde faite'; } });
   defineTask('guide', { label: 'Guide des épisodes', description: 'Sans clé TMDB : liste des épisodes diffusés (TVmaze), pour montrer les épisodes et saisons manquants.', when: 'Chaque jour', every: 86400e3, firstDelay: 240000, run: refreshGuides });

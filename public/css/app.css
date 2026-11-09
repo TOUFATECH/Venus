@@ -3097,7 +3097,7 @@ html[data-planet="tv"] .page-head h1 { letter-spacing: -.01em; }
 .req-note { margin: 4px 0 12px; }
 .req-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 14px; }
 .req-card { display: grid; grid-template-columns: 104px 1fr; gap: 14px; padding: 12px; border-radius: 14px; background: var(--deep); border: 1px solid var(--edge); }
-.req-pic { aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; background: var(--raise); }
+.req-pic { position: relative; aspect-ratio: 2 / 3; border-radius: 8px; overflow: hidden; background: var(--raise); }
 .req-pic img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .req-ph { display: grid; place-items: center; width: 100%; height: 100%; font-size: 2rem; font-weight: 800; color: var(--haze); background: var(--raise); }
 .req-ph.small { width: 46px; height: 68px; font-size: 1.1rem; border-radius: 6px; flex: none; }
@@ -3801,3 +3801,35 @@ pre.log { max-height: 220px; overflow: auto; font-size: .78rem; padding: 10px; b
 .switch-grid .switch { padding: 6px 0; }
 .world-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .world-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; border-radius: 8px; background: var(--raise); font-family: ui-monospace, monospace; font-size: 13px; }
+
+/* Musique et livres : À venir, discographies, bibliographies, demandes */
+.m-tile.static { cursor: default; }
+.m-tile.static .btn, .m-tile.static .asked { margin-top: 8px; align-self: flex-start; }
+.m-cover.absent img, .m-cover.absent .ph { filter: grayscale(.7) brightness(.72); }
+.m-cover .up-badge { left: 6px; top: 6px; font-size: .66rem; padding: 2px 6px; }
+.m-cover.book { aspect-ratio: 2 / 3; }
+.asked { display: inline-flex; align-items: center; gap: 6px; color: var(--ok); font-size: .82rem; font-weight: 700; }
+.asked svg { width: 16px; height: 16px; }
+.disco-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 10px; }
+.disco-head .section-title { margin: 0; }
+.disco-follow { margin: 6px 0 14px; }
+.m-upcoming .section-title small { margin-left: 8px; font-weight: 600; }
+.album-meta { margin: -8px 0 16px; }
+.album-meta .missing summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; cursor: pointer; color: var(--sulfur); font-weight: 700; list-style: none; }
+.album-meta .missing summary svg { width: 18px; height: 18px; }
+.album-meta .missing ol { margin: 10px 0 0; padding-left: 26px; color: var(--dim); columns: 2; column-gap: 32px; }
+.album-meta .missing li small { color: var(--haze); }
+.album-meta .muted svg { width: 16px; height: 16px; vertical-align: -3px; margin-right: 4px; color: var(--ok); }
+.m-head.author .m-cover.big.round { width: 180px; }
+.author-bio { max-width: 70ch; color: var(--dim); line-height: 1.5; margin: 10px 0 0; display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+.req-sheet { display: flex; flex-direction: column; gap: 12px; }
+.req-list { display: flex; flex-direction: column; gap: 8px; }
+.req-row { display: grid; grid-template-columns: 56px 1fr auto; gap: 12px; align-items: center; padding: 8px 10px; border-radius: 12px; background: var(--raise); }
+.req-row .req-pic { width: 56px; aspect-ratio: 1; }
+.req-row .req-pic.book { aspect-ratio: 2 / 3; }
+.req-pic.round, .req-pic.round img { border-radius: 50%; }
+.req-txt { min-width: 0; }
+.req-txt b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.req-txt small { color: var(--dim); display: block; }
+.req-txt p { margin: 4px 0 0; color: var(--haze); font-size: .82rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (max-width: 600px) { .album-meta .missing ol { columns: 1; } .req-row { grid-template-columns: 48px 1fr; } .req-row .btn, .req-row .asked { grid-column: 2; justify-self: start; } }

@@ -27,7 +27,10 @@ import { findTrailerFor } from './youtube.js';
 import { guideFor, ensureGuide } from './guide.js';
 import { checkChannels, checkState, channelHealth, FREE_TV, IPTV_WORLD, IPTV_WORLD_DEFAULT, iptvWorldLists, iptvListName, reportChannelFailure } from './free-tv.js';
 import { canRelay, startRelay, stopRelay, holdRelay, servePlaylistRelay, serveSegmentRelay } from './relay.js';
-import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue } from './arr.js';
+import { arrConf, arrOn, saveArr, arrOptions, arrSearch, arrAdd, arrQueue, lidarrSearch, lidarrAddAlbum, lidarrAddArtist, lidarrKnown } from './arr.js';
+import { runMusicMeta, musicMetaStatus, albumMeta, discographyOf, musicUpcoming, nasAlbums } from './music-meta.js';
+import { runBooksMeta, booksMetaStatus, bibliographyOf, booksUpcoming } from './books-meta.js';
+import { booksConf, booksOn, saveBooksApp, booksTest, booksSearch, booksAdd } from './books-arr.js';
 import { filmography, personPhoto } from './credits-free.js';
 import { checkNas, nasHealth } from './nas-health.js';
 import { sendSample } from './telegram-media.js';
@@ -569,6 +572,8 @@ router.get('/api/categories', (ctx) => {
   const lib = libraryClause(p);
   rows.push(...all(`SELECT CASE WHEN i.type = 'track' THEN 'music' WHEN i.type = 'photo' THEN 'photo' ELSE 'book' END AS cat, COUNT(*) AS n FROM items i
     WHERE (i.type = 'photo' OR i.type IN ('book','audiobook') OR (i.type = 'track' AND i.category = 'music')) AND ${lib.sql} GROUP BY cat`, ...lib.args));
+  // Une bibliothèque Musique ou Livres encore vide : la section reste visible (avec son message d'accueil)
+  for (const l of all("SELECT DISTINCT type FROM libraries WHERE type IN ('music','books')")) rows.push({ cat: `${l.type === 'books' ? 'book' : 'music'}_lib`, n: 1 });
   sendJson(ctx.res, Object.fromEntries(rows.map((r) => [r.cat, r.n])));
 });
 
@@ -1264,7 +1269,7 @@ router.post('/api/items/:id/mylist', (ctx) => {
 // Profils enfants exclus ; les autres peuvent demander. L'administrateur règle les services.
 const arrUser = (ctx) => { const p = requireProfile(ctx); if (p.max_age != null && p.max_age <= 12) throw new HttpError(403, 'Pas de demandes pour un profil enfant'); return p; };
 const arrLimiter = new Map();
-router.get('/api/arr/status', (ctx) => { arrUser(ctx); sendJson(ctx.res, { radarr: arrOn('radarr'), sonarr: arrOn('sonarr') }); });
+router.get('/api/arr/status', (ctx) => { arrUser(ctx); sendJson(ctx.res, { radarr: arrOn('radarr'), sonarr: arrOn('sonarr'), lidarr: arrOn('lidarr'), books: booksOn(), booksApp: booksConf().app }); });
 router.get('/api/arr/search', async (ctx) => {
   arrUser(ctx);
   const kind = ['movie', 'show', 'anime'].includes(ctx.url.searchParams.get('kind')) ? ctx.url.searchParams.get('kind') : 'movie';
@@ -1316,14 +1321,14 @@ router.post('/api/admin/perf/nas', async (ctx) => { requireAdmin(ctx); sendJson(
 
 router.get('/api/admin/arr', (ctx) => {
   requireAdmin(ctx);
-  const view = (app) => { const c = arrConf(app); return { url: c.url, keySet: !!c.key, profile: c.profile, root: c.root, animeRoot: c.animeRoot, on: arrOn(app) }; };
-  sendJson(ctx.res, { radarr: view('radarr'), sonarr: view('sonarr') });
+  const view = (app) => { const c = arrConf(app); return { url: c.url, keySet: !!c.key, profile: c.profile, metaProfile: c.metaProfile, root: c.root, animeRoot: c.animeRoot, on: arrOn(app) }; };
+  sendJson(ctx.res, { radarr: view('radarr'), sonarr: view('sonarr'), lidarr: view('lidarr'), books: booksConf() });
 });
 router.put('/api/admin/arr/:app', async (ctx) => {
   requireAdmin(ctx);
   const app = ctx.params.app;
-  if (!['radarr', 'sonarr'].includes(app)) throw new HttpError(404, 'Service inconnu');
-  const b = validate(await readBody(ctx.req, 4096), { url: V.str({ max: 300 }), key: V.str({ max: 100 }), profile: V.int({ min: 0, max: 1e6 }), root: V.str({ max: 500 }), animeRoot: V.str({ max: 500 }), remove: V.bool() });
+  if (!['radarr', 'sonarr', 'lidarr'].includes(app)) throw new HttpError(404, 'Service inconnu');
+  const b = validate(await readBody(ctx.req, 4096), { url: V.str({ max: 300 }), key: V.str({ max: 100 }), profile: V.int({ min: 0, max: 1e6 }), metaProfile: V.int({ min: 0, max: 1e6 }), root: V.str({ max: 500 }), animeRoot: V.str({ max: 500 }), remove: V.bool() });
   if (b.remove) { saveArr(app, { url: '', key: null, profile: 0, root: '', animeRoot: '' }); sendJson(ctx.res, { ok: true }); return; }
   // Test avant d'enregistrer : adresse et clé doivent répondre
   const cur = arrConf(app);
@@ -1334,8 +1339,56 @@ router.put('/api/admin/arr/:app', async (ctx) => {
 });
 router.get('/api/admin/arr/:app/options', async (ctx) => {
   requireAdmin(ctx);
-  if (!['radarr', 'sonarr'].includes(ctx.params.app)) throw new HttpError(404, 'Service inconnu');
+  if (!['radarr', 'sonarr', 'lidarr'].includes(ctx.params.app)) throw new HttpError(404, 'Service inconnu');
   sendJson(ctx.res, await arrOptions(ctx.params.app));
+});
+// Application de livres (LazyLibrarian ou Bookshelf) : réglages, test, recherche, demande
+router.put('/api/admin/books-app', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 4096), { app: V.str({ max: 20 }), url: V.str({ max: 300 }), key: V.str({ max: 100 }), profile: V.int({ min: 0, max: 1e6 }), metaProfile: V.int({ min: 0, max: 1e6 }), root: V.str({ max: 500 }), remove: V.bool() });
+  if (b.remove) { saveBooksApp({ remove: true }); sendJson(ctx.res, { ok: true }); return; }
+  if (b.url !== undefined || b.key) {
+    const cur = booksConf();
+    const app = b.app || cur.app;
+    const test = await booksTest({ app, url: b.url !== undefined ? String(b.url).trim().replace(/\/+$/, '') : cur.url, key: b.key || undefined });
+    saveBooksApp(b);
+    sendJson(ctx.res, { ok: true, ...test });
+    return;
+  }
+  saveBooksApp(b);
+  sendJson(ctx.res, { ok: true, ...booksConf() });
+});
+router.get('/api/admin/books-app/options', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await booksTest()); });
+// Reconnaissance musique et livres : état et lancement à la main
+router.get('/api/admin/music-meta', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, musicMetaStatus()); });
+router.post('/api/admin/music-meta/run', async (ctx) => { requireAdmin(ctx); const b = await readBody(ctx.req, 256).catch(() => ({})); runMusicMeta({ force: !!b.force }).catch((e) => console.warn('[musique]', e.message)); sendJson(ctx.res, { started: true }); });
+router.put('/api/admin/music-meta', async (ctx) => {
+  requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 1024), { acoustidKey: V.str({ max: 100 }) });
+  if (b.acoustidKey !== undefined) setSetting('acoustid_key', String(b.acoustidKey).trim());
+  sendJson(ctx.res, musicMetaStatus());
+});
+router.get('/api/admin/books-meta', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, booksMetaStatus()); });
+router.post('/api/admin/books-meta/run', async (ctx) => { requireAdmin(ctx); const b = await readBody(ctx.req, 256).catch(() => ({})); runBooksMeta({ force: !!b.force }).catch((e) => console.warn('[livres]', e.message)); sendJson(ctx.res, { started: true }); });
+
+// Musique : recherche et demandes Lidarr
+router.get('/api/music/search', async (ctx) => { arrUser(ctx); sendJson(ctx.res, await lidarrSearch(ctx.url.searchParams.get('q'))); });
+router.post('/api/music/request', async (ctx) => {
+  const p = arrUser(ctx);
+  const b = validate(await readBody(ctx.req, 2048), { album: V.str({ max: 60 }), artist: V.str({ max: 60 }) });
+  if (!b.album && !b.artist) throw new HttpError(400, 'Album ou artiste requis');
+  const r = b.album ? await lidarrAddAlbum(b.album) : await lidarrAddArtist(b.artist);
+  logActivity('request', `${p.name} a demandé « ${r.title} » (musique)${r.already ? ' (déjà demandé)' : ''}`);
+  sendJson(ctx.res, r);
+});
+// Livres : recherche et demandes (LazyLibrarian / Bookshelf)
+router.get('/api/books/search', async (ctx) => { arrUser(ctx); sendJson(ctx.res, await booksSearch(ctx.url.searchParams.get('q'))); });
+router.post('/api/books/request', async (ctx) => {
+  const p = arrUser(ctx);
+  const b = validate(await readBody(ctx.req, 2048), { id: V.str({ max: 80 }), title: V.str({ max: 300 }), author: V.str({ max: 200 }), isbn: V.str({ max: 20 }) });
+  const r = await booksAdd(b);
+  logActivity('request', `${p.name} a demandé « ${r.title} » (livre)${r.already ? ' (déjà demandé)' : ''}`);
+  sendJson(ctx.res, r);
 });
 
 // Vérification des chaînes de TV en direct : état, et lancement à la main (toutes ou une seule)
@@ -3158,6 +3211,7 @@ router.put('/api/admin/livetv', async (ctx) => {
 
 // ------------------------------------------------------------------ musique, photos, livres
 const libOk = (p) => libraryClause(p);
+const normTitle = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
 const trackOut = (t, pm) => ({ id: t.id, title: t.title, artist: t.original_title, album: t.grp, albumKey: t.key, disc: t.season_num, track: t.episode_num, year: t.year, duration: t.duration, cover: t.poster,
   progress: pm && pm.get(t.id) ? { position: pm.get(t.id).position, watched: !!pm.get(t.id).watched } : null });
 router.get('/api/music', (ctx) => {
@@ -3172,12 +3226,30 @@ router.get('/api/music', (ctx) => {
     const ar = artists.get(t.original_title) || { name: t.original_title, albums: new Set(), count: 0, cover: t.poster };
     ar.albums.add(t.key); ar.count++; artists.set(t.original_title, ar);
   }
+  // Fiches MusicBrainz déjà trouvées : date exacte, type (album, EP…), pochette, nombre de titres attendus
+  const metas = new Map(all("SELECT key, date, type, cover, tracks, mb_rg FROM music_albums WHERE status = 'ok'").map((m) => [m.key, m]));
+  for (const a of albums.values()) {
+    const m = metas.get(a.key);
+    if (!m) continue;
+    let n = 0; try { n = JSON.parse(m.tracks || '[]').length; } catch { /* */ }
+    Object.assign(a, { date: m.date, type: m.type, cover: a.cover || m.cover, year: a.year || (m.date ? Number(m.date.slice(0, 4)) : null), expected: n || null, mbId: m.mb_rg });
+  }
+  const up = musicUpcoming();
   sendJson(ctx.res, {
     albums: [...albums.values()].sort((a, b) => a.artist.localeCompare(b.artist, 'fr') || (a.year || 0) - (b.year || 0)),
     artists: [...artists.values()].map((a) => ({ name: a.name, slug: cleanName(a.name), albums: a.albums.size, count: a.count, cover: a.cover })).sort((a, b) => a.name.localeCompare(b.name, 'fr')),
     recent: [...albums.values()].sort((a, b) => b.added - a.added).slice(0, 20),
     tracks: tracks.length > 3000 ? [] : tracks.map((t) => trackOut(t)), total: tracks.length,
+    upcoming: up.upcoming.length, missing: up.missing.length, lidarr: arrOn('lidarr'),
   });
+});
+// À venir et sorties récentes absentes du NAS, pour tous les artistes de la bibliothèque
+router.get('/api/music/upcoming', async (ctx) => {
+  requireProfile(ctx);
+  const up = musicUpcoming();
+  const known = await lidarrKnown();
+  const mark = (r) => ({ ...r, requested: known.albums.has(r.id) });
+  sendJson(ctx.res, { upcoming: up.upcoming.map(mark), missing: up.missing.map(mark), artists: up.artists, pending: up.pending, lidarr: arrOn('lidarr'), status: musicMetaStatus() });
 });
 router.get('/api/music/album', (ctx) => {
   const p = requireProfile(ctx);
@@ -3189,10 +3261,18 @@ router.get('/api/music/album', (ctx) => {
   const tracks = all(`SELECT * FROM items i WHERE i.type = 'track' AND i.category = 'music' AND i.key = ? AND ${lib.sql} ORDER BY i.season_num, i.episode_num, i.sort_title`, key, ...lib.args);
   if (!tracks.length) throw new HttpError(404, 'Album introuvable');
   const t0 = tracks[0];
-  sendJson(ctx.res, { key, slug: cleanName(`${t0.original_title} ${t0.grp}`), artistSlug: cleanName(t0.original_title), album: t0.grp, artist: t0.original_title, year: tracks.map((t) => t.year).find(Boolean) || null, cover: tracks.map((t) => t.poster).find(Boolean) || null,
+  // Fiche MusicBrainz : date, type, et titres de l'album que le NAS n'a pas
+  const meta = albumMeta(key);
+  let mb = null;
+  if (meta && meta.status === 'ok') {
+    const have = new Set(tracks.map((t) => normTitle(t.title)));
+    const missing = meta.tracks.filter((x) => !have.has(normTitle(x.title)));
+    mb = { id: meta.mb_rg, title: meta.title, date: meta.date, type: meta.type, expected: meta.tracks.length, missing: missing.length <= meta.tracks.length - 1 ? missing : [], artistId: meta.mb_artist };
+  }
+  sendJson(ctx.res, { mb, lidarr: arrOn('lidarr'), key, slug: cleanName(`${t0.original_title} ${t0.grp}`), artistSlug: cleanName(t0.original_title), album: t0.grp, artist: t0.original_title, year: tracks.map((t) => t.year).find(Boolean) || null, cover: tracks.map((t) => t.poster).find(Boolean) || null,
     genres: [...new Set(tracks.flatMap((t) => parseJson(t.genres, [])))].slice(0, 5), duration: tracks.reduce((n, t) => n + (t.duration || 0), 0), tracks: tracks.map((t) => trackOut(t)) });
 });
-router.get('/api/music/artist', (ctx) => {
+router.get('/api/music/artist', async (ctx) => {
   const p = requireProfile(ctx);
   const lib = libOk(p);
   let name = String(ctx.url.searchParams.get('name') || '').slice(0, 300);
@@ -3202,7 +3282,12 @@ router.get('/api/music/artist', (ctx) => {
   if (!tracks.length) throw new HttpError(404, 'Artiste introuvable');
   const albums = new Map();
   for (const t of tracks) { const a = albums.get(t.key) || { key: t.key, slug: cleanName(`${t.original_title} ${t.grp}`), album: t.grp, artist: t.original_title, year: t.year, cover: t.poster, count: 0 }; a.count++; albums.set(t.key, a); }
-  sendJson(ctx.res, { name, slug: cleanName(name), albums: [...albums.values()], tracks: tracks.map((t) => trackOut(t)) });
+  // Discographie complète (MusicBrainz) croisée avec le NAS, et ce que Lidarr suit déjà
+  const disco = discographyOf(name, nasAlbums().filter((a) => a.artist === name));
+  const known = await lidarrKnown();
+  sendJson(ctx.res, { name, slug: cleanName(name), albums: [...albums.values()], tracks: tracks.map((t) => trackOut(t)), lidarr: arrOn('lidarr'),
+    info: disco ? { mbId: disco.mbId, type: disco.type, country: disco.country, begin: disco.begin, status: disco.status, followed: known.artists.has(disco.mbId) } : null,
+    discography: disco ? disco.releases.map((r) => ({ ...r, requested: !!r.id && known.albums.has(r.id) })) : null });
 });
 // Lecture audio : fichier tel quel quand le navigateur sait le lire, sinon conversion en MP3 à la volée
 const NATIVE_AUDIO = new Set(['.mp3', '.m4a', '.aac', '.m4b', '.wav', '.flac', '.ogg', '.oga', '.opus']);
@@ -3271,8 +3356,29 @@ router.get('/api/books', (ctx) => {
   const lib = libOk(p);
   const list = all(`SELECT i.* FROM items i WHERE i.type IN ('book','audiobook') AND ${lib.sql} ORDER BY i.original_title, i.sort_title`, ...lib.args);
   const pm = progressMap(p.id, list.map((b) => b.id));
-  sendJson(ctx.res, list.map((b) => ({ id: b.id, type: b.type, format: b.category, title: b.title, author: b.original_title, year: b.year, cover: b.poster, duration: b.duration, size: b.size,
-    progress: pm.get(b.id) ? { position: pm.get(b.id).position, duration: pm.get(b.id).duration, watched: !!pm.get(b.id).watched, updated: pm.get(b.id).updated_at } : null })));
+  const books = list.map((b) => ({ id: b.id, type: b.type, format: b.category, title: b.title, author: b.original_title, year: b.year, cover: b.poster, duration: b.duration, size: b.size, overview: b.overview ? String(b.overview).slice(0, 300) : null,
+    progress: pm.get(b.id) ? { position: pm.get(b.id).position, duration: pm.get(b.id).duration, watched: !!pm.get(b.id).watched, updated: pm.get(b.id).updated_at } : null }));
+  // Compatibilité : la liste seule quand on le demande (anciens clients)
+  if (ctx.url.searchParams.get('flat') === '1') { sendJson(ctx.res, books); return; }
+  const photos = new Map(all("SELECT name, photo, status FROM book_authors").map((a) => [a.name, a]));
+  const authors = new Map();
+  for (const b of books) { if (!b.author) continue; const a = authors.get(b.author) || { name: b.author, slug: cleanName(b.author), count: 0, cover: b.cover, photo: (photos.get(b.author) || {}).photo || null, known: (photos.get(b.author) || {}).status === 'ok' }; a.count++; a.cover = a.cover || b.cover; authors.set(b.author, a); }
+  const up = booksUpcoming();
+  sendJson(ctx.res, { books, authors: [...authors.values()].sort((a, b) => a.name.localeCompare(b.name, 'fr')), upcoming: up.upcoming.length, missing: up.missing.length, request: booksOn() });
+});
+router.get('/api/books/upcoming', (ctx) => {
+  requireProfile(ctx);
+  sendJson(ctx.res, { ...booksUpcoming(), request: booksOn(), status: booksMetaStatus() });
+});
+router.get('/api/books/author', (ctx) => {
+  const p = requireProfile(ctx);
+  const lib = libOk(p);
+  const slug = String(ctx.url.searchParams.get('slug') || '').toLowerCase();
+  const name = String(ctx.url.searchParams.get('name') || '') || (all("SELECT DISTINCT original_title FROM items WHERE type IN ('book','audiobook') AND original_title IS NOT NULL").map((r) => r.original_title).find((n) => cleanName(n).toLowerCase() === slug) || '');
+  if (!name) throw new HttpError(404, 'Auteur introuvable');
+  const mine = all(`SELECT i.id, i.title, i.original_title AS author, i.year, i.poster, i.overview, i.path, i.mtime FROM items i WHERE i.type IN ('book','audiobook') AND i.original_title = ? AND ${lib.sql}`, name, ...lib.args);
+  const bib = bibliographyOf(name, mine);
+  sendJson(ctx.res, { ...bib, books: mine.map((b) => ({ id: b.id, title: b.title, year: b.year, cover: b.poster, slug: slugFor(b.id) })), request: booksOn() });
 });
 const bookOf = (ctx) => {
   const p = requireProfile(ctx);
