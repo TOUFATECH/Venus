@@ -472,12 +472,13 @@ export function ArrBox() {
   const { data: c, error, reload } = useLoad('/api/admin/arr');
   return (
     <section className="box" id="arr">
-      <h2>Radarr et Sonarr</h2>
-      <p>Reliez Radarr (films) et Sonarr (séries et animés) : dans l’onglet « Nouveau », un clic sur « Ajouter » envoie le titre au bon service, qui le télécharge tout seul. Venus l’ajoute ensuite dès que le fichier arrive dans vos dossiers.</p>
+      <h2>Radarr, Sonarr et Lidarr</h2>
+      <p>Reliez Radarr (films), Sonarr (séries et animés) et Lidarr (musique) : dans l’onglet « Nouveau », un clic sur « Ajouter » envoie le titre au bon service, qui le télécharge tout seul. Venus l’ajoute ensuite dès que le fichier arrive dans vos dossiers.</p>
       {error ? <p className="error-text">{error.message}</p> : !c ? <p className="muted">Chargement…</p> : (
         <>
           <ArrOne app="radarr" conf={c.radarr} name="Radarr" port={7878} reload={reload} />
           <ArrOne app="sonarr" conf={c.sonarr} name="Sonarr" port={8989} reload={reload} />
+          <ArrOne app="lidarr" conf={c.lidarr} name="Lidarr" port={8686} reload={reload} />
         </>
       )}
     </section>
@@ -494,7 +495,7 @@ function ArrOne({ app, conf, name, port, reload }) {
   const savePick = async (body) => { try { await api(`/api/admin/arr/${app}`, { method: 'PUT', body }); toast('Enregistré'); } catch (e) { toast(e.message, true); } };
   return (
     <div className="arr-one">
-      <h3 className="box-sub">{name}<small className="muted">{app === 'radarr' ? ' — films' : ' — séries et animés'}</small></h3>
+      <h3 className="box-sub">{name}<small className="muted">{app === 'radarr' ? ' — films' : app === 'lidarr' ? ' — musique (albums et artistes)' : ' — séries et animés'}</small></h3>
       <div className="two-cols wide">
         <Field label="Adresse"><input ref={url} className="input" placeholder={`http://192.168.1.20:${port}`} defaultValue={conf.url || ''} inputMode="url" autoComplete="off" aria-label={`Adresse de ${name}`} /></Field>
         <Field label="Clé API"><input ref={key} className="input" placeholder={conf.keySet ? 'Clé enregistrée (laisser vide pour conserver)' : `Clé API (${name} : Settings → General)`} autoComplete="off" aria-label={`Clé API de ${name}`} /></Field>
@@ -514,8 +515,9 @@ function ArrOne({ app, conf, name, port, reload }) {
             <small className="ok-text">{`${opts.name || name} ${opts.version || ''} relié`}</small>
             <div className="two-cols wide">
               <Field label="Profil de qualité"><Select opts={opts.profiles.map((p) => [String(p.id), p.name])} value={String(conf.profile || (opts.profiles[0] || {}).id || '')} onChange={(e) => savePick({ profile: Number(e.target.value) })} /></Field>
-              <Field label={app === 'sonarr' ? 'Dossier des séries' : 'Dossier des films'}><Select opts={opts.roots.map((r) => [r.path, r.path])} value={conf.root || (opts.roots[0] || {}).path || ''} onChange={(e) => savePick({ root: e.target.value })} /></Field>
+              <Field label={app === 'sonarr' ? 'Dossier des séries' : app === 'lidarr' ? 'Dossier de la musique' : 'Dossier des films'}><Select opts={opts.roots.map((r) => [r.path, r.path])} value={conf.root || (opts.roots[0] || {}).path || ''} onChange={(e) => savePick({ root: e.target.value })} /></Field>
             </div>
+            {app === 'lidarr' && opts.metaProfiles && opts.metaProfiles.length ? <Field label="Profil de métadonnées" hint="Décide quels types de sorties Lidarr suit (albums, EP, singles…)."><Select opts={opts.metaProfiles.map((p) => [String(p.id), p.name])} value={String(conf.metaProfile || (opts.metaProfiles[0] || {}).id || '')} onChange={(e) => savePick({ metaProfile: Number(e.target.value) })} /></Field> : null}
             {app === 'sonarr' ? <Field label="Dossier des animés"><Select opts={[['', 'Même dossier que les séries'], ...opts.roots.map((r) => [r.path, r.path])]} value={conf.animeRoot || ''} onChange={(e) => savePick({ animeRoot: e.target.value })} /></Field> : null}
           </>
         ) : null}
@@ -845,6 +847,87 @@ export function ServerBox({ a }) {
           } catch (e) { toast(e.message, true); }
         }}>Enregistrer</Busy>
       </Actions>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- livres : LazyLibrarian ou Bookshelf
+export function BooksAppBox() {
+  const { data: c, error, reload } = useLoad('/api/admin/arr');
+  const [app, setApp] = useState(null);
+  const [opts, setOpts] = useState(null);
+  const [err, setErr] = useState('');
+  const url = useRef(null);
+  const key = useRef(null);
+  const conf = c ? c.books : null;
+  const cur = app || (conf ? conf.app : 'lazylibrarian');
+  useEffect(() => { if (conf && conf.on) api('/api/admin/books-app/options').then(setOpts).catch((e) => setErr(e.message)); }, [conf && conf.on, conf && conf.app]);
+  const savePick = async (body) => { try { await api('/api/admin/books-app', { method: 'PUT', body }); toast('Enregistré'); reload(); } catch (e) { toast(e.message, true); } };
+  return (
+    <section className="box" id="books-app">
+      <h2>Livres : LazyLibrarian ou Bookshelf</h2>
+      <p>Readarr s’est arrêté en juin 2025. Deux applications prennent le relais : <b>LazyLibrarian</b> (la plus éprouvée) ou <b>Bookshelf</b> (le fork qui garde l’interface et l’API de Readarr). Une fois reliée, le bouton « Demander » des Livres (À venir, bibliographie d’un auteur, Ajouter) lui envoie le livre.</p>
+      {error ? <p className="error-text">{error.message}</p> : !conf ? <p className="muted">Chargement…</p> : (
+        <>
+          <Field label="Application"><Select opts={[['lazylibrarian', 'LazyLibrarian'], ['bookshelf', 'Bookshelf (fork de Readarr)']]} value={cur} onChange={(e) => setApp(e.target.value)} /></Field>
+          <div className="two-cols wide">
+            <Field label="Adresse"><input ref={url} className="input" placeholder={cur === 'bookshelf' ? 'http://192.168.1.20:8787' : 'http://192.168.1.20:5299'} defaultValue={conf.app === cur ? conf.url || '' : ''} inputMode="url" autoComplete="off" aria-label="Adresse de l’application de livres" /></Field>
+            <Field label="Clé API"><input ref={key} className="input" placeholder={conf.keySet && conf.app === cur ? 'Clé enregistrée (laisser vide pour conserver)' : cur === 'bookshelf' ? 'Settings → General' : 'Config → Interface → API key'} autoComplete="off" aria-label="Clé API de l’application de livres" /></Field>
+          </div>
+          <p className="error-text">{err}</p>
+          <Actions>
+            <Busy className="btn btn-small btn-play f" onClick={async () => {
+              setErr('');
+              try { const r = await api('/api/admin/books-app', { method: 'PUT', body: { app: cur, url: url.current.value.trim(), ...(key.current.value.trim() ? { key: key.current.value.trim() } : {}) } }); key.current.value = ''; toast(`${r.name || 'Application'} ${r.version || ''} reliée`); reload(); }
+              catch (e) { setErr(e.message); }
+            }}>{conf.on ? 'Tester et enregistrer' : 'Relier'}</Busy>
+            {conf.on ? <button className="btn btn-small btn-ghost f" onClick={async () => { await api('/api/admin/books-app', { method: 'PUT', body: { remove: true } }); toast('Application retirée'); setOpts(null); reload(); }}>Retirer</button> : null}
+          </Actions>
+          {conf.on && opts ? (
+            <div className="arr-picks">
+              <small className="ok-text">{`${opts.name || ''} ${opts.version || ''} relié`}</small>
+              {conf.app === 'bookshelf' && opts.profiles ? (
+                <div className="two-cols wide">
+                  <Field label="Profil de qualité"><Select opts={opts.profiles.map((p) => [String(p.id), p.name])} value={String(conf.profile || (opts.profiles[0] || {}).id || '')} onChange={(e) => savePick({ profile: Number(e.target.value) })} /></Field>
+                  <Field label="Dossier des livres"><Select opts={opts.roots.map((r) => [r.path, r.path])} value={conf.root || (opts.roots[0] || {}).path || ''} onChange={(e) => savePick({ root: e.target.value })} /></Field>
+                  {opts.metaProfiles && opts.metaProfiles.length ? <Field label="Profil de métadonnées"><Select opts={opts.metaProfiles.map((p) => [String(p.id), p.name])} value={String(conf.metaProfile || (opts.metaProfiles[0] || {}).id || '')} onChange={(e) => savePick({ metaProfile: Number(e.target.value) })} /></Field> : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------- reconnaissance musique (MusicBrainz, AcoustID) et livres (Open Library)
+export function MediaMetaBox() {
+  const { data: m, reload: rm } = useLoad('/api/admin/music-meta');
+  const { data: b, reload: rb } = useLoad('/api/admin/books-meta');
+  const keyRef = useRef(null);
+  useEffect(() => { if ((m && m.running) || (b && b.running)) { const t = setTimeout(() => { rm(); rb(); }, 3000); return () => clearTimeout(t); } }, [m, b]);
+  if (!m || !b) return null;
+  return (
+    <section className="box" id="media-meta">
+      <h2>Reconnaissance des albums et des livres</h2>
+      <p>Venus identifie chaque album sur MusicBrainz (date, type, liste des titres, pochette Cover Art Archive) et chaque livre sur Open Library (couverture, résumé), puis suit la discographie de chaque artiste et la bibliographie de chaque auteur pour l’onglet « À venir ». Tout est gratuit et sans clé.</p>
+      <div className="src-list">
+        <span className={`src${m.identified ? ' ok' : ''}`}>{`Musique : ${m.identified}/${m.albums} album(s) reconnu(s), ${m.artists} discographie(s)`}</span>
+        <span className={`src${b.identified ? ' ok' : ''}`}>{`Livres : ${b.identified}/${b.books} livre(s) reconnu(s), ${b.authors} bibliographie(s)`}</span>
+        {m.running || b.running ? <span className="src">{`En cours : ${m.running ? `musique (${m.phase} ${m.done}/${m.total})` : ''} ${b.running ? `livres (${b.phase} ${b.done}/${b.total})` : ''}`}</span> : null}
+      </div>
+      <Actions>
+        <Busy className="btn btn-small btn-ghost f" onClick={async () => { await api('/api/admin/music-meta/run', { method: 'POST', body: {} }); toast('Reconnaissance musicale lancée'); setTimeout(rm, 800); }} disabled={m.running}>Identifier la musique maintenant</Busy>
+        <Busy className="btn btn-small btn-ghost f" onClick={async () => { await api('/api/admin/books-meta/run', { method: 'POST', body: {} }); toast('Reconnaissance des livres lancée'); setTimeout(rb, 800); }} disabled={b.running}>Identifier les livres maintenant</Busy>
+      </Actions>
+      <h3 className="box-sub">Fichiers sans étiquette (AcoustID)</h3>
+      <p className="muted">{`Pour les morceaux dont l’artiste ou l’album est inconnu (${m.untagged} actuellement), Venus peut calculer l’empreinte sonore et retrouver le titre. Il faut l’outil fpcalc (${m.fpcalc ? 'présent' : 'absent : paquet libchromaprint-tools, inclus dans l’image Docker'}) et une clé d’application AcoustID gratuite (acoustid.org/new-application).`}</p>
+      <div className="world-add">
+        <input ref={keyRef} className="input" placeholder={m.acoustid ? 'Clé enregistrée (laisser vide pour conserver)' : 'Clé d’application AcoustID'} autoComplete="off" aria-label="Clé AcoustID" />
+        <Busy onClick={async () => { const k = keyRef.current.value.trim(); if (!k) return; await api('/api/admin/music-meta', { method: 'PUT', body: { acoustidKey: k } }); keyRef.current.value = ''; toast('Clé enregistrée'); rm(); }}>Enregistrer</Busy>
+        {m.acoustid ? <button className="btn btn-ghost btn-small f" onClick={async () => { await api('/api/admin/music-meta', { method: 'PUT', body: { acoustidKey: '' } }); toast('Clé retirée'); rm(); }}>Retirer</button> : null}
+      </div>
     </section>
   );
 }

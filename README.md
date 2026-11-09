@@ -160,7 +160,9 @@ cd /opt/Venus && git pull && bash update.sh
 - **Mini-lecteur** qui continue pendant la navigation, mode **Ambiance** (la lumière du film déborde autour de l'image), partage d'un extrait (GIF ou MP4).
 - **TV en direct** (IPTV M3U / Xtream) avec guide des programmes, numéros de chaîne et **enregistrements** ; chaînes rangées par catégorie, favoris (export / import M3U), zapping instantané, **multi-écran** (2 ou 4 chaînes), rappels de programmes, chaînes du monde (iptv-org) sans doublon.
 - **Confort** : mode nuit (son égalisé), image dans l'image, sous-titres à votre goût (gardés par profil), écran de veille (après 10 minutes sans activité, 5 sur la TV, même sur une vidéo en pause).
-- **Musique** (paroles synchronisées), **photos** (diaporama, HEIC), **livres** (EPUB, PDF, BD, livres audio).
+- **Musique** : albums, artistes, titres, paroles synchronisées ; chaque album est **reconnu sur MusicBrainz** (date, type, liste des titres, pochette Cover Art Archive, titres manquants signalés), les fichiers sans étiquette sont identifiés par **empreinte sonore** (AcoustID) ; **discographie complète** de chaque artiste avec **Sur le NAS / Pas sur le NAS**, onglet **À venir** (sorties annoncées, albums de l'année absents) et téléchargement en un clic via **Lidarr**.
+- **Livres** : EPUB, PDF, BD, livres audio, lecteur intégré ; fiches complétées par **Open Library** (couverture, résumé), page **Auteur** avec sa **bibliographie complète** (Sur le NAS / Pas sur le NAS), onglet **À venir** (parutions annoncées via Google Books, parutions récentes absentes) et demande en un clic via **LazyLibrarian** ou **Bookshelf**.
+- **Photos** (diaporama, HEIC).
 - **Ce que les autres lecteurs n'ont pas** :
   - **« Précédemment dans… » automatique** : Venus analyse les scènes (coupures, volume) et monte un résumé de 30 secondes de l'épisode précédent, proposé au début du suivant (ou lancé tout seul avec l'option « Précédemment automatique »).
   - **Retour au moment où l'on s'est endormi** : 45 minutes sans aucun geste alors que la vidéo défilait, et la reprise revient au dernier geste, pas à la fin de l'épisode.
@@ -193,7 +195,7 @@ cd /opt/Venus && git pull && bash update.sh
 ### Administrer
 
 - **Tableau de bord** : lectures en cours, appareils, tâches planifiées, journal, **santé du NAS**, performances (GPU, mémoire, copies optimisées).
-- **Seerr, Radarr, Sonarr** : envies, séries suivies, nouvelles saisons demandées automatiquement.
+- **Seerr, Radarr, Sonarr, Lidarr, LazyLibrarian / Bookshelf** : envies, séries suivies, nouvelles saisons demandées automatiquement ; albums, artistes et livres demandés depuis Venus (Readarr étant arrêté depuis juin 2025, Venus parle à ses deux successeurs).
 - **Médiathèque** : doublons, renommage façon Plex / Jellyfin, corbeille 7 jours, qualité (4K, HDR, débits), sauvegardes nocturnes restaurables.
 - **Import depuis Plex ou Jellyfin** : épisodes vus et lectures en cours, retrouvés par fichier ou identifiants.
 - **API et webhooks** (`X-Api-Key`, Home Assistant, n8n…), CSS personnalisé, message d'accueil.
@@ -363,6 +365,8 @@ Venus sert aussi HTTPS (en **HTTP/2**) sur le port **8920** avec un certificat a
 | `LAN_SUBNET` | — | Réseau à explorer pour trouver les NAS (ex. `192.168.1`) |
 | `VENUS_SECRET` | — | Clé de chiffrement des clés d'API (sinon `/config/secret.key`) |
 | `VENUS_WHISPER_BIN` | auto | Chemin de `whisper-cli` (sous-titres générés) ; l'image Docker l'inclut |
+| `VENUS_FPCALC_BIN` | auto | Chemin de `fpcalc` (empreintes AcoustID) ; l'image Docker l'inclut (`libchromaprint-tools`) |
+| `ACOUSTID_KEY` | — | Clé d'application AcoustID (sinon saisissable dans Réglages → Demandes) |
 | `LIBRETRANSLATE_URL` | — | Serveur LibreTranslate pour traduire les sous-titres générés (sinon réglable dans l'interface, ou Argos Translate s'il est installé) |
 
 ## Par rapport à Plex et Jellyfin

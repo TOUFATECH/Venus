@@ -52,6 +52,10 @@ function makeMedia(dir) {
       '-metadata', 'artist=Zaza', '-metadata', 'album=Premier Album', '-metadata', `title=${n.slice(5, -4)}`, m('musique', 'Zaza', 'Premier Album', n));
   }
   ff('-f', 'lavfi', '-i', 'testsrc2=size=1200x800', '-frames:v', '1', m('photos', 'Vacances', 'plage.jpg'));
+  // Un livre (PDF minimal) rangé dans le dossier de son auteur : fiche Open Library, bibliographie, À venir
+  fs.writeFileSync(m('livres', 'Victor Hugo', 'Les Misérables.pdf'), `%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n%${'x'.repeat(2000)}\ntrailer<</Root 1 0 R>>\n%%EOF\n`);
+  // Pochette de test (JPEG) servie par les faux MusicBrainz / Open Library (dans le dossier des médias, hors bibliothèques)
+  ff('-f', 'lavfi', '-i', 'color=c=0x8844cc:size=500x500', '-frames:v', '1', m('pochette.jpg'));
   // Petite liste de chaînes (adresses injoignables : on teste la page, pas les flux)
   fs.writeFileSync(m('tv', 'chaines.m3u'), ['#EXTM3U',
     ...[['France 24', 'Infos'], ['Mayotte La 1ère', 'France TV'], ['Mangas TV', 'Divertissement'], ['Ciné Classique', ''], ['Histoire Plus', ''], ['Arte', 'TNT']]
@@ -86,7 +90,9 @@ export default async function globalSetup() {
   fs.writeFileSync(path.join(dir, 'data', 'models', 'whisper', 'ggml-small.bin'), 'modele factice');
   const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
     cwd: root, detached: true, stdio: ['ignore', log, log],
-    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh'), VENUS_WHISPER_BIN: path.join(dir, 'faux-whisper.sh') },
+    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh'), VENUS_WHISPER_BIN: path.join(dir, 'faux-whisper.sh'),
+      // Faux MusicBrainz / Cover Art Archive / Open Library / Google Books (démarrés par le test musique-livres)
+      VENUS_MUSICBRAINZ_API: `http://127.0.0.1:${port + 5}/mb`, VENUS_COVERART_API: `http://127.0.0.1:${port + 5}/caa`, VENUS_OPENLIBRARY_API: `http://127.0.0.1:${port + 5}/ol`, VENUS_OPENLIBRARY_COVERS: `http://127.0.0.1:${port + 5}/olc`, VENUS_GOOGLEBOOKS_API: `http://127.0.0.1:${port + 5}/gb` },
   });
   srv.unref();
   // Petit serveur des chaînes de test (dossier media/hls)
@@ -108,7 +114,7 @@ export default async function globalSetup() {
   const { token } = await api('/api/setup', { method: 'POST', body: { name: 'Admin', password: PASSWORD, pin: PIN, moviesPath: path.join(media, 'films'), showsPath: path.join(media, 'series') } });
   // Pas de recherche d'affiches sur Internet pendant les tests : plus rapide et reproductible
   await api('/api/admin/settings', { method: 'PUT', token, body: { postersFree: false } });
-  for (const [type, name, p] of [['clips', 'Clips', 'clips'], ['music', 'Musique', 'musique'], ['photos', 'Photos', 'photos'], ['iptv', 'Chaînes de test', path.join('tv', 'chaines.m3u')]]) {
+  for (const [type, name, p] of [['clips', 'Clips', 'clips'], ['music', 'Musique', 'musique'], ['photos', 'Photos', 'photos'], ['books', 'Livres', 'livres'], ['iptv', 'Chaînes de test', path.join('tv', 'chaines.m3u')]]) {
     await api('/api/admin/libraries', { method: 'POST', token, body: { type, name, path: path.join(media, p) } });
   }
   await api('/api/profiles', { method: 'POST', token, body: { name: 'Lina', avatar: 3 } });

@@ -5,12 +5,15 @@
 import { all, getSetting, setSetting } from './db.js';
 import { HttpError } from './http.js';
 
-const KINDS = { radarr: 'radarr', sonarr: 'sonarr' };
+const KINDS = { radarr: 'radarr', sonarr: 'sonarr', lidarr: 'lidarr', bookshelf: 'bookshelf' };
+const NAMES = { radarr: 'Radarr', sonarr: 'Sonarr', lidarr: 'Lidarr', bookshelf: 'Bookshelf' };
+const API = (app) => (app === 'lidarr' || app === 'bookshelf' ? '/api/v1' : '/api/v3');
 export function arrConf(app) {
   return {
     url: String(getSetting(`${app}_url`, '') || '').replace(/\/+$/, ''),
     key: String(getSetting(`${app}_key`, '') || ''),
     profile: Number(getSetting(`${app}_profile`, 0)) || null,
+    metaProfile: Number(getSetting(`${app}_meta_profile`, 0)) || null,
     root: String(getSetting(`${app}_root`, '') || ''),
     animeRoot: String(getSetting(`${app}_anime_root`, '') || ''),
   };
@@ -18,7 +21,7 @@ export function arrConf(app) {
 export const arrOn = (app) => { const c = arrConf(app); return !!(c.url && c.key); };
 export const appFor = (kind) => (kind === 'movie' ? 'radarr' : 'sonarr');
 
-export function saveArr(app, { url, key, profile, root, animeRoot }) {
+export function saveArr(app, { url, key, profile, metaProfile, root, animeRoot }) {
   if (!KINDS[app]) throw new HttpError(400, 'Service inconnu');
   if (url !== undefined) {
     const u = String(url).trim().replace(/\/+$/, '');
@@ -28,18 +31,19 @@ export function saveArr(app, { url, key, profile, root, animeRoot }) {
   if (key) setSetting(`${app}_key`, String(key).trim().slice(0, 100));
   if (key === null) setSetting(`${app}_key`, '');
   if (profile !== undefined) setSetting(`${app}_profile`, Number(profile) || 0);
+  if (metaProfile !== undefined) setSetting(`${app}_meta_profile`, Number(metaProfile) || 0);
   if (root !== undefined) setSetting(`${app}_root`, String(root || '').slice(0, 500));
   if (animeRoot !== undefined) setSetting(`${app}_anime_root`, String(animeRoot || '').slice(0, 500));
 }
 
 export async function call(app, path, { method = 'GET', body = null, conf = null } = {}) {
   const c = conf || arrConf(app);
-  if (!c.url || !c.key) throw new HttpError(400, `${app === 'radarr' ? 'Radarr' : 'Sonarr'} n’est pas relié (Réglages → Demandes)`);
+  if (!c.url || !c.key) throw new HttpError(400, `${NAMES[app]} n’est pas relié (Réglages → Demandes)`);
   let res;
   try {
     res = await fetch(`${c.url}${path}`, { method, headers: { 'X-Api-Key': c.key, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000), redirect: 'manual' });
-  } catch (e) { throw new HttpError(502, `${app === 'radarr' ? 'Radarr' : 'Sonarr'} injoignable : ${e.cause && e.cause.code ? e.cause.code : e.message}`); }
+  } catch (e) { throw new HttpError(502, `${NAMES[app]} injoignable : ${e.cause && e.cause.code ? e.cause.code : e.message}`); }
   if (res.status === 401) throw new HttpError(502, 'Clé API refusée');
   const text = await res.text();
   let data = null; try { data = text ? JSON.parse(text) : null; } catch { /* */ }
@@ -52,12 +56,15 @@ export async function call(app, path, { method = 'GET', body = null, conf = null
 
 // Test de connexion + listes pour les réglages
 export async function arrOptions(app, conf = null) {
-  const [status, profiles, roots] = await Promise.all([
-    call(app, '/api/v3/system/status', { conf }), call(app, '/api/v3/qualityprofile', { conf }), call(app, '/api/v3/rootfolder', { conf }),
+  const base = API(app);
+  const [status, profiles, roots, metas] = await Promise.all([
+    call(app, `${base}/system/status`, { conf }), call(app, `${base}/qualityprofile`, { conf }), call(app, `${base}/rootfolder`, { conf }),
+    app === 'lidarr' || app === 'bookshelf' ? call(app, `${base}/metadataprofile`, { conf }).catch(() => []) : Promise.resolve(null),
   ]);
   return {
     version: status && status.version, name: status && status.appName,
     profiles: (profiles || []).map((p) => ({ id: p.id, name: p.name })),
+    metaProfiles: metas ? metas.map((p) => ({ id: p.id, name: p.name })) : undefined,
     roots: (roots || []).map((r) => ({ path: r.path, free: r.freeSpace || null })),
   };
 }
@@ -131,19 +138,19 @@ export async function arrRemove(app, arrId) {
   return true;
 }
 
-// Téléchargements en cours dans Radarr et Sonarr
+// Téléchargements en cours dans Radarr, Sonarr et Lidarr
 export async function arrQueue() {
   const out = [];
-  for (const app of ['radarr', 'sonarr']) {
+  for (const app of ['radarr', 'sonarr', 'lidarr']) {
     if (!arrOn(app)) continue;
     try {
-      const q = await call(app, `/api/v3/queue?pageSize=50&${app === 'radarr' ? 'includeMovie=true' : 'includeSeries=true&includeEpisode=true'}`);
+      const q = await call(app, `${API(app)}/queue?pageSize=50&${app === 'radarr' ? 'includeMovie=true' : app === 'lidarr' ? 'includeArtist=true&includeAlbum=true' : 'includeSeries=true&includeEpisode=true'}`);
       for (const r of (q && q.records) || []) {
         const size = r.size || 0, left = r.sizeleft || 0;
-        const media = r.movie || r.series || {};
+        const media = r.movie || r.series || (r.album ? { title: r.album.title, year: r.album.releaseDate ? Number(String(r.album.releaseDate).slice(0, 4)) : null, images: r.album.images } : {});
         out.push({
           app, title: media.title || r.title, year: media.year || null, poster: posterOf(media),
-          episode: r.episode ? `S${r.episode.seasonNumber} É${r.episode.episodeNumber}` : null,
+          episode: r.episode ? `S${r.episode.seasonNumber} É${r.episode.episodeNumber}` : r.artist ? r.artist.artistName : null,
           progress: size ? Math.max(0, Math.min(100, Math.round(((size - left) / size) * 100))) : 0,
           status: r.trackedDownloadState === 'importPending' ? 'Import en cours' : r.status === 'paused' ? 'En pause' : r.status === 'queued' ? 'En attente' : r.errorMessage ? 'Problème' : 'Téléchargement',
           timeleft: r.timeleft || null,
@@ -168,7 +175,7 @@ export async function arrKnown() {
   } catch { /* */ }
   return known;
 }
-export const forgetKnown = () => { known.at = 0; };
+export const forgetKnown = () => { known.at = 0; lk.at = 0; };
 
 // Ajout à partir de ce qu'on sait du titre : identifiant TMDB (film), TVDB (série), sinon recherche par nom
 export async function arrGrab({ kind, tmdb = null, tvdb = null, imdb = null, title = '', year = null }) {
@@ -194,4 +201,65 @@ export async function arrGrab({ kind, tmdb = null, tvdb = null, imdb = null, tit
   }
   if (!id) throw new HttpError(404, 'Série introuvable dans Sonarr');
   const r = await arrAdd(kind === 'anime' ? 'anime' : 'show', id); forgetKnown(); return r;
+}
+
+// ------------------------------------------------------------------ Lidarr (musique)
+// Recherche d'artistes et d'albums ; indique ce qui est déjà suivi dans Lidarr et ce qui est déjà sur le NAS.
+export async function lidarrSearch(q) {
+  const term = String(q || '').trim().slice(0, 100);
+  if (term.length < 2) return { artists: [], albums: [] };
+  const [artists, albums] = await Promise.all([
+    call('lidarr', `/api/v1/artist/lookup?term=${encodeURIComponent(term)}`).catch(() => []),
+    call('lidarr', `/api/v1/album/lookup?term=${encodeURIComponent(term)}`).catch(() => []),
+  ]);
+  const nasArtists = new Set(all("SELECT DISTINCT original_title AS a FROM items WHERE type = 'track' AND category = 'music'").map((r) => norm(r.a)));
+  const nasAlbums = new Set(all("SELECT DISTINCT key FROM items WHERE type = 'track' AND category = 'music'").map((r) => r.key));
+  const img = (x) => ((x.images || []).find((i) => i.coverType === 'poster' || i.coverType === 'cover') || {}).remoteUrl || ((x.images || [])[0] || {}).remoteUrl || null;
+  return {
+    artists: (artists || []).slice(0, 12).map((a) => ({ mbId: a.foreignArtistId, name: a.artistName, type: a.artistType || null, overview: a.overview ? String(a.overview).slice(0, 300) : null, poster: img(a), requested: !!a.id, inVenus: nasArtists.has(norm(a.artistName)), genres: (a.genres || []).slice(0, 3) })).filter((a) => a.mbId),
+    albums: (albums || []).slice(0, 20).map((b) => ({ mbId: b.foreignAlbumId, title: b.title, artist: b.artist ? b.artist.artistName : null, artistMbId: b.artist ? b.artist.foreignArtistId : null, date: b.releaseDate || null, type: b.albumType || null, poster: img(b), requested: !!b.id, inVenus: b.artist ? nasAlbums.has(`${b.artist.artistName}|${b.title}`.toLowerCase()) : false })).filter((b) => b.mbId),
+  };
+}
+async function lidarrDefaults() {
+  const c = arrConf('lidarr');
+  const opts = await arrOptions('lidarr');
+  const profile = c.profile && opts.profiles.some((p) => p.id === c.profile) ? c.profile : (opts.profiles[0] || {}).id;
+  const meta = c.metaProfile && (opts.metaProfiles || []).some((p) => p.id === c.metaProfile) ? c.metaProfile : ((opts.metaProfiles || [])[0] || {}).id;
+  const root = c.root || (opts.roots[0] || {}).path;
+  if (!profile || !root) throw new HttpError(400, 'Choisissez un profil de qualité et un dossier dans Réglages → Demandes (Lidarr)');
+  return { profile, meta, root };
+}
+// Un album (identifiant MusicBrainz du groupe de sorties) : l'artiste est créé au besoin, sans suivre ses autres albums
+export async function lidarrAddAlbum(mbRgId) {
+  const list = await call('lidarr', `/api/v1/album/lookup?term=${encodeURIComponent(`lidarr:${mbRgId}`)}`) || [];
+  const album = list.find((b) => b.foreignAlbumId === mbRgId) || list[0];
+  if (!album) throw new HttpError(404, 'Album introuvable dans Lidarr');
+  if (album.id) return { already: true, title: album.title };
+  const { profile, meta, root } = await lidarrDefaults();
+  const body = { ...album, monitored: true, addOptions: { searchForNewAlbum: true },
+    artist: { ...album.artist, qualityProfileId: profile, metadataProfileId: meta, rootFolderPath: root, monitored: true, monitorNewItems: 'none', addOptions: { monitor: 'none', searchForMissingAlbums: false } } };
+  const added = await call('lidarr', '/api/v1/album', { method: 'POST', body });
+  forgetKnown();
+  return { added: true, title: added.title, arrId: added.id };
+}
+// Un artiste entier : tous ses albums, et les suivants dès leur annonce
+export async function lidarrAddArtist(mbId) {
+  const list = await call('lidarr', `/api/v1/artist/lookup?term=${encodeURIComponent(`lidarr:${mbId}`)}`) || [];
+  const artist = list.find((a) => a.foreignArtistId === mbId) || list[0];
+  if (!artist) throw new HttpError(404, 'Artiste introuvable dans Lidarr');
+  if (artist.id) return { already: true, title: artist.artistName };
+  const { profile, meta, root } = await lidarrDefaults();
+  const added = await call('lidarr', '/api/v1/artist', { method: 'POST', body: { ...artist, qualityProfileId: profile, metadataProfileId: meta, rootFolderPath: root, monitored: true, monitorNewItems: 'all', addOptions: { monitor: 'all', searchForMissingAlbums: true } } });
+  forgetKnown();
+  return { added: true, title: added.artistName, arrId: added.id };
+}
+// Ce que Lidarr suit déjà (identifiants MusicBrainz), gardé 5 min
+const lk = { at: 0, albums: new Set(), artists: new Set() };
+export async function lidarrKnown() {
+  if (!arrOn('lidarr')) return lk;
+  if (Date.now() - lk.at < 300000) return lk;
+  lk.at = Date.now();
+  try { lk.artists = new Set((await call('lidarr', '/api/v1/artist') || []).map((a) => a.foreignArtistId)); } catch { /* */ }
+  try { lk.albums = new Set((await call('lidarr', '/api/v1/album') || []).filter((b) => b.monitored).map((b) => b.foreignAlbumId)); } catch { /* */ }
+  return lk;
 }

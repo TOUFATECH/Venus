@@ -174,7 +174,7 @@ document.addEventListener('click', (e) => {
 export function hasCat(cat) {
   const c = state.categories;
   if (!c || !Object.keys(c).length) return cat === 'movie' || cat === 'show';
-  return (c[cat] || 0) > 0;
+  return (c[cat] || 0) > 0 || (c[`${cat}_lib`] || 0) > 0;
 }
 export async function refreshCategories() {
   try { state.categories = await api('/api/categories'); } catch { /* garde l'ancienne liste */ }

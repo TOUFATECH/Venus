@@ -13,7 +13,7 @@ export async function render(main, { view = 'all', id } = {}) {
   setTitle('Livres');
   const page = h('div', { class: 'page books-page' });
   main.append(page);
-  const list = await api('/api/books');
+  const list = await api('/api/books?flat=1');
   let filter = 'all';
   const grid = h('div', { class: 'm-grid books' });
   const tabs = h('div', { class: 'seg' });

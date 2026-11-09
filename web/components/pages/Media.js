@@ -10,6 +10,7 @@ import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
 import { Placeholder } from '../Card';
 import { PageError, PageLoading } from '../PageState';
+import { MusicUpcoming, Discography, AlbumMeta, musicAddSheet, BooksUpcoming, Authors, booksAddSheet, dateFr } from './MediaMore';
 
 const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
 const audio = () => shared().imp('audio.js');
@@ -26,7 +27,7 @@ const queue = async (list) => (await audio()).addToQueue(list);
 function AlbumTile({ a }) {
   return (
     <button className="m-tile f" onClick={() => go(`/musique/album/${encodeURIComponent(a.slug)}`)}>
-      <span className="m-cover"><Cover c={a.cover} title={a.album} /></span><b>{a.album}</b><small>{[a.artist, a.year].filter(Boolean).join(' · ')}</small>
+      <span className="m-cover"><Cover c={a.cover} title={a.album} /></span><b>{a.album}</b><small>{[a.artist, a.year, a.type && a.type !== 'Album' ? a.type : null].filter(Boolean).join(' · ')}</small>
     </button>
   );
 }
@@ -75,11 +76,12 @@ export function Music() {
         <div className="page-head">
           <div className="head-left"><h1>Musique</h1></div>
           <div className="head-tools">
-            <div className="seg">{[['albums', `Albums (${d.albums.length})`], ['artistes', `Artistes (${d.artists.length})`], ['titres', `Titres (${d.total})`]].map(([k, l]) => <button key={k} className={`seg-b f${k === tab ? ' on' : ''}`} onClick={() => setTab(k)}>{l}</button>)}</div>
+            <div className="seg">{[['albums', `Albums (${d.albums.length})`], ['artistes', `Artistes (${d.artists.length})`], ['titres', `Titres (${d.total})`], ['avenir', `À venir${d.upcoming ? ` (${d.upcoming})` : ''}`]].map(([k, l]) => <button key={k} className={`seg-b f${k === tab ? ' on' : ''}`} onClick={() => setTab(k)}>{l}</button>)}</div>
             {d.total ? <button className="btn btn-play btn-small f" onClick={shuffleAll}><Icon name="shuffle" />Tout en aléatoire</button> : null}
+            {d.lidarr ? <button className="btn btn-ghost btn-small f" onClick={musicAddSheet}><Icon name="download" />Ajouter</button> : null}
           </div>
         </div>
-        {!d.total ? <div className="empty"><h2>Pas encore de musique</h2><p>Ajoutez une bibliothèque « Musique » dans Réglages → Bibliothèques (un dossier par artiste, puis par album).</p></div>
+        {tab === 'avenir' ? <MusicUpcoming /> : !d.total ? <div className="empty"><h2>Pas encore de musique</h2><p>Ajoutez une bibliothèque « Musique » dans Réglages → Bibliothèques (un dossier par artiste, puis par album).</p></div>
           : tab === 'albums' ? (
             <div>
               {d.recent.length > 4 ? <><h2 className="section-title">Ajoutés récemment</h2><div className="m-row">{d.recent.slice(0, 12).map((a) => <AlbumTile key={a.slug} a={a} />)}</div></> : null}
@@ -108,7 +110,7 @@ export function Album() {
         <div className="m-head">
           <span className="m-cover big"><Cover c={a.cover} title={a.album} w={500} /></span>
           <div>
-            <small>Album</small><h1>{a.album}</h1>
+            <small>{a.mb && a.mb.type ? a.mb.type : 'Album'}{a.mb && a.mb.date && a.mb.date.length > 4 ? ` · sorti le ${dateFr(a.mb.date)}` : ''}</small><h1>{a.album}</h1>
             <p><button className="linkish f" onClick={() => go(`/musique/artiste/${encodeURIComponent(a.artistSlug)}`)}>{a.artist}</button>{[a.year, `${a.tracks.length} titre${a.tracks.length > 1 ? 's' : ''}`, total(a.duration), ...a.genres].filter(Boolean).map((x) => ` · ${x}`).join('')}</p>
             <div className="actions">
               <button className="btn btn-play f" data-autofocus="true" onClick={() => play(a.tracks, 0)}><Icon name="play" />Lecture</button>
@@ -117,6 +119,7 @@ export function Album() {
             </div>
           </div>
         </div>
+        <AlbumMeta a={a} />
         <Tracks tracks={a.tracks} />
       </div>
     </main>
@@ -136,7 +139,7 @@ export function Artist() {
           <div className="head-left"><h1>{a.name}</h1><p className="count">{`${a.albums.length} album${a.albums.length > 1 ? 's' : ''} · ${a.tracks.length} titres`}</p></div>
           <div className="head-tools"><button className="btn btn-play btn-small f" onClick={() => play(shuffle(a.tracks), 0)}><Icon name="shuffle" />Lecture aléatoire</button></div>
         </div>
-        <div className="m-grid">{a.albums.map((x) => <AlbumTile key={x.slug} a={x} />)}</div>
+        {a.discography ? <Discography a={a} /> : <div className="m-grid">{a.albums.map((x) => <AlbumTile key={x.slug} a={x} />)}</div>}
         <h2 className="section-title">Titres</h2>
         <Tracks tracks={a.tracks} showAlbum />
       </div>
@@ -240,10 +243,12 @@ const FORMAT = { epub: 'EPUB', pdf: 'PDF', cbz: 'BD', audiobook: 'Livre audio' }
 
 export function Books() {
   useTitle('Livres');
-  const [filter, setFilter] = useState('all');
-  const { data: list, error } = useApi('/api/books');
+  const { search } = useVenus();
+  const [filter, setFilter] = useState((search && search.get('vue')) || 'all');
+  const { data: d, error } = useApi('/api/books');
   if (error) return <PageError error={error} />;
-  if (!list) return <PageLoading />;
+  if (!d) return <PageLoading />;
+  const list = d.books;
   const open = async (b) => {
     if (b.type !== 'audiobook') return go(`/lire/${b.id}`);
     const d = await api(`/api/books/${b.id}`);
@@ -271,11 +276,13 @@ export function Books() {
       <div className="page books-page">
         <div className="page-head">
           <div className="head-left"><h1>Livres</h1><p className="count">{`${list.length} livre${list.length > 1 ? 's' : ''}`}</p></div>
-          <div className="head-tools"><div className="seg">{[['all', 'Tous'], ['read', 'À lire'], ['audio', 'Livres audio']].map(([k, l]) => <button key={k} className={`seg-b f${k === filter ? ' on' : ''}`} onClick={() => setFilter(k)}>{l}</button>)}</div></div>
+          <div className="head-tools"><div className="seg">{[['all', 'Tous'], ['read', 'À lire'], ['audio', 'Livres audio'], ['auteurs', `Auteurs (${d.authors.length})`], ['avenir', `À venir${d.upcoming ? ` (${d.upcoming})` : ''}`]].map(([k, l]) => <button key={k} className={`seg-b f${k === filter ? ' on' : ''}`} onClick={() => setFilter(k)}>{l}</button>)}</div>{d.request ? <button className="btn btn-ghost btn-small f" onClick={booksAddSheet}><Icon name="download" />Ajouter</button> : null}</div>
         </div>
+        {filter === 'avenir' ? <BooksUpcoming /> : filter === 'auteurs' ? <Authors authors={d.authors} /> : <>
         {reading.length ? <><h2 className="section-title">En cours</h2><div className="m-row">{reading.slice(0, 10).map((b) => tile(b, `${pct(b)} %`))}</div></> : null}
         {list.length ? <div className="m-grid books">{shown.map((b) => tile(b))}</div>
           : <div className="empty"><h2>Pas encore de livres</h2><p>Ajoutez une bibliothèque « Livres » dans Réglages → Bibliothèques : EPUB, PDF, CBZ et livres audio (un dossier par livre).</p></div>}
+        </>}
       </div>
     </main>
   );

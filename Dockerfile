@@ -58,7 +58,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends "${FFMPEG_PKG}" \
       || apt-get install -y --no-install-recommends jellyfin-ffmpeg6 \
       || apt-get install -y --no-install-recommends ffmpeg; \
-    apt-get install -y --no-install-recommends cifs-utils nfs-common smbclient libgomp1 libstdc++6; \
+    apt-get install -y --no-install-recommends cifs-utils nfs-common smbclient libgomp1 libstdc++6 libchromaprint-tools; \
     if [ "${TARGETARCH:-amd64}" = "amd64" ]; then \
       apt-get install -y --no-install-recommends mesa-va-drivers intel-media-va-driver vainfo || true; \
     fi; \

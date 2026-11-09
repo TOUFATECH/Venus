@@ -61,12 +61,14 @@ export async function getJson(url) {
 // Copie une image distante dans le dossier des images (nom stable : même adresse, même fichier).
 // any = adresse donnée par l'administrateur : HTTPS obligatoire, jamais une adresse du réseau local (pas de SSRF),
 // type et taille vérifiés, image réencodée telle quelle (JPEG, PNG ou WebP).
+const TEST_HTTP = !!(process.env.VENUS_ITUNES_URL || process.env.VENUS_MUSICBRAINZ_API || process.env.VENUS_OPENLIBRARY_API);
+const IMAGE_HOSTS = /(^|\.)(mzstatic\.com|tvmaze\.com|tmdb\.org|impawards\.com|wikipedia\.org|wikimedia\.org|media-amazon\.com|metahub\.space|trakt\.tv|coverartarchive\.org|archive\.org|openlibrary\.org|books\.google\.com|googleusercontent\.com)$/;
 export async function saveRemoteImage(url, { any = false } = {}) {
   if (!url) return null;
   let u;
   try { u = new URL(String(url).trim()); } catch { return null; }
-  if (u.protocol !== 'https:' && !(process.env.VENUS_ITUNES_URL && u.protocol === 'http:')) return null;
-  if (!any && !process.env.VENUS_ITUNES_URL && !/(^|\.)(mzstatic\.com|tvmaze\.com|tmdb\.org|impawards\.com|wikipedia\.org|wikimedia\.org|media-amazon\.com|metahub\.space|trakt\.tv)$/.test(u.hostname)) return null;
+  if (u.protocol !== 'https:' && !(TEST_HTTP && u.protocol === 'http:')) return null;
+  if (!any && !TEST_HTTP && !IMAGE_HOSTS.test(u.hostname)) return null;
   if (any) {
     if (net.isIP(u.hostname) ? isPrivateIp(u.hostname) : /^(localhost|.*\.local|.*\.lan|.*\.internal)$/i.test(u.hostname)) return null;
     try { const addrs = await dns.lookup(u.hostname, { all: true }); if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) return null; } catch { return null; }
@@ -83,7 +85,7 @@ export async function saveRemoteImage(url, { any = false } = {}) {
       if (![301, 302, 303, 307, 308].includes(res.status)) break;
       const loc = res.headers.get('location'); if (!loc) return null;
       cur = new URL(loc, cur);
-      if (cur.protocol !== 'https:') return null;
+      if (cur.protocol !== 'https:' && !(TEST_HTTP && cur.protocol === 'http:')) return null;
       if (any) { if (net.isIP(cur.hostname) ? isPrivateIp(cur.hostname) : /^(localhost|.*\.local|.*\.lan|.*\.internal)$/i.test(cur.hostname)) return null; try { const addrs = await dns.lookup(cur.hostname, { all: true }); if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) return null; } catch { return null; } }
       res = null;
     }
