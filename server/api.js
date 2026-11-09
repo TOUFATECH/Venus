@@ -59,6 +59,10 @@ import { traktId, testTrakt, posterSource, traktFind, downloadTraktImage } from 
 import { ensureTrickplay, trickplayInfo, trickplaySheet, trickplayMode, removeTrickplay } from './trickplay.js';
 import { runtime, mountAdvice, gpuAdvice } from './env.js';
 import { getSegments, scheduleSeason, segmentsPending } from './segments.js';
+import { setSubtitleVtt, scheduleDialogues, searchDialogues, dialogueStats } from './dialogues.js';
+import { transcribeStatus, downloadModel, requestSubtitles, jobOf, MODELS } from './transcribe.js';
+import { lightsStatus, lightsReady, saveLights, huePair, hueLights, wledInfo, setColor, startSession as lightsStart, endSession as lightsEnd, testLights } from './lights.js';
+import { getScenes, analyzeScenes, scheduleScenes, highlights as sceneHighlights, generatedChapters, dialoguesOf, recapPlan, buildRecap } from './scenes.js';
 import { searchSubs, downloadSub, osOn, resetOsLogin } from './subtitles.js';
 import { listBackups, makeBackup, scheduleRestore, backupPath } from './backup.js';
 import { prepare as prepareDownload, listJobs, getJob, cancelJob, niceName } from './downloads.js';
@@ -94,6 +98,7 @@ function requireVisible(ctx, item, msg = 'Introuvable') {
   if (!item || !visible(p, item)) throw new HttpError(404, msg);
   return p;
 }
+const uiPrefsOf = (p) => { try { return JSON.parse((p && p.ui_prefs) || '{}') || {}; } catch { return {}; } };
 function visible(profile, item) {
   if (!item) return false;
   const r = permsOf(profile);
@@ -154,7 +159,7 @@ function card(i, prog) {
     still: i.still, age: i.age, cert: i.certification, vote: i.vote, genres: parseJson(i.genres, []),
     overview: i.overview, runtime: i.runtime || (i.duration ? Math.round(i.duration / 60) : null),
     season: i.season_num, episode: i.episode_num, showId: i.show_id, showTitle: i.show_title,
-    progress: prog ? { position: prog.position, duration: prog.duration, watched: !!prog.watched } : undefined,
+    progress: prog ? { position: prog.position, duration: prog.duration, watched: !!prog.watched, asleep: !!prog.asleep || undefined } : undefined,
     added: i.added_at, category: i.category, released: i.release_date || null,
     popularity: i.popularity, group: i.grp,
     ratings: i.ratings ? parseJson(i.ratings, null) : null, trailer: i.trailer ? (parseJson(i.trailer, null) || {}).key || null : null, // { none: … } = déjà cherché sans succès
@@ -1001,6 +1006,17 @@ router.get('/api/items/:id', async (ctx) => {
       next = lp.watched ? nextEpisode(last) || last : last;
     }
     if (next) { const c = card(next, pm.get(next.id)); c.duration = next.duration; out.nextUp = c; }
+    // Mode anti-spoiler du profil : au-delà de l'épisode à suivre, titres, résumés et vignettes sont masqués
+    if (next && uiPrefsOf(p).spoilerGuard) {
+      const after = (s, e) => s > next.season_num || (s === next.season_num && e > next.episode_num);
+      for (const s of out.seasons) {
+        for (const e of s.episodes) if (e.season > 0 && after(e.season, e.episode)) { e.title = `Épisode ${e.episode}`; e.overview = null; e.still = null; e.hidden = true; }
+        for (const m of s.missing || []) if (s.number > 0 && after(s.number, m.number)) { m.title = null; m.overview = null; m.still = null; m.hidden = true; }
+        if (s.number > next.season_num) s.overview = null;
+      }
+      for (const s of out.absentSeasons || []) if (s.number > next.season_num) for (const m of s.missing) { m.title = null; m.still = null; m.hidden = true; }
+      out.spoilerGuard = true;
+    }
     const lastP = get('SELECT pr.updated_at AS updated, pr.device FROM progress pr JOIN items e ON e.id = pr.item_id WHERE pr.profile_id = ? AND e.show_id = ? ORDER BY pr.updated_at DESC LIMIT 1', p.id, item.id);
     if (lastP) out.lastWatch = lastP;
     const firstEp = eps.find((e) => e.probe);
@@ -1366,22 +1382,33 @@ router.post('/api/items/:id/watched', async (ctx) => {
 
 router.post('/api/progress', async (ctx) => {
   const p = requireProfile(ctx);
-  const b = validate(await readBody(ctx.req, 8192), { itemId: V.int({ min: 1 }), position: V.num({ min: 0, max: 1e6 }), duration: V.num({ min: 0, max: 1e6 }), sessionId: V.str({ max: 64 }), watched: V.bool() }, { required: ['itemId'] });
+  const b = validate(await readBody(ctx.req, 8192), { itemId: V.int({ min: 1 }), position: V.num({ min: 0, max: 1e6 }), duration: V.num({ min: 0, max: 1e6 }), sessionId: V.str({ max: 64 }), watched: V.bool(), idle: V.num({ min: 0, max: 1e7 }), activePos: V.num({ min: 0, max: 1e6 }) }, { required: ['itemId'] });
   const id = Number(b.itemId);
-  const pos = Math.max(0, Number(b.position) || 0);
+  let pos = Math.max(0, Number(b.position) || 0);
   const dur = Math.max(0, Number(b.duration) || 0);
   if (!id) throw new HttpError(400, 'itemId requis');
-  const watched = dur > 0 && pos / dur > 0.92 ? 1 : 0;
+  // Endormi devant l'écran : aucun geste depuis longtemps alors que la vidéo défile → la reprise se fait au
+  // dernier geste (moins une minute), pas là où la vidéo s'est arrêtée toute seule
+  const sleepMin = Number(getSetting('sleep_rewind_min', 45)) || 45;
+  const asleep = Number(b.idle) >= sleepMin * 60 && Number.isFinite(Number(b.activePos)) && pos - Number(b.activePos) > 300;
+  if (asleep) pos = Math.max(0, Number(b.activePos) - 60);
+  const watched = !asleep && dur > 0 && pos / dur > 0.92 ? 1 : 0;
   // Vu jusqu'au bout pour la première fois : envoyé à Trakt (si le profil a relié son compte)
-  if (watched) { const was = get('SELECT watched FROM progress WHERE profile_id = ? AND item_id = ?', p.id, id); if (!was || !was.watched) traktWatched(p.id, [id], true); }
+  if (watched) {
+    const was = get('SELECT watched FROM progress WHERE profile_id = ? AND item_id = ?', p.id, id);
+    if (!was || !was.watched) traktWatched(p.id, [id], true);
+    // Épisode terminé : le « Précédemment dans… » du suivant se prépare tout de suite
+    const ep = get("SELECT * FROM items WHERE id = ? AND type = 'episode'", id);
+    if (ep && nextEpisode(ep)) prepareRecap(ep).catch(() => {});
+  }
   // Temps réellement regardé (pour la limite quotidienne) : l'écart depuis la dernière position, borné à 2 min par envoi
   try { const prev = get('SELECT position, updated_at FROM progress WHERE profile_id = ? AND item_id = ?', p.id, id); if (prev && pos > prev.position) addWatchTime(p.id, Math.min(120, pos - prev.position)); } catch (e) { console.warn('[progression] temps d’écran :', e.message); }
-  run(`INSERT INTO progress(profile_id, item_id, position, duration, watched, updated_at, device) VALUES(?, ?, ?, ?, ?, ?, ?)
+  run(`INSERT INTO progress(profile_id, item_id, position, duration, watched, updated_at, device, asleep) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(profile_id, item_id) DO UPDATE SET position=excluded.position, duration=excluded.duration,
-       watched=excluded.watched, updated_at=excluded.updated_at, device=excluded.device`,
-  p.id, id, watched ? 0 : pos, dur, watched, Date.now(), deviceLabel(ctx.auth && ctx.auth.device));
+       watched=excluded.watched, updated_at=excluded.updated_at, device=excluded.device, asleep=excluded.asleep`,
+  p.id, id, watched ? 0 : pos, dur, watched, Date.now(), deviceLabel(ctx.auth && ctx.auth.device), asleep ? 1 : 0);
   if (b.sessionId) sessions.get(b.sessionId)?.touch();
-  sendJson(ctx.res, { watched: !!watched });
+  sendJson(ctx.res, { watched: !!watched, asleep, position: pos });
 });
 
 // Le lecteur signale ce qu'il joue (tableau de bord : lectures en cours)
@@ -1486,6 +1513,7 @@ router.post('/api/play/:id', async (ctx) => {
   const progress = get('SELECT * FROM progress WHERE profile_id=? AND item_id=?', p.id, item.id);
   const resumeAt = progress && !progress.watched && progress.position > 20 ? Math.max(0, progress.position - 3) : 0;
   const start = b.start === 'resume' || b.start == null ? resumeAt : Math.max(0, Number(b.start) || 0);
+  const resumeAsleep = !!(progress && progress.asleep && (b.start === 'resume' || b.start == null) && resumeAt > 0);
   const token = ctx.auth.token;
   let url, sessionId = null, offset = 0;
   if (b.replace) sessions.get(b.replace)?.stop();
@@ -1500,13 +1528,17 @@ router.post('/api/play/:id', async (ctx) => {
   const next = item.type === 'episode' ? nextEpisode(item) : null;
   const prev = item.type === 'episode' ? prevEpisode(item) : null;
   if (item.type === 'episode') scheduleSeason(item.parent_id, true); // génériques prêts pour la suite
+  if (!b.preview) { scheduleScenes(item.id, true); scheduleDialogues(item.id, true); } // scènes et dialogues : « Précédemment », moments forts, chapitres, recherche
+  // Fichier sans chapitres : chapitres générés d'après les scènes et les dialogues
+  let chapters = probe.chapters || [];
+  if (chapters.length < 2 && !b.preview) { const g = await chaptersFor(item, probe).catch(() => []); if (g.length) chapters = g; }
   sendJson(ctx.res, {
     itemId: item.id, slug: slugFor(item.id), path: pathFor(item.id, { play: true }), type: item.type, mode: decision.mode, reason: decision.reason, url, sessionId, offset,
     hwLabel: decision.mode === 'transcode' ? hw.label : null,
     duration: probe.duration, title: item.show_title || item.title, showId: item.show_id || null, season: item.season_num ?? null,
     subtitle: item.type === 'episode' ? `S${item.season_num} · É${item.episode_num} — ${item.title}` : (item.year ? String(item.year) : ''),
     backdrop: item.show_backdrop || item.backdrop || item.still, logo: item.show_logo || item.logo,
-    startAt: start,
+    startAt: start, resumeAsleep,
     audioOrder, subId: sub ? sub.id : null, quality: b.quality || 'auto',
     audio: probe.audio.map((a) => ({ order: a.order, lang: a.lang, codec: a.codec, channels: a.channels, title: a.title })),
     subs: probe.subs.map((s) => ({
@@ -1518,7 +1550,7 @@ router.post('/api/play/:id', async (ctx) => {
     next: next ? { id: next.id, title: next.title, season: next.season_num, episode: next.episode_num, still: next.still, overview: next.overview } : null,
     prev: prev ? { id: prev.id, title: prev.title, season: prev.season_num, episode: prev.episode_num } : null,
     segments: item.type === 'episode' ? getSegments(item) : { intro: null, credits: null },
-    chapters: probe.chapters || [],
+    chapters,
     trickplay: trickplayPublic(item),
   });
 });
@@ -3045,7 +3077,7 @@ export async function sendTvReminders() {
   }
 }
 // Réglages de l'interface qui suivent le profil (thème, apparence des sous-titres, mode nuit)
-const UI_PREFS = { theme: /^[a-z]{2,20}$/, themeAuto: /^(off|sun|system)$/, subSize: /^(small|medium|large|xlarge)$/, subColor: /^(white|yellow|cyan|green)$/, subStyle: /^(text|soft|box)$/, subPos: /^(normal|high|top)$/, nightMode: 'bool' };
+const UI_PREFS = { spoilerGuard: 'bool', theme: /^[a-z]{2,20}$/, themeAuto: /^(off|sun|system)$/, subSize: /^(small|medium|large|xlarge)$/, subColor: /^(white|yellow|cyan|green)$/, subStyle: /^(text|soft|box)$/, subPos: /^(normal|high|top)$/, nightMode: 'bool' };
 router.put('/api/profile/ui-prefs', async (ctx) => {
   const p = requireProfile(ctx);
   const b = await readBody(ctx.req, 4096);
@@ -3519,6 +3551,204 @@ router.get('/api/admin/storage', (ctx) => { requireAdmin(ctx); sendJson(ctx.res,
 router.get('/api/admin/transcodes', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, transcodeSummary()); });
 // Extrait de quelques secondes (GIF ou MP4 480p) : fichier temporaire, servi une fois
 const clipLimiter = new Map();
+// ---------------------------------------------------------------- film pour tout le monde (les personnes présentes)
+// Titres que personne (parmi les présents) n'a vus, permis au plus jeune, et qui plaisent à chacun :
+// l'affinité de chaque personne vient de ses avis (♥) et des genres qu'elle regarde le plus
+function tasteOf(profileId) {
+  const t = { ...genreTaste(profileId) };
+  for (const r of all(`SELECT i.genres, s.genres AS sg FROM progress pr JOIN items i ON i.id = pr.item_id LEFT JOIN items s ON s.id = i.show_id WHERE pr.profile_id = ? AND (pr.watched = 1 OR pr.position > 600) ORDER BY pr.updated_at DESC LIMIT 400`, profileId)) {
+    for (const g of parseJson(r.sg || r.genres, [])) t[g] = (t[g] || 0) + 0.5;
+  }
+  const max = Math.max(1, ...Object.values(t));
+  for (const k of Object.keys(t)) t[k] /= max;
+  return t;
+}
+router.get('/api/together', (ctx) => {
+  const me = requireProfile(ctx);
+  const ids = [...new Set(String(ctx.url.searchParams.get('profiles') || '').split(',').map(Number).filter(Boolean))];
+  const profiles = ids.length ? all(`SELECT * FROM profiles WHERE id IN (${ids.map(() => '?').join(',')})`, ...ids) : [me];
+  if (!profiles.length) throw new HttpError(400, 'Choisissez au moins une personne');
+  const kind = ctx.url.searchParams.get('kind') === 'show' ? 'show' : 'movie';
+  const tastes = profiles.map((p) => ({ p, t: tasteOf(p.id) }));
+  const seen = new Set(all(`SELECT DISTINCT COALESCE(i.show_id, i.item_id) AS id FROM (SELECT pr.item_id, it.show_id FROM progress pr JOIN items it ON it.id = pr.item_id WHERE pr.profile_id IN (${profiles.map(() => '?').join(',')}) AND (pr.watched = 1 OR pr.position > 300)) i`, ...profiles.map((p) => p.id)).map((r) => r.id));
+  const kids = profiles.some((p) => p.is_kids);
+  const maxMin = Number(ctx.url.searchParams.get('max')) || (kids ? 130 : 999);
+  const items = all(`SELECT * FROM items WHERE type = ? AND version_of IS NULL`, kind).filter((i) => !seen.has(i.id) && profiles.every((p) => visible(p, i)));
+  const scored = items.map((i) => {
+    const genres = parseJson(i.genres, []);
+    const aff = tastes.map(({ t }) => (genres.length ? genres.reduce((n, g) => n + (t[g] || 0), 0) / Math.min(3, genres.length) : 0.2));
+    const min = Math.min(...aff), sum = aff.reduce((a, b) => a + b, 0) / aff.length;
+    const runtime = i.runtime || (i.duration ? Math.round(i.duration / 60) : 0);
+    if (kind === 'movie' && runtime && runtime > maxMin) return null;
+    const score = sum * 2 + min * 3 + (i.vote || 0) / 10 + (i.popularity ? Math.min(1, Math.log10(1 + i.popularity) / 3) : 0);
+    // Pourquoi : les genres partagés par le plus de monde
+    const liked = genres.map((g) => [g, tastes.filter(({ t }) => (t[g] || 0) >= 0.3).length]).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, 2);
+    const why = liked.map(([g, n]) => (n === tastes.length && tastes.length > 1 ? `${g} : plaît à tout le monde` : n > 1 ? `${g} : plaît à ${n} d’entre vous` : `${g}`));
+    return { item: card(i), score, why };
+  }).filter(Boolean).sort((a, b) => b.score - a.score);
+  sendJson(ctx.res, { profiles: profiles.map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, kids: !!p.is_kids })), kids, results: scored.slice(0, 24) });
+});
+
+// ---------------------------------------------------------------- recherche dans les dialogues
+setSubtitleVtt(subtitleVtt);
+router.get('/api/dialogues', (ctx) => {
+  const p = requireProfile(ctx);
+  const q = String(ctx.url.searchParams.get('q') || '').slice(0, 200);
+  const hits = searchDialogues(q, { limit: Number(ctx.url.searchParams.get('limit')) || 30 });
+  const ids = [...new Set(hits.map((h) => h.itemId))];
+  const items = new Map(ids.length ? all(`SELECT i.*, s.title AS show_title FROM items i LEFT JOIN items s ON s.id = i.show_id WHERE i.id IN (${ids.map(() => '?').join(',')})`, ...ids).filter((i) => visible(p, i)).map((i) => [i.id, card(i)]) : []);
+  const out = [];
+  for (const id of ids) {
+    const it = items.get(id);
+    if (!it) continue;
+    out.push({ item: it, lines: hits.filter((h) => h.itemId === id).map((h) => ({ start: h.start, stop: h.stop, text: h.text })) });
+  }
+  sendJson(ctx.res, { results: out, ...dialogueStats() });
+});
+
+// ---------------------------------------------------------------- sous-titres générés (reconnaissance vocale sur le serveur)
+router.get('/api/admin/transcribe', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { ...transcribeStatus(), libretranslateUrl: getSetting('libretranslate_url', '') }); });
+router.put('/api/admin/transcribe', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 4096);
+  if (b.model && MODELS[b.model]) setSetting('whisper_model', b.model);
+  if (b.libretranslateUrl !== undefined) { const u = String(b.libretranslateUrl || '').trim(); if (u && !/^https?:\/\//.test(u)) throw new HttpError(400, 'Adresse LibreTranslate invalide'); setSetting('libretranslate_url', u); }
+  if (b.libretranslateKey !== undefined) setSetting('libretranslate_key', String(b.libretranslateKey || '').trim());
+  sendJson(ctx.res, transcribeStatus());
+});
+router.post('/api/admin/transcribe/model', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 1024);
+  const m = MODELS[b.model] ? b.model : 'small';
+  downloadModel(m).then(() => logActivity('admin', `Modèle de reconnaissance vocale « ${m} » téléchargé`)).catch((e) => console.warn('[whisper]', e.message));
+  sendJson(ctx.res, { started: true });
+});
+// Un profil demande des sous-titres pour un titre (film ou épisode)
+router.post('/api/items/:id/subtitles/generate', async (ctx) => {
+  const p = requireProfile(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item || !item.path) throw new HttpError(404, 'Vidéo introuvable');
+  if (!visible(p, item)) throw new HttpError(403, 'Interdit');
+  try {
+    const job = requestSubtitles(item.id, { lang: 'fr', onDone: () => { scheduleDialogues(item.id, true); notify({ title: 'Sous-titres prêts', body: `« ${item.title} » : sous-titres générés, à choisir dans le lecteur.`, url: pathFor(item.show_id || item.id), tag: `subs-${item.id}` }, { profileId: p.id }).catch(() => {}); } });
+    sendJson(ctx.res, { id: job.id, phase: job.phase, pct: job.pct, error: job.error });
+  } catch (e) { throw new HttpError(400, e.message); }
+});
+router.get('/api/items/:id/subtitles/generate', (ctx) => {
+  requireProfile(ctx);
+  const j = jobOf(Number(ctx.params.id));
+  sendJson(ctx.res, j ? { id: j.id, phase: j.phase, pct: j.pct, error: j.error, done: !!j.result, sub: j.result ? j.result.sub : null } : { none: true });
+});
+
+// ---------------------------------------------------------------- lumières synchronisées (Hue, WLED)
+router.get('/api/lights', (ctx) => { requireProfile(ctx); const s = lightsStatus(); sendJson(ctx.res, { enabled: s.enabled, targets: s.targets, ready: lightsReady() }); });
+router.post('/api/lights/color', async (ctx) => {
+  requireProfile(ctx);
+  if (!lightsReady()) throw new HttpError(409, 'Aucune lampe configurée');
+  const b = await readBody(ctx.req, 512);
+  const r = await setColor({ r: b.r, g: b.g, b: b.b, bri: b.bri, fast: !!b.fast });
+  sendJson(ctx.res, r);
+});
+router.post('/api/lights/session', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req, 256);
+  sendJson(ctx.res, b.action === 'stop' ? await lightsEnd() : await lightsStart(p.id));
+});
+router.get('/api/admin/lights', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, lightsStatus()); });
+router.put('/api/admin/lights', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 8192);
+  try { saveLights(b); } catch (e) { throw new HttpError(400, e.message); }
+  logActivity('admin', 'Réglages des lumières modifiés');
+  sendJson(ctx.res, lightsStatus());
+});
+router.post('/api/admin/lights/hue/pair', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 1024);
+  try { sendJson(ctx.res, await huePair(b.bridge)); } catch (e) { throw new HttpError(400, `Pont Hue injoignable : ${e.message}`); }
+});
+router.get('/api/admin/lights/hue/lights', async (ctx) => {
+  requireAdmin(ctx);
+  try { sendJson(ctx.res, { lights: await hueLights() }); } catch (e) { throw new HttpError(400, e.message); }
+});
+router.post('/api/admin/lights/wled/check', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 1024);
+  try { sendJson(ctx.res, await wledInfo(b.host)); } catch (e) { throw new HttpError(400, `WLED injoignable : ${e.message}`); }
+});
+router.post('/api/admin/lights/test', async (ctx) => {
+  requireAdmin(ctx);
+  try { sendJson(ctx.res, await testLights()); } catch (e) { throw new HttpError(400, e.message); }
+});
+
+// ---------------------------------------------------------------- scènes : « Précédemment dans… », meilleurs moments, chapitres
+const chapterCache = new Map();
+async function chaptersFor(item, probe) {
+  const key = `${item.id}:${item.mtime}`;
+  if (chapterCache.has(key)) return chapterCache.get(key);
+  const data = getScenes(item);
+  if (!data) return [];
+  const dialogues = await dialoguesOf(item, subtitleVtt);
+  const out = generatedChapters({ ...data, duration: data.duration || (probe && probe.duration) || 0 }, dialogues);
+  chapterCache.set(key, out);
+  if (chapterCache.size > 300) chapterCache.delete(chapterCache.keys().next().value);
+  return out;
+}
+/** Résumé de l'épisode « ep » (pour qui va regarder le suivant) : analyse si besoin, puis montage. Renvoie le fichier. */
+async function prepareRecap(ep) {
+  const data = await analyzeScenes(ep);
+  const dialogues = await dialoguesOf(ep, subtitleVtt);
+  const plan = recapPlan(ep, data, dialogues);
+  return buildRecap(ep, plan);
+}
+const recapJobs = new Map();
+// Le résumé à montrer avant l'épisode :id (celui de l'épisode précédent). 202 tant qu'il se prépare.
+router.get('/api/items/:id/recap', async (ctx) => {
+  const p = requireProfile(ctx);
+  const ep = get("SELECT * FROM items WHERE id = ? AND type = 'episode'", Number(ctx.params.id));
+  if (!ep) throw new HttpError(404, 'Épisode introuvable');
+  if (!visible(p, ep)) throw new HttpError(403, 'Interdit');
+  const prev = prevEpisode(ep);
+  if (!prev || !prev.path || !fs.existsSync(prev.path)) return sendJson(ctx.res, { available: false, reason: 'Pas d’épisode précédent' });
+  const file = path.join(config.dataDir, 'cache', 'scenes', `recap_${prev.id}_${prev.mtime}.mp4`);
+  const info = () => ({ prev: { id: prev.id, title: prev.title, season: prev.season_num, episode: prev.episode_num }, url: `/api/items/${ep.id}/recap.mp4` });
+  if (fs.existsSync(file)) return sendJson(ctx.res, { available: true, ready: true, ...info() });
+  if (ctx.url.searchParams.get('build') === '0') return sendJson(ctx.res, { available: true, ready: false, ...info() });
+  if (!recapJobs.has(prev.id)) {
+    recapJobs.set(prev.id, { at: Date.now(), error: null });
+    prepareRecap(prev).then(() => recapJobs.delete(prev.id)).catch((e) => { recapJobs.set(prev.id, { at: Date.now(), error: e.message }); setTimeout(() => recapJobs.delete(prev.id), 600000); });
+  }
+  const job = recapJobs.get(prev.id);
+  if (job && job.error) return sendJson(ctx.res, { available: false, reason: job.error });
+  ctx.res.statusCode = 202;
+  sendJson(ctx.res, { available: true, ready: false, since: job ? job.at : Date.now(), ...info() });
+});
+router.get('/api/items/:id/recap.mp4', (ctx) => {
+  const p = requireProfile(ctx);
+  const ep = get("SELECT * FROM items WHERE id = ? AND type = 'episode'", Number(ctx.params.id));
+  if (!ep || !visible(p, ep)) throw new HttpError(404, 'Introuvable');
+  const prev = prevEpisode(ep);
+  const file = prev && path.join(config.dataDir, 'cache', 'scenes', `recap_${prev.id}_${prev.mtime}.mp4`);
+  if (!file || !fs.existsSync(file)) throw new HttpError(404, 'Résumé pas encore prêt');
+  sendFile(ctx.req, ctx.res, file, { type: 'video/mp4', cache: 'private, max-age=86400' });
+});
+// Meilleurs moments d'un film ou d'un épisode (extraits de 8 s à partager)
+router.get('/api/items/:id/highlights', async (ctx) => {
+  const p = requireProfile(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item || !item.path) throw new HttpError(404, 'Vidéo introuvable');
+  if (!visible(p, item)) throw new HttpError(403, 'Interdit');
+  let data = getScenes(item);
+  if (!data) {
+    if (ctx.url.searchParams.get('wait') === '1') data = await analyzeScenes(item);
+    else { scheduleScenes(item.id, true); ctx.res.statusCode = 202; return sendJson(ctx.res, { ready: false, moments: [] }); }
+  }
+  const dialogues = await dialoguesOf(item, subtitleVtt);
+  const moments = sceneHighlights(item, data, { count: Number(ctx.url.searchParams.get('n')) || 5, length: 8, dialogues })
+    .map((m) => ({ ...m, line: (dialogues.find((x) => x.start >= m.start - 1 && x.start <= m.end) || {}).text || null }));
+  sendJson(ctx.res, { ready: true, moments });
+});
+
 router.get('/api/items/:id/clip', async (ctx) => {
   const p = requireProfile(ctx);
   const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));

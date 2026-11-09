@@ -1,6 +1,6 @@
 // Lecteur vidéo plein écran : lecture directe ou HLS, sous-titres, pistes, qualité, épisode suivant, Chromecast, AirPlay
 import { api, auth, deviceCaps, castCaps, preferredQuality, setPreferredQuality, prefs, clearApiCache } from '../api.js';
-import { h, icon, sheet, fmtTime, langName, toast, img, isBack } from '../ui.js';
+import { h, icon, sheet, fmtTime, langName, toast, img, isBack, hueOf } from '../ui.js';
 import { showPath, currentUrl, go, back, setTitle } from '../core.js';
 import { focusEl } from '../nav.js';
 import { castSupported, loadCast, castContext, castMedia, remote } from '../cast.js';
@@ -125,6 +125,8 @@ export async function render(main, { id, query }) {
   } }, icon('shuffle'));
   // « Passer l'intro » / « Passer le générique » : visible même quand les commandes sont cachées
   const skipBtn = h('button', { class: 'p-skip f', hidden: true, onclick: () => doSkip() }, icon('skip'), h('span', {}, 'Passer l’intro'));
+  // « Précédemment dans… » : résumé de 30 s de l'épisode d'avant, monté par Venus (proposé en début d'épisode)
+  const recapBtn = h('button', { class: 'p-skip p-recap f', hidden: true, onclick: () => playRecap() }, icon('restart'), h('span', {}, 'Précédemment dans la série'));
   // TV en direct : liste des chaînes à droite, pour zapper sans quitter l'image
   const chListBtn = h('button', { class: 'btn btn-ghost btn-small f', hidden: true, 'aria-label': 'Liste des chaînes', onclick: () => toggleChannels() }, icon('list'), h('span', { class: 'lbl' }, 'Chaînes'));
   // TV en direct : enregistrer le programme en cours, le suivant ou une durée
@@ -141,6 +143,8 @@ export async function render(main, { id, query }) {
   const ambCanvas = h('canvas', { class: 'amb-canvas', 'aria-hidden': 'true' });
   const reactLayer = h('div', { class: 'react-layer', 'aria-hidden': 'true' });
   const fitBtn = h('button', { class: 'p-icon f p-fit', 'aria-label': 'Format de l’image', title: 'Format de l’image (touche Z) : ajuster, remplir, zoom, étirer', onclick: () => openFit() }, icon('fit'));
+  // Lumières de la pièce (Hue, WLED) synchronisées avec la couleur dominante de l'image
+  const lightsBtn = h('button', { class: `p-icon f p-lights${prefs.get('lights') ? ' on' : ''}`, hidden: true, 'aria-label': 'Lumières synchronisées', 'aria-pressed': String(!!prefs.get('lights')), title: 'Lumières de la pièce : suivent les couleurs du film', onclick: () => setLights(!prefs.get('lights')) }, icon('bulb'));
   const ambBtn = h('button', { class: 'p-icon f', 'aria-label': 'Mode Ambiance', 'aria-pressed': 'false', title: 'Ambiance : la lumière du film déborde autour de l’image', onclick: () => setAmbiance(!ambOn) }, icon('glow'));
   const partyBtn = h('button', { class: 'btn btn-ghost btn-small f', title: 'Regarder ensemble, chacun sur son écran', onclick: () => startParty(), 'aria-label': 'Regarder ensemble' }, icon('people'), h('span', { class: 'lbl' }, 'Ensemble'));
   let quietStart = Date.now() - chainedAt < 3000;
@@ -150,8 +154,8 @@ export async function render(main, { id, query }) {
     h('div', { class: 'p-center' }, rwBtn, playBtn, ffBtn),
     h('div', { class: 'p-bottom' },
       h('div', { class: 'p-timeline' }, curEl, track, remEl),
-      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, recBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, shareBtn, fitBtn, ambBtn, nightBtn, pipBtn, castBtn, airBtn, fsBtn)),
-    nextPanel, overlay, volOsd, skipBtn, chPanel, below, lockLayer);
+      h('div', { class: 'p-controls' }, volBox, liveTag, tracksBtn, speedBtn, chapBtn, chPrev, chNext, h('div', { class: 'spacer' }), chListBtn, recBtn, partyBtn, chatBtn, epsBtn, shuffleBtn, prevBtn, nextBtn, sleepBtn, shareBtn, fitBtn, ambBtn, lightsBtn, nightBtn, pipBtn, castBtn, airBtn, fsBtn)),
+    nextPanel, overlay, volOsd, skipBtn, recapBtn, chPanel, below, lockLayer);
   main.append(root);
   document.body.style.overflow = 'hidden';
   // Style des sous-titres choisi dans Réglages (texte seul par défaut)
@@ -205,6 +209,7 @@ export async function render(main, { id, query }) {
     if (!g) return;
     g.src.disconnect();
     g.src.connect(on ? g.comp : g.ctx.destination);
+    if (g.analyser) g.src.connect(g.analyser);
     g.on = on;
     if (g.ctx.state === 'suspended') g.ctx.resume().catch(() => {});
   }
@@ -263,6 +268,7 @@ export async function render(main, { id, query }) {
     } catch (e) { return showError(e.message); }
     if (destroyed) { if (res.sessionId) stopSession(res.sessionId); return; }
     info = res;
+    if (info.resumeAsleep) setTimeout(() => toast('Vous vous étiez endormi : reprise au moment de votre dernier geste'), 1500);
     applyFit(savedFit(), { silent: true });
     audioOrder = info.audioOrder;
     subId = info.subId;
@@ -435,7 +441,9 @@ export async function render(main, { id, query }) {
 
   // ---------------------------------------------------------------- contrôles
   let userActAt = 0, desiredPaused = false;
-  const markUser = () => { userActAt = Date.now(); desiredPaused = false; };
+  let userActPos = 0;
+  const startedAt = Date.now(); // ouverture du lecteur : compte comme un geste
+  const markUser = () => { userActAt = Date.now(); desiredPaused = false; try { userActPos = position(); } catch { /* */ } };
   function togglePlay() {
     markUser();
     if (casting) return casting.toggle();
@@ -651,6 +659,78 @@ export async function render(main, { id, query }) {
     chapMarks.replaceChildren(...(d ? chapters.slice(1).map((c) => h('i', { style: { left: `${(c.start / d) * 100}%` } })) : []));
   }
   const chapterAt = (t) => { let c = null; for (const x of chapters) if (x.start <= t + 0.01) c = x; return c; };
+
+  // ---------------------------------------------------------------- pause intelligente : qui est là, ce qu'il reste, où on en est
+  // Après 1,5 s de pause (pas pendant un déplacement), une fiche discrète : distribution avec photos, temps restant
+  // et heure de fin, chapitre en cours, dernière réplique. Elle disparaît dès que la lecture reprend.
+  let pauseCard = null, pauseT = null, detailsCache = null;
+  async function showPauseCard() {
+    if (!info || info.live || info.type === 'channel' || pauseCard || !video.paused || video.seeking || recapLayer || root.querySelector('.p-night') || !prefs.get('pauseCard')) return;
+    try { detailsCache = detailsCache && detailsCache.id === (info.showId || info.itemId) ? detailsCache : await api(`/api/items/${info.showId || info.itemId}`); } catch { detailsCache = null; }
+    if (!video.paused || pauseCard || destroyed) return;
+    const d = detailsCache || {};
+    const cr = d.credits || {};
+    const people = [...(cr.cast || []).slice(0, 6), ...(cr.directors || []).slice(0, 1).map((x) => ({ ...x, role: 'Réalisation' }))];
+    const left = Math.max(0, duration() - position());
+    const endAt = new Date(Date.now() + left * 1000).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const chap = chapterAt(position());
+    const line = [...cues].reverse().find((c) => c.start <= position() + 0.2);
+    const ep = info.showId && d.seasons ? (d.seasons.flatMap((x) => x.episodes || []).find((e) => e.id === info.itemId) || null) : null;
+    const context = ep && ep.overview ? ep.overview : !info.showId && d.overview ? d.overview : '';
+    pauseCard = h('div', { class: 'p-pause', role: 'complementary', 'aria-label': 'Pendant la pause' },
+      h('div', { class: 'p-pause-top' },
+        h('div', { class: 'p-pause-meta' },
+          h('b', {}, `Il reste ${fmtTime(left)}`), h('span', {}, `Se termine à ${endAt}`),
+          chap ? h('span', {}, `${chap.title}`) : null),
+        people.length ? h('div', { class: 'p-pause-cast' }, ...people.map((x) => h('button', { class: 'p-pause-person f', title: `${x.name}${x.role || x.character ? ` · ${x.role || x.character}` : ''}`, onclick: () => go(`/recherche?q=${encodeURIComponent(x.name)}`) },
+          h('span', { class: 'face', style: { '--h': hueOf(x.name) } }, x.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join(''), x.photo ? h('img', { src: img(x.photo), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: (e) => e.target.remove() }) : null),
+          h('small', {}, x.name.split(' ')[0]), x.character ? h('small', { class: 'role' }, x.character) : null))) : null),
+      line ? h('p', { class: 'p-pause-line' }, `« ${line.text.replace(/\n/g, ' ')} »`) : null,
+      context ? h('p', { class: 'p-pause-ctx' }, context.length > 220 ? `${context.slice(0, 220)}…` : context) : null);
+    root.append(pauseCard);
+  }
+  function hidePauseCard() { clearTimeout(pauseT); if (pauseCard) { pauseCard.remove(); pauseCard = null; } }
+  onVideo('pause', () => { clearTimeout(pauseT); pauseT = setTimeout(showPauseCard, 1500); });
+  onVideo('play', hidePauseCard);
+  onVideo('seeking', hidePauseCard);
+
+  // ---------------------------------------------------------------- « Précédemment dans… »
+  let recap = null, recapTimer = null, recapLayer = null, recapShownFor = null;
+  function hideRecapBtn() { clearTimeout(recapTimer); recapBtn.hidden = true; }
+  async function offerRecap() {
+    hideRecapBtn();
+    if (!info || info.live || !info.showId || !info.prev || casting || party) return;
+    if (position() > 90 || recapShownFor === info.itemId) return;
+    recapShownFor = info.itemId;
+    try {
+      // 202 : le résumé se prépare ; on regarde de nouveau dans 25 s (une seule fois)
+      let r = await api(`/api/items/${info.itemId}/recap`);
+      if (r && r.available && !r.ready) { await new Promise((ok) => setTimeout(ok, 25000)); if (destroyed || info.itemId !== recapShownFor) return; r = await api(`/api/items/${info.itemId}/recap?build=0`); }
+      if (!r || !r.ready || destroyed || position() > 180) return;
+      recap = r;
+      // Enchaînement automatique avec l'option « Précédemment automatique » : le résumé part tout seul
+      if (prefs.get('recapAuto') && Date.now() - chainedAt < 5000) { playRecap(); return; }
+      recapBtn.querySelector('span').textContent = `Précédemment : ${r.prev.season ? `S${r.prev.season} É${r.prev.episode}` : r.prev.title}`;
+      recapBtn.hidden = false;
+      recapTimer = setTimeout(hideRecapBtn, 15000);
+    } catch { /* pas de résumé */ }
+  }
+  function playRecap() {
+    if (!recap || recapLayer) return;
+    hideRecapBtn();
+    const wasPaused = video.paused;
+    video.pause();
+    const rv = h('video', { class: 'p-recap-video', src: recap.url, autoplay: true, playsinline: true, preload: 'auto' });
+    const skip = h('button', { class: 'p-skip f', onclick: () => done() }, icon('skip'), h('span', {}, 'Passer le résumé'));
+    recapLayer = h('div', { class: 'p-recap-layer', role: 'dialog', 'aria-label': 'Précédemment dans la série' }, rv, h('div', { class: 'p-recap-tag' }, icon('restart'), `Précédemment${recap.prev.season ? ` · S${recap.prev.season} É${recap.prev.episode}` : ''}`), skip);
+    const done = () => { if (!recapLayer) return; const l = recapLayer; recapLayer = null; rv.pause(); rv.removeAttribute('src'); rv.load(); l.remove(); if (!wasPaused && !destroyed) video.play().catch(() => {}); };
+    rv.addEventListener('ended', done);
+    rv.addEventListener('error', () => { toast('Résumé indisponible', true); done(); });
+    rv.volume = video.volume; rv.muted = video.muted;
+    root.append(recapLayer);
+    focusEl(skip, { scroll: false });
+    rv.play().catch(() => {});
+  }
   function jumpChapter(dir) {
     if (chapters.length < 2) return false;
     const t = position();
@@ -719,25 +799,44 @@ export async function render(main, { id, query }) {
   function openShare() {
     if (!info || info.live || info.type === 'channel') { toast('Pas d’extrait pour le direct', true); return; }
     video.pause();
-    const at = Math.max(0, position() - 4);
+    let at = Math.max(0, position() - 4);
     let len = 8, fmt = 'mp4';
     const mk = () => `/api/items/${info.itemId}/clip?start=${Math.floor(at)}&duration=${len}&format=${fmt}`;
     const go2 = h('a', { class: 'btn btn-play f', href: mk(), download: '' }, icon('down'), 'Créer l’extrait');
     const upd = () => { go2.href = mk(); };
+    const atLabel = h('p', { class: 'muted' }, `À partir de ${fmtTime(at)}. L’extrait est fabriqué sur le serveur (quelques secondes), puis se télécharge : à envoyer sur WhatsApp, Messages…`);
+    const moments = h('div', { class: 'moments' }, h('p', { class: 'muted' }, 'Recherche des meilleurs moments…'));
     const s = sheet('Partager un extrait', h('div', { class: 'share-box' },
-      h('p', { class: 'muted' }, `À partir de ${fmtTime(at)}. L’extrait est fabriqué sur le serveur (quelques secondes), puis se télécharge : à envoyer sur WhatsApp, Messages…`),
+      atLabel,
+      h('h3', { class: 'moments-t' }, 'Meilleurs moments'), moments,
       h('div', { class: 'look-row' }, h('span', {}, 'Durée'), h('div', { class: 'seg' }, [4, 8, 12, 15].map((v) => h('button', { class: `seg-b f${len === v ? ' on' : ''}`, onclick: (e) => { len = v; upd(); e.currentTarget.parentNode.querySelectorAll('.seg-b').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, `${v} s`)))),
       h('div', { class: 'look-row' }, h('span', {}, 'Format'), h('div', { class: 'seg' }, [['mp4', 'Vidéo (MP4, avec le son)'], ['gif', 'GIF animé (sans son)']].map(([v, l]) => h('button', { class: `seg-b f${fmt === v ? ' on' : ''}`, onclick: (e) => { fmt = v; upd(); e.currentTarget.parentNode.querySelectorAll('.seg-b').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } }, l)))),
       h('div', { class: 'form-actions' }, go2)));
     go2.addEventListener('click', () => { toast('Extrait en préparation…'); setTimeout(() => s.close(), 800); });
+    // Moments forts repérés par Venus (scènes d'action, répliques) : un clic choisit le début de l'extrait
+    const fill = (r) => {
+      if (!r.ready) { moments.replaceChildren(h('p', { class: 'muted' }, 'Venus analyse encore cette vidéo : les meilleurs moments seront proposés à la prochaine ouverture.')); return; }
+      if (!r.moments.length) { moments.replaceChildren(h('p', { class: 'muted' }, 'Aucun moment fort repéré.')); return; }
+      moments.replaceChildren(...r.moments.map((m) => {
+        const tile = tileAt(m.start + 2, 160);
+        return h('button', { class: 'moment f', onclick: (e) => { at = m.start; len = 8; upd(); atLabel.textContent = `À partir de ${fmtTime(at)} (moment fort).`; moments.querySelectorAll('.moment').forEach((b) => b.classList.toggle('on', b === e.currentTarget)); } },
+          h('span', { class: 'chap-img', style: tile || {} }, tile ? null : icon('play')),
+          h('span', { class: 'moment-txt' }, h('b', {}, fmtTime(m.start)), h('small', {}, m.line || 'Scène forte')));
+      }));
+    };
+    api(`/api/items/${info.itemId}/highlights`).then(fill).catch(() => moments.replaceChildren());
   }
   // ---------------------------------------------------------------- silences accélérés (analyse du son dans le navigateur)
   let silNode = null, silTimer = null, silOn = false, silSince = 0;
   function startSilence() {
     if (silTimer || !window.AudioContext || info?.live) return;
     try {
-      audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-      if (!silNode) { silNode = audioCtx.createMediaElementSource(video); const an = audioCtx.createAnalyser(); an.fftSize = 1024; silNode.connect(an); an.connect(audioCtx.destination); silNode.analyser = an; }
+      // Un seul circuit audio par vidéo (partagé avec le mode nuit) : l'analyseur est une simple dérivation
+      const g = nightGraph();
+      if (!g) return;
+      audioCtx = g.ctx;
+      if (!g.analyser) { const an = g.ctx.createAnalyser(); an.fftSize = 1024; g.src.connect(an); g.analyser = an; if (!g.on) { g.src.disconnect(); g.src.connect(g.ctx.destination); g.src.connect(an); } }
+      silNode = { analyser: g.analyser };
       const buf = new Uint8Array(silNode.analyser.fftSize);
       silTimer = setInterval(() => {
         if (video.paused || audioCtx.state !== 'running') return;
@@ -823,6 +922,7 @@ export async function render(main, { id, query }) {
   onVideo('playing', () => { spinner.hidden = true; mediaRecover = 0; if (!quietStart) showUi(); requestWakeLock(); });
   onVideo('canplay', () => { spinner.hidden = true; });
   onVideo('play', () => { playBtn.replaceChildren(icon('pause')); if (!quietStart) showUi(); shareState('play'); });
+  onVideo('playing', () => { if (recapShownFor !== (info && info.itemId)) offerRecap(); });
   onVideo('seeked', () => shareState('seek'));
   onVideo('pause', () => { playBtn.replaceChildren(icon('play')); showUi(true); saveProgress(); releaseWakeLock(); shareState('pause'); });
   onVideo('timeupdate', () => {
@@ -857,7 +957,9 @@ export async function render(main, { id, query }) {
     if (!info || info.live) return;
     const pos = final ? duration() : position();
     if (!pos || pos < 5) return;
-    const body = JSON.stringify({ itemId: info.itemId, position: pos, duration: duration(), sessionId: info.sessionId });
+    // idle / activePos : depuis combien de temps personne n'a touché à rien, et où en était la vidéo à ce moment-là
+    // (le serveur remet la reprise à cet endroit si l'on s'est endormi devant l'écran)
+    const body = JSON.stringify({ itemId: info.itemId, position: pos, duration: duration(), sessionId: info.sessionId, idle: Math.round((Date.now() - (userActAt || startedAt)) / 1000), activePos: userActAt ? userActPos : 0 });
     fetch('/api/progress', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` }, body }).catch(() => {});
   }
   saveTimer = setInterval(() => {
@@ -988,10 +1090,10 @@ export async function render(main, { id, query }) {
   const autoKey = () => `vn_auto_${info && (info.showId || info.itemId)}`;
   function autoCount(reset = false) { try { if (reset) { sessionStorage.removeItem(autoKey()); return 0; } const n = Number(sessionStorage.getItem(autoKey()) || 0); return n; } catch { return 0; } }
   function bumpAuto() { try { sessionStorage.setItem(autoKey(), String(autoCount() + 1)); } catch { /* */ } }
-  function askStillThere() {
+  function askStillThere(asleep = false) {
     video.pause(); saveProgress();
-    const box = h('div', { class: 'p-night' }, h('div', {}, h('span', { class: 'p-night-moon' }, icon('eye')), h('h2', {}, 'Toujours là ?'),
-      h('p', {}, 'Trois épisodes se sont enchaînés sans que vous touchiez à rien. La lecture est en pause, votre progression est enregistrée.'),
+    const box = h('div', { class: 'p-night' }, h('div', {}, h('span', { class: 'p-night-moon' }, icon(asleep ? 'moon' : 'eye')), h('h2', {}, asleep ? 'Vous vous êtes endormi ?' : 'Toujours là ?'),
+      h('p', {}, asleep ? `Aucun geste depuis plus de 45 minutes. La reprise est réglée sur votre dernier geste (vers ${fmtTime(Math.max(0, userActPos - 60))}) : vous retrouverez l’histoire là où vous l’avez quittée.` : 'Trois épisodes se sont enchaînés sans que vous touchiez à rien. La lecture est en pause, votre progression est enregistrée.'),
       h('div', { class: 'actions' }, h('button', { class: 'btn btn-play f', onclick: () => { box.remove(); autoCount(true); playNext(true); } }, icon('play'), 'Oui, épisode suivant'),
         h('button', { class: 'btn btn-ghost f', onclick: () => { box.remove(); exit(); } }, 'Arrêter'))));
     root.append(box);
@@ -1000,6 +1102,8 @@ export async function render(main, { id, query }) {
   function playNext(confirmed = false) {
     if (!info || !info.next) return;
     const auto = Date.now() - userActAt > 60000 && !confirmed; // enchaînement sans geste depuis plus d'une minute
+    // Aucun geste depuis 45 min : sans doute endormi → on demande, au lieu d'enchaîner (la reprise est déjà remise au dernier geste)
+    if (auto && !party && Date.now() - (userActAt || startedAt) > 45 * 60000) { askStillThere(true); return; }
     if (auto && !info.next.queue && autoCount() >= 2 && !party) { askStillThere(); return; }
     if (auto) bumpAuto(); else autoCount(true);
     saveProgress(true);
@@ -1032,7 +1136,25 @@ export async function render(main, { id, query }) {
       h('small', {}, 'Touches G et H : 0,1 s')));
     subCol.append(h('button', { class: 'opt ic f', onclick: () => { s.close(); findSubtitles(); } }, icon('search'), 'Chercher des sous-titres en ligne'));
     subCol.append(h('button', { class: 'opt ic f', onclick: () => { s.close(); openSubLook(); } }, icon('subs'), 'Apparence des sous-titres'));
+    if (info.type !== 'channel' && !info.subs.some((x) => /^fr/.test(x.lang || '') && !x.forced)) subCol.append(h('button', { class: 'opt ic f', onclick: () => { s.close(); generateSubtitles(); } }, icon('mic'), 'Générer des sous-titres en français', h('small', {}, 'Reconnaissance vocale sur le serveur, quelques minutes')));
     const s = sheet('Audio et sous-titres', h('div', { class: 'sheet-cols' }, audioCol, subCol));
+  }
+  // Sous-titres générés par le serveur (whisper) : lancement, suivi, puis sélection automatique une fois prêts
+  let genTimer = null;
+  async function generateSubtitles() {
+    try {
+      const j = await api(`/api/items/${info.itemId}/subtitles/generate`, { method: 'POST' });
+      toast(j.phase === 'En attente' ? 'Sous-titres en file d’attente : vous serez prévenu quand ils seront prêts' : `Sous-titres : ${j.phase}…`);
+      clearInterval(genTimer);
+      const itemId = info.itemId;
+      genTimer = setInterval(async () => {
+        if (destroyed || !info || info.itemId !== itemId) { clearInterval(genTimer); return; }
+        const st = await api(`/api/items/${itemId}/subtitles/generate`).catch(() => null);
+        if (!st || st.none) { clearInterval(genTimer); return; }
+        if (st.error) { clearInterval(genTimer); toast(`Sous-titres : ${st.error}`, true); return; }
+        if (st.done) { clearInterval(genTimer); toast('Sous-titres générés : activés', { type: 'success' }); subId = st.sub ? st.sub.id : subId; load(position(), { reason: 'Sous-titres générés' }); }
+      }, 6000);
+    } catch (e) { toast(e.message, true); }
   }
 
   // Apparence des sous-titres (taille, couleur, fond, position), mémorisée sur cet appareil, appliquée en direct
@@ -1219,6 +1341,67 @@ export async function render(main, { id, query }) {
     if (stopAmb) { stopAmb(); stopAmb = null; }
     if (on) stopAmb = ambilight(video, ambCanvas);
   }
+
+
+  // ---------------------------------------------------------------- lumières synchronisées (Hue, WLED)
+  // Le navigateur mesure la couleur dominante de l'image (16×9 pixels, 2 fois par seconde) ; le serveur l'envoie aux lampes.
+  let lightsReady = false, lightsTimer = null, lightsSession = false, lightsLast = null, lightsLastAt = 0, lightsTainted = false;
+  const lightsCanvas = document.createElement('canvas');
+  lightsCanvas.width = 16; lightsCanvas.height = 9;
+  const lightsCtx = lightsCanvas.getContext('2d', { willReadFrequently: true });
+  api('/api/lights').then((r) => { lightsReady = !!(r && r.ready); lightsBtn.hidden = !lightsReady; if (lightsReady && !video.paused) startLights(); }).catch(() => {});
+  function setLights(on) {
+    prefs.set('lights', on);
+    lightsBtn.classList.toggle('on', on);
+    lightsBtn.setAttribute('aria-pressed', String(on));
+    if (on) { startLights(); toast('Lumières synchronisées'); } else { stopLights(); toast('Lumières rendues à la pièce'); }
+  }
+  function dominantColor() {
+    if (video.readyState < 2) return null;
+    lightsCtx.drawImage(video, 0, 0, 16, 9);
+    const d = lightsCtx.getImageData(0, 0, 16, 9).data;
+    let r = 0, g = 0, b = 0, w = 0, lum = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const R = d[i], G = d[i + 1], B = d[i + 2];
+      const mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+      const sat = mx ? (mx - mn) / mx : 0;
+      const l = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+      lum += l;
+      const wt = 0.1 + sat * 1.6 + (l / 255) * 0.3; // les couleurs franches et lumineuses pèsent plus que les gris
+      r += R * wt; g += G * wt; b += B * wt; w += wt;
+    }
+    const n = d.length / 4;
+    lum /= n; r /= w; g /= w; b /= w;
+    const mx = Math.max(r, g, b) || 1, boost = 1.45; // saturation renforcée : une ampoule grise n'a aucun intérêt
+    r = Math.max(0, mx - (mx - r) * boost); g = Math.max(0, mx - (mx - g) * boost); b = Math.max(0, mx - (mx - b) * boost);
+    const k = 255 / (Math.max(r, g, b) || 1);
+    return { r: Math.round(r * k), g: Math.round(g * k), b: Math.round(b * k), bri: Math.min(1, Math.max(0.08, 0.1 + (lum / 255) * 1.2)) };
+  }
+  async function lightsTick() {
+    if (destroyed || video.paused || !prefs.get('lights') || !lightsReady) return;
+    let c;
+    try { c = dominantColor(); } catch (e) {
+      // Source d'un autre domaine : le navigateur refuse de lire les pixels
+      if (e && e.name === 'SecurityError') { lightsTainted = true; stopLights(); toast('Lumières indisponibles pour cette source', true); }
+      return;
+    }
+    if (!c) return;
+    const now = Date.now();
+    const far = !lightsLast || Math.abs(c.r - lightsLast.r) + Math.abs(c.g - lightsLast.g) + Math.abs(c.b - lightsLast.b) > 36 || Math.abs(c.bri - lightsLast.bri) > 0.08;
+    if (!far && now - lightsLastAt < 4000) return;
+    lightsLast = c; lightsLastAt = now;
+    try { await api('/api/lights/color', { method: 'POST', body: c }); } catch { /* le serveur réessaiera au prochain tic */ }
+  }
+  function startLights() {
+    if (!lightsReady || lightsTainted || !prefs.get('lights') || lightsTimer) return;
+    if (!lightsSession) { lightsSession = true; api('/api/lights/session', { method: 'POST', body: { action: 'start' } }).catch(() => {}); }
+    lightsTimer = setInterval(lightsTick, 500);
+  }
+  function stopLights() {
+    clearInterval(lightsTimer); lightsTimer = null; lightsLast = null;
+    if (lightsSession) { lightsSession = false; api('/api/lights/session', { method: 'POST', body: { action: 'stop' } }).catch(() => {}); }
+  }
+  onVideo('playing', () => startLights());
 
   // ---------------------------------------------------------------- séance à plusieurs
   let party = null, panel = null, applyingRemote = false, syncTimer = null;
@@ -1506,6 +1689,7 @@ export async function render(main, { id, query }) {
     document.removeEventListener('keydown', onKey, true);
     if (zapper) { zapper.stop(); document.removeEventListener('keydown', zapper.onKey, true); }
     if (stopAmb) stopAmb();
+    if (!handedOff) stopLights(); else { clearInterval(lightsTimer); lightsTimer = null; }
     ambRo.disconnect();
     if (party) party.close();
     clearInterval(syncTimer);

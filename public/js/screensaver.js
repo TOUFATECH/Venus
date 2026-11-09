@@ -19,17 +19,26 @@ export function saverDelay() {
 const playing = () => [...document.querySelectorAll('video, audio')].some((m) => !m.paused && !m.ended && m.readyState > 1);
 const blocked = () => BLOCK.test(location.pathname) || !!document.querySelector('.palette, .sheet-wrap.open, dialog[open]') || document.hidden;
 
+let hiddenAt = 0;
 function wake(e) {
   last = Date.now();
-  if (!el) return;
+  // Un mouvement de souris a pu fermer la veille juste avant le clic : ce clic-là ne compte pas non plus
+  if (!el && Date.now() - hiddenAt > 700) return;
   // Le geste qui réveille ne fait rien d'autre (pas de clic sur ce qui est dessous, pas de touche transmise)
   if (e && e.type !== 'mousemove' && e.type !== 'pointermove') { e.preventDefault(); e.stopPropagation(); }
+  // Le « click » qui suit l'appui est avalé aussi (sinon il relancerait la vidéo ou ouvrirait une fiche)
+  if (e && (e.type === 'pointerdown' || e.type === 'touchstart')) {
+    const swallow = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+    window.addEventListener('click', swallow, { capture: true, once: true });
+    setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 600);
+  }
   hide();
 }
 function hide() {
   clearTimeout(timer); clearInterval(clockT);
   const x = el; el = null;
   if (!x) return;
+  hiddenAt = Date.now();
   x.classList.add('out');
   setTimeout(() => x.remove(), 400);
 }

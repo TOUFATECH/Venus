@@ -160,3 +160,104 @@ export function RemoteBox() {
     </>
   );
 }
+
+// ---------------------------------------------------------------- sous-titres générés (reconnaissance vocale)
+export function TranscribeBox() {
+  const [st, setSt] = useState(null);
+  const [lt, setLt] = useState('');
+  const [key, setKey] = useState('');
+  const load = () => api('/api/admin/transcribe').then((r) => { setSt(r); setLt(r.libretranslateUrl || ''); }).catch(() => {});
+  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []);
+  if (!st) return null;
+  const save = async (body) => { setSt(await api('/api/admin/transcribe', { method: 'PUT', body })); toast('Enregistré'); };
+  return (
+    <section className="box" id="transcribe">
+      <h2>Sous-titres générés</h2>
+      <p>Pour un film ou un épisode sans sous-titres, Venus les fabrique lui-même à partir du son, sur ce serveur (whisper.cpp, hors ligne), puis les traduit en français. Chacun peut le demander depuis le lecteur (Audio et sous-titres → Générer des sous-titres).</p>
+      <div className="src-list">
+        <span className={`src${st.bin ? ' ok' : ''}`}>{st.bin ? 'Reconnaissance vocale installée' : 'Reconnaissance vocale absente'}</span>
+        <span className={`src${st.modelReady ? ' ok' : ''}`}>{`Modèle ${st.model}${st.modelReady ? '' : ' (à télécharger)'}`}</span>
+        <span className={`src${st.translator ? ' ok' : ''}`}>{st.translator ? `Traduction : ${st.translator}` : 'Pas de traducteur (sous-titres dans la langue d’origine)'}</span>
+      </div>
+      {!st.bin ? <p className="muted">L’image Docker de Venus l’inclut. Sur une installation classique, compilez whisper.cpp : <code>git clone https://github.com/ggml-org/whisper.cpp && cd whisper.cpp && cmake -B build && cmake --build build -j && sudo cp build/bin/whisper-cli /usr/local/bin/</code></p> : null}
+      <Field label="Modèle (plus il est gros, plus c’est juste, plus c’est lent)" hint="small : bon compromis en français (≈ 470 Mo). base : plus rapide, moins juste. medium : le plus juste, 1,5 Go et plusieurs fois le temps du film sur un petit processeur.">
+        <Select opts={st.models.map((m) => [m.id, `${m.id} · ${m.mb >= 1000 ? `${(m.mb / 1000).toFixed(1).replace('.', ',')} Go` : `${m.mb} Mo`}${m.ready ? ' · téléchargé' : ''}`])} value={st.model} onChange={(e) => save({ model: e.target.value })} />
+      </Field>
+      {st.downloading ? <p className="muted">{`Téléchargement du modèle ${st.downloading.model} : ${st.downloading.pct} %`}</p>
+        : !st.modelReady ? <Actions><Busy onClick={async () => { await api('/api/admin/transcribe/model', { method: 'POST', body: { model: st.model } }); toast('Téléchargement lancé'); }}>Télécharger le modèle</Busy></Actions> : null}
+      <Field label="Serveur LibreTranslate (facultatif, pour traduire en français)" hint={<span>Argos Translate est utilisé s’il est installé (<code>pip install argostranslate</code>). Sinon, indiquez un serveur LibreTranslate, par exemple le vôtre en Docker : <code>docker run -d -p 5000:5000 libretranslate/libretranslate --load-only fr,en,ja</code>.</span>}>
+        <div className="world-add">
+          <input className="input" value={lt} onChange={(e) => setLt(e.target.value)} placeholder="http://192.168.1.126:5000" />
+          <input className="input" type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder="Clé (si le serveur en demande une)" />
+          <Busy onClick={() => save({ libretranslateUrl: lt, libretranslateKey: key })}>Enregistrer</Busy>
+        </div>
+      </Field>
+      {st.jobs.length ? <div className="import-res"><b>En cours</b><ul>{st.jobs.map((j) => <li key={j.id}>{`${j.title} : ${j.error || `${j.phase} ${j.pct ? `${j.pct} %` : ''}`}`}</li>)}</ul></div> : null}
+    </section>
+  );
+}
+
+// Lumières de la pièce (Philips Hue, WLED) synchronisées avec l'image pendant la lecture
+export function LightsBox() {
+  const [st, setSt] = useState(null);
+  const [bridge, setBridge] = useState('');
+  const [hue, setHue] = useState(null);
+  const [newWled, setNewWled] = useState('');
+  const load = () => api('/api/admin/lights').then((r) => { setSt(r); setBridge(r.hueBridge || ''); }).catch(() => {});
+  useEffect(() => { load(); }, []);
+  useEffect(() => { if (st && st.huePaired) api('/api/admin/lights/hue/lights').then((r) => setHue(r.lights)).catch((e) => { setHue([]); toast(e.message, true); }); }, [st && st.huePaired, st && st.hueBridge]);
+  if (!st) return null;
+  const save = async (body) => { const r = await api('/api/admin/lights', { method: 'PUT', body }); setSt(r); toast('Enregistré'); };
+  const pair = async () => {
+    const r = await api('/api/admin/lights/hue/pair', { method: 'POST', body: { bridge } });
+    if (r.paired) { toast('Pont Hue appairé'); load(); } else toast(r.message || 'Appuyez sur le bouton du pont', true);
+  };
+  const toggleLight = (id, on) => save({ hueLights: on ? [...st.hueLights, id] : st.hueLights.filter((x) => x !== id) });
+  const addWled = async () => {
+    const info = await api('/api/admin/lights/wled/check', { method: 'POST', body: { host: newWled } });
+    await save({ wled: [...st.wled, info.host] });
+    setNewWled(''); toast(`${info.name} (${info.leds} LED) ajouté`);
+  };
+  return (
+    <section className="box" id="lights">
+      <h2>Lumières synchronisées</h2>
+      <p>Pendant un film, les ampoules de la pièce prennent la couleur dominante de l’image : bleu profond sous l’eau, orange dans une explosion. Fonctionne avec Philips Hue (pont sur le réseau local) et les bandes LED WLED. À la fin, les lampes reviennent comme avant.</p>
+      <Switch label="Activer pendant la lecture" hint="Chaque appareil peut ensuite couper la synchronisation depuis le lecteur (icône ampoule)." checked={st.enabled} onChange={(e) => save({ enabled: e.target.checked })} />
+      <div className="src-list">
+        <span className={`src${st.huePaired ? ' ok' : ''}`}>{st.huePaired ? `Pont Hue ${st.hueBridge} appairé` : 'Pont Hue : non appairé'}</span>
+        <span className={`src${st.wled.length ? ' ok' : ''}`}>{`WLED : ${st.wled.length} appareil(s)`}</span>
+        <span className={`src${st.targets ? ' ok' : ''}`}>{`${st.targets} lampe(s) synchronisée(s)`}</span>
+      </div>
+      <Field label="Pont Philips Hue" hint="L’adresse se lit dans l’application Hue (Réglages → Mon pont Hue → Adresse IP). Appuyez sur le gros bouton du pont, puis cliquez sur Appairer dans les 30 secondes.">
+        <div className="world-add">
+          <input className="input" value={bridge} onChange={(e) => setBridge(e.target.value)} placeholder="192.168.1.20" />
+          <Busy onClick={pair} busy="Appairage…">{st.huePaired && bridge === st.hueBridge ? 'Réappairer' : 'Appairer'}</Busy>
+        </div>
+      </Field>
+      {st.huePaired && hue ? (
+        hue.length ? (
+          <div className="field"><label>Lampes à synchroniser</label>
+            <div className="switch-grid">
+              {hue.map((l) => <Switch key={l.id} mini hint={l.name} label={`${l.name}${l.color ? '' : ' (blanc seulement)'}`} checked={l.selected} onChange={(e) => toggleLight(l.id, e.target.checked)} />)}
+            </div>
+          </div>
+        ) : <p className="muted">Aucune lampe trouvée sur ce pont.</p>
+      ) : null}
+      <Field label="Bandes LED WLED" hint="Adresse IP (ou nom .local) de chaque contrôleur WLED du réseau. Venus vérifie l’appareil avant de l’ajouter.">
+        <div className="world-add">
+          <input className="input" value={newWled} onChange={(e) => setNewWled(e.target.value)} placeholder="192.168.1.42 ou wled-salon.local" />
+          <Busy onClick={addWled} busy="Vérification…" disabled={!newWled.trim()}>Ajouter</Busy>
+        </div>
+        {st.wled.length ? <ul className="world-list">{st.wled.map((h) => <li key={h}><span>{h}</span><button type="button" className="btn btn-ghost btn-small f" onClick={() => save({ wled: st.wled.filter((x) => x !== h) })}>Retirer</button></li>)}</ul> : null}
+      </Field>
+      <Field label={`Luminosité maximale : ${st.brightness} %`} hint="Les scènes sombres éteignent presque les lampes, les scènes claires montent jusqu’à ce niveau.">
+        <input type="range" className="p-volrange" min="5" max="100" step="5" defaultValue={st.brightness} onChange={(e) => save({ brightness: Number(e.target.value) })} aria-label="Luminosité maximale" />
+      </Field>
+      <Switch label="Remettre les lampes comme avant à la fin" hint="L’état de chaque lampe est mémorisé au début de la lecture et restauré à la fin." checked={st.restore} onChange={(e) => save({ restore: e.target.checked })} />
+      <Actions>
+        <Busy onClick={async () => { const r = await api('/api/admin/lights/test', { method: 'POST' }); toast(`${r.sent} lampe(s) ont répondu`); }} busy="Test…" disabled={!st.targets}>Tester (violet 2 secondes)</Busy>
+      </Actions>
+      {st.failures ? <p className="muted">{`${st.failures} envoi(s) récent(s) ont échoué : vérifiez que les lampes sont allumées et joignables.`}</p> : null}
+    </section>
+  );
+}

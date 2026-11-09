@@ -493,12 +493,12 @@ function EpisodeRow({ e, current, onToggle }) {
   const isNew = !seen && ((e.released && ui.daysSince(e.released) <= 14) || (!e.released && e.added && Date.now() - e.added < 7 * 864e5));
   return (
     <div className="ep-item">
-      <button className={`episode f${current ? ' is-current' : ''}${seen ? ' seen' : ''}`} data-ep={e.episode}
+      <button className={`episode f${current ? ' is-current' : ''}${seen ? ' seen' : ''}${e.hidden ? ' spoiler' : ''}`} data-ep={e.episode}
         title={e.title && !/^(É|E)pisode \d+$/i.test(e.title) ? `${num} — ${e.title}` : num}
         aria-label={`${num}${e.title ? `, ${e.title}` : ''}${dur ? `, ${dur} minutes` : ''}${seen ? ', vu' : ''}`}
         onClick={() => go(components.playPath(e.id))}>
         <div className="thumb">
-          <ThumbImg src={e.still ? img(e.still) : `/api/items/${e.id}/thumb`} title={`É${e.episode}`} />
+          {e.hidden ? <span className="spoiler-veil" title="Masqué par le mode anti-spoiler (Réglages → Mon profil)"><Icon name="eye" /></span> : <ThumbImg src={e.still ? img(e.still) : `/api/items/${e.id}/thumb`} title={`É${e.episode}`} />}
           <span className="ep-play"><Icon name="play" /></span>
           {pct > 0 && !seen ? <div className="bar"><i style={{ width: `${pct}%` }} /></div> : null}
           {current ? <span className="ep-badge now">{p && !seen && p.position > 0 ? 'En cours' : 'À suivre'}</span> : isNew ? <span className="ep-badge">Nouveau</span> : null}

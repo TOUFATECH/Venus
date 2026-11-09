@@ -11,7 +11,7 @@ const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-
 const SETTINGS = [['profil', 'Mon profil'], ['appareil', 'Cet appareil (lecture, sous-titres)'], ['affichage', 'Thème et menu'], ['medias', 'Médiathèques', true], ['tv', 'TV en direct (listes, chaînes du monde)', true],
   ['infos', 'Infos et affiches (clé TMDB)', true], ['notes', 'Notes des sites (Trakt)', true], ['demandes', 'Demandes (Radarr, Sonarr)', true], ['famille', 'Profils et appareils', true], ['alertes', 'Notifications', true],
   ['lecture', 'Lecture et conversion', true], ['maj', 'Mise à jour', true], ['sauvegardes', 'Sauvegardes', true]];
-const KIND = { movie: 'Film', show: 'Série', anime: 'Animé', clip: 'Clip', channel: 'Chaîne', person: 'Personne', page: 'Page', setting: 'Réglage', action: 'Action' };
+const KIND = { line: 'Réplique', movie: 'Film', show: 'Série', anime: 'Animé', clip: 'Clip', channel: 'Chaîne', person: 'Personne', page: 'Page', setting: 'Réglage', action: 'Action' };
 
 export default function Palette() {
   const [open, setOpen] = useState(false);
@@ -41,6 +41,14 @@ function PaletteBox({ close }) {
   const listRef = useRef(null);
   const stopRef = useRef(null);
   const [voiceMod, setVoiceMod] = useState(null);
+  // Répliques : « je suis ton père » → la scène, lecture à la seconde près
+  const [lines, setLines] = useState([]);
+  useEffect(() => {
+    if (norm(q).length < 4) { setLines([]); return undefined; }
+    let dead = false;
+    const t = setTimeout(() => api.api(`/api/dialogues?q=${encodeURIComponent(q.trim())}&limit=6`).then((r) => { if (!dead) setLines(r.results || []); }).catch(() => {}), 250);
+    return () => { dead = true; clearTimeout(t); };
+  }, [q]);
   useEffect(() => {
     input.current && input.current.focus();
     api.api('/api/library').then(setTitles).catch(() => {});
@@ -84,9 +92,10 @@ function PaletteBox({ close }) {
     for (const x of statics) { const s = match(x.label) || match(x.sub); if (s) out.push({ ...x, s: s - 0.2 }); }
     out.sort((a, b) => b.s - a.s);
     const top = out.slice(0, 12);
+    for (const r of lines) for (const l of r.lines.slice(0, 1)) top.push({ kind: 'line', label: `« ${l.text} »`, sub: `${r.item.showTitle ? `${r.item.showTitle} · S${r.item.season} É${r.item.episode}` : r.item.title} · ${L.ui.fmtTime(l.start)}`, poster: r.item.still || r.item.poster, run: () => go(`${L.components.playPath(r.item.id)}?t=${Math.max(0, Math.floor(l.start - 3))}`) });
     top.push({ kind: 'action', label: `Rechercher « ${q.trim()} » partout`, icon: 'search', run: () => go(`/recherche?q=${encodeURIComponent(q.trim())}`) });
     return top;
-  }, [q, titles, chans, statics]);
+  }, [q, titles, chans, statics, lines]);
   useEffect(() => setSel(0), [q]);
   useEffect(() => { const el = listRef.current && listRef.current.querySelector('[aria-selected="true"]'); if (el) el.scrollIntoView({ block: 'nearest' }); }, [sel]);
 

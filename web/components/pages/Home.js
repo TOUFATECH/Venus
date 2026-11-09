@@ -287,7 +287,7 @@ function HeroBody({ item, bodyRef, swap }) {
     const ghost = (ic, label, to) => <button className="btn btn-ghost f" aria-label={label} onClick={() => go(to)}><Icon name={ic} /><span className="lbl">{label}</span></button>;
     return (
       <div className="hero-body resume" ref={ref}>
-        <div className="hero-kicker">{live ? <span className="live-dot">Direct</span> : <Icon name="restart" />}{live ? 'Votre dernière chaîne' : item.next ? 'À suivre' : 'Reprendre là où vous en étiez'}</div>
+        <div className="hero-kicker">{live ? <span className="live-dot">Direct</span> : <Icon name="restart" />}{live ? 'Votre dernière chaîne' : item.next ? 'À suivre' : item.progress && item.progress.asleep ? 'Vous vous étiez endormi ici' : 'Reprendre là où vous en étiez'}</div>
         {item.logo && !live ? <img className="hero-logo" src={img(item.logo)} alt={title} /> : <h1 className="hero-title">{title}</h1>}
         {isEp ? <a className="hero-ep f" href={`/titre/${item.showId}?ep=${item.id}`} onClick={(e) => { e.preventDefault(); go(`/titre/${item.showId}?ep=${item.id}`); }}>{`S${item.season}:É${item.episode} - ${item.title}`}</a> : null}
         {pct ? <div className="hero-progress"><div className="bar"><i style={{ width: `${pct}%` }} /></div><span>{`${left} min restantes`}</span></div> : null}
