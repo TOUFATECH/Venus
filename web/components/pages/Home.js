@@ -3,7 +3,8 @@
 // rappels (« vous regardiez… », affiches manquantes) et rangées. À la télécommande, l'affiche suit la carte choisie.
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
-import { useApi, useTitle, go, api, toast, img } from '../../lib/hooks';
+import { useApi, useTitle, go, api, toast, img, useLayout } from '../../lib/hooks';
+import { Avatar } from '../Icon';
 import { Row } from '../Row';
 import { Icon } from '../Icon';
 import { Placeholder } from '../Card';
@@ -14,6 +15,7 @@ export default function Home() {
   const { data, error } = useApi('/api/home', { keep: true });
   useTitle(null);
   const heroApi = useRef(null);
+  const { layout } = useLayout();
   const [today, setToday] = useState(null);
   useEffect(() => {
     api('/api/today').then((list) => {
@@ -27,9 +29,12 @@ export default function Home() {
   if (data.empty) return <main className="with-nav"><Empty data={data} /></main>;
   // À la télécommande, la carte sélectionnée éclaire l'affiche
   const onFocus = (item) => { if (item.type !== 'episode' && document.documentElement.classList.contains('keys') && heroApi.current) heroApi.current.spot(item); };
+  const lagon = layout === 'lagon';
   return (
     <main className="with-nav home page-in">
-      {data.hero.length ? <Hero items={data.hero} apiRef={heroApi} /> : null}
+      {lagon
+        ? <div className="ce-soir">{data.hero.length ? <Hero items={data.hero} apiRef={heroApi} /> : <div className="hero empty-hero" />}<TonightSide /></div>
+        : data.hero.length ? <Hero items={data.hero} apiRef={heroApi} /> : null}
       <SectionStrip />
       <Elsewhere />
       {data.noPosters ? <NoPosters /> : null}
@@ -389,5 +394,50 @@ function Empty({ data }) {
         {p.isAdmin ? <div className="actions" style={{ marginTop: 24, justifyContent: 'center' }}><button className="btn btn-play f" onClick={() => go('/reglages?onglet=medias')}>Choisir les dossiers de vidéos</button></div> : null}
       </div>
     </div>
+  );
+}
+
+// Colonne « Ce soir » des thèmes Lagon et Océan : sorties du jour, prochaine sortie musicale, qui regarde, direct
+function TonightSide() {
+  const { data: d } = useApi('/api/home/tonight');
+  const { app } = shared();
+  const hhmm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  return (
+    <aside className="ce-soir-side" aria-label="Ce soir">
+      <section className="cs-panel">
+        <h3>À venir aujourd’hui</h3>
+        {!d ? <p className="muted small">Chargement…</p> : d.soon.length ? d.soon.map((e, i) => (
+          <button key={i} className="cs-item f" onClick={() => go(e.showId ? `/titre/${e.showId}` : `/avenir?type=${e.kind === 'anime' ? 'anime' : 'show'}`)}>
+            <span className="cs-pic">{e.poster ? <img src={e.poster.startsWith('http') ? e.poster : img(e.poster, 92)} alt="" loading="lazy" referrerPolicy="no-referrer" /> : <Placeholder title={e.title} />}</span>
+            <span className="cs-txt"><b>{e.title}</b><small>{`${e.sub} · ${e.when}`}</small></span>
+            <span className={`cs-badge ${e.nas ? 'in' : e.requested ? 'arr' : 'out'}`}>{e.nas ? 'Sur le NAS' : e.requested ? 'Demandé' : 'Pas sur le NAS'}</span>
+          </button>
+        )) : d.album ? null : <p className="muted small">Rien d’annoncé pour aujourd’hui ni demain.</p>}
+        {d && d.album ? (
+          <button className="cs-item f" onClick={() => go(`/musique/artiste/${encodeURIComponent(d.album.slug)}`)}>
+            <span className="cs-pic">{d.album.cover ? <img src={img(d.album.cover, 92)} alt="" loading="lazy" /> : <Placeholder title={d.album.title} />}</span>
+            <span className="cs-txt"><b>{`${d.album.title} · ${d.album.artist}`}</b><small>{`Album · ${new Date(d.album.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`}</small></span>
+            <span className={`cs-badge ${d.album.requested ? 'arr' : 'out'}`}>{d.album.requested ? 'Demandé' : 'À venir'}</span>
+          </button>
+        ) : null}
+      </section>
+      <section className="cs-panel row-panel">
+        <div><h3>Qui regarde ce soir ?</h3><div className="cs-avatars">{(d ? d.people : []).slice(0, 4).map((p) => <Avatar key={p.id} profile={p} cls="sm" />)}{d && d.people.length > 4 ? <span className="cs-more">{`+${d.people.length - 4}`}</span> : null}</div></div>
+        <button className="btn btn-ghost btn-small f" onClick={() => go('/cesoir')}>Trouver un film</button>
+      </section>
+      <section className="cs-panel row-panel live-panel">
+        {d && d.live ? (
+          <button className="cs-live f" onClick={() => go(d.live.path)}>
+            <span className="cs-logo">{d.live.logo ? <img src={img(d.live.logo, 160)} alt="" loading="lazy" /> : <Icon name="tv" />}<i className="live-dot" /></span>
+            <span className="cs-txt"><h3>En direct</h3><b>{`${d.live.title}${d.live.now ? ` · ${d.live.now.title}` : ''}`}</b><small>{d.live.now ? `${hhmm(d.live.now.start)} – ${hhmm(d.live.now.stop)}${d.live.next ? ` · ensuite : ${d.live.next.title}` : ''}` : 'Reprendre la dernière chaîne'}</small></span>
+          </button>
+        ) : (
+          <button className="cs-live f" onClick={() => go('/tv')}>
+            <span className="cs-logo"><Icon name="tv" /></span>
+            <span className="cs-txt"><h3>En direct</h3><b>Télévision</b><small>{app.hasCat && app.hasCat('channel') ? 'Choisir une chaîne' : 'Ajoutez des chaînes dans Réglages → Bibliothèques'}</small></span>
+          </button>
+        )}
+      </section>
+    </aside>
   );
 }

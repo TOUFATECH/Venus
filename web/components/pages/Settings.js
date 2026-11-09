@@ -265,7 +265,7 @@ function ThemeBox() {
               <button key={v} className={`seg-b f${auto === v ? ' on' : ''}`} role="radio" aria-checked={String(auto === v)} onClick={() => { T.setAutoTheme(v); setAuto(v); }}>{l}</button>
             ))}
           </div>
-          {auto === 'sun' ? <small>{`Clair (thème Blanc) de ${hm(T.sunInfo().rise)} à ${hm(T.sunInfo().set)}, puis ${T.PLANETS[cur].name}.`}</small> : auto === 'system' ? <small>Clair quand votre téléphone ou ordinateur est en mode clair, sinon {T.PLANETS[cur].name}.</small> : null}
+          {auto === 'sun' ? <small>{`Clair (thème ${T.PLANETS[T.PLANETS[cur].day || 'blanc'].name}) de ${hm(T.sunInfo().rise)} à ${hm(T.sunInfo().set)}, puis ${T.PLANETS[cur].name}.`}</small> : auto === 'system' ? <small>Clair quand votre téléphone ou ordinateur est en mode clair, sinon {T.PLANETS[cur].name}.</small> : null}
           <small>Votre thème suit votre profil sur tous vos appareils.</small>
         </div>
       ) : null}

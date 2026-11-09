@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../lib/shared';
 import { Icon, LogoMark, Brand, Avatar } from './Icon';
+import { useLayout } from '../lib/hooks';
 
 const isActive = (href, path) => (href === '/' ? path === '/' : path.startsWith(href));
 
@@ -68,6 +69,7 @@ export default function Shell({ path, bare, children }) {
   const top = useRef(null);
   const rail = useRef(null);
   const prevActive = useRef(null);
+  const { layout, waves } = useLayout();
 
   // Barre du haut : transparente en haut de page, fond plein dès qu'on fait défiler
   useEffect(() => {
@@ -102,7 +104,8 @@ export default function Shell({ path, bare, children }) {
   return (
     <div id="app">
       <nav className="rail" aria-label="Navigation principale" ref={rail}>
-        <Link href="/" className={`home-link f${path === '/' ? ' active' : ''}`} aria-label="Venus, accueil"><LogoMark /></Link>
+        <Link href="/" className={`home-link f${path === '/' ? ' active' : ''}`} aria-label="Venus, accueil"><LogoMark />{layout === 'lagon' ? <span className="rail-brand">venus</span> : null}</Link>
+        {layout === 'lagon' ? <button className="rail-search f" aria-label="Rechercher partout (Ctrl+K)" onClick={() => window.dispatchEvent(new CustomEvent('vn:palette'))}><Icon name="search" /><span>Titre, acteur, réplique…</span><kbd>Ctrl K</kbd></button> : null}
         <div className="rail-scroll">
           {shown.slice(0, RAIL_MAX).map((it) => <ItemLink key={it.id} it={it} path={path} />)}
           {shown.length > RAIL_MAX || more.length
@@ -125,11 +128,24 @@ export default function Shell({ path, bare, children }) {
         </div>
       </header>
       {children}
+      {waves ? <Waves /> : null}
       <Palette />
       <nav className="tabbar">
         {tabItems.map((it) => <ItemLink key={it.id} it={it} path={path} />)}
         <button className="f tab-more" aria-label="Toutes les sections" data-more="1" onClick={() => app.openAll(all.filter((it) => !tabItems.includes(it)))}><Icon name="apps" /><span>Tout</span></button>
       </nav>
+    </div>
+  );
+}
+
+// Océan : trois nappes de vagues qui roulent en bas de l'écran (CSS, coupées quand l'appareil demande moins d'animations)
+function Waves() {
+  const path = 'M0 40c120-30 240-30 360 0s240 30 360 0 240-30 360 0 240 30 360 0v60H0z';
+  return (
+    <div className="waves" aria-hidden="true">
+      <svg className="wave w1" viewBox="0 0 1440 100" preserveAspectRatio="none"><path d={path} /></svg>
+      <svg className="wave w2" viewBox="0 0 1440 100" preserveAspectRatio="none"><path d={path} /></svg>
+      <svg className="wave w3" viewBox="0 0 1440 100" preserveAspectRatio="none"><path d={path} /></svg>
     </div>
   );
 }

@@ -602,6 +602,32 @@ function newHero(base) {
   return out.slice(0, 10);
 }
 
+// Bloc « Ce soir » des thèmes Lagon et Océan : ce qui sort aujourd'hui et demain, la prochaine sortie musicale,
+// la dernière chaîne regardée avec son programme, et qui est là ce soir
+router.get('/api/home/tonight', async (ctx) => {
+  const p = requireProfile(ctx);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const from = today.toISOString().slice(0, 10), to = new Date(today.getTime() + 2 * 864e5).toISOString().slice(0, 10);
+  const safe = (f) => f().catch(() => ({ entries: [] }));
+  const [shows, anime] = await Promise.all([safe(() => upcomingShows(p, 'show', ageClause(p, 's'))), safe(() => upcomingShows(p, 'anime', ageClause(p, 's')))]);
+  const label = (e) => `${new Date(`${e.date}T12:00:00`).toDateString() === new Date().toDateString() ? 'Aujourd’hui' : 'Demain'}${e.at ? ` ${new Date(e.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`;
+  const soon = [...shows.entries, ...anime.entries].filter((e) => e.date >= from && e.date < to)
+    .sort((a, b) => (b.nas ? 2 : b.arr || b.wanted ? 1 : 0) - (a.nas ? 2 : a.arr || a.wanted ? 1 : 0) || (a.at || 0) - (b.at || 0) || (b.pop || 0) - (a.pop || 0))
+    .slice(0, 3).map((e) => ({ title: e.show, sub: `${e.season ? `S${e.season} ` : ''}É${e.episode}${e.network ? ` · ${e.network}` : ''}`, when: label(e), poster: e.poster || e.image || null, kind: e.kind, nas: !!e.nas, requested: !!(e.arr || e.wanted), showId: e.nas || null }));
+  const mu = musicUpcoming();
+  const album = mu.upcoming[0] ? { title: mu.upcoming[0].title, artist: mu.upcoming[0].artist, date: mu.upcoming[0].date, cover: mu.upcoming[0].cover, requested: !!mu.upcoming[0].requested, slug: mu.upcoming[0].artistSlug } : null;
+  // Dernière chaîne : ce qui passe maintenant et ensuite
+  let live = null;
+  const lc = getSetting(`last_channel:${p.id}`, null);
+  const ch = lc ? get('SELECT * FROM items WHERE id = ? AND type = ?', lc.id, 'channel') : null;
+  if (ch && visible(p, ch)) {
+    const nn = nowNext([ch.id])[ch.id] || [];
+    live = { id: ch.id, title: ch.title, logo: ch.poster, path: `/tv/${channelNumber(ch)}-${slugFor(ch.id)}`, now: nn[0] ? { title: nn[0].title, start: nn[0].start, stop: nn[0].stop } : null, next: nn[1] ? { title: nn[1].title, start: nn[1].start } : null };
+  }
+  const people = all('SELECT id, name, avatar, max_age FROM profiles ORDER BY id').map((x) => ({ id: x.id, name: x.name, avatar: x.avatar, kids: x.max_age != null && x.max_age <= 12 }));
+  sendJson(ctx.res, { soon, album, live, people });
+});
+
 router.get('/api/home', (ctx) => {
   const p = requireProfile(ctx);
   const age = ageClause(p);

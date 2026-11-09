@@ -39,6 +39,19 @@ export function useApi(path, { deps = [], keep = false } = {}) {
 }
 
 // Titre de l'onglet
+// Mise en page et planète du thème en cours (html[data-layout], html[data-planet]) ; suit les changements de thème
+export function useLayout() {
+  const read = () => (typeof document === 'undefined' ? { layout: 'rail', planet: 'venus', waves: false } : { layout: document.documentElement.dataset.layout || 'rail', planet: document.documentElement.dataset.planet || 'venus', waves: !!document.documentElement.dataset.waves });
+  const [st, setSt] = useState(read);
+  useEffect(() => {
+    const on = () => setSt(read());
+    on();
+    window.addEventListener('vn:theme', on);
+    return () => window.removeEventListener('vn:theme', on);
+  }, []);
+  return st;
+}
+
 export function useTitle(t) {
   useEffect(() => { if (t !== undefined) shared().app.setTitle(t || undefined); }, [t]);
 }
