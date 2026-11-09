@@ -9,7 +9,7 @@ import { Row } from '../Row';
 import { Icon } from '../Icon';
 import { Placeholder } from '../Card';
 
-const ROTATE_MS = 8000;
+const ROTATE_MS = 3000; // une affiche toutes les 3 secondes
 
 export default function Home() {
   const { data, error } = useApi('/api/home', { keep: true });
@@ -63,123 +63,36 @@ function Hero({ items, apiRef }) {
   const [idx, setIdx] = useState(0);
   const [bgItem, setBgItem] = useState(items[0]);
   const [layers, setLayers] = useState([]); // fonds déjà chargés (gardés pour un fondu instantané)
-  const [trailerOn, setTrailerOn] = useState(false);
-  const [sound, setSound] = useState(false);
   const [paused, setPaused] = useState(false);
   const [swap, setSwap] = useState(0);
   const hero = useRef(null);
-  const bg = useRef(null);
   const body = useRef(null);
-  const st = useRef({ trailer: null, media: null, trailerTimer: null, timer: null, hovering: false, keys: false, shown: null, sound: false, warmed: new Set() });
+  const st = useRef({ timer: null, hovering: false, keys: false, shown: null });
   const item = items[idx];
   const S = st.current;
 
-  const playable = (it) => L.api.heroTrailers() && (it.heroResume || it.type !== 'clip');
+  // Le défilement s'arrête tant que la souris est dessus, qu'on navigue au clavier dans les rangées, ou que l'onglet est caché
   const isPaused = () => S.hovering || S.keys || document.hidden;
-
-  const stopMedia = () => {
-    clearTimeout(S.trailerTimer);
-    if (S.trailer) { S.trailer.destroy(); S.trailer = null; }
-    if (S.media) { S.media.stop(); S.media = null; }
-    S.trailerOn = false;
-    setTrailerOn(false);
-  };
   const next = () => setIdx((i) => (i + 1) % items.length);
   const restart = () => {
     clearTimeout(S.timer);
     setPaused(isPaused());
     if (!many || isPaused()) return;
-    // Pendant une bande-annonce, on attend sa fin (au plus 3 minutes)
-    S.timer = setTimeout(next, S.trailerOn ? 180000 : ROTATE_MS);
+    S.timer = setTimeout(next, ROTATE_MS);
   };
-  const mediaOn = (forItem) => { if (S.shown !== forItem) return; S.trailerOn = true; setTrailerOn(true); restart(); };
 
-  // Vraie vidéo (petite qualité) : reprise d'un film, d'un épisode, ou chaîne en direct
-  const startVideo = async (it) => {
-    const v = document.createElement('video');
-    Object.assign(v, { className: 'hero-vid', muted: !S.sound, playsInline: true });
-    v.setAttribute('aria-hidden', 'true');
-    let session = null, detach = null, gone = false;
-    const m = { item: it, el: v, stop: () => {
-      gone = true;
-      if (detach) detach();
-      v.remove();
-      if (session) fetch(`/api/hls/${session}`, { method: 'DELETE', keepalive: true, headers: { Authorization: `Bearer ${L.api.auth.token}` } }).catch(() => {});
-    } };
-    S.media = m;
-    try {
-      const live = await L.imp('live.js');
-      const info = await L.api.api(`/api/play/${it.id}`, { method: 'POST', body: { caps: L.api.deviceCaps(), preview: true, hero: true, start: 'resume' } });
-      session = info.sessionId;
-      if (gone) { m.stop(); return; }
-      v.addEventListener('playing', () => { if (S.media === m) mediaOn(it); });
-      v.addEventListener('ended', () => { if (S.media === m) { stopMedia(); if (many) next(); } });
-      if (info.mode === 'direct' && info.startAt) v.addEventListener('loadedmetadata', () => { try { v.currentTime = info.startAt; } catch { /* */ } }, { once: true });
-      bg.current && bg.current.append(v);
-      detach = await live.attachStream(v, info.url, { live: !!info.live, onError: () => { if (S.media === m) stopMedia(); } });
-      if (gone && detach) detach();
-    } catch { if (S.media === m) S.media = null; }
-  };
-  // Extrait de la vidéo, quand il n'y a pas de bande-annonce (ou que YouTube ne répond pas)
-  const startClip = (it) => {
-    const v = document.createElement('video');
-    Object.assign(v, { className: 'hero-vid', muted: !S.sound, loop: true, playsInline: true, preload: 'auto' });
-    v.setAttribute('aria-hidden', 'true');
-    v.src = window.__VN_PREVIEW ? window.__VN_PREVIEW(it.id) : `/api/items/${it.id}/preview?hd=1`;
-    const m = { item: it, el: v, stop: () => { v.pause(); v.removeAttribute('src'); v.load(); v.remove(); } };
-    S.media = m;
-    v.addEventListener('playing', () => { if (S.media === m) mediaOn(it); });
-    v.addEventListener('error', () => { if (S.media === m) { S.media = null; v.remove(); } }, { once: true });
-    bg.current && bg.current.append(v);
-    v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
-  };
-  // L'extrait HD du titre suivant est préparé à l'avance sur le serveur
-  const warmNext = () => {
-    if (window.__VN_PREVIEW || !many) return;
-    const n = items[(items.indexOf(S.shown) + 1) % items.length];
-    if (!n || n.trailer || n.heroResume || !playable(n) || S.warmed.has(n.id)) return;
-    S.warmed.add(n.id);
-    fetch(`/api/items/${n.id}/preview?hd=1`, { priority: 'low' }).then((r) => r.body && r.body.cancel()).catch(() => {});
-  };
-  const fit = () => {
-    if (!S.trailer || !hero.current) return;
-    const w = hero.current.clientWidth, hh = hero.current.clientHeight;
-    const W = Math.max(w, (hh * 16) / 9) * 1.18;
-    Object.assign(S.trailer.el.style, { width: `${W}px`, height: `${(W * 9) / 16}px` });
-  };
-  const launch = async (it) => {
-    if (S.shown !== it || document.hidden || S.media || S.trailer) return;
-    setTimeout(warmNext, 4000);
-    if (it.heroResume) return startVideo(it);
-    if (!it.trailer) return startClip(it);
-    const { trailerPlayer } = await L.imp('trailer.js');
-    if (S.shown !== it || S.trailer || S.media) return;
-    const t = trailerPlayer(it.trailer, {
-      mute: !S.sound, hd: true,
-      onPlaying: () => { if (S.trailer === t) mediaOn(it); },
-      onEnd: () => { if (S.trailer !== t) return; stopMedia(); if (many) next(); },
-      onError: () => { if (S.trailer !== t) return; t.destroy(); S.trailer = null; startClip(it); },
-    });
-    S.trailer = t;
-    t.el.classList.add('hero-yt');
-    bg.current && bg.current.append(t.el);
-    fit();
-    // YouTube injoignable : extrait de la vidéo à la place
-    setTimeout(() => { if (S.trailer === t && !t.el.classList.contains('on') && S.shown === it) { t.destroy(); S.trailer = null; startClip(it); } }, 10000);
-  };
-  const playNow = () => { if (S.shown && playable(S.shown) && !S.media && !S.trailer) { clearTimeout(S.trailerTimer); launch(S.shown); } };
-
-  // Nouveau titre à la une
+  // Nouvelle affiche à la une : fond, teinte de la page, petite animation du texte
   useEffect(() => {
     const it = items[idx];
     const hadFocus = body.current && body.current.contains(document.activeElement);
     S.shown = it;
-    stopMedia();
-    if (playable(it)) S.trailerTimer = setTimeout(() => launch(it), 1200);
     setBgItem(it);
     L.imp('ambiance.js').then((m) => m.tintFrom(img(it.backdrop || it.poster))).catch(() => {});
     setSwap((n) => n + 1);
     restart();
+    // L'affiche suivante est chargée à l'avance pour un fondu sans à-coup
+    const n = items[(idx + 1) % items.length];
+    if (n && n !== it) { const pre = new Image(); pre.src = img(n.backdrop || n.poster); if (n.poster) { const pp = new Image(); pp.src = img(n.poster, 342); } }
     if (hadFocus) requestAnimationFrame(() => body.current && body.current.querySelector('.btn-play')?.focus({ preventScroll: true }));
   }, [idx]);
 
@@ -193,34 +106,23 @@ function Hero({ items, apiRef }) {
   useEffect(() => { const r = requestAnimationFrame(() => setOnKey(activeKey)); return () => cancelAnimationFrame(r); }, [activeKey, layers.length]);
 
   useEffect(() => {
-    const ro = new ResizeObserver(fit);
-    ro.observe(hero.current);
-    const onVis = () => {
-      if (S.trailer) (document.hidden ? S.trailer.pause() : S.trailer.play());
-      if (S.media) (document.hidden ? S.media.el.pause() : S.media.el.play().catch(() => {}));
-      restart();
-    };
+    const onVis = () => restart();
     document.addEventListener('visibilitychange', onVis);
     apiRef.current = {
-      spot: (it) => { S.keys = true; stopMedia(); restart(); setBgItem(it); L.imp('ambiance.js').then((m) => m.tintFrom(img(it.backdrop || it.poster || it.still))).catch(() => {}); },
+      spot: (it) => { S.keys = true; restart(); setBgItem(it); L.imp('ambiance.js').then((m) => m.tintFrom(img(it.backdrop || it.poster || it.still))).catch(() => {}); },
       leaveRows: () => { S.keys = false; restart(); },
     };
-    return () => { clearTimeout(S.timer); stopMedia(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); apiRef.current = null; };
+    return () => { clearTimeout(S.timer); document.removeEventListener('visibilitychange', onVis); apiRef.current = null; };
   }, []);
 
   const goTo = (i) => { setIdx((i + items.length) % items.length); };
-  const toggleSound = () => {
-    S.sound = !S.sound; setSound(S.sound);
-    if (S.trailer) S.trailer.mute(!S.sound);
-    if (S.media) S.media.el.muted = !S.sound;
-  };
   // Balayage horizontal au doigt
   const touch = useRef(null);
 
   return (
-    <section ref={hero} className={`hero${trailerOn ? ' trailer-on' : ''}${paused ? ' paused' : ''}`} style={{ '--rotate': `${ROTATE_MS}ms` }}
-      onFocus={() => { setBgItem(S.shown || item); playNow(); }}
-      onPointerEnter={(e) => { if (e.pointerType === 'mouse') { S.hovering = true; restart(); playNow(); } }}
+    <section ref={hero} className={`hero posters${paused ? ' paused' : ''}`} style={{ '--rotate': `${ROTATE_MS}ms` }}
+      onFocus={() => setBgItem(S.shown || item)}
+      onPointerEnter={(e) => { if (e.pointerType === 'mouse') { S.hovering = true; restart(); } }}
       onPointerLeave={() => { S.hovering = false; restart(); }}
       onTouchStart={(e) => { touch.current = [e.touches[0].clientX, e.touches[0].clientY]; }}
       onTouchEnd={(e) => {
@@ -229,13 +131,13 @@ function Hero({ items, apiRef }) {
         if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) goTo(idx + (dx < 0 ? 1 : -1));
         touch.current = null;
       }}>
-      <div className="hero-bg" ref={bg}>
+      <div className="hero-bg">
         {layers.map(({ key, item: it }) => <HeroLayer key={key} item={it} on={key === onKey} />)}
       </div>
       <HeroBody item={item} bodyRef={body} swap={swap} />
+      {item.poster ? <button type="button" key={`${item.id}-${swap}`} className="hero-poster f" tabIndex={-1} aria-label={`Fiche de ${item.title}`} onClick={() => go(`/titre/${item.id}`)}><img src={img(item.poster, 342)} alt="" decoding="async" /></button> : null}
       {many ? <button type="button" className="hero-arrow prev" tabIndex={-1} aria-label="Titre précédent" onClick={() => goTo(idx - 1)}><Icon name="back" /></button> : null}
       {many ? <button type="button" className="hero-arrow next" tabIndex={-1} aria-label="Titre suivant" onClick={() => goTo(idx + 1)}><Icon name="fwd" /></button> : null}
-      <button type="button" className="hero-sound" hidden={!trailerOn} tabIndex={-1} onClick={toggleSound} aria-label={sound ? 'Couper le son de la bande-annonce' : 'Activer le son de la bande-annonce'}><Icon name={sound ? 'vol' : 'mute'} /></button>
       {many ? (
         <div className="hero-dots" role="tablist" aria-label="À la une">
           {items.map((it, i) => <button key={i === idx ? `${it.id}-${swap}-${paused}` : it.id} type="button" role="tab" tabIndex={-1} aria-label={it.title} aria-selected={String(i === idx)} className={i === idx ? 'on' : ''} onClick={() => goTo(i)}><i /></button>)}

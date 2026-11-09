@@ -71,8 +71,16 @@ export function setAutoTheme(m) { try { localStorage.setItem('vn_theme_auto', m)
 let syncT = null;
 function syncProfileTheme() {
   clearTimeout(syncT);
-  syncT = setTimeout(() => { import('./api.js').then((m) => m.saveProfilePrefs({ theme: chosenPlanet(), themeAuto: autoTheme() })).catch(() => {}); }, 400);
+  syncT = setTimeout(() => { syncT = null; import('./api.js').then((m) => m.saveProfilePrefs({ theme: chosenPlanet(), themeAuto: autoTheme() })).catch(() => {}); }, 400);
 }
+// Rechargement juste après un changement : la demande part sans attendre
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => {
+  if (!syncT) return;
+  clearTimeout(syncT); syncT = null;
+  let token = null; try { token = localStorage.getItem('vn_token'); } catch { /* */ }
+  if (!token) return;
+  fetch('/api/profile/ui-prefs', { method: 'PUT', keepalive: true, credentials: 'same-origin', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ theme: chosenPlanet(), themeAuto: autoTheme() }) }).catch(() => {});
+});
 /** Profil choisi : son thème (s'il en a un) remplace celui de l'appareil */
 export function useProfileTheme(p) {
   const u = (p && p.uiPrefs) || {};

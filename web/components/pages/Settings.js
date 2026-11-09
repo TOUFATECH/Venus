@@ -153,7 +153,7 @@ function MyBox({ me }) {
 
 // ---------------------------------------------------------------- préférences propres à cet appareil
 function DeviceBox() {
-  const { prefs, hoverMode, heroTrailers, detailsTrailers } = shared().api;
+  const { prefs, hoverMode, detailsTrailers } = shared().api;
   const pref = (key) => (e) => { prefs.set(key, e.target.type === 'checkbox' ? e.target.checked : e.target.value); saved(); };
   return (
     <section className="box">
@@ -162,7 +162,6 @@ function DeviceBox() {
       <Switch label="Plein écran au lancement d’une vidéo" checked={!!prefs.get('fullscreenOnPlay')} onChange={pref('fullscreenOnPlay')} />
       <Field label="Au survol d’une affiche"><Select opts={[['trailer', 'Bande-annonce (sinon un extrait)'], ['extract', 'Extrait de la vidéo'], ['off', 'Rien']]} value={hoverMode()} onChange={pref('hoverMode')} /></Field>
       <Switch label="Aperçus et bandes-annonces avec le son" checked={!!prefs.get('hoverSound')} onChange={pref('hoverSound')} />
-      <Switch label="Bandes-annonces dans l’affiche d’accueil" checked={heroTrailers()} onChange={pref('heroTrailer')} />
       <Switch label="Bande-annonce en fond des fiches (films, séries, animés)" checked={detailsTrailers()} onChange={pref('detailsTrailer')} />
       <Switch label="Montrer les épisodes manquants dans les saisons (diffusés mais pas dans vos dossiers)" checked={prefs.get('showMissing') !== false} onChange={pref('showMissing')} />
       <Switch label="Fiche à la pause : distribution, temps restant, chapitre et dernière réplique" checked={prefs.get('pauseCard') !== false} onChange={pref('pauseCard')} />

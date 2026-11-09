@@ -1,5 +1,5 @@
 // Réglages : mon profil (tous) + administration du serveur (administrateur)
-import { api, auth, preferredQuality, setPreferredQuality, prefs, hoverMode, heroTrailers, detailsTrailers } from '../api.js';
+import { api, auth, preferredQuality, setPreferredQuality, prefs, hoverMode, detailsTrailers } from '../api.js';
 import { h, icon, avatar, sheet, toast, AVATAR_HUES, fmtTime, confirmSheet, passwordProblem, passwordMeter } from '../ui.js';
 import { state, switchProfile, go, liteSetting, applyLite } from '../core.js';
 import { openSourceWizard } from './source-wizard.js';
@@ -67,8 +67,6 @@ export async function render(main, { query } = {}) {
     field('Au survol d’une affiche', select([['trailer', 'Bande-annonce (sinon un extrait)'], ['extract', 'Extrait de la vidéo'], ['off', 'Rien']], hoverMode(),
       { onchange: (e) => { prefs.set('hoverMode', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
     prefSwitch('hoverSound', 'Aperçus et bandes-annonces avec le son'),
-    h('label', { class: 'switch' }, h('span', {}, 'Bandes-annonces dans l’affiche d’accueil'),
-      h('input', { type: 'checkbox', class: 'f', checked: heroTrailers(), onchange: (e) => { prefs.set('heroTrailer', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
     h('label', { class: 'switch' }, h('span', {}, 'Bande-annonce en fond des fiches (films, séries, animés)'),
       h('input', { type: 'checkbox', class: 'f', checked: detailsTrailers(), onchange: (e) => { prefs.set('detailsTrailer', e.target.checked); toast('Préférence enregistrée pour cet appareil'); } })),
     h('label', { class: 'switch' }, h('span', {}, 'Montrer les épisodes manquants dans les saisons (diffusés mais pas dans vos dossiers)'),
