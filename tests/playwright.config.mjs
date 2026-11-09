@@ -18,6 +18,8 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
+    // Machine sans accès au téléchargement des navigateurs : VENUS_CHROMIUM=/chemin/vers/chrome
+    ...(process.env.VENUS_CHROMIUM ? { launchOptions: { executablePath: process.env.VENUS_CHROMIUM } } : {}),
     baseURL: `http://127.0.0.1:${port}`,
     storageState: './.auth.json',
     locale: 'fr-FR',

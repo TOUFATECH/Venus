@@ -9,9 +9,9 @@
     "analyse": "cd .. && tests/node_modules/.bin/eslint --no-config-lookup -c tests/eslint.config.mjs server scripts tests public/js public/sw.js web/app web/components web/lib"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0",
-    "eslint": "^9.39.1",
-    "eslint-plugin-react-hooks": "^5.2.0",
-    "globals": "^16.5.0"
+    "@playwright/test": "^1.65.0",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0"
   }
 }

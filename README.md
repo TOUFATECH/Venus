@@ -204,7 +204,7 @@ cd /opt/Venus && git pull && bash update.sh
 
 ## Interface Next.js
 
-L'interface est une application **Next.js 16** (App Router) dans le dossier [`web/`](web), mise en page en **flexbox**. Elle est servie **par Venus lui-même**, sur le même port : rien de plus à ouvrir ni à configurer.
+L'interface est une application **Next.js 16** (App Router, React 19, dernières versions) dans le dossier [`web/`](web), mise en page en **flexbox** : chaque écran est une vraie page avec son adresse directe (`/films/orage-2018`, `/series/brigade-nord/S02E04`, `/musique/artiste/zaza`…), partageable et rechargeable. L'image Docker repose sur Node 24 et Debian 13 (trixie) avec jellyfin-ffmpeg 7 ; le lecteur HLS embarqué est hls.js 1.7.4. Elle est servie **par Venus lui-même**, sur le même port : rien de plus à ouvrir ni à configurer.
 
 ```
 Navigateur ──► Venus (port 8096)
@@ -246,7 +246,7 @@ npm run web:build         # construction de production (servie ensuite par Venus
 ### Tests
 
 ```bash
-npm run web:build && npm test   # 75 tests dans un vrai navigateur (Playwright)
+npm run web:build && npm test   # 116 tests dans un vrai navigateur (Playwright)
 cd tests && npm run analyse     # analyse du code (variables inconnues, règles React…)
 ```
 
