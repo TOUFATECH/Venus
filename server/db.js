@@ -141,6 +141,8 @@ db.exec('CREATE TABLE IF NOT EXISTS watch_time (profile_id INTEGER, day TEXT, se
 if (!cols('profiles').includes('perms')) db.exec('ALTER TABLE profiles ADD COLUMN perms TEXT');
 if (!cols('profiles').includes('email')) db.exec('ALTER TABLE profiles ADD COLUMN email TEXT');
 if (!cols('profiles').includes('ui_prefs')) db.exec('ALTER TABLE profiles ADD COLUMN ui_prefs TEXT');
+// Reprise « endormi » : la position gardée est celle du dernier geste, pas la fin de la lecture
+if (!cols('progress').includes('asleep')) db.exec('ALTER TABLE progress ADD COLUMN asleep INTEGER DEFAULT 0');
 if (!cols('libraries').includes('remote')) db.exec('ALTER TABLE libraries ADD COLUMN remote TEXT');
 const libSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'libraries'").get();
 if (libSql && /CHECK/.test(libSql.sql)) {

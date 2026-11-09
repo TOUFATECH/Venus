@@ -161,6 +161,17 @@ cd /opt/Venus && git pull && bash update.sh
 - **TV en direct** (IPTV M3U / Xtream) avec guide des programmes, numéros de chaîne et **enregistrements** ; chaînes rangées par catégorie, favoris (export / import M3U), zapping instantané, **multi-écran** (2 ou 4 chaînes), rappels de programmes, chaînes du monde (iptv-org) sans doublon.
 - **Confort** : mode nuit (son égalisé), image dans l'image, sous-titres à votre goût (gardés par profil), écran de veille (après 10 minutes sans activité, 5 sur la TV, même sur une vidéo en pause).
 - **Musique** (paroles synchronisées), **photos** (diaporama, HEIC), **livres** (EPUB, PDF, BD, livres audio).
+- **Ce que les autres lecteurs n'ont pas** :
+  - **« Précédemment dans… » automatique** : Venus analyse les scènes (coupures, volume) et monte un résumé de 30 secondes de l'épisode précédent, proposé au début du suivant (ou lancé tout seul avec l'option « Précédemment automatique »).
+  - **Retour au moment où l'on s'est endormi** : 45 minutes sans aucun geste alors que la vidéo défilait, et la reprise revient au dernier geste, pas à la fin de l'épisode.
+  - **Fiche à la pause** : temps restant, heure de fin, chapitre, acteurs de la scène avec leurs photos, dernière réplique et résumé — sans quitter la vidéo.
+  - **Chapitres générés** pour les fichiers qui n'en ont pas, avec un titre tiré des dialogues (« Le lagon garde tous nos secrets »).
+  - **Sous-titres générés sur le serveur** (whisper.cpp, hors ligne) puis traduits en français (Argos Translate ou LibreTranslate) pour les vidéos qui n'en ont pas : à demander depuis le lecteur.
+  - **Recherche dans les dialogues** : tapez une réplique, retrouvez le film ou l'épisode et lancez la lecture à la seconde près (page Recherche et Ctrl+K).
+  - **Mode anti-spoiler** par profil : les épisodes après le prochain à voir n'affichent ni titre, ni résumé, ni image.
+  - **« Qui regarde ce soir ? »** (page Ce soir) : cochez les personnes présentes, Venus propose ce que personne n'a vu, permis au plus jeune, et qui plaît à chacun.
+  - **Lumières synchronisées** : les ampoules Philips Hue et les bandes LED WLED prennent la couleur dominante de l'image, puis reviennent comme avant à la fin (Réglages → Lecture).
+  - **Meilleurs moments** repérés automatiquement, proposés dans « Partager un extrait ».
 
 ### Trouver
 
@@ -351,6 +362,8 @@ Venus sert aussi HTTPS (en **HTTP/2**) sur le port **8920** avec un certificat a
 | `TRUST_PROXY` | — | `1` si un proxy sur une autre machine transmet l'adresse du visiteur |
 | `LAN_SUBNET` | — | Réseau à explorer pour trouver les NAS (ex. `192.168.1`) |
 | `VENUS_SECRET` | — | Clé de chiffrement des clés d'API (sinon `/config/secret.key`) |
+| `VENUS_WHISPER_BIN` | auto | Chemin de `whisper-cli` (sous-titres générés) ; l'image Docker l'inclut |
+| `LIBRETRANSLATE_URL` | — | Serveur LibreTranslate pour traduire les sous-titres générés (sinon réglable dans l'interface, ou Argos Translate s'il est installé) |
 
 ## Par rapport à Plex et Jellyfin
 

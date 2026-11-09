@@ -88,5 +88,6 @@ export function downloadedSubs(itemId) {
   const dir = path.join(subsDir, String(itemId));
   let files = [];
   try { files = fs.readdirSync(dir).filter((f) => f.endsWith('.srt')); } catch { return []; }
-  return files.map((f) => { const [lang, id] = f.split('.'); return { id: `o${id}`, path: path.join(dir, f), codec: 'subrip', lang, title: 'OpenSubtitles', forced: false, isDefault: false, text: true, external: true, online: true }; });
+  // fr.1234.srt : OpenSubtitles ; fr.auto.srt : généré par Venus (reconnaissance vocale, traduit si besoin)
+  return files.map((f) => { const [lang, id] = f.split('.'); const auto = id === 'auto'; return { id: auto ? `g${lang}` : `o${id}`, path: path.join(dir, f), codec: 'subrip', lang, title: auto ? 'Générés par Venus' : 'OpenSubtitles', forced: false, isDefault: false, text: true, external: true, online: !auto, generated: auto || undefined }; });
 }

@@ -22,6 +22,16 @@ RUN npm run build \
  && cp -r .next/standalone/. /out/ \
  && mkdir -p /out/.next && cp -r .next/static /out/.next/static
 
+# Étape 3 : whisper.cpp (sous-titres générés par reconnaissance vocale, hors ligne). Si la compilation échoue,
+# l'image se construit quand même, sans cette fonction.
+FROM debian:bookworm-slim AS whisper
+RUN set -eux; apt-get update; apt-get install -y --no-install-recommends ca-certificates git cmake g++ make; rm -rf /var/lib/apt/lists/*; \
+    mkdir -p /out; \
+    ( git clone --depth 1 --branch v1.7.5 https://github.com/ggml-org/whisper.cpp /w && cd /w \
+      && cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF -DGGML_NATIVE=OFF \
+      && cmake --build build -j"$(nproc)" --target whisper-cli \
+      && cp build/bin/whisper-cli /out/ ) || echo "whisper.cpp non compilé"
+
 FROM node:24-bookworm-slim
 
 ARG TARGETARCH
@@ -48,7 +58,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends "${FFMPEG_PKG}" \
       || apt-get install -y --no-install-recommends jellyfin-ffmpeg6 \
       || apt-get install -y --no-install-recommends ffmpeg; \
-    apt-get install -y --no-install-recommends cifs-utils nfs-common smbclient; \
+    apt-get install -y --no-install-recommends cifs-utils nfs-common smbclient libgomp1 libstdc++6; \
     if [ "${TARGETARCH:-amd64}" = "amd64" ]; then \
       apt-get install -y --no-install-recommends mesa-va-drivers intel-media-va-driver vainfo || true; \
     fi; \
@@ -62,6 +72,8 @@ COPY server ./server
 COPY --from=web /w/public ./public
 # Interface Next.js : lancée et surveillée par Venus sur un port interne (VENUS_UI=classic pour l'ancienne interface)
 COPY --from=next /out ./web-dist
+# whisper-cli (s'il a pu être compilé) : Venus le trouve dans /usr/local/bin
+COPY --from=whisper /out/ /usr/local/bin/
 
 EXPOSE 8096
 VOLUME ["/config"]

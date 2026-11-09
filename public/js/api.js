@@ -136,7 +136,7 @@ export function openStream(path, handlers) {
 }
 
 // Préférences de cet appareil (aperçu au survol, plein écran au lancement, volume)
-const PREF_DEFAULTS = { hoverPreview: true, hoverSound: true, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true, chatSound: true, autoSkip: false, hoverMode: null, heroTrailer: null, detailsTrailer: null, detailsSound: false, subStyle: 'text', subSize: 'medium', subColor: 'white', subPos: 'normal', showMissing: true, miniPlayer: true, notifyBrowser: true };
+const PREF_DEFAULTS = { hoverPreview: true, hoverSound: true, fullscreenOnPlay: true, volume: 1, muted: false, chatOverlay: true, chatSound: true, autoSkip: false, hoverMode: null, heroTrailer: null, detailsTrailer: null, detailsSound: false, subStyle: 'text', subSize: 'medium', subColor: 'white', subPos: 'normal', showMissing: true, miniPlayer: true, notifyBrowser: true, pauseCard: true, recapAuto: false, lights: true };
 // Réglages qui suivent le profil sur tous ses appareils (gardés aussi sur le serveur)
 const PROFILE_PREFS = new Set(['subSize', 'subColor', 'subStyle', 'subPos', 'nightMode']);
 export const prefs = {

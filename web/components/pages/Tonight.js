@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, img, go } from '../../lib/hooks';
-import { Icon } from '../Icon';
+import { Icon, Avatar } from '../Icon';
 import { Picture, Placeholder } from '../Card';
 import { PageError, PageLoading } from '../PageState';
 
@@ -147,5 +147,59 @@ export default function Tonight() {
       </>
     );
   }
-  return <main className="with-nav page-in"><div className="page tonight-page"><div className="tonight" ref={box}>{body}</div></div></main>;
+  return <main className="with-nav page-in"><div className="page tonight-page"><div className="tonight" ref={box}>{body}</div><Together /></div></main>;
+}
+
+// ---------------------------------------------------------------- film pour tout le monde : qui est dans le salon ?
+function Together() {
+  const L = shared();
+  const me = L.app.state.profile;
+  const { data: profiles } = useApi('/api/profiles');
+  const [sel, setSel] = useState(() => { try { return JSON.parse(localStorage.getItem('vn.together') || 'null') || [me.id]; } catch { return [me.id]; } });
+  const [kind, setKind] = useState('movie');
+  const [res, setRes] = useState(null);
+  useEffect(() => {
+    try { localStorage.setItem('vn.together', JSON.stringify(sel)); } catch { /* */ }
+    if (!sel.length) { setRes(null); return undefined; }
+    let dead = false;
+    api(`/api/together?profiles=${sel.join(',')}&kind=${kind}`).then((r) => { if (!dead) setRes(r); }).catch(() => {});
+    return () => { dead = true; };
+  }, [sel.join(','), kind]);
+  if (!profiles || profiles.length < 2) return null;
+  const toggle = (id) => setSel((l) => (l.includes(id) ? l.filter((x) => x !== id) : [...l, id]));
+  return (
+    <section className="together" aria-label="Film pour tout le monde">
+      <h2 className="section-title">Qui regarde ce soir ?</h2>
+      <p className="muted">Cochez les personnes présentes : Venus propose ce que personne n’a vu, permis au plus jeune, et qui plaît à chacun.</p>
+      <div className="together-who" role="group" aria-label="Personnes présentes">
+        {profiles.map((p) => (
+          <button key={p.id} className={`together-p f${sel.includes(p.id) ? ' on' : ''}`} aria-pressed={String(sel.includes(p.id))} onClick={() => toggle(p.id)}>
+            <Avatar profile={p} cls="sm" /><span>{p.name}</span>{p.isKids ? <small>enfant</small> : null}
+          </button>
+        ))}
+        <div className="seg" role="radiogroup" aria-label="Type">
+          {[['movie', 'Films'], ['show', 'Séries']].map(([k, l]) => <button key={k} className={`seg-b f${kind === k ? ' on' : ''}`} role="radio" aria-checked={String(kind === k)} onClick={() => setKind(k)}>{l}</button>)}
+        </div>
+      </div>
+      {!sel.length ? <p className="grid-empty">Choisissez au moins une personne.</p>
+        : !res ? <p className="muted">Recherche…</p>
+          : !res.results.length ? <p className="grid-empty">Rien que tout ce monde n’ait pas déjà vu : essayez les séries, ou retirez quelqu’un.</p>
+            : (
+              <div className="together-grid">
+                {res.results.slice(0, 12).map(({ item, why }, i) => (
+                  <article key={item.id} className="together-card" style={{ animationDelay: `${i * 40}ms` }}>
+                    <button className="together-pic f" onClick={() => go(item.path || `/titre/${item.id}`)} aria-label={item.title}>{item.poster ? <Picture src={img(item.poster, 342)} title={item.title} /> : <Placeholder title={item.title} />}</button>
+                    <div className="together-txt">
+                      <b>{item.title}</b>
+                      <small>{[item.year, item.runtime ? `${item.runtime} min` : null].filter(Boolean).join(' · ')}</small>
+                      {why.length ? <div className="pick-reasons">{why.map((w) => <span key={w}>{w}</span>)}</div> : null}
+                      <button className="btn btn-small btn-play f" onClick={() => playItem(item)}><Icon name="play" />Lecture</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+      {res && res.kids ? <p className="muted">Un enfant est présent : seuls les titres permis à son âge, de moins de 2 h 10, sont proposés.</p> : null}
+    </section>
+  );
 }

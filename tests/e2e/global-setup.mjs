@@ -32,6 +32,21 @@ function makeMedia(dir) {
     ['clips', 'Zaza - Soleil.mp4'],
   ]) fs.copyFileSync(base, m(...f));
   fs.rmSync(base);
+  // Deux vidéos avec de vrais changements de plan (image inversée toutes les 3 s) et des passages forts et faibles :
+  // analyse des scènes, meilleurs moments, « Précédemment dans… », chapitres générés
+  const cuts = m('cuts.mp4');
+  ff('-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=25:duration=30', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=30',
+    '-vf', "negate=enable='gte(mod(t,6),3)'", '-af', "volume='if(gte(mod(t,6),3),0.08,1)':eval=frame",
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', cuts);
+  for (const f of [['films', 'Orage (2018).mp4'], ['series', 'Brigade Nord', 'Saison 01', 'Brigade Nord S01E01.mp4']]) fs.copyFileSync(cuts, m(...f));
+  fs.rmSync(cuts);
+  // Sous-titres externes à côté d'un épisode : recherche dans les dialogues, titres de chapitres, fiche à la pause
+  fs.writeFileSync(m('series', 'Brigade Nord', 'Saison 01', 'Brigade Nord S01E01.fr.srt'), [
+    '1', '00:00:02,000 --> 00:00:05,000', 'Nous ne reviendrons jamais à Mayotte.', '',
+    '2', '00:00:08,000 --> 00:00:11,000', 'Le lagon garde tous nos secrets.', '',
+    '3', '00:00:14,000 --> 00:00:17,000', 'Brigade Nord, on y va !', '',
+    '4', '00:00:20,000 --> 00:00:23,000', 'Personne ne quitte l’île ce soir.', '',
+    '5', '00:00:26,000 --> 00:00:29,000', 'À demain, inspecteur.', ''].join('\n'));
   for (const [n, t] of [['01 - Lumière.mp3', 523], ['02 - Marée.mp3', 659]]) {
     ff('-f', 'lavfi', '-i', `sine=frequency=${t}:duration=20`, '-c:a', 'libmp3lame', '-b:a', '96k',
       '-metadata', 'artist=Zaza', '-metadata', 'album=Premier Album', '-metadata', `title=${n.slice(5, -4)}`, m('musique', 'Zaza', 'Premier Album', n));
@@ -65,14 +80,21 @@ export default async function globalSetup() {
   const log = fs.openSync(logFile, 'a');
   // Faux « cloudflared » : annonce une adresse de tunnel puis attend (accès hors de la maison)
   fs.writeFileSync(path.join(dir, 'faux-cloudflared.sh'), '#!/bin/sh\necho "INF |  https://essai-venus.trycloudflare.com  |" >&2\necho "INF Registered tunnel connection connIndex=0" >&2\nexec sleep 3600\n', { mode: 0o755 });
+  // Faux « whisper-cli » : écrit un SRT tout prêt (la vraie reconnaissance vocale demande un modèle de 470 Mo)
+  fs.writeFileSync(path.join(dir, 'faux-whisper.sh'), '#!/bin/sh\nof=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "-of" ]; then of="$2"; shift; fi; shift; done\necho "whisper_full: auto-detected language: fr (p = 0.98)" >&2\necho "progress = 100%" >&2\nprintf "1\\n00:00:01,000 --> 00:00:03,500\\nBonjour, ici la brigade.\\n\\n2\\n00:00:05,000 --> 00:00:08,000\\nLa mer est calme ce matin.\\n" > "$of.srt"\n', { mode: 0o755 });
+  fs.mkdirSync(path.join(dir, 'data', 'models', 'whisper'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'data', 'models', 'whisper', 'ggml-small.bin'), 'modele factice');
   const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
     cwd: root, detached: true, stdio: ['ignore', log, log],
-    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh') },
+    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh'), VENUS_WHISPER_BIN: path.join(dir, 'faux-whisper.sh') },
   });
   srv.unref();
   // Petit serveur des chaînes de test (dossier media/hls)
   const hls = spawn('python3', ['-m', 'http.server', String(port + 2), '--bind', '127.0.0.1', '--directory', path.join(media, 'hls')], { detached: true, stdio: 'ignore' });
   hls.unref();
+  // Faux pont Hue + faux WLED (lumières synchronisées)
+  const maison = spawn(process.execPath, [path.resolve(here, 'faux-maison.mjs'), String(port + 4)], { detached: true, stdio: 'ignore' });
+  maison.unref();
 
   const api = async (p, o = {}) => {
     const r = await fetch(base + p, { ...o, body: o.body ? JSON.stringify(o.body) : undefined, headers: { 'content-type': 'application/json', ...(o.token ? { authorization: `Bearer ${o.token}` } : {}) } });
@@ -106,7 +128,7 @@ export default async function globalSetup() {
     if (i > 120) throw new Error('Interface Next.js absente : lancez « npm run web:build » à la racine de Venus avant les tests.');
     await wait(500);
   }
-  fs.writeFileSync(STATE, JSON.stringify({ base, token, pid: srv.pid, hlsPid: hls.pid, dir, logFile }, null, 2));
+  fs.writeFileSync(STATE, JSON.stringify({ base, token, pid: srv.pid, hlsPid: hls.pid, maisonPid: maison.pid, maisonPort: port + 4, dir, logFile }, null, 2));
   // Session des tests : l'appareil est déjà connecté sur le profil administrateur
   fs.writeFileSync(path.resolve(here, '..', '.auth.json'), JSON.stringify({ cookies: [], origins: [{ origin: base, localStorage: [{ name: 'vn_token', value: token }] }] }));
   process.env.VENUS_BASE = base;

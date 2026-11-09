@@ -1,7 +1,7 @@
 'use client';
 // Réglages : mon profil, cet appareil, thème et menu (tous), puis l'administration du serveur (administrateur).
 // Une rubrique à la fois : colonne à gauche sur ordinateur, bande défilante sur téléphone.
-import { TraktLinkBox, ImportBox, RemoteBox } from './SettingsExtra';
+import { TraktLinkBox, ImportBox, RemoteBox, TranscribeBox, LightsBox } from './SettingsExtra';
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
 import { useTitle, api, toast, go } from '../../lib/hooks';
@@ -82,7 +82,7 @@ export default function Settings() {
     demandes: () => <><ArrBox /><SeerrBox {...ctx} /></>,
     famille: () => <><ProfilesBox {...ctx} /><DevicesBox {...ctx} /></>,
     alertes: () => <NotifyBox {...ctx} />,
-    lecture: () => <><PlaybackBox {...ctx} /><SubtitlesBox {...ctx} /></>,
+    lecture: () => <><PlaybackBox {...ctx} /><SubtitlesBox {...ctx} /><TranscribeBox /><LightsBox /></>,
     serveur: () => <ServerBox {...ctx} />,
     sauvegardes: () => <BackupBox {...ctx} />,
     import: () => <ImportBox {...ctx} />,
@@ -140,6 +140,8 @@ function MyBox({ me }) {
         <Select opts={[['auto', 'Auto'], ['original', 'Originale'], ['1080p', '1080p'], ['720p', '720p'], ['480p', '480p'], ['360p', '360p (data mobile)']]} value={L.api.preferredQuality()}
           onChange={(e) => { L.api.setPreferredQuality(e.target.value); toast('Qualité enregistrée pour cet appareil'); }} />
       </Field>
+      <Switch label="Mode anti-spoiler : au-delà de là où j’en suis, les titres, résumés et images des épisodes sont masqués" checked={!!(me.uiPrefs && me.uiPrefs.spoilerGuard)}
+        onChange={(e) => { const v = e.target.checked; me.uiPrefs = { ...(me.uiPrefs || {}), spoilerGuard: v }; L.api.saveProfilePrefs({ spoilerGuard: v }); L.api.clearApiCache(); toast(v ? 'Anti-spoiler activé' : 'Anti-spoiler désactivé'); }} />
       <Actions>
         <button className="btn btn-small f" onClick={() => editProfile(me, true, reboot)}>Modifier nom, couleur et code PIN</button>
         <button className="btn btn-small f" onClick={() => L.app.switchProfile()}>Changer de profil</button>
@@ -163,6 +165,8 @@ function DeviceBox() {
       <Switch label="Bandes-annonces dans l’affiche d’accueil" checked={heroTrailers()} onChange={pref('heroTrailer')} />
       <Switch label="Bande-annonce en fond des fiches (films, séries, animés)" checked={detailsTrailers()} onChange={pref('detailsTrailer')} />
       <Switch label="Montrer les épisodes manquants dans les saisons (diffusés mais pas dans vos dossiers)" checked={prefs.get('showMissing') !== false} onChange={pref('showMissing')} />
+      <Switch label="Fiche à la pause : distribution, temps restant, chapitre et dernière réplique" checked={prefs.get('pauseCard') !== false} onChange={pref('pauseCard')} />
+      <Switch label="« Précédemment dans… » automatique quand les épisodes s’enchaînent (sinon, proposé en début d’épisode)" checked={!!prefs.get('recapAuto')} onChange={pref('recapAuto')} />
       <Field label="Écran de veille (fonds de vos films et séries, avec l’heure)" hint="Après ce temps sans rien toucher, si aucune vidéo ne joue (une vidéo en pause compte comme arrêtée). Automatique : 5 minutes sur une TV, 10 minutes sur ordinateur, tablette et téléphone.">
         <Select opts={[['auto', 'Automatique'], ['2', 'Après 2 minutes'], ['5', 'Après 5 minutes'], ['10', 'Après 10 minutes'], ['15', 'Après 15 minutes'], ['30', 'Après 30 minutes'], ['0', 'Jamais']]} value={String(prefs.get('screensaver') ?? 'auto')} onChange={pref('screensaver')} />
       </Field>

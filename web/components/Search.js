@@ -40,7 +40,7 @@ export default function Search() {
 
 function SearchView({ all, initial, initialKind }) {
   const L = shared();
-  const { api, app, ui } = L;
+  const { api, app, ui, components } = L;
   const recentKey = `vn_recent_search_${app.state.profile ? app.state.profile.id : 0}`;
   const getRecent = () => { try { return JSON.parse(localStorage.getItem(recentKey)) || []; } catch { return []; } };
   const [recent, setRecent] = useState(getRecent);
@@ -63,6 +63,15 @@ function SearchView({ all, initial, initialKind }) {
 
   // Titres pas encore dans Venus : recherche en ligne après une courte pause de frappe
   const [online, setOnline] = useState(null);
+  // Dans les dialogues : une réplique → le titre et la scène (index des sous-titres sur le serveur)
+  const [lines, setLines] = useState(null);
+  useEffect(() => {
+    setLines(null);
+    if (!raw.trim() || raw.trim().length < 4) return undefined;
+    let dead = false;
+    const t = setTimeout(() => { api.api(`/api/dialogues?q=${encodeURIComponent(raw.trim())}&limit=12`).then((r) => { if (!dead) setLines(r.results); }).catch(() => {}); }, 300);
+    return () => { dead = true; clearTimeout(t); };
+  }, [raw]);
   const [smartMod, setSmartMod] = useState(null);
   useEffect(() => { L.imp('views/search.js').then(setSmartMod).catch(() => {}); }, []);
   useEffect(() => {
@@ -149,6 +158,19 @@ function SearchView({ all, initial, initialKind }) {
         {result.scored.length ? <div className="grid">{result.scored.slice(0, 60).map((i) => <Card key={i.id} item={i} poster />)}</div>
           : <p className="grid-empty">Rien dans votre médiathèque pour cette recherche.</p>}
       </Section>
+      {lines && lines.length ? (
+        <Section title="Dans les dialogues">
+          <div className="line-hits">
+            {lines.map((r) => r.lines.map((l) => (
+              <button key={`${r.item.id}-${l.start}`} className="line-hit f" onClick={() => app.go(`${components.playPath(r.item.id)}?t=${Math.max(0, Math.floor(l.start - 3))}`)} title="Lire à ce moment">
+                {r.item.poster || r.item.still ? <img src={ui.img(r.item.still || r.item.poster, 120)} alt="" loading="lazy" /> : <span className="ph-ini">{(r.item.title || '?')[0]}</span>}
+                <span><b>{`« ${l.text} »`}</b><small>{`${r.item.showTitle ? `${r.item.showTitle} · S${r.item.season} É${r.item.episode}` : r.item.title} · ${ui.fmtTime(l.start)}`}</small></span>
+                <Icon name="play" />
+              </button>
+            )))}
+          </div>
+        </Section>
+      ) : null}
       <div className="online-hits">
         {online ? <Section title="Pas encore dans Venus"><div className="grid">{online.map((x) => <OnlineCard key={`${x.type}-${x.tmdbId}`} x={x} />)}</div></Section> : null}
       </div>
