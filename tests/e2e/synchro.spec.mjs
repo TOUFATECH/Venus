@@ -145,3 +145,18 @@ test('écran de veille : apparaît sans activité, disparaît au premier geste',
   await expect(page.locator('.saver')).toHaveCount(0);
   await expect(page).toHaveURL(/\/films$/); // la touche n'a rien ouvert
 });
+
+test('écran de veille : par défaut au bout de 10 min sur ordinateur, aussi sur une vidéo en pause', async ({ page }) => {
+  await ouvrir(page, '/');
+  expect(await page.evaluate(async () => (await import('/js/screensaver.js')).saverDelay())).toBe(10);
+  // Vidéo en pause : l'écran de veille vient quand même
+  await page.addInitScript(() => localStorage.setItem('vn_pref_screensaver', '0.05'));
+  await ouvrir(page, '/films/orage-2018/lecture');
+  const video = page.locator('.player video');
+  await expect.poll(() => video.evaluate((v) => v.currentTime), { timeout: 30_000 }).toBeGreaterThan(0.3);
+  await video.evaluate((v) => v.pause());
+  await expect(page.locator('.saver')).toBeVisible({ timeout: 15_000 });
+  await page.mouse.click(300, 300);
+  await expect(page.locator('.saver')).toHaveCount(0);
+  expect(await video.evaluate((v) => v.paused)).toBe(true); // le clic qui réveille ne relance pas la vidéo
+});

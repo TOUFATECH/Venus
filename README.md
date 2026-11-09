@@ -159,7 +159,7 @@ cd /opt/Venus && git pull && bash update.sh
 - **Sous-titres** SRT / ASS / VTT / PGS, intégrés ou externes, recherche en ligne (OpenSubtitles), décalage réglable.
 - **Mini-lecteur** qui continue pendant la navigation, mode **Ambiance** (la lumière du film déborde autour de l'image), partage d'un extrait (GIF ou MP4).
 - **TV en direct** (IPTV M3U / Xtream) avec guide des programmes, numéros de chaîne et **enregistrements** ; chaînes rangées par catégorie, favoris (export / import M3U), zapping instantané, **multi-écran** (2 ou 4 chaînes), rappels de programmes, chaînes du monde (iptv-org) sans doublon.
-- **Confort** : mode nuit (son égalisé), image dans l'image, sous-titres à votre goût (gardés par profil), écran de veille sur la TV.
+- **Confort** : mode nuit (son égalisé), image dans l'image, sous-titres à votre goût (gardés par profil), écran de veille (après 10 minutes sans activité, 5 sur la TV, même sur une vidéo en pause).
 - **Musique** (paroles synchronisées), **photos** (diaporama, HEIC), **livres** (EPUB, PDF, BD, livres audio).
 
 ### Trouver
