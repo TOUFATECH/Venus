@@ -1,17 +1,19 @@
 // Écran de veille : après quelques minutes sans rien toucher (et sans vidéo en cours), les fonds de vos films et
 // séries défilent doucement, avec l'heure et la date. Le moindre geste (souris, touche, télécommande, manette)
 // le ferme sans rien déclencher d'autre.
-// Réglage « Cet appareil » : automatique (5 min sur la TV, désactivé ailleurs), ou 2 / 5 / 10 / 15 / 30 min, ou jamais.
+// Sur tous les appareils (ordinateur, tablette, téléphone, TV), y compris sur une vidéo mise en pause.
+// Réglage « Cet appareil » : automatique (5 min sur la TV, 10 min ailleurs), ou 2 / 5 / 10 / 15 / 30 min, ou jamais.
 import { api, prefs } from './api.js';
 import { img } from './ui.js';
 
-const BLOCK = /^\/(vote|telecommande|lecture|seance)|\/lecture$|\/S\d{1,3}E\d{1,4}$/i;
+// Pages où il ne s'affiche jamais : vote en famille, téléphone-télécommande, séance à plusieurs
+const BLOCK = /^\/(vote|telecommande|seance)/i;
 let last = Date.now();
 let el = null, slides = [], idx = 0, timer = null, clockT = null;
 
 export function saverDelay() {
   const v = prefs.get('screensaver');
-  if (v === undefined || v === null || v === 'auto') return document.documentElement.classList.contains('tv') ? 5 : 0;
+  if (v === undefined || v === null || v === 'auto') return document.documentElement.classList.contains('tv') ? 5 : 10;
   return Number(v) || 0;
 }
 const playing = () => [...document.querySelectorAll('video, audio')].some((m) => !m.paused && !m.ended && m.readyState > 1);

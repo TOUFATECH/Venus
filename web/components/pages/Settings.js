@@ -163,7 +163,7 @@ function DeviceBox() {
       <Switch label="Bandes-annonces dans l’affiche d’accueil" checked={heroTrailers()} onChange={pref('heroTrailer')} />
       <Switch label="Bande-annonce en fond des fiches (films, séries, animés)" checked={detailsTrailers()} onChange={pref('detailsTrailer')} />
       <Switch label="Montrer les épisodes manquants dans les saisons (diffusés mais pas dans vos dossiers)" checked={prefs.get('showMissing') !== false} onChange={pref('showMissing')} />
-      <Field label="Écran de veille (fonds de vos films et séries, avec l’heure)" hint="Après ce temps sans rien toucher, si aucune vidéo ne joue. Automatique : 5 minutes sur une TV, jamais ailleurs.">
+      <Field label="Écran de veille (fonds de vos films et séries, avec l’heure)" hint="Après ce temps sans rien toucher, si aucune vidéo ne joue (une vidéo en pause compte comme arrêtée). Automatique : 5 minutes sur une TV, 10 minutes sur ordinateur, tablette et téléphone.">
         <Select opts={[['auto', 'Automatique'], ['2', 'Après 2 minutes'], ['5', 'Après 5 minutes'], ['10', 'Après 10 minutes'], ['15', 'Après 15 minutes'], ['30', 'Après 30 minutes'], ['0', 'Jamais']]} value={String(prefs.get('screensaver') ?? 'auto')} onChange={pref('screensaver')} />
       </Field>
       <button className="btn btn-small btn-ghost f" type="button" onClick={() => shared().imp('screensaver.js').then((m) => m.showSaver())}>Voir l’écran de veille</button>
