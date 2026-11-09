@@ -1,7 +1,7 @@
 // Accueil : grande affiche + rangées. L'affiche suit la carte sélectionnée (télécommande ou souris).
 import { api, auth, heroTrailers, deviceCaps } from '../api.js';
 import { trailerPlayer } from '../trailer.js';
-import { h, icon, img, picture, ageBadge, fmtRuntime, toast } from '../ui.js';
+import { h, icon, img, bgWidth, picture, ageBadge, fmtRuntime, toast } from '../ui.js';
 import { row, playPath, metaLine, frameImage } from '../components.js';
 import { attachStream } from '../live.js';
 import { go, state, currentPath, hasCat, openAll } from '../core.js';
@@ -128,7 +128,7 @@ export async function render(main) {
     const key = item.backdrop ? item.backdrop : `th:${item.id}`;
     let layer = layers.get(key);
     if (!layer) {
-      layer = item.backdrop ? picture(img(item.backdrop), item.title, { lazy: false })
+      layer = item.backdrop ? picture(img(item.backdrop, bgWidth()), item.title, { lazy: false })
         : item.type === 'channel' ? h('img', { src: `/api/channels/${item.id}/preview.jpg`, alt: '', class: 'ch-snap' })
           : frameImage(item.id, item.title, { fade: false, big: true, fallback: item.poster ? () => h('img', { src: img(item.poster), alt: '', class: 'poster-fill' }) : null });
       layers.set(key, layer);

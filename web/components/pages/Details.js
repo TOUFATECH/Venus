@@ -161,7 +161,7 @@ function DetailsView({ d: initial }) {
   return (
     <div className={`details${amb ? ' amb' : ''}`} ref={root} style={amb ? { '--amb': amb } : undefined}>
       <div className="details-bg" ref={bgRef}>
-        {d.backdrop ? <Picture src={img(d.backdrop, 1280)} title={d.title} lazy={false} /> : <img src={`/api/items/${d.id}/thumb?size=big`} alt="" />}
+        {d.backdrop ? <Picture src={img(d.backdrop, shared().ui.bgWidth())} title={d.title} lazy={false} /> : <img src={`/api/items/${d.id}/thumb?size=big`} alt="" />}
       </div>
       {d.trailer ? <BackdropTrailer d={d} bgRef={bgRef} rootRef={root} apiRef={bt} /> : null}
       <div className="details-body">

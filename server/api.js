@@ -1949,7 +1949,7 @@ router.get('/img/:name', async (ctx) => {
   const src = path.join(imagesDir, name);
   // Version réduite (affiches des grilles, vignettes) : faite une fois par ffmpeg, puis gardée
   const w = Number(ctx.url.searchParams.get('w'));
-  if ([185, 342, 500, 780, 1280].includes(w) && /\.(jpe?g|png|webp)$/i.test(name) && fs.existsSync(src)) {
+  if ([185, 342, 500, 780, 1280, 1920, 2560, 3840].includes(w) && /\.(jpe?g|png|webp)$/i.test(name) && fs.existsSync(src)) {
     // WebP quand le navigateur le prend (30 à 50 % plus léger) et que ffmpeg sait le faire
     const webp = /image\/webp/.test(ctx.req.headers.accept || '') && await webpOk();
     ctx.res.setHeader('Vary', 'Accept');
@@ -1970,7 +1970,9 @@ function resizeImage(src, out, w, webp = false) {
   return new Promise((resolve) => {
     fs.mkdirSync(path.dirname(out), { recursive: true });
     const tmp = `${out}.tmp.${webp ? 'webp' : 'jpg'}`;
-    execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', src, '-vf', `scale='min(${w},iw)':-2`, ...(webp ? ['-c:v', 'libwebp', '-quality', '78', '-compression_level', '4'] : ['-q:v', '4']), '-y', tmp], { timeout: 20000 }, (err) => {
+    // Grandes tailles (fonds HD/4K) : qualité plus haute, l'image est vue en plein écran
+    const hd = w >= 1920;
+    execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', src, '-vf', `scale='min(${w},iw)':-2:flags=lanczos`, ...(webp ? ['-c:v', 'libwebp', '-quality', hd ? '86' : '78', '-compression_level', '4'] : ['-q:v', hd ? '2' : '4']), '-y', tmp], { timeout: 20000 }, (err) => {
       if (err) { try { fs.unlinkSync(tmp); } catch { /* */ } return resolve(false); }
       try { fs.renameSync(tmp, out); resolve(true); } catch { resolve(false); }
     });
