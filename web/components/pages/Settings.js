@@ -1,6 +1,7 @@
 'use client';
 // Réglages : mon profil, cet appareil, thème et menu (tous), puis l'administration du serveur (administrateur).
 // Une rubrique à la fois : colonne à gauche sur ordinateur, bande défilante sur téléphone.
+import { TraktLinkBox, ImportBox, RemoteBox } from './SettingsExtra';
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
 import { useTitle, api, toast, go } from '../../lib/hooks';
@@ -27,7 +28,7 @@ export default function Settings() {
     ...(me.isAdmin ? [
       ['Médias', [['medias', 'Médiathèques', 'folder'], ['tv', 'TV en direct', 'live'], ['infos', 'Infos et affiches', 'spark'], ['notes', 'Notes des sites', 'heart'], ['demandes', 'Demandes', 'download']]],
       ['Foyer', [['famille', 'Profils et appareils', 'people'], ['alertes', 'Notifications', 'chat']]],
-      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['perf', 'Performances', 'spark'], ['maj', 'Mise à jour', 'download'], ['serveur', 'Serveur', 'server'], ['sauvegardes', 'Sauvegardes', 'copy']]],
+      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['perf', 'Performances', 'spark'], ['maj', 'Mise à jour', 'download'], ['serveur', 'Serveur', 'server'], ['distance', 'Accès hors de la maison', 'live'], ['import', 'Importer (Plex, Jellyfin)', 'download'], ['sauvegardes', 'Sauvegardes', 'copy']]],
     ] : []),
   ];
   const TABS = NAV.flatMap(([, items]) => items);
@@ -84,9 +85,11 @@ export default function Settings() {
     lecture: () => <><PlaybackBox {...ctx} /><SubtitlesBox {...ctx} /></>,
     serveur: () => <ServerBox {...ctx} />,
     sauvegardes: () => <BackupBox {...ctx} />,
+    import: () => <ImportBox {...ctx} />,
+    distance: () => <RemoteBox />,
   };
   let content;
-  if (tab === 'profil') content = <MyBox me={me} />;
+  if (tab === 'profil') content = <><MyBox me={me} /><TraktLinkBox /></>;
   else if (tab === 'appareil') content = <DeviceBox />;
   else if (tab === 'affichage') content = <><ThemeBox /><FluidBox /><MenuBox me={me} /></>;
   else if (tab === 'perf') content = <PerfBoxes />;
@@ -160,6 +163,10 @@ function DeviceBox() {
       <Switch label="Bandes-annonces dans l’affiche d’accueil" checked={heroTrailers()} onChange={pref('heroTrailer')} />
       <Switch label="Bande-annonce en fond des fiches (films, séries, animés)" checked={detailsTrailers()} onChange={pref('detailsTrailer')} />
       <Switch label="Montrer les épisodes manquants dans les saisons (diffusés mais pas dans vos dossiers)" checked={prefs.get('showMissing') !== false} onChange={pref('showMissing')} />
+      <Field label="Écran de veille (fonds de vos films et séries, avec l’heure)" hint="Après ce temps sans rien toucher, si aucune vidéo ne joue. Automatique : 5 minutes sur une TV, jamais ailleurs.">
+        <Select opts={[['auto', 'Automatique'], ['2', 'Après 2 minutes'], ['5', 'Après 5 minutes'], ['10', 'Après 10 minutes'], ['15', 'Après 15 minutes'], ['30', 'Après 30 minutes'], ['0', 'Jamais']]} value={String(prefs.get('screensaver') ?? 'auto')} onChange={pref('screensaver')} />
+      </Field>
+      <button className="btn btn-small btn-ghost f" type="button" onClick={() => shared().imp('screensaver.js').then((m) => m.showSaver())}>Voir l’écran de veille</button>
       <Switch label="Avec le son" checked={!!prefs.get('detailsSound')} onChange={pref('detailsSound')} />
       <Switch label="Mode nuit dans le lecteur : explosions moins fortes, dialogues plus clairs (suit votre profil)" checked={!!prefs.get('nightMode')} onChange={pref('nightMode')} />
       <div className="two-cols wide">

@@ -31,6 +31,7 @@ export function h(tag, attrs = {}, ...children) {
 }
 
 const P = {
+  link: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.2 1.2M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.2-1.2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
   bell: '<path d="M6 16.5V11a6 6 0 1 1 12 0v5.5l1.6 2H4.4z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/><path d="M10 20.5a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="2" fill="none"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>',
   multi: '<rect x="3" y="4" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="13" y="4" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="3" y="13" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="13" y="13" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/>',

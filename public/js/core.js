@@ -5,6 +5,7 @@ import { api, auth, clearApiCache, prefs } from './api.js';
 import { h, icon, toast, logoMark, sheet, overlayHost } from './ui.js';
 import { initNav } from './nav.js';
 import './gamepad.js';
+import './screensaver.js';
 import { labelOf, iconOf, sections } from './menu.js';
 import { applyTheme, planet } from './themes.js';
 applyTheme();

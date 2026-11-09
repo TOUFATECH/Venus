@@ -63,9 +63,11 @@ export default async function globalSetup() {
   const base = `http://127.0.0.1:${port}`;
   const logFile = path.join(dir, 'venus.log');
   const log = fs.openSync(logFile, 'a');
+  // Faux « cloudflared » : annonce une adresse de tunnel puis attend (accès hors de la maison)
+  fs.writeFileSync(path.join(dir, 'faux-cloudflared.sh'), '#!/bin/sh\necho "INF |  https://essai-venus.trycloudflare.com  |" >&2\necho "INF Registered tunnel connection connIndex=0" >&2\nexec sleep 3600\n', { mode: 0o755 });
   const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
     cwd: root, detached: true, stdio: ['ignore', log, log],
-    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0' },
+    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh') },
   });
   srv.unref();
   // Petit serveur des chaînes de test (dossier media/hls)

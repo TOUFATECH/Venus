@@ -454,6 +454,8 @@ export function RatingsBox({ a, refresh }) {
         placeholder={kept(S.simklConfigured, 'Identifiant') || 'Client ID Simkl'} hint={<span>Gratuit : créez une application sur <Ext href="https://simkl.com/settings/developer/">simkl.com/settings/developer</Ext>.</span>} />
       <KeyRow label="Client ID Trakt : note Trakt, et affiches, fonds et logos" k="traktClientId" configured={S.traktConfigured} save={save}
         placeholder={kept(S.traktConfigured, 'Identifiant') || 'Client ID Trakt'} hint={<span>Gratuit : créez une application sur <Ext href="https://trakt.tv/oauth/applications/new">trakt.tv/oauth/applications</Ext> (adresse de redirection : urn:ietf:wg:oauth:2.0:oob), puis copiez le « Client ID ».</span>} />
+      {S.traktConfigured ? <KeyRow label="Client Secret Trakt : pour que chaque profil relie son compte (synchronisation des épisodes vus)" k="traktClientSecret" configured={S.traktSecretConfigured} save={save}
+        placeholder={kept(S.traktSecretConfigured, 'Secret') || 'Client Secret Trakt'} hint="Sur la même page de votre application Trakt, sous le Client ID. Ensuite : Réglages → Mon profil → Trakt." /> : null}
       {S.traktConfigured ? (
         <Field label="Affiches des films, séries et animés" hint="Vos images du dossier (poster.jpg, fanart.jpg) restent toujours prioritaires. Le changement se fait en arrière-plan.">
           <Select opts={[['tmdb', 'TMDB d’abord, Trakt quand TMDB n’en a pas'], ['trakt', 'Trakt d’abord, TMDB en secours']]} value={S.posterSource || 'tmdb'} onChange={(e) => save({ posterSource: e.target.value })} />
