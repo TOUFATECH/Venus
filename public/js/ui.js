@@ -133,6 +133,14 @@ export function brand(cls = '') { return h('span', { class: `brand ${cls}` }, lo
 const HIDPI = { 185: 342, 342: 500, 500: 780, 780: 1280 };
 const sharp = (w) => (w && typeof devicePixelRatio === 'number' && devicePixelRatio >= 1.5 && HIDPI[w] ? HIDPI[w] : w);
 export const img = (name, w) => (!name ? null : /^(data:|blob:|https?:)/.test(name) ? name : `/img/${encodeURIComponent(name)}${w ? `?w=${sharp(w)}` : ''}`);
+// Largeur d'image de fond adaptée à l'écran (1280, 1920, 2560 ou 3840 px) : HD sur un ordinateur, 4K sur une grande télé
+export function bgWidth() {
+  try {
+    const lite = document.documentElement.classList.contains('lite');
+    const px = Math.round(Math.max(screen.width || 0, innerWidth || 0) * Math.min(devicePixelRatio || 1, lite ? 1 : 2));
+    return px <= 1280 ? 1280 : px <= 1920 || lite ? 1920 : px <= 2560 ? 2560 : 3840;
+  } catch { return 1920; }
+}
 export const hueOf = (s) => { let x = 0; for (const c of String(s)) x = (x * 31 + c.charCodeAt(0)) % 360; return x; };
 
 // Image absente : fond coloré (couleur tirée du titre), sans texte quand le nom est déjà écrit à côté

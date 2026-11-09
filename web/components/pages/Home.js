@@ -92,7 +92,7 @@ function Hero({ items, apiRef }) {
     restart();
     // L'affiche suivante est chargée à l'avance pour un fondu sans à-coup
     const n = items[(idx + 1) % items.length];
-    if (n && n !== it) { const pre = new Image(); pre.src = img(n.backdrop || n.poster); if (n.poster) { const pp = new Image(); pp.src = img(n.poster, 342); } }
+    if (n && n !== it) { const pre = new Image(); pre.src = n.backdrop ? img(n.backdrop, L.ui.bgWidth()) : img(n.poster); if (n.poster) { const pp = new Image(); pp.src = img(n.poster, 342); } }
     if (hadFocus) requestAnimationFrame(() => body.current && body.current.querySelector('.btn-play')?.focus({ preventScroll: true }));
   }, [idx]);
 
@@ -150,7 +150,8 @@ function Hero({ items, apiRef }) {
 function HeroLayer({ item, on }) {
   const [failed, setFailed] = useState(false);
   const cls = on ? 'on' : '';
-  if (item.backdrop) return failed ? <Placeholder title={item.title} cls={`ph ${cls}`} /> : <img src={img(item.backdrop)} alt="" className={cls} decoding="async" onError={() => setFailed(true)} />;
+  // Fond en haute définition, à la taille de l'écran (jusqu'à 3840 px sur une grande télé)
+  if (item.backdrop) return failed ? <Placeholder title={item.title} cls={`ph ${cls}`} /> : <img src={img(item.backdrop, shared().ui.bgWidth())} alt="" className={cls} decoding="async" onError={() => setFailed(true)} />;
   if (item.type === 'channel') return <img src={`/api/channels/${item.id}/preview.jpg`} alt="" className={`ch-snap ${cls}`} />;
   if (failed) return item.poster ? <img src={img(item.poster)} alt="" className={`poster-fill ${cls}`} /> : <Placeholder title={item.title} cls={`ph ${cls}`} />;
   return <img src={`/api/items/${item.id}/thumb?size=big`} alt="" className={cls} decoding="async" onError={() => setFailed(true)} />;

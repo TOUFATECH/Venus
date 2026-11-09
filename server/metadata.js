@@ -39,6 +39,17 @@ export async function testKey(key) {
 }
 
 // Téléchargement et mise en cache local des images (l'interface ne dépend plus d'internet ensuite)
+// Fonds déjà enregistrés en 1280 px : repris en pleine définition (l'accueil et les fiches les affichent en HD/4K)
+export async function upgradeBackdrops(limit = 40) {
+  const rows = all("SELECT id, backdrop FROM items WHERE type IN ('movie','show') AND backdrop LIKE 't_w1280_%' ORDER BY added_at DESC LIMIT ?", limit);
+  let n = 0;
+  for (const r of rows) {
+    const name = await downloadImage(`/${r.backdrop.slice('t_w1280_'.length)}`, 'original');
+    if (name) { run('UPDATE items SET backdrop = ? WHERE id = ?', name, r.id); n++; }
+  }
+  return n;
+}
+export const pendingBackdropUpgrades = () => get("SELECT COUNT(*) n FROM items WHERE type IN ('movie','show') AND backdrop LIKE 't_w1280_%'").n;
 export async function downloadImage(tmdbPath, size) {
   if (!tmdbPath) return null;
   const name = `t_${size}_${tmdbPath.replace(/^\//, '').replace(/[^\w.]/g, '')}`;
@@ -153,7 +164,7 @@ export async function matchMovie(item, forcedId) {
   const cert = pickCert(d.release_dates?.results || [], (e) => (e.release_dates || []).map((x) => x.certification).find(Boolean));
   const [poster, backdrop, logo] = await Promise.all([
     item.poster?.startsWith('l_') ? item.poster : downloadImage(d.poster_path, 'w500'),
-    item.backdrop?.startsWith('l_') ? item.backdrop : downloadImage(d.backdrop_path, 'w1280'),
+    item.backdrop?.startsWith('l_') ? item.backdrop : downloadImage(d.backdrop_path, 'original'),
     downloadImage(pickLogo(d.images), 'w500'),
   ]);
   run(`UPDATE items SET tmdb_id=?, title=?, original_title=?, sort_title=?, year=?, overview=?, tagline=?, poster=?, backdrop=?, logo=?,
@@ -182,7 +193,7 @@ export async function matchShow(show, forcedId) {
   const cert = pickCert(d.content_ratings?.results || [], (e) => e.rating);
   const [poster, backdrop, logo] = await Promise.all([
     show.poster?.startsWith('l_') ? show.poster : downloadImage(d.poster_path, 'w500'),
-    show.backdrop?.startsWith('l_') ? show.backdrop : downloadImage(d.backdrop_path, 'w1280'),
+    show.backdrop?.startsWith('l_') ? show.backdrop : downloadImage(d.backdrop_path, 'original'),
     downloadImage(pickLogo(d.images), 'w500'),
   ]);
   run(`UPDATE items SET tmdb_id=?, title=?, original_title=?, sort_title=?, year=?, overview=?, tagline=?, poster=?, backdrop=?, logo=?,

@@ -113,6 +113,18 @@ test('accueil : les nouveautés défilent à la une (3 films, 5 animés, 2 séri
   await expect(page.locator('.hero video, .hero iframe')).toHaveCount(0);
   expect(await page.locator('.hero-poster img').count()).toBeLessThanOrEqual(1); // la carte-affiche n'existe que si le titre a une affiche
   expect(home.resume === null || typeof home.resume === 'object').toBe(true);
+  // Fonds en haute définition : les tailles 1920, 2560 et 3840 sont servies (ici à partir d'une affiche locale)
+  const lib = await api('/api/library?type=show');
+  const seasons = (await api(`/api/items/${(Array.isArray(lib) ? lib : lib.items).find((i) => i.title === 'Brigade Nord').id}`)).seasons;
+  const withImg = home.rows.flatMap((r) => r.items).find((i) => i.poster && !/^https?:/.test(i.poster)) || seasons.find((x) => x.poster);
+  if (withImg) {
+    for (const w of [1920, 3840]) {
+      const r = await page.request.get(`/img/${encodeURIComponent(withImg.poster)}?w=${w}`);
+      expect(r.status(), `taille ${w}`).toBe(200);
+      expect(r.headers()['content-type']).toMatch(/image\//);
+    }
+  }
+  expect(await page.locator('.hero-bg img').first().getAttribute('src').catch(() => '')).toMatch(/w=(1280|1920|2560|3840)|thumb|^$/);
   // Côté serveur : seules les sorties de moins d'un an passent à la une dès qu'il y en a trois ; les autres complètent sinon
   const { DatabaseSync } = await import('node:sqlite');
   const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
