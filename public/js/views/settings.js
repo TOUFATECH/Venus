@@ -5,6 +5,7 @@ import { state, switchProfile, go, liteSetting, applyLite } from '../core.js';
 import { openSourceWizard } from './source-wizard.js';
 import { NAV_ITEMS, menuPrefs, saveMenuPrefs, resetMenuPrefs, labelOf, iconOf } from '../menu.js';
 import { PLANETS, chosenPlanet, setPlanet, planetMarkup, glassMode, setGlassMode, sunInfo, LAYOUTS, layoutOf } from '../themes.js';
+import { convertBox } from '../convert.js';
 
 const AGES = [['', 'Aucune limite'], ['3', '3 ans et +'], ['7', '7 ans et +'], ['10', '10 ans et +'], ['12', '12 ans et +'], ['16', '16 ans et +']];
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
@@ -167,7 +168,7 @@ export async function render(main, { query } = {}) {
     infos: (a) => [metadataBox(a), postersBox(a)], notes: (a) => [ratingsBox(a)], demandes: (a) => [arrBox(a), seerrBox(a)],
     famille: (a) => [profilesBox(a), devicesBox(a)], alertes: (a) => [notifyBox(a)],
     lecture: (a) => [playbackBox(a), subtitlesBox(a)], serveur: (a) => [serverBox(a)], sauvegardes: (a) => [backupBox(a)],
-    perf: () => perfBoxes(),
+    perf: () => [...perfBoxes(), convertBox()],
     maj: () => [updateBox()],
   });
   // Données dont dépend chaque rubrique ; l'état des lectures en cours et l'usage système bougent sans cesse :
