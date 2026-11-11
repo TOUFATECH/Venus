@@ -6,9 +6,10 @@
 //    cherche le plus long passage identique.
 //
 // L'analyse tourne en arrière-plan, une saison à la fois, et n'est faite qu'une fois par fichier.
-import { spawn, execFile } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { config } from './config.js';
 import { all, get, run, getSetting } from './db.js';
+import { spawnLow } from './nice.js';
 
 const SEC = 0.1238;              // durée d'un point d'empreinte chromaprint (11 025 Hz, trames de 4096, recouvrement 2/3)
 const INTRO_MIN = 15, INTRO_MAX = 150;
@@ -73,7 +74,7 @@ export function segmentsFromChapters(list, duration) {
 // ------------------------------------------------------------------ 2. empreinte audio
 export function fingerprint(file, start, length) {
   return new Promise((resolve) => {
-    const p = spawn(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, start)), '-i', file, '-t', String(length),
+    const p = spawnLow(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(Math.max(0, start)), '-i', file, '-t', String(length),
       '-vn', '-sn', '-dn', '-ac', '2', '-f', 'chromaprint', '-fp_format', 'raw', '-'], { stdio: ['ignore', 'pipe', 'ignore'] });
     const chunks = [];
     const timer = setTimeout(() => p.kill('SIGKILL'), 180000);

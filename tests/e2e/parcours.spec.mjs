@@ -94,8 +94,10 @@ test('accueil : les nouveautés défilent à la une (3 films, 5 animés, 2 séri
   const tags = home.hero.map((h) => h.heroTag).filter(Boolean);
   expect(tags.length).toBeGreaterThan(0);
   expect(tags.length).toBeLessThanOrEqual(10);
-  // Données de test : 3 films et 1 série, pas d'animé
-  expect(home.hero.filter((h) => h.type === 'movie').length).toBe(3);
+  // Données de test : 5 films et 1 série, pas d'animé : 3 films, plus les places laissées libres par les animés
+  const films = home.hero.filter((h) => h.type === 'movie').length;
+  expect(films).toBeGreaterThanOrEqual(3);
+  expect(films).toBeLessThanOrEqual(5);
   // La reprise de lecture (un épisode) remplace sa série dans la liste
   const series = home.hero.filter((h) => (h.type === 'show' || h.type === 'episode') && h.category !== 'anime').length;
   expect(series).toBeGreaterThanOrEqual(1);

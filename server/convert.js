@@ -5,7 +5,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { db, all, get, run, getSetting, setSetting } from './db.js';
 import { hw, videoPipelines } from './hw.js';
@@ -14,6 +13,8 @@ import { logActivity } from './activity.js';
 import { notify } from './notify.js';
 import { recordTrash, TRASH_DIR } from './trash.js';
 import { needsOptimizing } from './optimize.js';
+import { sessions } from './stream.js';
+import { spawnLow } from './nice.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS conversions (
   id INTEGER PRIMARY KEY AUTOINCREMENT, item_id INTEGER NOT NULL, src_path TEXT NOT NULL, out_path TEXT, status TEXT NOT NULL DEFAULT 'queued',
@@ -146,7 +147,7 @@ export function convertStatus() {
   const list = rows.map((c) => ({ id: c.id, itemId: c.item_id, title: c.title, type: c.type, poster: c.poster, show: c.show_title, season: c.season_num, episode: c.episode_num, status: c.status, pct: c.status === 'running' && current && current.id === c.id ? current.pct : c.pct, sizeBefore: c.size_before, sizeAfter: c.size_after, error: c.error, encoder: c.encoder, opts: parse(c.opts), queuedAt: c.queued_at, doneAt: c.done_at, validatedAt: c.validated_at, speed: current && current.id === c.id ? current.speed : null }));
   const saved = get("SELECT COALESCE(SUM(size_before - size_after), 0) n FROM conversions WHERE status = 'validated'").n;
   const pending = get("SELECT COALESCE(SUM(size_before - size_after), 0) n FROM conversions WHERE status = 'done'").n;
-  return { list, running: !!current, saved, pending, paused: pausedUntil > Date.now(), settings: convertSettings(), hw: hw.label, cpu: os.cpus().length };
+  return { list, running: !!current, saved, pending, paused: pausedUntil > Date.now() || !!(current && current.held), settings: convertSettings(), hw: hw.label, cpu: os.cpus().length };
 }
 
 // ------------------------------------------------------------------ encodage
@@ -182,6 +183,21 @@ function subArgs(probe, o) {
   if (!subs.length) return ['-sn'];
   return subs.flatMap((s, i) => ['-map', `0:${s.index}`, `-c:s:${i}`, 'mov_text', `-metadata:s:s:${i}`, `language=${norm3(s.lang)}`, ...(s.title ? [`-metadata:s:s:${i}`, `title=${s.title}`] : [])]);
 }
+// Quelqu'un regarde : une session de lecture vivante (touchée depuis moins de 90 s)
+const watching = () => [...sessions.values()].some((x) => !x.exited && Date.now() - x.lastAccess < 90e3);
+// La compression se met en pause (SIGSTOP) pendant toute lecture et repart ensuite, sans perdre son travail
+function holdWhileWatching(proc) {
+  if (process.platform === 'win32') return; // pas de SIGSTOP : la conversion y continue en priorité basse
+  const iv = setInterval(() => {
+    if (proc.exitCode != null || proc.signalCode || !current || current.proc !== proc) return clearInterval(iv);
+    const busy = watching() || pausedUntil > Date.now();
+    try {
+      if (busy && !current.held) { proc.kill('SIGSTOP'); current.held = true; }
+      else if (!busy && current.held) { proc.kill('SIGCONT'); current.held = false; }
+    } catch { /* processus terminé */ }
+  }, 3000);
+  proc.on('exit', () => clearInterval(iv));
+}
 function encode(c, item, probe, o) {
   return new Promise((resolve, reject) => {
     const v = probe.video;
@@ -203,8 +219,9 @@ function encode(c, item, probe, o) {
       if (!p) return reject(new Error('Aucun encodeur n’a fonctionné'));
       const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...p.input, '-i', item.path, ...tune(p, { kbit, crf: PROFILE.crf }), ...audio, ...subs,
         '-dn', '-map_metadata', '0', '-map_chapters', '0', '-movflags', '+faststart', '-f', 'mp4', '-progress', 'pipe:1', '-nostats', tmp];
-      const proc = spawn(config.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawnLow(config.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
       current.proc = proc; current.encoder = p.name; const t0 = Date.now();
+      holdWhileWatching(proc);
       let log = '';
       proc.stderr.on('data', (d) => { log = (log + d).slice(-2000); });
       proc.stdout.on('data', (d) => {
@@ -230,7 +247,7 @@ export async function runConversions() {
   let done = 0;
   try {
     for (;;) {
-      if (pausedUntil > Date.now()) break;
+      if (pausedUntil > Date.now() || watching()) break;
       if (convertSettings().night && !nightOk()) break;
       const c = get("SELECT * FROM conversions WHERE status = 'queued' ORDER BY id LIMIT 1");
       if (!c) break;
@@ -262,10 +279,11 @@ export async function runConversions() {
   return done ? `${done} vidéo(s) compressée(s)` : 'Rien en attente';
 }
 const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} Go` : `${Math.round(b / 1e6)} Mo`);
-// Une lecture commence : la conversion en cours s'arrête et repartira plus tard
-export function pauseConversions(ms = 10 * 60e3) {
+// Une lecture commence : la conversion en cours est suspendue tout de suite (elle reprendra là où elle en était
+// dès que plus personne ne regarde, voir holdWhileWatching) ; rien ne démarre pendant ce délai
+export function pauseConversions(ms = 2 * 60e3) {
   pausedUntil = Date.now() + ms;
-  if (current && current.proc && !current.paused) { current.paused = true; try { current.proc.kill('SIGKILL'); } catch { /* */ } }
+  if (current && current.proc && !current.held && process.platform !== 'win32') { try { current.proc.kill('SIGSTOP'); current.held = true; } catch { /* */ } }
   setTimeout(() => { if (pausedUntil <= Date.now()) runConversions().catch(() => {}); }, ms + 1000).unref();
 }
 

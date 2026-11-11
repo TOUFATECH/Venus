@@ -48,6 +48,7 @@ import {
   decide, startSession, sessions, servePlaylist, serveSegment, subtitleVtt, thumbnail, previewClip, QUALITIES, hw, channelSnapshot, warmSnapshots, transcodePlace,
 } from './stream.js';
 import { detectHardware } from './hw.js';
+import { nextUiInfo } from './next-ui.js';
 import { probeLive, readChapters, cachedProbe } from './probe.js';
 import { runTask, listTasks } from './tasks.js';
 import { versionLabel } from './versions.js';
@@ -1921,8 +1922,10 @@ router.del('/api/live/:rid', (ctx) => { requireDevice(ctx); stopRelay(ctx.params
 router.post('/api/live/:rid/hold', async (ctx) => { requireDevice(ctx); const b = await readBody(ctx.req); sendJson(ctx.res, { ok: holdRelay(ctx.params.rid, b.on !== false) }); });
 router.get('/api/hls/:sid/index.m3u8', (ctx) => servePlaylist(ctx.res, ctx.params.sid));
 router.get('/api/hls/:sid/:seg', (ctx) => serveSegment(ctx.req, ctx.res, ctx.params.sid, ctx.params.seg));
-router.post('/api/hls/:sid/ping', (ctx) => { requireDevice(ctx); sessions.get(ctx.params.sid)?.touch(); sendJson(ctx.res, { ok: sessions.has(ctx.params.sid) }); });
+router.post('/api/hls/:sid/ping', (ctx) => { requireDevice(ctx); const s = sessions.get(ctx.params.sid); if (s) s.touch(); sendJson(ctx.res, { ok: !!s, ...(s ? s.pace() : {}) }); });
 router.del('/api/hls/:sid', (ctx) => { requireDevice(ctx); sessions.get(ctx.params.sid)?.stop(); sendJson(ctx.res, { ok: true }); });
+// Tests automatisés seulement (VENUS_TEST_HOOKS=1) : simule un ffmpeg qui lâche en pleine conversion
+if (process.env.VENUS_TEST_HOOKS === '1') router.post('/api/admin/hls/:sid/fault', (ctx) => { requireAdmin(ctx); const s = sessions.get(ctx.params.sid); if (!s || !s.proc) throw new HttpError(404, 'Session inconnue'); try { s.proc.kill('SIGTERM'); } catch { /* */ } sendJson(ctx.res, { ok: true, segments: s.segmentCount() }); });
 
 router.get('/api/subs/:id/:sub', async (ctx) => {
   const p = requireProfile(ctx);
@@ -2244,7 +2247,7 @@ router.get('/api/admin/dashboard', (ctx) => {
     server: {
       name: getSetting('server_name', 'Venus'), version: config.version, uptime: process.uptime(), node: process.version,
       os: `${os.type()} ${os.release()}`, platform: process.platform, arch: process.arch, host: os.hostname(), runtime: runtime.kind,
-      canRestart: supervised(), hw: { type: hw.type, label: hw.label, tested: hw.tested },
+      canRestart: supervised(), hw: { type: hw.type, label: hw.label, tested: hw.tested }, ui: nextUiInfo(),
     },
     counts: { movie: counts.movie || 0, show: (counts.show || 0) - anime, anime, episode: counts.episode || 0, clip: counts.clip || 0, channel: counts.channel || 0, season: counts.season || 0, track: counts.track || 0, photo: counts.photo || 0, book: (counts.book || 0) + (counts.audiobook || 0) },
     totals: { size: tot.size || 0, hours: Math.round((tot.dur || 0) / 3600) },

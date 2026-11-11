@@ -154,6 +154,7 @@ cd /opt/Venus && git pull && bash update.sh
 ### Regarder
 
 - **Lecture intelligente** : lecture directe (0 % de processeur) quand l'appareil sait lire le fichier, « remux » quand seul le conteneur ou le son posent problème, conversion matérielle sinon. La conversion se met en pause quand elle a assez d'avance.
+- **Lecture qui ne se fige pas** : si la conversion lâche en plein film, Venus reprend juste après le dernier segment écrit (même liste, discontinuité signalée) ; si le processeur convertit moins vite que la lecture, la qualité baisse d'un cran toute seule (et en automatique, le processeur seul ne vise jamais plus que ce qu'il tient en temps réel) ; le lecteur surveille l'image figée (saut par-dessus un trou, coup de pouce au décodeur, reprise de session, passage en conversion pour une lecture directe qui coince). Toutes les tâches de fond (compression, copies optimisées, reconnaissance vocale, analyses) tournent en priorité basse et la compression se **suspend** pendant toute lecture.
 - **Copies optimisées** préparées la nuit ou quand la carte graphique est libre (H.264 + AAC) pour les appareils qui convertiraient sinon ; conversions en mémoire vive quand la machine en a assez.
 - **Séries** : saisons, « Reprendre », épisode suivant avec compte à rebours, « Toujours là ? », minuterie de sommeil.
 - **Sous-titres** SRT / ASS / VTT / PGS, intégrés ou externes, recherche en ligne (OpenSubtitles), décalage réglable.

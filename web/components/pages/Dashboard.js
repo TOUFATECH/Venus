@@ -233,6 +233,7 @@ function NowPlaying({ p, refresh }) {
           {mode ? <span className={`pill${p.mode === 'transcode' ? ' warm' : ''}`}>{mode}</span> : null}
           {p.quality && p.quality !== 'auto' ? <span className="pill">{p.quality}</span> : null}
           {p.hls && p.hls.reason ? <span className="pill ghost" title={p.hls.reason}>{p.hls.reason}</span> : null}
+          {p.hls && p.hls.resumes ? <span className="pill warm" title="La conversion a lâché puis a repris toute seule au même endroit">{`Reprise ×${p.hls.resumes}`}</span> : null}
         </div>
       </div>
       <div className="np-ctl">
@@ -337,6 +338,7 @@ function System({ d }) {
         <div className="sys">
           <div className="sys-row"><span>Processeur</span><b>{s.cpuModel.replace(/\(R\)|\(TM\)|CPU|@.*$/g, '').trim()}</b></div>
           <div className="sys-row"><span>Venus utilise</span><b>{fmtBytes(s.rss)}</b></div>
+          <div className="sys-row"><span>Interface</span><b>{d.server.ui && d.server.ui.ready ? 'Next.js (nouvelle)' : 'Classique (de secours)'}</b><small>{d.server.ui && d.server.ui.ready ? `${d.server.ui.restarts ? `${d.server.ui.restarts} relance(s) · ` : ''}pages Next.js servies` : d.server.ui && d.server.ui.enabled ? `La nouvelle interface ne répond pas${d.server.ui.error ? ` : ${d.server.ui.error}` : ''} — l’ancienne est servie en attendant` : 'Nouvelle interface non construite ou désactivée (VENUS_UI=classic)'}</small></div>
           <div className="sys-row"><span>Accélération</span><b>{d.server.hw.label || 'Processeur seul'}</b><small>{d.server.hw.type && d.server.hw.type !== 'none' ? (d.server.hw.tested ? 'Testée et fonctionnelle' : 'Détectée') : 'Aucune carte graphique : conversions plus lentes'}</small></div>
           {s.disks.map((k, i) => <div key={i} className="sys-row"><span>Disque</span><b>{`${fmtBytes(k.total - k.free)} / ${fmtBytes(k.total)}`}</b><Meter pct={((k.total - k.free) / k.total) * 100} /><small>{`${fmtBytes(k.free)} libres · ${k.names.join(', ')}`}</small></div>)}
         </div>

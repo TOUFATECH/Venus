@@ -3,6 +3,7 @@ import { spawn, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { config } from './config.js';
 import { hw, videoPipelines } from './hw.js';
 import { NET_INPUT } from './probe.js';
@@ -131,23 +132,37 @@ class HlsSession {
     if (decision.copyVideo) {
       this.pipelines = [{ name: 'copie', input: [], video: ['-map', '0:v:0', '-c:v', 'copy', ...(this.fmp4 ? ['-tag:v', 'hvc1'] : [])], audioArgs }];
     } else {
-      const { width, height } = targetSize(probe.video || { width: 1280, height: 720 }, decision.limitHeight);
+      const src = probe.video || { width: 1280, height: 720 };
+      const { width, height } = targetSize(src, decision.limitHeight);
       const bitrate = targetBitrate(probe, height, decision.limitBitrate);
       this.pipelines = videoPipelines({ width, height, bitrate, src: probe.video || {}, burnIndex: decision.burnIndex })
         .map((p) => ({ ...p, audioArgs }));
       this.target = { width, height, bitrate };
+      // Processeur seul (pas de carte, ou repli) en qualité automatique : on vise une définition qu'il tient en
+      // temps réel (4K ou HDR à convertir au processeur : l'image finirait figée). Une qualité choisie à la main est respectée.
+      if (this.quality === 'auto' || !this.quality) {
+        const cores = os.cpus().length, hdr = !!src.hdr;
+        const cap = hdr ? (cores >= 12 ? 1080 : cores >= 6 ? 720 : 480) : (cores >= 8 ? 1080 : cores >= 4 ? 720 : 480);
+        if (height > cap) {
+          const t = targetSize(src, cap), b = targetBitrate(probe, t.height, decision.limitBitrate);
+          const cpu = videoPipelines({ width: t.width, height: t.height, bitrate: b, src: probe.video || {}, burnIndex: decision.burnIndex }).find((p) => p.name === 'cpu');
+          this.pipelines = this.pipelines.map((p) => (p.name === 'cpu' && cpu ? { ...cpu, audioArgs, target: t } : p));
+          if (this.pipelines[0] && this.pipelines[0].name === 'cpu') this.target = { ...t, bitrate: b };
+        }
+      }
     }
   }
 
   start() {
     const p = this.pipelines[this.pipelineIdx];
     this.pipelineName = p.name;
+    if (p.target) this.target = { ...p.target, bitrate: this.target ? this.target.bitrate : 0 };
     const live = this.live;
     const args = [
       '-hide_banner', '-loglevel', 'error', '-nostdin',
       ...p.input,
       ...(live ? NET_INPUT(this.input) : []),
-      ...(!live && this.offset > 0 ? ['-ss', String(this.offset)] : []),
+      ...(!live && this.offset + this.resumeOffset() > 0 ? ['-ss', String(this.offset + this.resumeOffset())] : []),
       '-fflags', live ? '+genpts+discardcorrupt' : '+genpts',
       // Direct : analyse courte (le codec est déjà connu grâce à l'analyse gardée en mémoire) = démarrage plus rapide
       '-analyzeduration', live ? (this.probe && this.probe.video ? '1500000' : '3M') : '20M', '-probesize', live ? (this.probe && this.probe.video ? '1500000' : '3M') : '20M',
@@ -159,7 +174,8 @@ class HlsSession {
       '-f', 'hls', '-hls_time', String(live ? 2 : config.segmentSeconds),
       ...(live
         ? ['-hls_init_time', '1', '-hls_list_size', '10', '-hls_flags', `delete_segments+temp_file+independent_segments+omit_endlist${this.restarts ? '+append_list+discont_start' : ''}`]
-        : ['-hls_list_size', '0', '-hls_playlist_type', 'event', '-hls_flags', 'temp_file+independent_segments']),
+        : ['-hls_list_size', '0', '-hls_playlist_type', 'event', ...(this.resumedAt ? ['-start_number', String(this.resumedAt)] : []),
+          '-hls_flags', `temp_file+independent_segments${this.resumedAt ? '+append_list+discont_start' : ''}`]),
       ...(this.fmp4 ? ['-hls_segment_type', 'fmp4', '-hls_fmp4_init_filename', 'init.mp4'] : ['-hls_segment_type', 'mpegts']),
       '-hls_segment_filename', path.join(this.dir, this.fmp4 ? 'seg%05d.m4s' : 'seg%05d.ts'),
       path.join(this.dir, 'index.m3u8'),
@@ -178,7 +194,7 @@ class HlsSession {
         this.log = '';
         return void setTimeout(() => { if (!this.killed) this.start(); }, Math.min(10000, 1000 * this.restarts));
       }
-      if (code !== 0 && signal == null) {
+      if (code !== 0 || signal != null) {
         const produced = this.segmentCount();
         if (produced === 0 && this.pipelineIdx < this.pipelines.length - 1) {
           console.warn(`[transcodage] échec du mode "${p.name}", repli sur le suivant…\n${this.log.slice(-600)}`);
@@ -187,11 +203,34 @@ class HlsSession {
           for (const f of fs.readdirSync(this.dir)) fs.rmSync(path.join(this.dir, f), { force: true });
           return this.start();
         }
-        this.failed = this.log.slice(-800) || `ffmpeg code ${code}`;
+        // ffmpeg a lâché en plein film (image abîmée, encodeur matériel qui décroche, piste qui change…) alors que
+        // des segments existent déjà : on reprend juste après le dernier segment écrit, dans la même liste
+        // (discontinuité signalée au lecteur), au besoin avec l'encodeur suivant. L'image ne reste pas figée.
+        const noSpace = /No space left|ENOSPC/i.test(this.log);
+        if (!this.live && !noSpace && produced > (this.resumedAt || 0) && (this.resumes || 0) < 4 && Date.now() - this.lastAccess < 120000) {
+          this.resumes = (this.resumes || 0) + 1;
+          const same = produced > (this.resumedAt || 0) + 2; // a bien avancé : on garde l'encodeur, sinon on passe au suivant
+          if (!same && this.pipelineIdx < this.pipelines.length - 1) this.pipelineIdx++;
+          console.warn(`[transcodage] ${this.item.title} : interruption au segment ${produced}, reprise ${this.resumes}${same ? '' : ` avec « ${this.pipelines[this.pipelineIdx].name} »`} (${this.log.trim().split('\n').pop().slice(0, 160)})`);
+          this.resumedAt = produced;
+          this.log = '';
+          return this.start();
+        }
+        this.failed = noSpace ? 'Plus de place sur le disque de conversion' : this.log.slice(-800) || `ffmpeg code ${code}`;
         console.warn(`[transcodage] erreur : ${this.failed}`);
       }
       this.exited = true;
     });
+  }
+
+  // Reprise après une interruption : durée déjà écrite (somme des segments de la liste)
+  resumeOffset() {
+    if (!this.resumedAt) return 0;
+    try {
+      const txt = fs.readFileSync(path.join(this.dir, 'index.m3u8'), 'utf8');
+      let t = 0; for (const m of txt.matchAll(/#EXTINF:([\d.]+)/g)) t += Number(m[1]);
+      return t;
+    } catch { return this.resumedAt * config.segmentSeconds; }
   }
 
   segmentCount() {
@@ -203,6 +242,21 @@ class HlsSession {
     if (segIndex != null) this.lastSeg = Math.max(segIndex, this.lastSeg);
   }
 
+  // Vitesse de conversion par rapport au temps réel, et conseil de qualité si elle ne suit pas
+  // (mesurée sur la conversion en cours, hors temps passé en pause volontaire quand on a de l'avance)
+  pace() {
+    if (this.live || this.decision.copyVideo || this.exited || !this.proc) return { speed: null, slow: false, suggest: null };
+    const wall = (Date.now() - this.startedAt) / 1000 - (this.pausedFor || 0) / 1000;
+    const made = Math.max(0, this.segmentCount() - (this.resumedAt || 0)) * config.segmentSeconds;
+    const ahead = this.segmentCount() - this.lastSeg;
+    if (wall < 20) return { speed: null, slow: false, suggest: null };
+    const speed = Number((made / wall).toFixed(2));
+    const slow = speed < 0.9 && ahead < 12;
+    const h = this.target ? this.target.height : 0;
+    const suggest = slow ? (h > 1080 ? '1080p' : h > 720 ? '720p' : h > 480 ? '480p' : h > 360 ? '360p' : null) : null;
+    return { speed, slow, suggest, height: h };
+  }
+
   // Évite de transcoder tout le film d'avance : économise CPU/GPU et disque
   throttle() {
     if (this.exited || !this.proc || this.decision.copyVideo || this.live) return;
@@ -210,8 +264,8 @@ class HlsSession {
     if (process.platform === 'win32') return;
     const ahead = this.segmentCount() - this.lastSeg;
     try {
-      if (!this.paused && ahead > MAX_AHEAD) { this.proc.kill('SIGSTOP'); this.paused = true; }
-      else if (this.paused && ahead < RESUME_AT) { this.proc.kill('SIGCONT'); this.paused = false; }
+      if (!this.paused && ahead > MAX_AHEAD) { this.proc.kill('SIGSTOP'); this.paused = true; this.pausedAt = Date.now(); }
+      else if (this.paused && ahead < RESUME_AT) { this.proc.kill('SIGCONT'); this.paused = false; this.pausedFor = (this.pausedFor || 0) + (Date.now() - (this.pausedAt || Date.now())); }
     } catch { /* processus terminé */ }
   }
 
@@ -225,8 +279,8 @@ class HlsSession {
   info() {
     return {
       id: this.id, item: this.item.title, itemId: this.item.id, profileId: this.profileId, mode: this.decision.mode,
-      pipeline: this.pipelineName, reason: this.decision.reason, paused: this.paused, offset: this.offset,
-      target: this.target || null, quality: this.quality,
+      pipeline: this.pipelineName, reason: this.decision.reason, paused: this.paused, offset: this.offset, resumes: this.resumes || 0,
+      target: this.target || null, quality: this.quality, pace: this.pace(),
     };
   }
 }
@@ -268,7 +322,7 @@ export async function servePlaylist(res, sid) {
   const deadline = Date.now() + 45000;
   // Démarrage dès le premier segment prêt
   while (Date.now() < deadline) {
-    if (s.failed) throw new HttpError(502, s.live ? 'Cette chaîne ne répond pas pour le moment' : 'La conversion de la vidéo a échoué');
+    if (s.failed) throw new HttpError(502, s.live ? 'Cette chaîne ne répond pas pour le moment' : s.failed === 'Plus de place sur le disque de conversion' ? s.failed : 'La conversion de la vidéo a échoué');
     if (fs.existsSync(file) && (s.segmentCount() >= 1 || s.exited)) break;
     await wait(150);
   }
@@ -289,7 +343,7 @@ export async function serveSegment(req, res, sid, name) {
   const file = path.join(s.dir, name);
   const deadline = Date.now() + 30000;
   while (!fs.existsSync(file)) {
-    if (s.paused && process.platform !== 'win32') { try { s.proc.kill('SIGCONT'); s.paused = false; } catch { /* */ } }
+    if (s.paused && process.platform !== 'win32') { try { s.proc.kill('SIGCONT'); s.paused = false; s.pausedFor = (s.pausedFor || 0) + (Date.now() - (s.pausedAt || Date.now())); } catch { /* */ } }
     if (s.exited || Date.now() > deadline) throw new HttpError(404, 'Segment indisponible');
     await wait(100);
   }

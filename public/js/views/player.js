@@ -313,7 +313,7 @@ export async function render(main, { id, query }) {
       else {
         hls = new Hls(info.live
           ? { liveSyncDurationCount: 3, manifestLoadingMaxRetry: 0, fragLoadingMaxRetry: 6, levelLoadingMaxRetry: 6, backBufferLength: 30 }
-          : { maxBufferLength: 40, maxMaxBufferLength: 120, backBufferLength: 60, startPosition: 0, fragLoadingMaxRetry: 6, manifestLoadingMaxRetry: 4, levelLoadingMaxRetry: 6 });
+          : { maxBufferLength: 40, maxMaxBufferLength: 120, backBufferLength: 60, startPosition: 0, fragLoadingMaxRetry: 6, manifestLoadingMaxRetry: 4, levelLoadingMaxRetry: 6, maxBufferHole: 0.6, nudgeMaxRetry: 6 });
         hls.on(Hls.Events.ERROR, (_e, data) => onHlsError(Hls, data));
         hls.loadSource(info.url);
         hls.attachMedia(video);
@@ -329,7 +329,7 @@ export async function render(main, { id, query }) {
       // automatique sans le dire, flux lent…), on relance et on montre le gros bouton Lecture
       const myLoad = info;
       setTimeout(() => {
-        if (destroyed || info !== myLoad || desiredPaused || !video.paused) return;
+        if (destroyed || info !== myLoad || desiredPaused || !video.paused || video.played.length) return; // a déjà joué : pause voulue
         video.play().catch(() => {});
         spinner.hidden = true; quietStart = false; showUi(true);
       }, 6000);
@@ -953,6 +953,38 @@ export async function render(main, { id, query }) {
   });
   subsTimer = setInterval(() => { if (cues.length) paintSubs(); }, 120);
 
+  // Chien de garde : l'image est figée alors que la vidéo devrait avancer (trou dans la mémoire tampon,
+  // décodeur coincé, conversion qui a décroché). D'abord un petit saut par-dessus le trou si la suite est déjà
+  // là ; sinon reprise de la lecture au même endroit (nouvelle session), et pour une lecture directe qui coince
+  // deux fois au même endroit, passage en conversion.
+  let wdLast = -1, wdSince = 0, wdFixes = 0, wdStallPos = -1;
+  const watchdog = setInterval(() => {
+    if (destroyed || !info || info.live || video.paused || video.ended || video.seeking || dragging || pendingSeek != null || casting || desiredPaused || document.hidden || video.readyState === 0) { wdSince = 0; return; }
+    const t = video.currentTime;
+    if (t !== wdLast) { wdLast = t; wdSince = 0; wdFixes = 0; return; }
+    if (!wdSince) { wdSince = Date.now(); return; }
+    const stuck = Date.now() - wdSince;
+    const b = video.buffered;
+    let here = false, next = null;
+    for (let i = 0; i < b.length; i++) {
+      if (b.start(i) <= t + 0.05 && b.end(i) > t + 0.6) here = true;
+      else if (b.start(i) > t + 0.05 && (next == null || b.start(i) < next)) next = b.start(i);
+    }
+    if (stuck > 6000 && wdFixes < 3) {
+      wdFixes++; wdSince = Date.now();
+      if (next != null && next - t < 12) { video.currentTime = next + 0.1; return; }  // trou : on saute par-dessus
+      if (here) { video.currentTime = t + 0.4; return; }                              // données là, décodeur coincé : petit coup de pouce
+      return;                                                                         // rien de reçu : on laisse encore 6 s au réseau
+    }
+    if (stuck > 20000) {
+      wdSince = 0; wdFixes = 0;
+      const pos = position();
+      if (info.mode === 'direct' && !forceCompat && wdStallPos >= 0 && Math.abs(pos - wdStallPos) < 8) { forceCompat = true; wdStallPos = -1; load(pos, { reason: 'Ce passage ne passe pas tel quel : conversion…' }); return; }
+      wdStallPos = pos;
+      reloadAt(pos + 0.5, 'Reprise de la lecture…');
+    }
+  }, 2000);
+
   // ---------------------------------------------------------------- progression
   async function saveProgress(final = false) {
     if (!info || info.live) return;
@@ -963,9 +995,22 @@ export async function render(main, { id, query }) {
     const body = JSON.stringify({ itemId: info.itemId, position: pos, duration: duration(), sessionId: info.sessionId, idle: Math.round((Date.now() - (userActAt || startedAt)) / 1000), activePos: userActAt ? userActPos : 0 });
     fetch('/api/progress', { method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${auth.token}` }, body }).catch(() => {});
   }
+  // Conversion qui ne suit pas le temps réel (processeur trop juste pour cette définition) : le serveur le mesure,
+  // le lecteur baisse d'un cran la qualité au lieu de laisser l'image se figer ; au plus une fois par 2 minutes
+  let slowAt = 0;
+  async function pingSession() {
+    if (!info || !info.sessionId) return;
+    let r;
+    try { r = await (await fetch(`/api/hls/${info.sessionId}/ping`, { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } })).json(); } catch { return; }
+    if (!r || !r.slow || !r.suggest || destroyed || video.paused || casting || info.mode !== 'transcode') return;
+    if (Date.now() - slowAt < 120000) return;
+    slowAt = Date.now();
+    quality = r.suggest;
+    load(position(), { reason: `Le serveur convertit moins vite que la lecture (×${r.speed}) : passage en ${r.suggest}` });
+  }
   saveTimer = setInterval(() => {
-    if (!video.paused || casting) saveProgress();
-    else if (info && info.sessionId) fetch(`/api/hls/${info.sessionId}/ping`, { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } }).catch(() => {});
+    if (!video.paused || casting) { saveProgress(); if (info && info.mode === 'transcode' && !casting) pingSession(); }
+    else pingSession();
   }, 10000);
   // Tableau de bord : le lecteur signale ce qu'il joue, et obéit aux commandes de l'administrateur
   const beat = (stop = false) => {
@@ -1686,7 +1731,7 @@ export async function render(main, { id, query }) {
     saveProgress();
     clearApiCache(); // « Reprendre la lecture » et les vus sont à jour au retour
     clearInterval(beatTimer); clearTimeout(beatSoon); window.removeEventListener('vn:control', onControl); beat(true); stopSilence();
-    clearInterval(saveTimer); clearInterval(subsTimer); clearInterval(nextTimer); clearTimeout(uiTimer); clearTimeout(seekTimer);
+    clearInterval(saveTimer); clearInterval(subsTimer); clearInterval(nextTimer); clearInterval(watchdog); clearTimeout(uiTimer); clearTimeout(seekTimer);
     document.removeEventListener('keydown', onKey, true);
     if (zapper) { zapper.stop(); document.removeEventListener('keydown', zapper.onKey, true); }
     if (stopAmb) stopAmb();

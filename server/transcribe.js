@@ -10,6 +10,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { config } from './config.js';
 import { get, run, getSetting, setSetting } from './db.js';
 import { subsDir } from './subtitles.js';
+import { spawnLow } from './nice.js';
 
 const binDir = path.join(config.dataDir, 'bin');
 const modelsDir = path.join(config.dataDir, 'models', 'whisper');
@@ -145,7 +146,7 @@ async function runJob(job) {
     job.phase = 'Extraction du son'; job.pct = 2;
     const wav = path.join(tmp, 'audio.wav');
     await new Promise((resolve, reject) => {
-      const pr = spawn(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', item.path, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', wav]);
+      const pr = spawnLow(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', item.path, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', '-y', wav]);
       let err = ''; pr.stderr.on('data', (d) => { err += d; });
       pr.on('close', (c) => (c ? reject(new Error(`Son illisible : ${err.trim().split('\n').pop()}`)) : resolve()));
     });
@@ -154,7 +155,7 @@ async function runJob(job) {
     const base = path.join(tmp, 'out');
     const threads = Math.max(1, Math.min(8, os.cpus().length - 1));
     const detected = await new Promise((resolve, reject) => {
-      const pr = spawn(whisperBin(), ['-m', modelPath(), '-f', wav, '-l', 'auto', '-t', String(threads), '-osrt', '-of', base, '-pp', '-np'], { stdio: ['ignore', 'pipe', 'pipe'] });
+      const pr = spawnLow(whisperBin(), ['-m', modelPath(), '-f', wav, '-l', 'auto', '-t', String(threads), '-osrt', '-of', base, '-pp', '-np'], { stdio: ['ignore', 'pipe', 'pipe'] });
       let lang = null, err = '';
       const onLine = (l) => {
         const m = /progress\s*=\s*(\d+)%/i.exec(l); if (m) job.pct = 5 + Math.round(Number(m[1]) * 0.85);

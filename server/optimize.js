@@ -12,13 +12,13 @@
 // quand la place vient à manquer.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { db, all, get, run, getSetting, setSetting } from './db.js';
 import { config } from './config.js';
 import { hw, videoPipelines } from './hw.js';
 import { probeFile } from './probe.js';
 import { sessions } from './stream.js';
 import { logActivity } from './activity.js';
+import { spawnLow } from './nice.js';
 
 export const OPT_DIR = path.join(config.dataDir, 'optimized');
 fs.mkdirSync(OPT_DIR, { recursive: true });
@@ -130,7 +130,7 @@ function encode(item, probe) {
       const video = p.video.filter((x, i, a) => !['-force_key_frames', '-forced-idr'].includes(x) && !['-force_key_frames', '-forced-idr'].includes(a[i - 1]));
       const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...p.input, '-i', item.path, ...video, ...audio,
         '-sn', '-dn', '-map_metadata', '-1', '-movflags', '+faststart', '-progress', 'pipe:1', '-nostats', tmp];
-      const proc = spawn(config.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const proc = spawnLow(config.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
       current.proc = proc;
       let log = '';
       proc.stderr.on('data', (d) => { log = (log + d).slice(-2000); });

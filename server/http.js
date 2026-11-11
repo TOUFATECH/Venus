@@ -124,16 +124,26 @@ export function sendFile(req, res, filePath, { cache = 'no-cache', type, downloa
     end = Math.min(end, size - 1);
     res.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
     if (req.method === 'HEAD') return res.end();
-    const stream = fs.createReadStream(filePath, { start, end, highWaterMark: 512 * 1024 });
-    stream.pipe(res);
-    res.on('close', () => stream.destroy());
+    pipeFile(req, res, fs.createReadStream(filePath, { start, end, highWaterMark: 512 * 1024 }), end - start + 1);
     return;
   }
   res.writeHead(200, { ...headers, 'Content-Length': size });
   if (req.method === 'HEAD') return res.end();
-  const stream = fs.createReadStream(filePath, { highWaterMark: 512 * 1024 });
+  pipeFile(req, res, fs.createReadStream(filePath, { highWaterMark: 512 * 1024 }), size);
+}
+
+// Envoi d'un fichier (vidéo en lecture directe surtout) : le navigateur lit par à-coups et peut laisser la
+// connexion muette plusieurs minutes (mémoire tampon pleine, pause) — le délai d'inactivité de 2 min du serveur
+// est donc levé le temps du transfert ; une erreur de lecture du fichier (NAS qui décroche) coupe proprement la
+// réponse au lieu de faire tomber Venus.
+function pipeFile(req, res, stream, bytes) {
+  const sock = req.socket;
+  const big = bytes > 4 * 1024 * 1024;
+  if (big && sock && sock.setTimeout) { try { sock.setTimeout(0); } catch { /* */ } }
+  const restore = () => { if (big && sock && sock.setTimeout && !sock.destroyed) { try { sock.setTimeout(120000); } catch { /* */ } } };
+  stream.on('error', (e) => { console.warn(`[fichier] lecture interrompue : ${e.code || e.message}`); try { res.destroy(); } catch { /* */ } });
+  res.on('close', () => { stream.destroy(); restore(); });
   stream.pipe(res);
-  res.on('close', () => stream.destroy());
 }
 
 // Numéro de version de l'interface (empreinte des fichiers). Les fichiers sont servis sous /b/<version>/… :

@@ -44,6 +44,9 @@ function makeMedia(dir) {
   ff('-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=25:duration=20', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=20', '-f', 'lavfi', '-i', 'sine=frequency=660:duration=20',
     '-map', '0:v', '-map', '1:a', '-map', '2:a', '-c:v', 'libx265', '-preset', 'ultrafast', '-x265-params', 'log-level=error', '-pix_fmt', 'yuv420p10le', '-b:v', '2500k', '-c:a', 'ac3', '-b:a', '192k',
     '-metadata:s:a:0', 'language=fre', '-metadata:s:a:1', 'language=eng', '-metadata:s:a:1', 'title=English', m('films', 'Tempête (2005)', 'Tempête (2005).mkv'));
+  // Un film plus long (150 s) : la conversion a le temps d'être interrompue puis reprise (lecture-reprise.spec.mjs)
+  ff('-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=25:duration=150', '-f', 'lavfi', '-i', 'sine=frequency=220:duration=150',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', m('films', 'Mousson (2012)', 'Mousson (2012).mp4'));
   // Sous-titres externes à côté d'un épisode : recherche dans les dialogues, titres de chapitres, fiche à la pause
   fs.writeFileSync(m('series', 'Brigade Nord', 'Saison 01', 'Brigade Nord S01E01.fr.srt'), [
     '1', '00:00:02,000 --> 00:00:05,000', 'Nous ne reviendrons jamais à Mayotte.', '',
@@ -94,7 +97,7 @@ export default async function globalSetup() {
   fs.writeFileSync(path.join(dir, 'data', 'models', 'whisper', 'ggml-small.bin'), 'modele factice');
   const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
     cwd: root, detached: true, stdio: ['ignore', log, log],
-    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh'), VENUS_WHISPER_BIN: path.join(dir, 'faux-whisper.sh'),
+    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_TEST_HOOKS: '1', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh'), VENUS_WHISPER_BIN: path.join(dir, 'faux-whisper.sh'),
       // Faux MusicBrainz / Cover Art Archive / Open Library / Google Books (démarrés par le test musique-livres)
       VENUS_MUSICBRAINZ_API: `http://127.0.0.1:${port + 5}/mb`, VENUS_COVERART_API: `http://127.0.0.1:${port + 5}/caa`, VENUS_OPENLIBRARY_API: `http://127.0.0.1:${port + 5}/ol`, VENUS_OPENLIBRARY_COVERS: `http://127.0.0.1:${port + 5}/olc`, VENUS_GOOGLEBOOKS_API: `http://127.0.0.1:${port + 5}/gb` },
   });
