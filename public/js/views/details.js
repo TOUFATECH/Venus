@@ -7,6 +7,7 @@ import { trailerPlayer, playTrailer } from '../trailer.js';
 import { go, state, setTitle, showPath, currentUrl } from '../core.js';
 import { focusEl } from '../nav.js';
 import { tintFrom } from '../ambiance.js';
+import { compressNote } from '../convert.js';
 
 const LIB = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips' };
 const libOf = (d) => LIB[d.category] || LIB[d.type] || '/films';
@@ -202,7 +203,8 @@ export async function render(main, { id, query }) {
     ratingChips(d.ratings, d.links),
     d.tagline ? h('p', { class: 'tagline' }, d.tagline) : null,
     overview, more,
-    actions, screenTimeNote(), resumeNote(), watchedBy(), opinionBar(), subNote());
+    actions, screenTimeNote(), resumeNote(), watchedBy(), opinionBar(), subNote(),
+    state.profile.isAdmin && d.compress ? compressNote(d, () => go(currentUrl())) : null);
 
   const content = h('div', { class: 'details-body' }, h('div', { class: 'details-top' }, posterEl, mainInfo));
 
