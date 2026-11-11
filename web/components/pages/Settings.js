@@ -2,6 +2,7 @@
 // Réglages : mon profil, cet appareil, thème et menu (tous), puis l'administration du serveur (administrateur).
 // Une rubrique à la fois : colonne à gauche sur ordinateur, bande défilante sur téléphone.
 import { TraktLinkBox, ImportBox, RemoteBox, TranscribeBox, LightsBox } from './SettingsExtra';
+import { ConvertBox } from './Convert';
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
 import { useTitle, api, toast, go } from '../../lib/hooks';
@@ -92,7 +93,7 @@ export default function Settings() {
   if (tab === 'profil') content = <><MyBox me={me} /><TraktLinkBox /></>;
   else if (tab === 'appareil') content = <DeviceBox />;
   else if (tab === 'affichage') content = <><ThemeBox /><FluidBox /><MenuBox me={me} /></>;
-  else if (tab === 'perf') content = <PerfBoxes />;
+  else if (tab === 'perf') content = <><PerfBoxes /><ConvertBox /></>;
   else if (tab === 'maj') content = <UpdateBox />;
   else if (error && !a) content = <p className="error-text">{error.message}</p>;
   else if (!a) content = <section className="box"><p className="muted">Chargement…</p></section>;

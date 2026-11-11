@@ -40,6 +40,10 @@ function makeMedia(dir) {
     '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest', cuts);
   for (const f of [['films', 'Orage (2018).mp4'], ['series', 'Brigade Nord', 'Saison 01', 'Brigade Nord S01E01.mp4']]) fs.copyFileSync(cuts, m(...f));
   fs.rmSync(cuts);
+  // Un film HEVC 10 bits avec deux pistes AC-3 (français, anglais) : compression proposée, choix des langues, validation
+  ff('-f', 'lavfi', '-i', 'testsrc2=size=640x360:rate=25:duration=20', '-f', 'lavfi', '-i', 'sine=frequency=330:duration=20', '-f', 'lavfi', '-i', 'sine=frequency=660:duration=20',
+    '-map', '0:v', '-map', '1:a', '-map', '2:a', '-c:v', 'libx265', '-preset', 'ultrafast', '-x265-params', 'log-level=error', '-pix_fmt', 'yuv420p10le', '-b:v', '2500k', '-c:a', 'ac3', '-b:a', '192k',
+    '-metadata:s:a:0', 'language=fre', '-metadata:s:a:1', 'language=eng', '-metadata:s:a:1', 'title=English', m('films', 'Tempête (2005)', 'Tempête (2005).mkv'));
   // Sous-titres externes à côté d'un épisode : recherche dans les dialogues, titres de chapitres, fiche à la pause
   fs.writeFileSync(m('series', 'Brigade Nord', 'Saison 01', 'Brigade Nord S01E01.fr.srt'), [
     '1', '00:00:02,000 --> 00:00:05,000', 'Nous ne reviendrons jamais à Mayotte.', '',
