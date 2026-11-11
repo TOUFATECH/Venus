@@ -13,6 +13,7 @@ import { Row, ScrollRow } from '../Row';
 import { PersonCard, openPerson } from '../Person';
 import { openDownload } from './Downloads';
 import { addToSheet } from './Collections';
+import { CompressNote } from './Convert';
 
 const LIB = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips' };
 const libOf = (d) => LIB[d.category] || LIB[d.type] || '/films';
@@ -198,6 +199,7 @@ function DetailsView({ d: initial }) {
               {profile.isAdmin ? <button className="btn btn-ghost btn-icon btn-del f" aria-label={isShow ? 'Supprimer la série' : 'Supprimer la vidéo'} title={isShow ? 'Supprimer la série (fichiers effacés)' : 'Supprimer la vidéo (fichier effacé)'} onClick={delVideo}><Icon name="trash" /></button> : null}
             </div>
             <ScreenTimeNote d={d} target={target} isShow={isShow} />
+            {profile.isAdmin && d.compress ? <CompressNote d={d} reload={async () => { try { setD(await api(`/api/items/${d.id}`)); } catch { /* */ } }} /> : null}
             <ResumeNote d={d} isShow={isShow} />
             <WatchedBy list={d.watchedBy} />
             {(isShow && showDone) || (!isShow && d.progress && d.progress.watched) ? <Opinion d={d} /> : null}

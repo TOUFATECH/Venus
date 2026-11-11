@@ -32,6 +32,8 @@ import { schedulePending } from './segments.js';
 import { schedulePendingScenes, scenesPending, cleanRecaps } from './scenes.js';
 import { schedulePendingDialogues, dialogueStats } from './dialogues.js';
 import { reapSessions } from './lights.js';
+import { recoverConversions, runConversions, setArrCall } from './convert.js';
+import { call as arrCall } from './arr.js';
 import { runMusicMeta } from './music-meta.js';
 import { runBooksMeta } from './books-meta.js';
 import { refreshRatings } from './ratings.js';
@@ -222,6 +224,8 @@ async function main() {
   defineTask('dialogues', { label: 'Index des dialogues', description: 'Les sous-titres de chaque film et épisode sont indexés : on retrouve un titre et une scène à partir d’une réplique.', when: 'Toutes les heures', every: 3600e3, firstDelay: 4 * 60e3, run: async () => { const n = schedulePendingDialogues(); const st = dialogueStats(); return `${n} titre(s) à indexer · ${st.items} titre(s), ${st.lines} réplique(s) dans l’index`; } });
   defineTask('scenes', { label: 'Analyse des scènes', description: 'Changements de plan et volume sonore de chaque épisode et film : pour le « Précédemment dans… » automatique, les meilleurs moments à partager et les chapitres générés.', when: 'Toutes les heures', every: 3600e3, firstDelay: 8 * 60e3, run: async () => { const n = schedulePendingScenes(); const c = cleanRecaps(); return `${n} vidéo(s) en file d’attente${scenesPending() ? ` (${scenesPending()} en cours)` : ''}${c ? `, ${c} résumé(s) nettoyé(s)` : ''}`; } });
   setInterval(reapSessions, 60e3).unref();
+  recoverConversions(); setArrCall(arrCall);
+  defineTask('convert', { label: 'Compression des vidéos', description: 'Compresse une à une les vidéos mises en file (H.264 + AAC de bonne qualité, à côté de l’original) ; l’original n’est supprimé qu’après validation. Jamais pendant une lecture.', when: 'Toutes les 15 min (file d’attente)', every: 15 * 60e3, firstDelay: 2 * 60e3, run: () => runConversions() });
   defineTask('backdrops-hd', { label: 'Fonds en haute définition', description: 'Les images de fond enregistrées en 1280 px sont reprises en pleine définition chez TMDB, pour l’affiche à la une et les fiches sur les grands écrans.', when: 'Toutes les 6 h', every: 6 * 3600e3, firstDelay: 180e3, run: async () => {
     let n = 0, passes = 0;
     do { n += await upgradeBackdrops(); passes++; } while (pendingBackdropUpgrades() > 0 && passes < 6);

@@ -37,6 +37,7 @@ import { sendSample } from './telegram-media.js';
 import { createInvite, inviteFor, markUsed as markInviteUsed, listInvites, cancelInvites, baseUrl, EMAIL_RE } from './invites.js';
 import { describe as describeShare } from './netshare.js';
 import { optimizedFor, markUsed, pauseForPlayback, optStatus, runOptimize, clearAll as clearOptimized } from './optimize.js';
+import { convertStatus, suggestions as convertSuggestions, saveConvertSettings, queue as queueConversions, cancel as cancelConversion, validate as validateConversion, runConversions, pauseConversions, conversionFor, reasonFor as convertReason, convertSettings } from './convert.js';
 import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
 import { checkUpdate, runUpdate, localCommit, updaterInfo, setUpdatePrefs } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
@@ -1097,8 +1098,25 @@ router.get('/api/items/:id', async (ctx) => {
       items: scored.filter((x) => (x.cc.cast || []).some((p) => p.name === name) || (x.cc.directors || []).some((p) => p.name === name)).sort((a, b) => (b.c.year || 0) - (a.c.year || 0)).slice(0, 18).map((x) => card(x.c)),
     })).filter((r) => r.items.length).slice(0, 3);
   }
+  // Compression (admin) : copie prête à valider, en cours, ou proposition avec le gain estimé
+  if (p.is_admin && (item.type === 'movie' || item.type === 'episode') && item.path) out.compress = compressInfo(item);
+  if (p.is_admin && item.type === 'show') {
+    const ready = get("SELECT COUNT(*) n FROM conversions c JOIN items e ON e.id = c.item_id WHERE e.show_id = ? AND c.status = 'done'", item.id).n;
+    const running = get("SELECT COUNT(*) n FROM conversions c JOIN items e ON e.id = c.item_id WHERE e.show_id = ? AND c.status IN ('queued','running')", item.id).n;
+    if (ready || running) out.compress = { show: true, ready, running };
+  }
   sendJson(ctx.res, out);
 });
+function compressInfo(item) {
+  const c = get("SELECT * FROM conversions WHERE item_id = ? AND status IN ('queued','running','done') ORDER BY id DESC LIMIT 1", item.id);
+  if (c) return { id: c.id, status: c.status, pct: c.pct, sizeBefore: c.size_before, sizeAfter: c.size_after, error: c.error, encoder: c.encoder };
+  const probe = parseJson(item.probe, null);
+  if (!probe) return null;
+  probe.size = probe.size || item.size;
+  const r = convertReason(probe, convertSettings());
+  if (!r) return null;
+  return { status: 'suggested', why: r.why, gain: r.gain, size: item.size, estimated: r.est ? r.est.bytes : null, height: r.est ? r.est.height : null, audio: (probe.audio || []).map((a) => ({ lang: a.lang || 'und', codec: a.codec, channels: a.channels, title: a.title || null })) };
+}
 
 // À venir : films, séries, animés qui sortent autour d'aujourd'hui, sur le NAS ou pas (voir upcoming.js)
 router.get('/api/upcoming', async (ctx) => {
@@ -1581,15 +1599,21 @@ router.post('/api/play/:id', async (ctx) => {
 
   let decision = decide(probe, { caps: b.caps, audioOrder, quality: b.preview ? 'auto' : b.quality || 'auto', burnSub: b.preview ? null : burnIndex, maxBitrate: Number(b.maxBitrate) || 0 });
   // Version optimisée prête (H.264 + AAC) : lue telle quelle au lieu d'être convertie
-  let playItem = item, playProbe = probe, optimized = false;
-  if (decision.mode === 'transcode' && burnIndex == null && (b.preview || !b.quality || b.quality === 'auto') && audioOrder < 4) {
+  let playItem = item, playProbe = probe, optimized = false, converted = false;
+  // Copie compressée prête (en attente de validation) : c'est elle qu'on lit, sauf si on demande l'original
+  const conv = !item.stream_url && b.source !== 'original' ? conversionFor(item.id) : null;
+  if (conv && conv.probe) {
+    decision = decide(conv.probe, { caps: b.caps, audioOrder: Math.min(audioOrder, Math.max(0, conv.probe.audio.length - 1)), quality: b.preview ? 'auto' : b.quality || 'auto', maxBitrate: Number(b.maxBitrate) || 0 });
+    playItem = { ...item, path: conv.out_path }; playProbe = conv.probe; converted = true;
+  }
+  if (!converted && decision.mode === 'transcode' && burnIndex == null && (b.preview || !b.quality || b.quality === 'auto') && audioOrder < 4) {
     const o = optimizedFor(item);
     if (o && o.probe) {
       const d2 = decide(o.probe, { caps: b.caps, audioOrder, quality: 'auto', maxBitrate: Number(b.maxBitrate) || 0 });
       if (d2.mode !== 'transcode') { decision = { ...d2, reason: 'Version optimisée' }; playItem = { ...item, path: o.path }; playProbe = o.probe; optimized = true; markUsed(item.id); }
     }
   }
-  if (!b.preview) pauseForPlayback(); // la préparation des versions optimisées laisse la place à la lecture
+  if (!b.preview) { pauseForPlayback(); pauseConversions(); } // préparations et compressions laissent la place à la lecture
   if (decision.mode === 'transcode' && !b.preview && !item.stream_url) { try { logTranscode({ device: deviceLabel(ctx.req.headers['user-agent']), reason: decision.reason, itemId: item.id, codec: probe.video && probe.video.codec, container: path.extname(item.path || '').slice(1) }); } catch (e) { console.warn('[lecture] journal des conversions :', e.message); } }
   decision.burnIndex = b.preview ? null : burnIndex;
   if (!b.preview && dailyLeft(p) === 0) throw new HttpError(403, 'Temps d’écran du jour épuisé pour ce profil. On se retrouve demain !');
@@ -1605,7 +1629,7 @@ router.post('/api/play/:id', async (ctx) => {
   let url, sessionId = null, offset = 0;
   if (b.replace) sessions.get(b.replace)?.stop();
   if (decision.mode === 'direct') {
-    url = `/api/stream/${item.id}/file?token=${encodeURIComponent(token)}${optimized ? '&v=opt' : ''}`;
+    url = `/api/stream/${item.id}/file?token=${encodeURIComponent(token)}${optimized ? '&v=opt' : converted ? '&v=conv' : ''}`;
   } else {
     const s = startSession({ item: playItem, probe: playProbe, decision, start, profileId: p.id, quality: b.quality || 'auto' });
     sessionId = s.id; offset = s.offset;
@@ -1861,8 +1885,10 @@ router.get('/api/stream/:id/file', (ctx) => {
   const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
   if (!item || !item.path) throw new HttpError(404, 'Introuvable');
   if (!visible(p, item)) throw new HttpError(403, 'Interdit');
-  const o = ctx.url.searchParams.get('v') === 'opt' ? optimizedFor(item) : null;
-  sendFile(ctx.req, ctx.res, o ? o.path : item.path, { cache: 'private, max-age=3600' });
+  const v = ctx.url.searchParams.get('v');
+  const o = v === 'opt' ? optimizedFor(item) : null;
+  const cv = v === 'conv' ? conversionFor(item.id) : null;
+  sendFile(ctx.req, ctx.res, o ? o.path : cv ? cv.out_path : item.path, { cache: 'private, max-age=3600' });
 });
 
 // Épisode suivant préparé à l'avance : début du fichier lu (le NAS se réveille et le garde en cache), chapitres lus
@@ -3780,6 +3806,31 @@ router.get('/api/items/:id/subtitles/generate', (ctx) => {
   requireProfile(ctx);
   const j = jobOf(Number(ctx.params.id));
   sendJson(ctx.res, j ? { id: j.id, phase: j.phase, pct: j.pct, error: j.error, done: !!j.result, sub: j.result ? j.result.sub : null } : { none: true });
+});
+
+// ---------------------------------------------------------------- compression des vidéos (place sur le NAS)
+router.get('/api/admin/convert', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, convertStatus()); });
+router.get('/api/admin/convert/suggest', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, convertSuggestions({ libraryId: Number(ctx.url.searchParams.get('library')) || null, limit: Number(ctx.url.searchParams.get('limit')) || 200 })); });
+router.put('/api/admin/convert/settings', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req, 4096);
+  sendJson(ctx.res, { settings: saveConvertSettings(b) });
+});
+router.post('/api/admin/convert', async (ctx) => {
+  const p = requireAdmin(ctx);
+  const b = await readBody(ctx.req, 64 * 1024);
+  let ids = Array.isArray(b.ids) ? b.ids.map(Number).filter(Boolean).slice(0, 2000) : [];
+  if (b.all) ids = convertSuggestions({ libraryId: Number(b.library) || null, limit: 2000 }).items.map((x) => x.id);
+  const n = queueConversions(ids, b.opts || {}, p.name);
+  if (n) logActivity('admin', `${p.name} a lancé la compression de ${n} vidéo(s)`);
+  sendJson(ctx.res, { queued: n });
+});
+router.post('/api/admin/convert/run', (ctx) => { requireAdmin(ctx); runConversions().catch(() => {}); sendJson(ctx.res, { started: true }); });
+router.del('/api/admin/convert/:id', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { ok: cancelConversion(Number(ctx.params.id)) }); });
+router.post('/api/admin/convert/:id/validate', async (ctx) => {
+  const p = requireAdmin(ctx);
+  const b = await readBody(ctx.req, 1024).catch(() => ({}));
+  try { sendJson(ctx.res, await validateConversion(Number(ctx.params.id), { purge: !!b.purge, byName: p.name })); } catch (e) { throw new HttpError(e.status || 500, e.message); }
 });
 
 // ---------------------------------------------------------------- lumières synchronisées (Hue, WLED)

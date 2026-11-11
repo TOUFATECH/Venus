@@ -41,6 +41,7 @@ function walk(dir, out = [], extra = null) {
     if (!e.isFile() && !e.isSymbolicLink()) continue;
     const ext = path.extname(e.name).toLowerCase();
     if (!VIDEO_EXT.has(ext) || /(^|[._-])sample([._-]|$)/i.test(e.name)) continue;
+    if (/\.venus\.mp4(\.part)?$/i.test(e.name)) continue; // copie compressée en attente de validation : suivie à part
     try {
       const st = fs.statSync(full);
       const base = path.basename(e.name, ext);

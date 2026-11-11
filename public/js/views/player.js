@@ -51,6 +51,7 @@ export async function render(main, { id, query }) {
   const fromUrl = currentUrl();
   closeMini(); // une seule vidéo à la fois : le mini-lecteur s'arrête
   const startParam = query.get('t');
+  const sourceParam = query.get('src'); // 'original' : lire l'original même si une copie compressée est prête
   let roomCode = query.get('salle');
   const caps = deviceCaps();
   let info = null, hls = null, offset = 0, forceCompat = false, quality = preferredQuality();
@@ -263,7 +264,7 @@ export async function render(main, { id, query }) {
     try {
       res = await api(`/api/play/${id}`, { method: 'POST', body: {
         caps: forceCompat ? COMPAT_CAPS : caps, quality, audio: audioOrder, sub: subId,
-        start: start == null ? 'resume' : start, replace: prevSession || undefined,
+        start: start == null ? 'resume' : start, replace: prevSession || undefined, source: sourceParam || undefined,
       } });
     } catch (e) { return showError(e.message); }
     if (destroyed) { if (res.sessionId) stopSession(res.sessionId); return; }
@@ -887,7 +888,7 @@ export async function render(main, { id, query }) {
     }
     if (k === 'MediaFastForward' || code === 417) { consume(); seekBy(30); showUi(); return; }
     if (k === 'MediaRewind' || code === 412) { consume(); seekBy(-30); showUi(); return; }
-    if ((k === 'MediaTrackNext' || (k === 'N' && e.shiftKey)) && info && info.next) { consume(); playNext(); return; }
+    if ((k === 'MediaTrackNext' || k === 'n' || (k === 'N' && e.shiftKey)) && info && info.next && !info.live) { consume(); playNext(); return; }
     if ((k === 'MediaTrackPrevious' || (k === 'P' && e.shiftKey)) && info && info.prev) { consume(); playPrev(); return; }
     if (k === 's' && skipKind) { consume(); doSkip(); return; }
     if (info && info.live && (k === 'ChannelUp' || k === 'PageUp' || code === 427 || code === 33)) { consume(); zap(-1); return; }
