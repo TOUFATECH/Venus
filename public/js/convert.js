@@ -4,6 +4,8 @@ import { api } from './api.js';
 import { h, icon, sheet, toast, confirmSheet, langName } from './ui.js';
 import { go } from './core.js';
 
+const DEFS = [['0', 'D’origine (garde le 4K)'], ['1440', '1440p'], ['1080', '1080p (recommandé)'], ['720', '720p (très compact)']];
+const QUALS = [['max', 'Maximale'], ['high', 'Haute'], ['balanced', 'Équilibrée']];
 const LANGS = [['fre', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['ger', 'Allemand'], ['ita', 'Italien'], ['ara', 'Arabe'], ['kor', 'Coréen'], ['chi', 'Chinois'], ['por', 'Portugais']];
 const fmtGo = (b) => (!b ? '0 Mo' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
 const pct = (a, b) => (a && b ? Math.round((1 - b / a) * 100) : 0);
@@ -56,7 +58,8 @@ export function convertBox() {
         h('span', { class: 'src' }, `Encodeur : ${st.hw} · ${st.cpu} cœurs`)),
       h('h3', { class: 'box-sub' }, 'Réglages'),
       h('div', { class: 'two-cols wide' },
-        field('Définition maximale', select([['1080', '1080p (recommandé)'], ['0', 'D’origine (garde le 4K)'], ['720', '720p (très compact)']], s.maxHeight, (e) => save({ maxHeight: Number(e.target.value) })), '1080p suffit à la plupart des écrans et divise la taille d’un 4K par trois. « D’origine » garde le 4K (fichiers plus gros).'),
+        field('Qualité', select((st.qualities || []).map((q) => [q.id, q.label]), s.quality, (e) => save({ quality: e.target.value })), 'Maximale : CRF 17, quasi sans perte visible même sur un grand écran, fichiers plus gros. Haute : CRF 20, indiscernable à distance normale. Équilibrée : CRF 23, nette, bien plus légère.'),
+        field('Définition maximale', select(DEFS, s.maxHeight, (e) => save({ maxHeight: Number(e.target.value) })), '1080p suffit à la plupart des écrans et divise la taille d’un 4K par trois. « D’origine » garde le 4K (fichiers plus gros).'),
         field('Encodeur', select([['auto', 'Automatique (carte graphique si présente)'], ['cpu', 'Processeur (meilleure qualité, lent)'], ['gpu', 'Carte graphique (rapide)']], s.encoder, (e) => save({ encoder: e.target.value })), 'Le processeur donne la meilleure qualité à taille égale mais est lent ; la carte graphique va 5 à 10 fois plus vite.')),
       field('Langues audio conservées', h('div', { class: 'chips' }, LANGS.map(([c, n]) => h('button', { type: 'button', class: `chip f${s.langs.includes(c) ? ' on' : ''}`, 'aria-pressed': String(s.langs.includes(c)), onclick: () => save({ langs: s.langs.includes(c) ? s.langs.filter((x) => x !== c) : [...s.langs, c] }) }, n))),
         'Rien de coché : toutes les pistes sont gardées. Sinon seules ces langues restent (toutes si aucune ne correspond). Modifiable vidéo par vidéo depuis sa fiche.'),
@@ -104,16 +107,28 @@ export function compressNote(d, reload) {
   if (c.status === 'suggested') {
     const present = [...new Set((c.audio || []).map((a) => a.lang))];
     let chosen = present.slice();
+    const choice = { maxHeight: null, quality: null };
+    const head = h('p', {});
+    const paintHead = (e) => head.replaceChildren(icon('disk'), ` Cette vidéo peut être compressée : ${fmtGo(c.size)} → ≈ ${fmtGo(e ? e.estimated : c.estimated)} (−${Math.round((e ? e.gain : c.gain) * 100)} %)${(e ? e.height : c.height) ? ` · ${e ? e.height : c.height}p` : ''} · ${c.why.join(' · ')}.`);
+    paintHead(null);
+    const refresh = async () => {
+      if (choice.maxHeight == null && !choice.quality && chosen.length === present.length) return paintHead(null);
+      const q = new URLSearchParams(); if (choice.maxHeight != null) q.set('maxHeight', choice.maxHeight); if (choice.quality) q.set('quality', choice.quality); if (chosen.length !== present.length) q.set('langs', chosen.join(','));
+      try { paintHead(await api(`/api/admin/convert/estimate/${d.id}?${q}`)); } catch { paintHead(null); }
+    };
+    const sel = (label, opts, onchange) => h('label', {}, h('span', {}, label), h('select', { class: 'f', onchange }, h('option', { value: '' }, 'Réglage général'), opts.map(([v, l]) => h('option', { value: v }, l))));
+    const choices = h('div', { class: 'conv-choices' },
+      sel('Qualité', QUALS, (e) => { choice.quality = e.target.value || null; refresh(); }),
+      sel('Définition', DEFS, (e) => { choice.maxHeight = e.target.value === '' ? null : Number(e.target.value); refresh(); }));
     const chips = h('div', { class: 'chips' });
-    const paintChips = () => chips.replaceChildren(...present.map((l) => h('button', { type: 'button', class: `chip f${chosen.includes(l) ? ' on' : ''}`, 'aria-pressed': String(chosen.includes(l)), onclick: () => { chosen = chosen.includes(l) ? (chosen.length > 1 ? chosen.filter((x) => x !== l) : chosen) : [...chosen, l]; paintChips(); } }, langName(l))), h('small', { class: 'muted' }, 'Langues gardées dans la copie'));
+    const paintChips = () => chips.replaceChildren(...present.map((l) => h('button', { type: 'button', class: `chip f${chosen.includes(l) ? ' on' : ''}`, 'aria-pressed': String(chosen.includes(l)), onclick: () => { chosen = chosen.includes(l) ? (chosen.length > 1 ? chosen.filter((x) => x !== l) : chosen) : [...chosen, l]; paintChips(); refresh(); } }, langName(l))), h('small', { class: 'muted' }, 'Langues gardées dans la copie'));
     paintChips();
     const btn = h('button', { class: 'btn btn-ghost btn-small f', onclick: async () => {
       btn.disabled = true;
-      try { await api('/api/admin/convert', { method: 'POST', body: { ids: [d.id], opts: present.length > 1 && chosen.length !== present.length ? { langs: chosen } : {} } }); toast('Compression lancée : vous serez prévenu quand la copie sera prête'); reload(); } catch (e) { toast(e.message, true); btn.disabled = false; }
+      const opts = { ...(present.length > 1 && chosen.length !== present.length ? { langs: chosen } : {}), ...(choice.maxHeight != null ? { maxHeight: choice.maxHeight } : {}), ...(choice.quality ? { quality: choice.quality } : {}) };
+      try { await api('/api/admin/convert', { method: 'POST', body: { ids: [d.id], opts } }); toast('Compression lancée : vous serez prévenu quand la copie sera prête'); reload(); } catch (e) { toast(e.message, true); btn.disabled = false; }
     } }, icon('disk'), 'Compresser (l’original est conservé)');
-    return h('div', { class: 'compress-note' },
-      h('p', {}, icon('disk'), ` Cette vidéo peut être compressée : ${fmtGo(c.size)} → ≈ ${fmtGo(c.estimated)} (−${Math.round(c.gain * 100)} %)${c.height ? ` · ${c.height}p` : ''} · ${c.why.join(' · ')}.`),
-      present.length > 1 ? chips : null, btn);
+    return h('div', { class: 'compress-note' }, head, choices, present.length > 1 ? chips : null, btn);
   }
   if (c.status === 'queued' || c.status === 'running') return h('p', { class: 'resume-note' }, icon('disk'), c.status === 'running' ? ` Compression en cours : ${c.pct} %` : ' Compression en attente');
   if (c.status === 'done') {

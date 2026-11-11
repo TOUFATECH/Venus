@@ -20,6 +20,16 @@ test('compression : proposition, conversion en français seulement, lecture, val
   expect(prop.estimated).toBeGreaterThan(0);
   // Les films déjà en H.264 léger ne sont pas proposés
   expect(sug.items.some((x) => x.title === 'Orage')).toBe(false);
+  // Qualité au choix : Maximale donne une copie plus grosse qu'Équilibrée ; le réglage général se change
+  const st0 = await api('/api/admin/convert');
+  expect(st0.qualities.map((q) => q.id)).toEqual(['max', 'high', 'balanced']);
+  const eMax = await api(`/api/admin/convert/estimate/${film.id}?quality=max&maxHeight=0`);
+  const eBal = await api(`/api/admin/convert/estimate/${film.id}?quality=balanced&maxHeight=720`);
+  expect(eMax.estimated).toBeGreaterThan(eBal.estimated);
+  expect(eBal.height).toBe(360); // la source fait 360p : jamais agrandie
+  const saved = await api('/api/admin/convert/settings', { method: 'PUT', body: { quality: 'max', maxHeight: 1440 } });
+  expect(saved.settings.quality).toBe('max'); expect(saved.settings.maxHeight).toBe(1440);
+  await api('/api/admin/convert/settings', { method: 'PUT', body: { quality: 'high', maxHeight: 1080 } });
   // La fiche (admin) montre la proposition avec les langues
   const d = await api(`/api/items/${film.id}`);
   expect(d.compress.status).toBe('suggested');

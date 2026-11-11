@@ -1003,10 +1003,12 @@ export async function render(main, { id, query }) {
     let r;
     try { r = await (await fetch(`/api/hls/${info.sessionId}/ping`, { method: 'POST', headers: { Authorization: `Bearer ${auth.token}` } })).json(); } catch { return; }
     if (!r || !r.slow || !r.suggest || destroyed || video.paused || casting || info.mode !== 'transcode') return;
+    // Une qualité choisie à la main est respectée ; réglage « Cet appareil » pour ne jamais baisser tout seul
+    if (quality !== 'auto' || prefs.get('keepQuality')) { if (Date.now() - slowAt > 300000) { slowAt = Date.now(); toast(`Le serveur convertit moins vite que la lecture (×${r.speed}) : la vidéo risque d’attendre. Baissez la qualité (pastille en bas) si besoin.`); } return; }
     if (Date.now() - slowAt < 120000) return;
     slowAt = Date.now();
     quality = r.suggest;
-    load(position(), { reason: `Le serveur convertit moins vite que la lecture (×${r.speed}) : passage en ${r.suggest}` });
+    load(position(), { reason: `Le serveur convertit moins vite que la lecture (×${r.speed}) : passage en ${r.suggest}. Vous pouvez choisir une autre qualité avec la pastille en bas.` });
   }
   saveTimer = setInterval(() => {
     if (!video.paused || casting) { saveProgress(); if (info && info.mode === 'transcode' && !casting) pingSession(); }

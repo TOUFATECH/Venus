@@ -6,6 +6,8 @@ import { api, toast, go, openSheet } from '../../lib/hooks';
 import { Icon } from '../Icon';
 import { Field, Select, Actions, Busy, Switch, confirm, fmtGo } from './SettingsSheets';
 
+const DEFS = [['0', 'D’origine (garde le 4K)'], ['1440', '1440p'], ['1080', '1080p (recommandé)'], ['720', '720p (très compact)']];
+const QUALS = [['max', 'Maximale'], ['high', 'Haute'], ['balanced', 'Équilibrée']];
 const LANGS = [['fre', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['ger', 'Allemand'], ['ita', 'Italien'], ['ara', 'Arabe'], ['kor', 'Coréen'], ['chi', 'Chinois'], ['por', 'Portugais']];
 const langName = (c) => (LANGS.find((l) => l[0] === c) || [])[1] || (c === 'und' ? 'Langue inconnue' : c.toUpperCase());
 const pct = (a, b) => (a && b ? Math.round((1 - b / a) * 100) : 0);
@@ -45,8 +47,11 @@ export function ConvertBox() {
 
       <h3 className="box-sub">Réglages</h3>
       <div className="two-cols wide">
+        <Field label="Qualité" hint="Maximale : CRF 17, quasi sans perte visible même sur un grand écran, fichiers plus gros. Haute : CRF 20, indiscernable à distance normale. Équilibrée : CRF 23, nette, bien plus légère.">
+          <Select opts={(st.qualities || []).map((q) => [q.id, q.label])} value={s.quality} onChange={(e) => save({ quality: e.target.value })} />
+        </Field>
         <Field label="Définition maximale" hint="1080p suffit à la plupart des écrans et divise la taille d’un 4K par trois. « D’origine » garde le 4K (fichiers plus gros).">
-          <Select opts={[['1080', '1080p (recommandé)'], ['0', 'D’origine (garde le 4K)'], ['720', '720p (très compact)']]} value={String(s.maxHeight)} onChange={(e) => save({ maxHeight: Number(e.target.value) })} />
+          <Select opts={DEFS} value={String(s.maxHeight)} onChange={(e) => save({ maxHeight: Number(e.target.value) })} />
         </Field>
         <Field label="Encodeur" hint="Le processeur donne la meilleure qualité à taille égale mais est lent ; la carte graphique va 5 à 10 fois plus vite.">
           <Select opts={[['auto', 'Automatique (carte graphique si présente)'], ['cpu', 'Processeur (meilleure qualité, lent)'], ['gpu', 'Carte graphique (rapide)']]} value={s.encoder} onChange={(e) => save({ encoder: e.target.value })} />
@@ -125,6 +130,14 @@ export function CompressNote({ d, reload }) {
   const c = d.compress;
   const [langs, setLangs] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [choice, setChoice] = useState({ maxHeight: null, quality: null });
+  const [est, setEst] = useState(null);
+  const chosenOpts = (present) => ({ ...(present.length > 1 && langs ? { langs } : {}), ...(choice.maxHeight != null ? { maxHeight: choice.maxHeight } : {}), ...(choice.quality ? { quality: choice.quality } : {}) });
+  useEffect(() => {
+    if (!c || c.status !== 'suggested' || (choice.maxHeight == null && !choice.quality && !langs)) { setEst(null); return; }
+    const q = new URLSearchParams(); if (choice.maxHeight != null) q.set('maxHeight', choice.maxHeight); if (choice.quality) q.set('quality', choice.quality); if (langs) q.set('langs', langs.join(','));
+    api(`/api/admin/convert/estimate/${d.id}?${q}`).then(setEst).catch(() => setEst(null));
+  }, [choice.maxHeight, choice.quality, langs && langs.join(',')]);
   if (!c) return null;
   if (c.show) return <p className="resume-note"><Icon name="info" />{` ${c.ready ? `${c.ready} épisode(s) compressé(s) à valider` : ''}${c.ready && c.running ? ' · ' : ''}${c.running ? `${c.running} en cours de compression` : ''} — `}<a href="/reglages?onglet=perf#convert" onClick={(e) => { e.preventDefault(); go('/reglages?onglet=perf'); }}>Réglages → Performance</a></p>;
   if (c.status === 'suggested') {
@@ -132,9 +145,13 @@ export function CompressNote({ d, reload }) {
     const chosen = langs || present;
     return (
       <div className="compress-note">
-        <p><Icon name="disk" />{` Cette vidéo peut être compressée : ${fmtGo(c.size)} → ≈ ${fmtGo(c.estimated)} (−${Math.round(c.gain * 100)} %)${c.height ? ` · ${c.height}p` : ''} · ${c.why.join(' · ')}.`}</p>
+        <p><Icon name="disk" />{` Cette vidéo peut être compressée : ${fmtGo(c.size)} → ≈ ${fmtGo(est ? est.estimated : c.estimated)} (−${Math.round((est ? est.gain : c.gain) * 100)} %)${(est ? est.height : c.height) ? ` · ${est ? est.height : c.height}p` : ''} · ${c.why.join(' · ')}.`}</p>
+        <div className="conv-choices">
+          <label><span>Qualité</span><select className="f" value={choice.quality || ''} onChange={(e) => setChoice({ ...choice, quality: e.target.value || null })}><option value="">Réglage général</option>{QUALS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+          <label><span>Définition</span><select className="f" value={choice.maxHeight == null ? '' : String(choice.maxHeight)} onChange={(e) => setChoice({ ...choice, maxHeight: e.target.value === '' ? null : Number(e.target.value) })}><option value="">Réglage général</option>{DEFS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+        </div>
         {present.length > 1 ? <div className="chips">{present.map((l) => <button key={l} type="button" className={`chip f${chosen.includes(l) ? ' on' : ''}`} aria-pressed={String(chosen.includes(l))} onClick={() => setLangs(chosen.includes(l) ? (chosen.length > 1 ? chosen.filter((x) => x !== l) : chosen) : [...chosen, l])}>{langName(l)}</button>)}<small className="muted">Langues gardées dans la copie</small></div> : null}
-        <button className="btn btn-ghost btn-small f" disabled={busy} onClick={async () => { setBusy(true); try { await api('/api/admin/convert', { method: 'POST', body: { ids: [d.id], opts: present.length > 1 && langs ? { langs } : {} } }); toast('Compression lancée : vous serez prévenu quand la copie sera prête'); reload(); } catch (e) { toast(e.message, true); } finally { setBusy(false); } }}><Icon name="disk" />Compresser (l’original est conservé)</button>
+        <button className="btn btn-ghost btn-small f" disabled={busy} onClick={async () => { setBusy(true); try { await api('/api/admin/convert', { method: 'POST', body: { ids: [d.id], opts: chosenOpts(present) } }); toast('Compression lancée : vous serez prévenu quand la copie sera prête'); reload(); } catch (e) { toast(e.message, true); } finally { setBusy(false); } }}><Icon name="disk" />Compresser (l’original est conservé)</button>
       </div>
     );
   }

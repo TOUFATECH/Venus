@@ -37,7 +37,7 @@ import { sendSample } from './telegram-media.js';
 import { createInvite, inviteFor, markUsed as markInviteUsed, listInvites, cancelInvites, baseUrl, EMAIL_RE } from './invites.js';
 import { describe as describeShare } from './netshare.js';
 import { optimizedFor, markUsed, pauseForPlayback, optStatus, runOptimize, clearAll as clearOptimized } from './optimize.js';
-import { convertStatus, suggestions as convertSuggestions, saveConvertSettings, queue as queueConversions, cancel as cancelConversion, validate as validateConversion, runConversions, pauseConversions, conversionFor, reasonFor as convertReason, convertSettings } from './convert.js';
+import { convertStatus, suggestions as convertSuggestions, saveConvertSettings, queue as queueConversions, cancel as cancelConversion, validate as validateConversion, runConversions, pauseConversions, conversionFor, reasonFor as convertReason, convertSettings, estimate as convertEstimate } from './convert.js';
 import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
 import { checkUpdate, runUpdate, localCommit, updaterInfo, setUpdatePrefs } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
@@ -3818,6 +3818,21 @@ router.put('/api/admin/convert/settings', async (ctx) => {
   requireAdmin(ctx);
   const b = await readBody(ctx.req, 4096);
   sendJson(ctx.res, { settings: saveConvertSettings(b) });
+});
+// Estimation pour une vidéo avec une définition et une qualité choisies (fiche : les choix se reflètent tout de suite)
+router.get('/api/admin/convert/estimate/:id', (ctx) => {
+  requireAdmin(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  const probe = item && parseJson(item.probe, null);
+  if (!probe) throw new HttpError(404, 'Analyse introuvable');
+  probe.size = probe.size || item.size;
+  const q = ctx.url.searchParams;
+  const opts = { ...convertSettings() };
+  if (q.has('maxHeight')) opts.maxHeight = Number(q.get('maxHeight'));
+  if (q.has('quality')) opts.quality = q.get('quality');
+  if (q.has('langs')) opts.langs = q.get('langs').split(',').filter(Boolean);
+  const est = convertEstimate(probe, opts);
+  sendJson(ctx.res, { size: item.size, estimated: est ? est.bytes : null, height: est ? est.height : null, gain: est && item.size ? Math.max(0, 1 - est.bytes / item.size) : 0 });
 });
 router.post('/api/admin/convert', async (ctx) => {
   const p = requireAdmin(ctx);

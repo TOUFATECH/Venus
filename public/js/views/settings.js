@@ -65,6 +65,7 @@ export async function render(main, { query } = {}) {
     h('h2', {}, 'Lecture sur cet appareil'),
     h('p', {}, 'Ces choix ne valent que pour ce navigateur ou cette télévision.'),
     prefSwitch('fullscreenOnPlay', 'Plein écran au lancement d’une vidéo'),
+    prefSwitch('keepQuality', 'Ne jamais baisser la qualité tout seul (en automatique, Venus descend d’un cran si le serveur convertit moins vite que la lecture)'),
     field('Au survol d’une affiche', select([['trailer', 'Bande-annonce (sinon un extrait)'], ['extract', 'Extrait de la vidéo'], ['off', 'Rien']], hoverMode(),
       { onchange: (e) => { prefs.set('hoverMode', e.target.value); toast('Préférence enregistrée pour cet appareil'); } })),
     prefSwitch('hoverSound', 'Aperçus et bandes-annonces avec le son'),

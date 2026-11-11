@@ -161,6 +161,7 @@ function DeviceBox() {
       <h2>Lecture sur cet appareil</h2>
       <p>Ces choix ne valent que pour ce navigateur ou cette télévision.</p>
       <Switch label="Plein écran au lancement d’une vidéo" checked={!!prefs.get('fullscreenOnPlay')} onChange={pref('fullscreenOnPlay')} />
+      <Switch label="Ne jamais baisser la qualité tout seul" hint="En qualité automatique, Venus descend d’un cran si le serveur convertit moins vite que la lecture (sinon l’image attendrait). Une qualité choisie à la main dans le lecteur est toujours respectée." checked={!!prefs.get('keepQuality')} onChange={pref('keepQuality')} />
       <Field label="Au survol d’une affiche"><Select opts={[['trailer', 'Bande-annonce (sinon un extrait)'], ['extract', 'Extrait de la vidéo'], ['off', 'Rien']]} value={hoverMode()} onChange={pref('hoverMode')} /></Field>
       <Switch label="Aperçus et bandes-annonces avec le son" checked={!!prefs.get('hoverSound')} onChange={pref('hoverSound')} />
       <Switch label="Bande-annonce en fond des fiches (films, séries, animés)" checked={detailsTrailers()} onChange={pref('detailsTrailer')} />

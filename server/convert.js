@@ -30,10 +30,16 @@ const TEXT_SUBS = new Set(['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 
 // Un seul profil pour l'instant, « Universel » : H.264 8 bits lu partout sans conversion, qualité quasi
 // indiscernable de l'original (CRF 20 sur processeur), plafonds de débit selon la définition.
 export const PROFILE = { crf: 20, caps: { 2160: 20e6, 1440: 14e6, 1080: 10e6, 720: 6e6, 480: 3e6 } };
+// Niveaux de qualité au choix (réglage global, modifiable vidéo par vidéo) : CRF et multiplicateur des plafonds de débit.
+// « Maximale » est quasi sans perte visible même sur un grand écran ; « Haute » est indiscernable à distance normale ;
+// « Équilibrée » reste nette mais gagne nettement plus de place.
+export const QUALITIES = { max: { crf: 17, mul: 1.6, label: 'Maximale' }, high: { crf: 20, mul: 1, label: 'Haute (recommandée)' }, balanced: { crf: 23, mul: 0.7, label: 'Équilibrée (plus légère)' } };
+const qualityOf = (o) => QUALITIES[o && o.quality] || QUALITIES.high;
 export function convertSettings() {
   const s = getSetting('convert_opts', null) || {};
   return {
-    maxHeight: [0, 1080, 720].includes(s.maxHeight) ? s.maxHeight : 1080, // 0 = définition d'origine
+    maxHeight: [0, 1440, 1080, 720].includes(s.maxHeight) ? s.maxHeight : 1080, // 0 = définition d'origine
+    quality: QUALITIES[s.quality] ? s.quality : 'high',
     langs: Array.isArray(s.langs) ? s.langs : [],                           // vide = toutes les langues
     stereo: !!s.stereo,                                                      // false = garde le 5.1 (en AAC)
     subs: s.subs !== false,                                                  // sous-titres texte conservés
@@ -44,7 +50,8 @@ export function convertSettings() {
 export function saveConvertSettings(patch) {
   const cur = convertSettings();
   const next = { ...cur };
-  if (patch.maxHeight !== undefined) next.maxHeight = [0, 1080, 720].includes(Number(patch.maxHeight)) ? Number(patch.maxHeight) : cur.maxHeight;
+  if (patch.maxHeight !== undefined) next.maxHeight = [0, 1440, 1080, 720].includes(Number(patch.maxHeight)) ? Number(patch.maxHeight) : cur.maxHeight;
+  if (patch.quality !== undefined && QUALITIES[patch.quality]) next.quality = patch.quality;
   if (patch.langs !== undefined) next.langs = (Array.isArray(patch.langs) ? patch.langs : []).map((l) => String(l).toLowerCase().slice(0, 3)).filter(Boolean).slice(0, 8);
   if (patch.stereo !== undefined) next.stereo = !!patch.stereo;
   if (patch.subs !== undefined) next.subs = !!patch.subs;
@@ -53,7 +60,7 @@ export function saveConvertSettings(patch) {
   setSetting('convert_opts', next);
   return next;
 }
-const capFor = (h) => (h >= 2000 ? PROFILE.caps[2160] : h >= 1300 ? PROFILE.caps[1440] : h >= 1000 ? PROFILE.caps[1080] : h >= 700 ? PROFILE.caps[720] : PROFILE.caps[480]);
+const capFor = (h, o = null) => (h >= 2000 ? PROFILE.caps[2160] : h >= 1300 ? PROFILE.caps[1440] : h >= 1000 ? PROFILE.caps[1080] : h >= 700 ? PROFILE.caps[720] : PROFILE.caps[480]) * qualityOf(o).mul;
 
 // Taille attendue après compression (estimation : le CRF s'adapte au contenu, un animé descend bien plus bas)
 export function estimate(probe, opts = convertSettings()) {
@@ -64,7 +71,7 @@ export function estimate(probe, opts = convertSettings()) {
   // Déjà en H.264 : gain seulement si le débit dépasse nettement le plafond (remux Blu-ray) ; sinon rien à gagner.
   // HEVC/AV1 : à qualité égale le H.264 ne fait pas mieux que l'original, le gain vient du plafond et de la définition.
   // MPEG-2/MPEG-4/VC-1 : vieux codecs peu efficaces, le H.264 divise la taille par deux.
-  const cap = capFor(h);
+  const cap = capFor(h, opts);
   let video;
   if (v.codec === 'h264') video = scaled > cap * 1.3 || h < v.height ? Math.min(cap, scaled * 0.7) : scaled;
   else if (['hevc', 'av1', 'vp9'].includes(v.codec)) video = Math.min(cap, scaled * 1.0);
@@ -122,7 +129,7 @@ export function suggestions({ limit = 200, libraryId = null } = {}) {
 // ------------------------------------------------------------------ file d'attente
 export function queue(itemIds, opts = {}, byName = null) {
   const base = convertSettings();
-  const o = { maxHeight: opts.maxHeight !== undefined ? Number(opts.maxHeight) : base.maxHeight, langs: Array.isArray(opts.langs) ? opts.langs.map(norm3) : base.langs, stereo: opts.stereo !== undefined ? !!opts.stereo : base.stereo, subs: opts.subs !== undefined ? !!opts.subs : base.subs };
+  const o = { maxHeight: opts.maxHeight !== undefined && [0, 1440, 1080, 720].includes(Number(opts.maxHeight)) ? Number(opts.maxHeight) : base.maxHeight, quality: QUALITIES[opts.quality] ? opts.quality : base.quality, langs: Array.isArray(opts.langs) ? opts.langs.map(norm3) : base.langs, stereo: opts.stereo !== undefined ? !!opts.stereo : base.stereo, subs: opts.subs !== undefined ? !!opts.subs : base.subs };
   let n = 0;
   for (const id of itemIds) {
     const it = get("SELECT id, path, size FROM items WHERE id = ? AND type IN ('movie','episode') AND path IS NOT NULL", id);
@@ -147,7 +154,7 @@ export function convertStatus() {
   const list = rows.map((c) => ({ id: c.id, itemId: c.item_id, title: c.title, type: c.type, poster: c.poster, show: c.show_title, season: c.season_num, episode: c.episode_num, status: c.status, pct: c.status === 'running' && current && current.id === c.id ? current.pct : c.pct, sizeBefore: c.size_before, sizeAfter: c.size_after, error: c.error, encoder: c.encoder, opts: parse(c.opts), queuedAt: c.queued_at, doneAt: c.done_at, validatedAt: c.validated_at, speed: current && current.id === c.id ? current.speed : null }));
   const saved = get("SELECT COALESCE(SUM(size_before - size_after), 0) n FROM conversions WHERE status = 'validated'").n;
   const pending = get("SELECT COALESCE(SUM(size_before - size_after), 0) n FROM conversions WHERE status = 'done'").n;
-  return { list, running: !!current, saved, pending, paused: pausedUntil > Date.now() || !!(current && current.held), settings: convertSettings(), hw: hw.label, cpu: os.cpus().length };
+  return { list, running: !!current, saved, pending, paused: pausedUntil > Date.now() || !!(current && current.held), settings: convertSettings(), qualities: Object.entries(QUALITIES).map(([id, q]) => ({ id, label: q.label, crf: q.crf })), hw: hw.label, cpu: os.cpus().length };
 }
 
 // ------------------------------------------------------------------ encodage
@@ -203,7 +210,7 @@ function encode(c, item, probe, o) {
     const v = probe.video;
     const height = o.maxHeight && v.height > o.maxHeight ? o.maxHeight : v.height;
     const width = Math.max(2, Math.round((v.width * height) / v.height / 2) * 2);
-    const cap = capFor(height);
+    const cap = capFor(height, o);
     const kbit = Math.round(cap / 1000);
     const set = convertSettings();
     let pipelines = videoPipelines({ width, height, bitrate: cap, src: v });
@@ -217,7 +224,7 @@ function encode(c, item, probe, o) {
     const tryNext = () => {
       const p = pipelines[idx];
       if (!p) return reject(new Error('Aucun encodeur n’a fonctionné'));
-      const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...p.input, '-i', item.path, ...tune(p, { kbit, crf: PROFILE.crf }), ...audio, ...subs,
+      const args = ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...p.input, '-i', item.path, ...tune(p, { kbit, crf: qualityOf(o).crf }), ...audio, ...subs,
         '-dn', '-map_metadata', '0', '-map_chapters', '0', '-movflags', '+faststart', '-f', 'mp4', '-progress', 'pipe:1', '-nostats', tmp];
       const proc = spawnLow(config.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
       current.proc = proc; current.encoder = p.name; const t0 = Date.now();
