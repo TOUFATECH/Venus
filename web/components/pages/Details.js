@@ -14,6 +14,7 @@ import { PersonCard, openPerson } from '../Person';
 import { openDownload } from './Downloads';
 import { addToSheet } from './Collections';
 import { CompressNote } from './Convert';
+import { Field as LabelledField } from '../Field';
 
 const LIB = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips' };
 const libOf = (d) => LIB[d.category] || LIB[d.type] || '/films';
@@ -664,7 +665,7 @@ async function editInfo(d) {
   openSheet('Modifier les infos', (close) => <EditInfo d={d} r={r} close={close} />, { wide: true });
 }
 
-const Field = ({ l, children }) => <div className="field"><label>{l}</label>{children}</div>;
+const Field = ({ l, children }) => <LabelledField label={l}>{children}</LabelledField>;
 
 function EditInfo({ d, r, close }) {
   const f = r.fields;

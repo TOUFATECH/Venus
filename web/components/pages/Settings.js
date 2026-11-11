@@ -54,6 +54,7 @@ export default function Settings() {
     let x = null;
     try { x = await api('/api/admin'); setA(x); loaded.current = true; } catch (e) { setA((old) => { if (!old) setError(e); return old; }); }
     timer.current = setTimeout(refresh, x && (x.scan.running || x.sessions.length) ? 4000 : 20000);
+    return x;
   };
   useEffect(() => {
     L.app.hideBoot();

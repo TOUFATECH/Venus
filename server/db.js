@@ -31,6 +31,7 @@ PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 PRAGMA foreign_keys = ON;
 PRAGMA temp_store = MEMORY;
+PRAGMA cache_size = -32000;
 
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 
@@ -134,6 +135,8 @@ for (const [col, def] of [['category', 'TEXT'], ['release_date', 'TEXT'], ['popu
   if (!cols('items').includes(col)) db.exec(`ALTER TABLE items ADD COLUMN ${col} ${def}`);
 }
 db.exec('CREATE INDEX IF NOT EXISTS idx_items_version ON items(version_of)');
+// « Reprendre la lecture » : les 200 dernières lectures d'un profil, sans trier tout son historique à chaque visite
+db.exec('CREATE INDEX IF NOT EXISTS idx_progress_recent ON progress(profile_id, updated_at DESC, item_id)');
 if (!cols('progress').includes('device')) db.exec('ALTER TABLE progress ADD COLUMN device TEXT');
 // Temps de visionnage par profil et par jour (limite quotidienne des profils enfants)
 db.exec('CREATE TABLE IF NOT EXISTS track_prefs (profile_id INTEGER, show_id INTEGER, audio_lang TEXT, sub_lang TEXT, sub_mode TEXT, updated_at INTEGER, PRIMARY KEY(profile_id, show_id))');
@@ -164,27 +167,45 @@ export function q(sql) {
   if (!st) { st = db.prepare(sql); cache.set(sql, st); }
   return st;
 }
-export const all = (sql, ...p) => q(sql).all(...p);
-export const get = (sql, ...p) => q(sql).get(...p);
+// Diagnostic : VENUS_SQL_SLOW=50 note dans le journal toute requête de plus de 50 ms (éteint par défaut)
+const SLOW_MS = Number(process.env.VENUS_SQL_SLOW) || 0;
+const timed = (kind, sql, p) => {
+  const t = performance.now();
+  const r = q(sql)[kind](...p);
+  const dt = performance.now() - t;
+  if (dt >= SLOW_MS) console.warn(`[sql lent] ${dt.toFixed(0)} ms${Array.isArray(r) ? `, ${r.length} lignes` : ''} : ${sql.replace(/\s+/g, ' ').slice(0, 160)}`);
+  return r;
+};
+export const all = SLOW_MS ? (sql, ...p) => timed('all', sql, p) : (sql, ...p) => q(sql).all(...p);
+export const get = SLOW_MS ? (sql, ...p) => timed('get', sql, p) : (sql, ...p) => q(sql).get(...p);
 // Compteur des écritures dans la table des titres : permet de garder en mémoire les listes lourdes
 // (bibliothèques entières) et de les reconstruire seulement quand quelque chose a changé
 export let itemsVersion = 1;
 export const bumpItems = () => { itemsVersion++; };
-const touchesItems = (sql) => /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*\bitems\b/i.test(sql);
-export const run = (sql, ...p) => { const r = q(sql).run(...p); if (touchesItems(sql)) itemsVersion++; return r; };
+// « libraries » aussi : supprimer une bibliothèque efface ses titres en cascade (sans que « items » apparaisse dans
+// la requête) — sans cela, les listes gardées en mémoire montraient encore les titres d'une bibliothèque supprimée
+const touchesItems = (sql) => /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*\b(items|libraries)\b/i.test(sql);
+// Même principe pour l'avancement des lectures (vu, en cours) : l'état « vu / non vu » de chaque série, calculé sur
+// tous les épisodes, n'est refait que si quelque chose a changé
+export let progressVersion = 1;
+const touchesProgress = (sql) => /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*\b(progress|profiles)\b/i.test(sql);
+export const run = (sql, ...p) => { const r = q(sql).run(...p); if (touchesItems(sql)) itemsVersion++; if (touchesProgress(sql)) progressVersion++; return r; };
 
 export function tx(fn) {
   db.exec('BEGIN');
-  try { const r = fn(); db.exec('COMMIT'); itemsVersion++; return r; }
+  try { const r = fn(); db.exec('COMMIT'); itemsVersion++; progressVersion++; return r; }
   catch (e) { db.exec('ROLLBACK'); throw e; }
 }
 
 // Clés d'API et mots de passe des services : chiffrés dans la base (AES-256-GCM). La clé de chiffrement est
 // dans le dossier de données (secret.key, lisible seulement par Venus) ou dans VENUS_SECRET : une copie de la
 // base ou d'une sauvegarde seule ne révèle aucun secret.
-const SECRET_KEYS = new Set(['tmdb_key', 'omdb_key', 'seerr_key', 'telegram_token', 'discord_webhook', 'opensubtitles_key', 'opensubtitles_pass', 'smtp_pass', 'vapid', 'simkl_client_id', 'trakt_client_id', 'trakt_client_secret', 'remote_access']);
-// Jetons Trakt de chaque profil : chiffrés aussi
-const isSecret = (k) => SECRET_KEYS.has(k) || k.startsWith('trakt_auth:');
+const SECRET_KEYS = new Set(['tmdb_key', 'omdb_key', 'seerr_key', 'telegram_token', 'discord_webhook', 'opensubtitles_key', 'opensubtitles_pass', 'smtp_pass', 'vapid', 'simkl_client_id', 'trakt_client_id', 'trakt_client_secret', 'remote_access',
+  // Secrets des webhooks, clé du pont Philips Hue, liens privés des calendriers
+  'webhooks', 'lights', 'ical_tokens']);
+// Jetons Trakt de chaque profil : chiffrés aussi, comme toute clé de service (« radarr_key », « sonarr_key »,
+// « lidarr_key », « bookshelf_key », « lazylibrarian_key », « libretranslate_key », « acoustid_key »…)
+const isSecret = (k) => SECRET_KEYS.has(k) || k.startsWith('trakt_auth:') || /^[a-z0-9]+_key$/.test(k);
 let masterKey = null;
 function keyOf() {
   if (masterKey) return masterKey;
@@ -223,8 +244,21 @@ export function setSetting(key, value) {
   if (isSecret(key) && value != null && value !== '') stored = JSON.stringify(seal(stored));
   run('INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', key, stored);
 }
+// Texte chiffré de la même façon, pour un secret rangé ailleurs que dans les réglages (mot de passe d'un partage réseau)
+export const sealText = (text) => (text == null || text === '' ? '' : seal(String(text)));
+let unreadableSaid = false;
+export function unsealText(v, def = '') {
+  if (typeof v !== 'string' || !v.startsWith('enc1:')) return v == null ? def : v;
+  try { return unseal(v); } catch {
+    // Dit une seule fois : ces valeurs sont relues souvent (surveillance des partages réseau)
+    if (!unreadableSaid) { unreadableSaid = true; console.warn('[secrets] mot de passe de partage illisible (clé secret.key changée ?) : à ressaisir dans Réglages → Sources'); }
+    return def;
+  }
+}
 // Au démarrage : les secrets encore en clair sont chiffrés
-for (const k of SECRET_KEYS) {
-  const r = get('SELECT value FROM settings WHERE key = ?', k);
-  if (r && !String(r.value).includes('enc1:')) { try { setSetting(k, JSON.parse(r.value)); } catch { /* */ } }
+for (const r of all('SELECT key, value FROM settings')) {
+  if (!isSecret(r.key)) continue;
+  let v; try { v = JSON.parse(r.value); } catch { continue; }
+  if (v == null || v === '' || (typeof v === 'string' && v.startsWith('enc1:'))) continue;
+  try { setSetting(r.key, v); } catch { /* */ }
 }

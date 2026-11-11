@@ -92,7 +92,8 @@ function Hero({ items, apiRef }) {
     restart();
     // L'affiche suivante est chargée à l'avance pour un fondu sans à-coup
     const n = items[(idx + 1) % items.length];
-    if (n && n !== it) { const pre = new Image(); pre.src = n.backdrop ? img(n.backdrop, L.ui.bgWidth()) : img(n.poster); if (n.poster) { const pp = new Image(); pp.src = img(n.poster, 342); } }
+    // Image suivante chargée d'avance — seulement s'il y en a une (sinon le navigateur demandait « /null » à chaque affiche)
+    if (n && n !== it) { const src = n.backdrop ? img(n.backdrop, L.ui.bgWidth()) : img(n.poster); if (src) { const pre = new Image(); pre.src = src; } if (n.poster) { const pp = new Image(); pp.src = img(n.poster, 342); } }
     if (hadFocus) requestAnimationFrame(() => body.current && body.current.querySelector('.btn-play')?.focus({ preventScroll: true }));
   }, [idx]);
 

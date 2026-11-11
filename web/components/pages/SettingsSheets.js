@@ -5,15 +5,13 @@ import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
 import { api, toast, go, openSheet } from '../../lib/hooks';
 import { Icon, Avatar } from '../Icon';
+import { Field, Select } from '../Field';
 
 export const confirm = (m, l) => shared().ui.confirmSheet(m, l);
 export const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
 
-export const Field = ({ label, hint, children, style }) => <div className="field" style={style}><label>{label}</label>{children}{hint ? <small>{hint}</small> : null}</div>;
-export const Select = ({ opts, value, onChange, ...rest }) => (
-  <select className="input" defaultValue={String(value ?? '')} onChange={onChange} {...rest}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-);
+export { Field, Select };
 export const Actions = ({ children, wrap, end }) => <div className="form-actions" style={end ? undefined : { justifyContent: 'flex-start', ...(wrap ? { flexWrap: 'wrap' } : {}) }}>{children}</div>;
 export const Ext = ({ href, children }) => <a href={href} target="_blank" rel="noopener" style={{ textDecoration: 'underline' }}>{children}</a>;
 

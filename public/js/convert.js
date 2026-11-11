@@ -9,6 +9,10 @@ const QUALS = [['max', 'Maximale'], ['high', 'Haute'], ['balanced', 'Équilibré
 const LANGS = [['fre', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['ger', 'Allemand'], ['ita', 'Italien'], ['ara', 'Arabe'], ['kor', 'Coréen'], ['chi', 'Chinois'], ['por', 'Portugais']];
 const fmtGo = (b) => (!b ? '0 Mo' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
 const pct = (a, b) => (a && b ? Math.round((1 - b / a) * 100) : 0);
+// Écart de taille en clair : « −35 % » quand la copie est plus légère, « +13 % » quand elle serait plus lourde (une
+// vidéo déjà très légère, proposée parce que son format oblige à la convertir à chaque lecture), jamais « −-13 % »
+const delta = (p) => (p > 0 ? `−${p} %` : p < 0 ? `+${-p} %` : 'même taille');
+const freed = (r, later) => (r.saved > 0 ? `Validé : ${fmtGo(r.saved)} libérés${later ? ' dans 7 jours (corbeille)' : ''}` : 'Validé : la copie remplace l’original');
 const epLabel = (x) => (x.type === 'episode' && x.show ? `${x.show} · S${x.season} É${x.episode} · ${x.title}` : `${x.title}${x.year ? ` (${x.year})` : ''}`);
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('small', {}, hint) : null);
 const select = (opts, value, onchange) => h('select', { class: 'f', onchange }, opts.map(([v, l]) => h('option', { value: v, selected: String(v) === String(value) }, l)));
@@ -19,7 +23,7 @@ const toggle = (label, hint, on, onchange) => h('label', { class: 'switch' }, h(
 export function validateSheet(c, reload) {
   return new Promise((resolve) => {
     const run = async (purge) => {
-      try { const r = await api(`/api/admin/convert/${c.id}/validate`, { method: 'POST', body: { purge } }); toast(purge ? `Validé : ${fmtGo(r.saved)} libérés` : `Validé : ${fmtGo(r.saved)} libérés dans 7 jours (corbeille)`); } catch (e) { toast(e.message, true); }
+      try { const r = await api(`/api/admin/convert/${c.id}/validate`, { method: 'POST', body: { purge } }); toast(freed(r, !purge)); } catch (e) { toast(e.message, true); }
       s.close(); reload(); resolve();
     };
     const s = sheet('Valider la copie compressée', h('div', { class: 'req-sheet' },
@@ -70,11 +74,11 @@ export function convertBox() {
       !sug ? h('p', { class: 'muted' }, 'Calcul…') : !sug.items.length ? h('p', { class: 'muted' }, 'Rien à compresser : vos vidéos sont déjà en H.264 à un débit raisonnable.') : h('div', {},
         list(items.map((x) => h('label', { class: 'conv-row' },
           h('input', { type: 'checkbox', checked: sel.has(x.id), 'aria-label': `Sélectionner ${x.title}`, onchange: (e) => { if (e.target.checked) sel.add(x.id); else sel.delete(x.id); paint(); } }),
-          h('span', { class: 'conv-txt' }, h('b', {}, epLabel(x)), h('small', {}, `${fmtGo(x.size)} → ≈ ${fmtGo(x.estimated)} (−${Math.round(x.gain * 100)} %) · ${x.why.join(' · ')}`))))),
+          h('span', { class: 'conv-txt' }, h('b', {}, epLabel(x)), h('small', {}, `${fmtGo(x.size)} → ≈ ${fmtGo(x.estimated)} (${delta(Math.round(x.gain * 100))}) · ${x.why.join(' · ')}`))))),
         sug.items.length > 12 ? h('button', { class: 'btn btn-ghost btn-small f', onclick: () => { showAll = !showAll; paint(); } }, showAll ? 'Réduire' : `Voir les ${sug.items.length}`) : null,
         h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } },
           h('button', { class: 'btn btn-small btn-play f', disabled: !sel.size, onclick: () => queue([...sel]) }, `Compresser la sélection (${sel.size})`),
-          h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { if (await confirmSheet(`Mettre en file les ${sug.items.length} vidéos proposées ? Elles seront compressées une par une ; rien n’est supprimé avant votre validation.`, 'Tout compresser')) queue([], true); } }, 'Tout compresser'))),
+          h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { if (await confirmSheet('Mettre en file toutes les vidéos proposées qui gagnent de la place ? Elles seront compressées une par une ; rien n’est supprimé avant votre validation.', 'Tout compresser')) queue([], true); } }, 'Tout compresser'))),
       active.length ? h('h3', { class: 'box-sub' }, 'En cours') : null,
       active.length ? list(active.map((c) => h('div', { class: 'conv-row' },
         h('span', { class: 'conv-txt' }, h('b', {}, epLabel(c)), h('small', {}, c.status === 'running' ? `${c.pct} %${c.speed ? ` · ${c.speed}× temps réel` : ''}${c.encoder ? ` · ${c.encoder}` : ''}` : 'En attente'),
@@ -83,7 +87,7 @@ export function convertBox() {
       done.length ? h('h3', { class: 'box-sub' }, 'Copies à valider') : null,
       done.length ? h('p', { class: 'muted small' }, 'Regardez la copie (bouton « Lire la copie » : c’est elle que Venus lit désormais quand vous lancez le titre), puis validez. Pour revoir l’original : « Lire l’original ».') : null,
       done.length ? list(done.map((c) => h('div', { class: 'conv-row' },
-        h('span', { class: 'conv-txt' }, h('b', {}, epLabel(c)), h('small', {}, `${fmtGo(c.sizeBefore)} → ${fmtGo(c.sizeAfter)} (−${pct(c.sizeBefore, c.sizeAfter)} %)${c.encoder ? ` · ${c.encoder}` : ''}`)),
+        h('span', { class: 'conv-txt' }, h('b', {}, epLabel(c)), h('small', {}, `${fmtGo(c.sizeBefore)} → ${fmtGo(c.sizeAfter)} (${delta(pct(c.sizeBefore, c.sizeAfter))})${c.encoder ? ` · ${c.encoder}` : ''}`)),
         h('div', { class: 'conv-actions' },
           h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go(`/lecture/${c.itemId}`) }, icon('play'), 'Lire la copie'),
           h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go(`/lecture/${c.itemId}?src=original`) }, 'Lire l’original'),
@@ -109,7 +113,13 @@ export function compressNote(d, reload) {
     let chosen = present.slice();
     const choice = { maxHeight: null, quality: null };
     const head = h('p', {});
-    const paintHead = (e) => head.replaceChildren(icon('disk'), ` Cette vidéo peut être compressée : ${fmtGo(c.size)} → ≈ ${fmtGo(e ? e.estimated : c.estimated)} (−${Math.round((e ? e.gain : c.gain) * 100)} %)${(e ? e.height : c.height) ? ` · ${e ? e.height : c.height}p` : ''} · ${c.why.join(' · ')}.`);
+    // Copie pas plus légère que l'original : on le dit (elle sert à lire la vidéo partout sans conversion, pas à gagner de la place)
+    const label = h('span', {});
+    const paintHead = (e) => {
+      const gain = Math.round((e ? e.gain : c.gain) * 100);
+      head.replaceChildren(icon('disk'), ` ${gain > 0 ? 'Cette vidéo peut être compressée' : 'Cette vidéo peut être convertie pour être lue partout sans attente, sans gain de place'} : ${fmtGo(c.size)} → ≈ ${fmtGo(e ? e.estimated : c.estimated)} (${delta(gain)})${(e ? e.height : c.height) ? ` · ${e ? e.height : c.height}p` : ''} · ${c.why.join(' · ')}.`);
+      label.textContent = gain > 0 ? 'Compresser (l’original est conservé)' : 'Convertir (l’original est conservé)';
+    };
     paintHead(null);
     const refresh = async () => {
       if (choice.maxHeight == null && !choice.quality && chosen.length === present.length) return paintHead(null);
@@ -127,13 +137,13 @@ export function compressNote(d, reload) {
       btn.disabled = true;
       const opts = { ...(present.length > 1 && chosen.length !== present.length ? { langs: chosen } : {}), ...(choice.maxHeight != null ? { maxHeight: choice.maxHeight } : {}), ...(choice.quality ? { quality: choice.quality } : {}) };
       try { await api('/api/admin/convert', { method: 'POST', body: { ids: [d.id], opts } }); toast('Compression lancée : vous serez prévenu quand la copie sera prête'); reload(); } catch (e) { toast(e.message, true); btn.disabled = false; }
-    } }, icon('disk'), 'Compresser (l’original est conservé)');
+    } }, icon('disk'), label);
     return h('div', { class: 'compress-note' }, head, choices, present.length > 1 ? chips : null, btn);
   }
   if (c.status === 'queued' || c.status === 'running') return h('p', { class: 'resume-note' }, icon('disk'), c.status === 'running' ? ` Compression en cours : ${c.pct} %` : ' Compression en attente');
   if (c.status === 'done') {
     return h('div', { class: 'compress-note ok' },
-      h('p', {}, icon('check'), ` Copie compressée prête : ${fmtGo(c.sizeBefore)} → ${fmtGo(c.sizeAfter)} (−${pct(c.sizeBefore, c.sizeAfter)} %). « Lire » lit désormais la copie ; vérifiez-la, puis validez pour supprimer l’original.`),
+      h('p', {}, icon('check'), ` ${c.sizeAfter < c.sizeBefore ? 'Copie compressée prête' : 'Copie prête, sans gain de place (la vidéo était déjà très légère)'} : ${fmtGo(c.sizeBefore)} → ${fmtGo(c.sizeAfter)} (${delta(pct(c.sizeBefore, c.sizeAfter))}). « Lire » lit désormais la copie ; vérifiez-la, puis validez pour supprimer l’original.`),
       h('div', { class: 'conv-actions' },
         h('button', { class: 'btn btn-ghost btn-small f', onclick: () => go(`/lecture/${d.id}?src=original`) }, 'Lire l’original'),
         h('button', { class: 'btn btn-small btn-play f', onclick: () => validateSheet({ ...c, itemId: d.id }, reload) }, icon('check'), 'Valider la copie'),

@@ -15,11 +15,13 @@ import { tmdb, tmdbKey, lang } from './metadata.js';
 import { arrOn, call as arrCall, arrKnown, arrGrab, arrRemove } from './arr.js';
 import { logActivity } from './activity.js';
 import { notify } from './notify.js';
+import { localDay } from './clock.js';
 
 const TVMAZE = process.env.VENUS_TVMAZE_API || 'https://api.tvmaze.com';
 const DAY = 864e5;
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
-const iso = (t) => new Date(t).toISOString().slice(0, 10);
+// Jour local d'un instant (une diffusion à 23 h 30 UTC tombe le lendemain à Mayotte)
+const iso = (t) => localDay(t);
 const strip = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
 const cache = new Map();

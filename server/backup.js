@@ -22,12 +22,15 @@ export function makeBackup({ manual = false } = {}) {
   const file = path.join(backupsDir, `venus-${stamp}${manual ? '-manuel' : ''}.db`);
   try { fs.unlinkSync(file); } catch { /* */ }
   db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+  // Comme la base : lisible seulement par Venus (sessions, empreintes des mots de passe, réglages)
+  try { fs.chmodSync(file, 0o600); } catch { /* Windows */ }
   setSetting('last_backup', Date.now());
   // Copie vers un second emplacement (NAS, disque externe), si réglé : une copie ratée n'empêche pas la sauvegarde
   const copyDir = String(getSetting('backup_copy_dir', '') || '').trim();
   if (copyDir) {
     try {
       fs.copyFileSync(file, path.join(copyDir, path.basename(file)));
+      try { fs.chmodSync(path.join(copyDir, path.basename(file)), 0o600); } catch { /* partage sans droits Unix */ }
       const old = fs.readdirSync(copyDir).filter((n) => /^venus-.*\.db$/.test(n)).sort().reverse().slice(KEEP);
       for (const n of old) { try { fs.unlinkSync(path.join(copyDir, n)); } catch { /* */ } }
     } catch (e) { console.warn(`[sauvegarde] copie vers ${copyDir} impossible : ${e.message}`); }

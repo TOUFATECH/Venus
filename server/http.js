@@ -111,13 +111,15 @@ export function sendFile(req, res, filePath, { cache = 'no-cache', type, downloa
   if (download) headers['Content-Disposition'] = `attachment; filename="${String(download).replace(/[^\w.\-]+/g, '_')}"`;
   if (req.headers['if-none-match'] === etag) { res.writeHead(304, headers); return res.end(); }
 
-  const range = req.headers.range;
-  if (range) {
-    const m = /bytes=(\d*)-(\d*)/.exec(range);
-    let start = m && m[1] ? parseInt(m[1], 10) : NaN;
-    let end = m && m[2] ? parseInt(m[2], 10) : size - 1;
-    if (isNaN(start)) { start = size - end; end = size - 1; } // suffix range
-    if (start >= size || start < 0 || end < start) {
+  // Seule la forme « bytes=début-fin » (une plage) est suivie ; un en-tête Range invalide est ignoré, comme le
+  // veut HTTP : le fichier entier est envoyé (avant, le premier octet manquait et la réponse était marquée 206)
+  const m = /^\s*bytes=(\d*)-(\d*)\s*(?:,|$)/i.exec(req.headers.range || '');
+  if (m && (m[1] || m[2]) && size > 0) {
+    let start = m[1] ? parseInt(m[1], 10) : NaN;
+    let end = m[2] ? parseInt(m[2], 10) : size - 1;
+    // « bytes=-N » : les N derniers octets ; N plus grand que le fichier = le fichier entier
+    if (isNaN(start)) { start = Math.max(0, size - end); end = size - 1; }
+    if (start >= size || end < start) {
       res.writeHead(416, { 'Content-Range': `bytes */${size}` });
       return res.end();
     }
@@ -223,7 +225,9 @@ export function parseCookies(header = '') {
   const out = {};
   header.split(';').forEach((p) => {
     const i = p.indexOf('=');
-    if (i > 0) out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim());
+    if (i <= 0) return;
+    // Valeur mal encodée (« %E0%A4%A ») : ce cookie est ignoré, la requête continue
+    try { out[p.slice(0, i).trim()] = decodeURIComponent(p.slice(i + 1).trim()); } catch { /* cookie illisible */ }
   });
   return out;
 }

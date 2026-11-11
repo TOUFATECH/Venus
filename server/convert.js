@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { config } from './config.js';
-import { db, all, get, run, getSetting, setSetting } from './db.js';
+import { db, all, get, run, getSetting, setSetting, itemsVersion } from './db.js';
 import { hw, videoPipelines } from './hw.js';
 import { probeFile } from './probe.js';
 import { logActivity } from './activity.js';
@@ -107,23 +107,37 @@ export function reasonFor(probe, opts = convertSettings()) {
   if (!needsOptimizing(probe) && gain < 0.25) return null;
   return { why, gain, est };
 }
+// L'examen de chaque vidéo (fiche technique décodée, taille estimée) ne dépend que des titres et des réglages : il
+// est gardé en mémoire et refait seulement si l'un des deux change (0,65 s sinon à chaque ouverture de la page
+// sur une médiathèque de 38 000 vidéos). Les vidéos déjà en file ou compressées sont écartées à chaque demande.
+let sugCache = { key: '', list: [], total: 0 };
 export function suggestions({ limit = 200, libraryId = null } = {}) {
   const done = new Set(all("SELECT item_id FROM conversions WHERE status IN ('queued','running','done','validated')").map((r) => r.item_id));
   const failed = new Map(all("SELECT item_id, COUNT(*) n FROM conversions WHERE status = 'failed' GROUP BY item_id").map((r) => [r.item_id, r.n]));
   const opts = convertSettings();
-  const out = [];
-  const rows = all(`SELECT i.id, i.title, i.type, i.year, i.poster, i.probe, i.size, i.path, i.mtime, i.library_id, i.show_id, i.season_num, i.episode_num, s.title AS show_title
-    FROM items i LEFT JOIN items s ON s.id = i.show_id WHERE i.type IN ('movie','episode') AND i.path IS NOT NULL AND i.version_of IS NULL${libraryId ? ' AND i.library_id = ?' : ''} ORDER BY i.size DESC`, ...(libraryId ? [libraryId] : []));
-  let totalGain = 0;
-  for (const r of rows) {
-    if (done.has(r.id) || (failed.get(r.id) || 0) >= 2 || path.basename(r.path).endsWith(SUFFIX)) continue;
-    const probe = parse(r.probe); if (!probe) continue;
-    probe.size = probe.size || r.size;
-    const why = reasonFor(probe, opts); if (!why) continue;
-    totalGain += Math.max(0, (r.size || 0) - (why.est ? why.est.bytes : 0));
-    if (out.length < limit) out.push({ id: r.id, title: r.title, type: r.type, year: r.year, poster: r.poster, show: r.show_title, season: r.season_num, episode: r.episode_num, size: r.size, estimated: why.est ? why.est.bytes : null, height: why.est ? why.est.height : null, gain: why.gain, why: why.why, audio: (probe.audio || []).map((a) => ({ lang: a.lang || 'und', codec: a.codec, channels: a.channels, title: a.title || null })) });
+  const key = `${itemsVersion}|${libraryId || 0}|${JSON.stringify(opts)}`;
+  if (sugCache.key !== key) {
+    const rows = all(`SELECT i.id, i.title, i.type, i.year, i.poster, i.probe, i.size, i.path, i.mtime, i.library_id, i.show_id, i.season_num, i.episode_num, s.title AS show_title
+      FROM items i LEFT JOIN items s ON s.id = i.show_id WHERE i.type IN ('movie','episode') AND i.path IS NOT NULL AND i.version_of IS NULL${libraryId ? ' AND i.library_id = ?' : ''} ORDER BY i.size DESC`, ...(libraryId ? [libraryId] : []));
+    const list = [];
+    for (const r of rows) {
+      if (path.basename(r.path).endsWith(SUFFIX)) continue;
+      const probe = parse(r.probe); if (!probe) continue;
+      probe.size = probe.size || r.size;
+      const why = reasonFor(probe, opts); if (!why) continue;
+      list.push({ id: r.id, saved: Math.max(0, (r.size || 0) - (why.est ? why.est.bytes : 0)),
+        item: { id: r.id, title: r.title, type: r.type, year: r.year, poster: r.poster, show: r.show_title, season: r.season_num, episode: r.episode_num, size: r.size, estimated: why.est ? why.est.bytes : null, height: why.est ? why.est.height : null, gain: why.gain, why: why.why, audio: (probe.audio || []).map((a) => ({ lang: a.lang || 'und', codec: a.codec, channels: a.channels, title: a.title || null })) } });
+    }
+    sugCache = { key, list, total: rows.length };
   }
-  return { items: out, total: rows.length, totalGain };
+  const out = [];
+  let totalGain = 0;
+  for (const x of sugCache.list) {
+    if (done.has(x.id) || (failed.get(x.id) || 0) >= 2) continue;
+    totalGain += x.saved;
+    if (out.length < limit) out.push(x.item);
+  }
+  return { items: out, total: sugCache.total, totalGain };
 }
 
 // ------------------------------------------------------------------ file d'attente
@@ -274,7 +288,8 @@ export async function runConversions() {
         run("UPDATE conversions SET status = 'done', out_path = ?, size_after = ?, probe = ?, encoder = ?, done_at = ?, pct = 100 WHERE id = ?", out, size, JSON.stringify(p2), encoder, Date.now(), c.id);
         done++;
         const gain = Math.max(0, (c.size_before || 0) - size);
-        notify({ title: 'Vidéo compressée', body: `« ${item.title} » : ${fmtGo(c.size_before)} → ${fmtGo(size)} (${Math.round((gain / Math.max(1, c.size_before)) * 100)} % de place). Vérifiez-la, puis validez pour supprimer l’original.`, url: `/titre/${item.id}`, tag: 'venus-convert' }, { adminOnly: true }).catch(() => {});
+        // Copie pas plus légère (vidéo déjà très légère, convertie pour être lue partout) : on ne promet pas de place gagnée
+        notify({ title: gain > 0 ? 'Vidéo compressée' : 'Copie prête', body: `« ${item.title} » : ${fmtGo(c.size_before)} → ${fmtGo(size)} (${gain > 0 ? `${Math.round((gain / Math.max(1, c.size_before)) * 100)} % de place` : 'sans gain de place'}). Vérifiez-la, puis validez pour supprimer l’original.`, url: `/titre/${item.id}`, tag: 'venus-convert' }, { adminOnly: true }).catch(() => {});
       } catch (e) {
         if (e.paused) { run("UPDATE conversions SET status = 'queued', pct = 0 WHERE id = ?", c.id); break; }
         if (e.cancelled) { run('DELETE FROM conversions WHERE id = ?', c.id); continue; }

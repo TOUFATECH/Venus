@@ -97,7 +97,9 @@ export default async function globalSetup() {
   fs.writeFileSync(path.join(dir, 'data', 'models', 'whisper', 'ggml-small.bin'), 'modele factice');
   const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
     cwd: root, detached: true, stdio: ['ignore', log, log],
-    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_TEST_HOOKS: '1', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh'), VENUS_WHISPER_BIN: path.join(dir, 'faux-whisper.sh'),
+    // Même fuseau que le navigateur des tests (playwright.config.mjs) : sur une machine à l'heure UTC, le serveur
+    // adopterait sinon celui du navigateur dès la première page ouverte par l'administrateur
+    env: { ...process.env, TZ: 'Indian/Mayotte', DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_TEST_HOOKS: '1', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh'), VENUS_WHISPER_BIN: path.join(dir, 'faux-whisper.sh'),
       // Faux MusicBrainz / Cover Art Archive / Open Library / Google Books (démarrés par le test musique-livres)
       VENUS_MUSICBRAINZ_API: `http://127.0.0.1:${port + 5}/mb`, VENUS_COVERART_API: `http://127.0.0.1:${port + 5}/caa`, VENUS_OPENLIBRARY_API: `http://127.0.0.1:${port + 5}/ol`, VENUS_OPENLIBRARY_COVERS: `http://127.0.0.1:${port + 5}/olc`, VENUS_GOOGLEBOOKS_API: `http://127.0.0.1:${port + 5}/gb` },
   });

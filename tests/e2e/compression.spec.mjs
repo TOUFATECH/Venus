@@ -36,12 +36,15 @@ test('compression : proposition, conversion en français seulement, lecture, val
   await ouvrir(page, '/films/tempete-2005');
   const note = page.locator('.compress-note');
   await expect(note).toBeVisible();
-  await expect(note).toContainText('peut être compressée');
+  // Vidéo d'essai minuscule : la copie estimée n'est pas plus légère, et la fiche le dit (jamais de « −-13 % »)
+  await expect(note).toContainText(/peut être (compressée|convertie)/);
+  await expect(note).not.toContainText('−-');
+  await expect(note).toContainText(/\((−\d+ %|\+\d+ %|même taille)\)/);
   await expect(note.getByRole('button', { name: 'Anglais' })).toHaveAttribute('aria-pressed', 'true');
   // On ne garde que le français, puis on lance
   await note.getByRole('button', { name: 'Anglais' }).click();
   await expect(note.getByRole('button', { name: 'Anglais' })).toHaveAttribute('aria-pressed', 'false');
-  await note.getByRole('button', { name: /Compresser/ }).click();
+  await note.getByRole('button', { name: /Compresser|Convertir/ }).click();
   await expect(page.locator('.resume-note, .compress-note').filter({ hasText: /Compression en (cours|attente)/ })).toBeVisible({ timeout: 10_000 });
   // La copie se fait à côté de l'original, sans le toucher
   let st;

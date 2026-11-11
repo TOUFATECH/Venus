@@ -31,7 +31,7 @@ Venus est pensé pour la maison, mais il est souvent ouvert sur Internet. Voici 
 | ReDoS | Aucune expression régulière sur des textes non bornés ; longueur des entrées limitée avant tout test. |
 | Délais | En-têtes : 20 s ; corps : 20 s ; connexion inactive : 2 min ; 900 requêtes par minute par adresse (hors vidéo) ; adresses de plus de 8 Ko refusées. |
 | Erreurs | En production, aucune trace technique : un message générique et un numéro de référence, retrouvable dans le journal du serveur. |
-| Secrets | Clés d'API et mots de passe des services chiffrés dans la base (AES-256-GCM) avec `/config/secret.key` (droits 600). Base de données en droits 600. Aucune clé dans le code. |
+| Secrets | Clés d'API, mots de passe des services et des partages réseau (NAS), secrets des webhooks, clé des lumières et liens privés des calendriers chiffrés dans la base (AES-256-GCM) avec `/config/secret.key` (droits 600). Base de données, sauvegardes et exports en droits 600. Aucune clé dans le code. |
 | Droits | Les profils non administrateurs ne voient que leurs propres téléchargements, réglages et historique ; toute route d'administration exige un profil administrateur protégé par code PIN. Vignettes, extraits au survol, vignettes de la barre de lecture et photos suivent les mêmes règles que la lecture (âge, bibliothèques autorisées) : un appareil sans profil choisi n'y a pas accès. |
 | Réseau local (SSRF) | Le relais des chaînes ne suit que les serveurs annoncés par la chaîne, refuse le réseau local (box, NAS, cette machine) à une chaîne venue d'Internet, y compris par redirection, et ne renvoie que de la vidéo, de l'audio ou du binaire (jamais une page ni un script). ffmpeg ne suit que des adresses web pour un flux web. Les images collées par adresse sont vérifiées de la même façon. |
 | Import d'archive | Contenu inspecté avant extraction : fichiers et dossiers ordinaires seulement (aucun lien, chemin absolu ni `..`), 20 Go décompressés au plus. |
@@ -58,7 +58,7 @@ Venus est pensé pour la maison, mais il est souvent ouvert sur Internet. Voici 
 ## Vérifier soi-même
 
 ```
-npm run security     # 30 attaques simulées sur un serveur jetable
+npm run security     # 34 attaques simulées sur un serveur jetable
 npm run audit        # npm audit + attaques simulées
 ```
 

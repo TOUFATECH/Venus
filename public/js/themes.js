@@ -174,6 +174,18 @@ export function planetMarkup(id = currentPlanet()) {
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
 const mix = (a, b, k) => { const x = rgb(a), y = rgb(b); return `#${x.map((v, i) => Math.round(v + (y[i] - v) * k).toString(16).padStart(2, '0')).join('')}`; };
 const trip = (hex) => rgb(hex).join(' ');
+// Texte secondaire toujours lisible : contraste WCAG entre deux couleurs, et couleur rapprochée du blanc (thème
+// sombre) ou du noir (thème clair) juste assez pour atteindre 4,5:1 sur le fond des panneaux (niveau AA)
+const lum = (hex) => { const [r, g, b] = rgb(hex).map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+export const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+export function legible(fg, bgs, min = 4.5) {
+  const list = Array.isArray(bgs) ? bgs : [bgs];
+  const to = lum(list[0]) < 0.4 ? '#ffffff' : '#000000';
+  const worst = (c) => Math.min(...list.map((b) => contrast(c, b)));
+  let c = fg;
+  for (let k = 0.02; worst(c) < min && k <= 1; k += 0.02) c = mix(fg, to, k);
+  return c;
+}
 // Toutes les couleurs de l'application pour une planète : fonds teintés, accent, textes secondaires, bordures
 const GLASS = {
   day: { '--night': '#f2f2f5', '--deep': '#ffffff', '--raise': '#e8e8ed', '--paper': '#1d1d1f', '--haze': '#5f5f66', '--dim': '#8a8a90',
@@ -185,7 +197,7 @@ export function themeVars(id, glassState = glassNow().state) {
   const t = PLANETS[id] || PLANETS[DEFAULT_PLANET];
   if (t.glass) {
     const g = GLASS[glassState] || GLASS.night;
-    return { ...g, '--night-rgb': trip(g['--night']), '--deep-rgb': trip(g['--deep']), '--raise-rgb': trip(g['--raise']), '--sulfur-rgb': trip(g['--sulfur']),
+    return { ...g, '--dim': legible(g['--dim'], [g['--deep'], g['--night']]), '--night-rgb': trip(g['--night']), '--deep-rgb': trip(g['--deep']), '--raise-rgb': trip(g['--raise']), '--sulfur-rgb': trip(g['--sulfur']),
       '--planet-bands': `linear-gradient(172deg, ${t.bands.map((c, i) => `${c} ${Math.round((i / (t.bands.length - 1)) * 100)}%`).join(', ')})` };
   }
   if (t.light) {
@@ -194,7 +206,7 @@ export function themeVars(id, glassState = glassNow().state) {
       '--night': t.night, '--deep': t.deep, '--raise': t.raise,
       '--night-rgb': trip(t.night), '--deep-rgb': trip(t.deep), '--raise-rgb': trip(t.raise),
       '--sulfur': t.accent, '--sulfur-rgb': trip(t.accent), '--dawn': t.accent2, '--glow': t.glow, '--tint': t.paper ? t.accent : '#7a7a7a',
-      '--paper': t.paper || '#111111', '--haze': t.haze || '#4f4f4f', '--dim': t.dim || '#7d7d7d', '--edge': 'rgb(0 0 0 / .12)',
+      '--paper': t.paper || '#111111', '--haze': t.haze || '#4f4f4f', '--dim': legible(t.dim || '#7d7d7d', [t.deep, t.night]), '--edge': 'rgb(0 0 0 / .12)',
       '--planet-bands': `linear-gradient(172deg, ${t.bands.map((c, i) => `${c} ${Math.round((i / (t.bands.length - 1)) * 100)}%`).join(', ')})`,
     };
   }
@@ -203,7 +215,7 @@ export function themeVars(id, glassState = glassNow().state) {
     '--night': t.night, '--deep': t.deep, '--raise': t.raise,
     '--night-rgb': trip(t.night), '--deep-rgb': trip(t.deep), '--raise-rgb': trip(t.raise),
     '--sulfur': t.accent, '--sulfur-rgb': trip(t.accent), '--dawn': t.accent2, '--glow': t.glow, '--tint': t.accent,
-    '--paper': paper, '--haze': t.haze || (t.mono ? '#a8a8a8' : mix('#a6a9b0', t.accent, 0.16)), '--dim': t.dim || (t.mono ? '#727272' : mix('#6e727c', t.accent, 0.14)),
+    '--paper': paper, '--haze': t.haze || (t.mono ? '#a8a8a8' : mix('#a6a9b0', t.accent, 0.16)), '--dim': legible(t.dim || (t.mono ? '#727272' : mix('#6e727c', t.accent, 0.14)), [t.deep, t.night]),
     '--edge': `rgb(${trip(mix('#eceae4', t.accent, 0.4))} / .12)`,
     '--planet-bands': `linear-gradient(${t.dir === 'flat' ? 180 : 172}deg, ${t.bands.map((c, i) => `${c} ${Math.round((i / (t.bands.length - 1)) * 100)}%`).join(', ')})`,
   };

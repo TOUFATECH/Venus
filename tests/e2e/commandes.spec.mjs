@@ -64,11 +64,14 @@ test('manette : flèches, validation et retour', async ({ page }) => {
     window.dispatchEvent(Object.assign(new Event('gamepadconnected'), { gamepad: { id: 'Manette de test' } }));
   });
   await expect(page.getByText(/Manette connectée/)).toBeVisible();
+  // La manette est lue une fois par image : on attend deux images, bouton enfoncé puis relâché, pour être sûr qu'il
+  // a été vu même quand la machine est lente (un appui de 80 ms pouvait tomber entre deux lectures)
+  const images = () => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
   const tap = async (i) => {
     await page.evaluate((k) => { window.__pad.buttons[k] = { pressed: true, value: 1 }; }, i);
-    await page.waitForTimeout(80);
+    await images();
     await page.evaluate((k) => { window.__pad.buttons[k] = { pressed: false, value: 0 }; }, i);
-    await page.waitForTimeout(80);
+    await images();
   };
   await tap(15); // droite : la sélection apparaît
   await expect.poll(() => page.evaluate(() => document.activeElement && document.activeElement.classList.contains('f'))).toBe(true);

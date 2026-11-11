@@ -9,9 +9,9 @@ import { execFile, spawn } from 'node:child_process';
 import path from 'node:path';
 import os from 'node:os';
 import { Router, HttpError, readBody, sendJson, sendFile } from './http.js';
-import { db, all, get, run, tx, itemsVersion, getSetting, setSetting } from './db.js';
+import { db, all, get, run, tx, itemsVersion, progressVersion, getSetting, setSetting } from './db.js';
 import { slugFor, resolveSlug, cleanName, pathFor, resolveEpisode } from './slugs.js';
-import { V, validate, passwordProblem, logSecurity, securityLog, listBans, unbanIp, banIp, attemptStats, isSecure, httpsMode } from './security.js';
+import { V, validate, passwordProblem, logSecurity, securityLog, listBans, unbanIp, banIp, attemptStats, isSecure, httpsMode, isPrivateIp } from './security.js';
 import { twofaOn, startChallenge, verifyChallenge, resendChallenge, twofaEmail, twofaStats, maskEmail } from './twofa.js';
 import { sendMail, smtpConf, smtpOn } from './smtp.js';
 import { lastAudit, runSecurityAudit } from './audit.js';
@@ -76,7 +76,8 @@ import { control, deviceId, logActivity, recentActivity, heartbeat, stopHeartbea
 import { scheduleRatings, refreshRatings, omdbKey, simklId, ratingsPending } from './ratings.js';
 import { wishlistOf, inWishlist, addWish, removeWish, runWatch, watchState, autoRequest, followMode, seerrLogin, listSeerrUsers, seerrUsers, linkSeerrUser, seerrUserOf } from './watch.js';
 import { searchOnline, discover as discoverTitles, discoverAvailable, seerrOn, seerrStatus, seerrRequest, seerrTest, seerrConf, resolveTmdb, trailerFor } from './discover.js';
-import { discover, listShares, mountRemote, unmountRemote, remoteOf, describe, netState, xtreamUrl } from './netshare.js';
+import { localDay, localDayPlus, clockInfo, setZone, validZone, chosenZone, serverZone, zoneOffset } from './clock.js';
+import { discover, listShares, mountRemote, unmountRemote, remoteOf, packRemote, remoteReady, loginRefused, describe, netState, xtreamUrl } from './netshare.js';
 
 export const router = new Router();
 const imagesDir = path.join(config.dataDir, 'images');
@@ -96,6 +97,91 @@ function ageClause(profile, alias = 'i') {
   };
 }
 
+// ------------------------------------------------------------------ catalogue en mémoire
+// Films, séries et clips (les titres « de premier niveau »), gardés en mémoire tant que la table des titres ne
+// change pas. L'accueil et les titres similaires d'une fiche relisaient sinon, à chaque requête, toutes ces lignes
+// en entier (résumé, distribution, fiche technique…) puis redécodaient leur distribution : 0,6 s pour l'accueil et
+// 0,25 s par fiche sur une médiathèque de 5 000 films, pendant lesquelles le serveur ne répondait à personne.
+// Ici : une seule lecture (sans les colonnes lourdes qui ne servent pas aux listes), genres et distribution
+// décodés une fois. Les lignes sont partagées entre les requêtes : on ne les modifie jamais.
+const CAT_SKIP = new Set(['probe', 'nfo', 'custom', 'tmdb_eps', 'tmdb_seasons', 'guide_eps', 'stream_opts', 'ch_error']);
+let catCols = null;
+let catalogue = { v: -1, rows: [], byId: new Map() };
+const names = (list) => (Array.isArray(list) ? list.filter(Boolean).map((x) => ({ name: x.name })) : []);
+function topItems() {
+  if (catalogue.v === itemsVersion) return catalogue;
+  const v = itemsVersion;
+  catCols ||= db.prepare('PRAGMA table_info(items)').all().map((c) => c.name).filter((c) => !CAT_SKIP.has(c)).join(', ');
+  // Par identifiant : l'ordre dans lequel SQLite rendait déjà ces lignes (les égalités des tris en dépendent)
+  const rows = all(`SELECT ${catCols} FROM items WHERE type IN ('movie','show','clip') ORDER BY id`);
+  for (const r of rows) {
+    const c = r.credits ? parseJson(r.credits, null) : null;
+    // Distribution réduite à ce que les rapprochements utilisent : noms (acteurs, réalisation, création) et saga
+    r._cred = c ? { cast: names(c.cast), directors: names(c.directors), creators: names(c.creators), collection: c.collection || undefined } : null;
+    r._genres = parseJson(r.genres, []);
+    // Réalisation et six premiers rôles (rapprochements de l'accueil) ; note moyenne des sites, sinon note TMDB
+    r._people = r._cred ? [...r._cred.directors, ...r._cred.cast.slice(0, 6)].map((x) => x.name) : [];
+    const rt = r.ratings ? parseJson(r.ratings, null) : null;
+    r._score = (rt && rt.score) || (r.vote ? r.vote * 10 : 0);
+    r.credits = undefined;
+  }
+  catalogue = { v, rows, byId: new Map(rows.map((r) => [r.id, r])) };
+  return catalogue;
+}
+// Le même filtre que ageClause(), appliqué aux lignes du catalogue : pas les autres versions d'un film,
+// bibliothèques autorisées, âge maximum du profil
+function topFilter(profile) {
+  const r = permsOf(profile);
+  const libs = !r.admin && Array.isArray(r.libraries) ? new Set(r.libraries) : null;
+  const max = profile && profile.max_age != null ? profile.max_age : null;
+  const unrated = max != null && !!getSetting('kids_allow_unrated', false);
+  return (i) => i.version_of == null && (!libs || libs.has(i.library_id)) && (max == null || (i.age != null ? i.age <= max : unrated));
+}
+// Dernier épisode arrivé et dernière diffusion de chaque série (tête d'affiche de l'accueil)
+let lastEpCache = { v: -1 };
+function lastEpisodes() {
+  if (lastEpCache.v !== itemsVersion) {
+    lastEpCache = { v: itemsVersion,
+      lastEp: new Map(all("SELECT show_id, MAX(added_at) AS at FROM items WHERE type = 'episode' GROUP BY show_id").map((r) => [r.show_id, r.at])),
+      lastAir: new Map(all("SELECT show_id, MAX(release_date) AS d FROM items WHERE type = 'episode' AND release_date IS NOT NULL GROUP BY show_id").map((r) => [r.show_id, r.d])) };
+  }
+  return lastEpCache;
+}
+
+// Épisodes sortis ces 60 derniers jours (ou ajoutés ces 30 derniers jours), du plus récent au plus ancien : relus
+// seulement quand les titres changent, et au moins une fois par heure (la fenêtre de dates glisse)
+let recentEpsCache = { key: '' };
+function recentEpisodes(since, today) {
+  const key = `${itemsVersion}|${since}|${today}|${Math.floor(Date.now() / 3600e3)}`;
+  if (recentEpsCache.key !== key) {
+    recentEpsCache = { key, rows: all(`SELECT e.*, s.title AS show_title, s.backdrop AS show_backdrop, s.poster AS show_poster, s.age AS show_age
+      FROM items e JOIN items s ON s.id = e.show_id
+      WHERE e.type = 'episode' AND ((e.release_date >= ? AND e.release_date <= ?) OR (e.release_date IS NULL AND e.added_at > ?))
+      ORDER BY COALESCE(e.release_date, date(e.added_at / 1000, 'unixepoch')) DESC, e.season_num DESC, e.episode_num DESC`,
+    since, today, Date.now() - 30 * 864e5) };
+  }
+  return recentEpsCache.rows;
+}
+// Ce que le foyer regarde le plus (rangée « Populaires ») et les trois derniers titres regardés par un profil
+// (rangées « Parce que vous avez regardé… ») : recalculés seulement quand une lecture ou un titre a changé
+let playsCache = { iv: -1, pv: -1 };
+function householdPlays() {
+  if (playsCache.iv !== itemsVersion || playsCache.pv !== progressVersion) {
+    playsCache = { iv: itemsVersion, pv: progressVersion, map: new Map(all(`SELECT COALESCE(i.show_id, i.id) AS tid, COUNT(*) AS n FROM progress pr JOIN items i ON i.id = pr.item_id GROUP BY tid`).map((r) => [r.tid, r.n])) };
+  }
+  return playsCache.map;
+}
+const lastSeenCache = new Map();
+function lastSeenTitles(pid) {
+  const hit = lastSeenCache.get(pid);
+  if (hit && hit.iv === itemsVersion && hit.pv === progressVersion) return hit.rows;
+  const rows = all(`SELECT COALESCE(i.show_id, i.id) AS tid, MAX(pr.updated_at) AS t FROM progress pr JOIN items i ON i.id = pr.item_id
+      WHERE pr.profile_id = ? AND i.type IN ('movie','episode') GROUP BY tid ORDER BY t DESC LIMIT 3`, pid);
+  if (lastSeenCache.size > 40) lastSeenCache.clear();
+  lastSeenCache.set(pid, { iv: itemsVersion, pv: progressVersion, rows });
+  return rows;
+}
+
 // Images et extraits d'un titre : réservés au profil qui a le droit de voir ce titre (âge, bibliothèques).
 // Le profil vient du jeton de l'appareil (cookie ou en-tête), comme pour la lecture.
 function requireVisible(ctx, item, msg = 'Introuvable') {
@@ -104,12 +190,17 @@ function requireVisible(ctx, item, msg = 'Introuvable') {
   return p;
 }
 const uiPrefsOf = (p) => { try { return JSON.parse((p && p.ui_prefs) || '{}') || {}; } catch { return {}; } };
+const UNRATED_TYPES = new Set(['track', 'photo', 'book', 'audiobook']);
 function visible(profile, item) {
   if (!item) return false;
   const r = permsOf(profile);
   if (!r.admin && Array.isArray(r.libraries) && item.library_id != null && !r.libraries.includes(item.library_id)) return false;
   if (!profile || profile.max_age == null) return true;
-  const top = ['movie', 'show', 'clip', 'channel'].includes(item.type) ? item : get('SELECT age FROM items WHERE id=?', item.show_id);
+  // Musique, photos et livres n'ont pas de classification par âge : ils suivent les bibliothèques autorisées du
+  // profil, comme leurs listes (avant, un profil avec une limite d'âge les voyait sans pouvoir les ouvrir)
+  if (UNRATED_TYPES.has(item.type)) return true;
+  // Épisode, saison : l'âge de la série ; bonus : l'âge du film ou de la série auquel il est rattaché
+  const top = ['movie', 'show', 'clip', 'channel'].includes(item.type) ? item : get('SELECT age FROM items WHERE id=?', item.show_id || item.parent_id);
   if (!top) return false;
   if (top.age == null) return getSetting('kids_allow_unrated', false);
   return top.age <= profile.max_age;
@@ -136,7 +227,8 @@ function mediaSummary(probeJson) {
 const CODEC = { hevc: 'HEVC', h264: 'H.264', av1: 'AV1', vp9: 'VP9', mpeg2video: 'MPEG-2', mpeg4: 'MPEG-4', eac3: 'E-AC3', ac3: 'AC3', dts: 'DTS', truehd: 'TrueHD', aac: 'AAC', flac: 'FLAC', opus: 'Opus', mp3: 'MP3', vorbis: 'Vorbis',
   subrip: 'SRT', ass: 'ASS', ssa: 'SSA', webvtt: 'VTT', vtt: 'VTT', hdmv_pgs_subtitle: 'PGS', dvd_subtitle: 'VobSub', mov_text: 'TX3G', srt: 'SRT' };
 
-const today = () => new Date().toISOString().slice(0, 10);
+// Temps d'écran : compté par jour local (remis à zéro à minuit, heure du serveur — et non à minuit UTC)
+const today = () => localDay();
 export function addWatchTime(pid, seconds) {
   if (!(seconds > 0)) return;
   run('INSERT INTO watch_time(profile_id, day, seconds) VALUES(?, ?, ?) ON CONFLICT(profile_id, day) DO UPDATE SET seconds = seconds + excluded.seconds', pid, today(), seconds);
@@ -191,14 +283,21 @@ function channelNumber(i) {
 events.on('library', () => { chanNums = null; });
 
 // État vu / en cours / non vu, par profil (films, clips, et séries épisode par épisode)
+const statusCache = new Map();
 function statusIndex(pid) {
+  const hit = statusCache.get(pid);
+  if (hit && hit.iv === itemsVersion && hit.pv === progressVersion) return hit.idx;
+  const iv = itemsVersion, pv = progressVersion;
   const prog = new Map(all('SELECT item_id, position, duration, watched, updated_at FROM progress WHERE profile_id=?', pid).map((r) => [r.item_id, r]));
   const shows = new Map(all(`SELECT e.show_id AS sid, COUNT(*) AS total, MAX(p.updated_at) AS last,
       SUM(CASE WHEN p.watched = 1 THEN 1 ELSE 0 END) AS seen,
       SUM(CASE WHEN p.watched = 0 AND p.position > 0 THEN 1 ELSE 0 END) AS part
     FROM items e LEFT JOIN progress p ON p.item_id = e.id AND p.profile_id = ?
     WHERE e.type = 'episode' GROUP BY e.show_id`, pid).map((r) => [r.sid, r]));
-  return { prog, shows };
+  const idx = { prog, shows };
+  if (statusCache.size > 40) statusCache.clear();
+  statusCache.set(pid, { iv, pv, idx });
+  return idx;
 }
 function withStatus(c, idx) {
   if (c.type === 'show') {
@@ -585,8 +684,7 @@ const HERO_ORDER = ['anime', 'movie', 'anime', 'show', 'anime', 'movie', 'anime'
 // Seules les sorties de l'année (film sorti, ou dernier épisode diffusé, il y a moins de douze mois) et présentes sur
 // le NAS ; s'il y en a moins de trois, les arrivées les plus récentes complètent pour que l'accueil ne soit pas vide.
 function newHero(base) {
-  const lastEp = new Map(all("SELECT show_id, MAX(added_at) AS at FROM items WHERE type = 'episode' GROUP BY show_id").map((r) => [r.show_id, r.at]));
-  const lastAir = new Map(all("SELECT show_id, MAX(release_date) AS d FROM items WHERE type = 'episode' AND release_date IS NOT NULL GROUP BY show_id").map((r) => [r.show_id, r.d]));
+  const { lastEp, lastAir } = lastEpisodes();
   const freshness = (i) => Math.max(i.added_at || 0, (i.type === 'show' && lastEp.get(i.id)) || 0);
   const dateOf = (i) => (i.type === 'show' && lastAir.get(i.id)) || i.release_date || (i.year ? `${i.year}-07-01` : '');
   const cutoff = new Date(Date.now() - 365 * 864e5).toISOString().slice(0, 10);
@@ -618,11 +716,12 @@ function newHero(base) {
 // la dernière chaîne regardée avec son programme, et qui est là ce soir
 router.get('/api/home/tonight', async (ctx) => {
   const p = requireProfile(ctx);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const from = today.toISOString().slice(0, 10), to = new Date(today.getTime() + 2 * 864e5).toISOString().slice(0, 10);
+  // Aujourd'hui et demain, en jours locaux (avant : minuit local converti en jour UTC, soit « hier et aujourd'hui »
+  // dans tout fuseau en avance sur UTC — la sortie d'hier s'affichait « Demain » et celle de demain manquait)
+  const from = localDay(), to = localDayPlus(2);
   const safe = (f) => f().catch(() => ({ entries: [] }));
   const [shows, anime] = await Promise.all([safe(() => upcomingShows(p, 'show', ageClause(p, 's'))), safe(() => upcomingShows(p, 'anime', ageClause(p, 's')))]);
-  const label = (e) => `${new Date(`${e.date}T12:00:00`).toDateString() === new Date().toDateString() ? 'Aujourd’hui' : 'Demain'}${e.at ? ` ${new Date(e.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`;
+  const label = (e) => `${e.date === from ? 'Aujourd’hui' : 'Demain'}${e.at ? ` ${new Date(e.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}`;
   const soon = [...shows.entries, ...anime.entries].filter((e) => e.date >= from && e.date < to)
     .sort((a, b) => (b.nas ? 2 : b.arr || b.wanted ? 1 : 0) - (a.nas ? 2 : a.arr || a.wanted ? 1 : 0) || (a.at || 0) - (b.at || 0) || (b.pop || 0) - (a.pop || 0))
     .slice(0, 3).map((e) => ({ title: e.show, sub: `${e.season ? `S${e.season} ` : ''}É${e.episode}${e.network ? ` · ${e.network}` : ''}`, when: label(e), poster: e.poster || e.image || null, kind: e.kind, nas: !!e.nas, requested: !!(e.arr || e.wanted), showId: e.nas || null }));
@@ -646,13 +745,14 @@ router.get('/api/home', (ctx) => {
   const idx = statusIndex(p.id);
   const rows = [];
   const C = (i, prog) => withStatus(card(i, prog), idx);
-  const base = all(`SELECT i.* FROM items i WHERE i.type IN ('movie','show','clip') AND ${age.sql}`, ...age.args);
+  const base = topItems().rows.filter(topFilter(p));
   const day = Math.floor(Date.now() / 864e5);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay();
 
   // 1. Reprendre la lecture, là où on s'est arrêté (+ épisode suivant d'une série en cours)
+  // (à date égale — une saison marquée « vue » d'un coup —, l'ordre des titres, comme avant l'index)
   const prog = all(`SELECT pr.*, i.type, i.show_id FROM progress pr JOIN items i ON i.id = pr.item_id
-                    WHERE pr.profile_id = ? ORDER BY pr.updated_at DESC LIMIT 200`, p.id);
+                    WHERE pr.profile_id = ? ORDER BY pr.updated_at DESC, pr.item_id LIMIT 200`, p.id);
   const cont = [], stale = []; const seenShows = new Set(); const STALE_MS = 21 * 864e5; // au-delà de 3 semaines : « vous aviez laissé »
   for (const pr of prog) {
     if (cont.length >= 20) break;
@@ -695,11 +795,7 @@ router.get('/api/home', (ctx) => {
 
   // 2. Nouveaux épisodes : sortis ces 60 derniers jours (date TMDB), sinon ajoutés ces 30 derniers jours
   const since = new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10);
-  const freshEps = all(`SELECT e.*, s.title AS show_title, s.backdrop AS show_backdrop, s.poster AS show_poster, s.age AS show_age
-      FROM items e JOIN items s ON s.id = e.show_id
-      WHERE e.type = 'episode' AND ((e.release_date >= ? AND e.release_date <= ?) OR (e.release_date IS NULL AND e.added_at > ?))
-      ORDER BY COALESCE(e.release_date, date(e.added_at / 1000, 'unixepoch')) DESC, e.season_num DESC, e.episode_num DESC`,
-  since, today, Date.now() - 30 * 864e5);
+  const freshEps = recentEpisodes(since, today);
   const newEps = []; const shown = new Set();
   for (const e of freshEps) {
     if (shown.has(e.show_id) || !visible(p, e)) continue;
@@ -734,19 +830,18 @@ router.get('/api/home', (ctx) => {
   for (const [iid, pr] of idx.prog) { if (pr.position > 0 || pr.watched) seenIds.add(iid); }
   for (const [sid] of idx.shows) { const r = idx.shows.get(sid); if (r && (r.seen || r.part)) seenIds.add(sid); }
   const unseen = base.filter((i) => i.type !== 'clip' && !seenIds.has(i.id));
-  const credOf = new Map(base.map((i) => [i.id, parseJson(i.credits, null)]));
-  const peopleOf = (i) => { const c = credOf.get(i.id); return c ? [...(c.directors || []), ...(c.cast || []).slice(0, 6)].map((x) => x.name) : []; };
-  const lastSeen = all(`SELECT COALESCE(i.show_id, i.id) AS tid, MAX(pr.updated_at) AS t FROM progress pr JOIN items i ON i.id = pr.item_id
-      WHERE pr.profile_id = ? AND i.type IN ('movie','episode') GROUP BY tid ORDER BY t DESC LIMIT 3`, p.id);
+  const credOf = { get: (id) => { const r = byId.get(id); return r ? r._cred : null; } };
+  const peopleOf = (i) => i._people;
+  const lastSeen = lastSeenTitles(p.id);
   const byId = new Map(base.map((i) => [i.id, i]));
   const usedBecause = new Set();
   for (const ls of lastSeen.slice(0, 3)) {
     const ref = byId.get(ls.tid);
     if (!ref) continue;
-    const g = parseJson(ref.genres, []), pp = new Set(peopleOf(ref)), col = (credOf.get(ref.id) || {}).collection;
+    const g = ref._genres, pp = new Set(peopleOf(ref)), col = (credOf.get(ref.id) || {}).collection;
     const sim = unseen.filter((i) => i.id !== ref.id).map((i) => {
       const c = credOf.get(i.id) || {};
-      const s = parseJson(i.genres, []).filter((x) => g.includes(x)).length * 2 + peopleOf(i).filter((n) => pp.has(n)).length * 3
+      const s = i._genres.filter((x) => g.includes(x)).length * 2 + peopleOf(i).filter((n) => pp.has(n)).length * 3
         + (col && c.collection && c.collection.id === col.id ? 8 : 0) + (i.type === ref.type ? 1 : 0) + (i.vote || 0) / 5
         // Animé pour un animé, même époque
         + ((i.category === 'anime') === (ref.category === 'anime') ? 2 : -2) + (i.year && ref.year && Math.abs(i.year - ref.year) <= 5 ? 1 : 0);
@@ -766,10 +861,10 @@ router.get('/api/home', (ctx) => {
     }
   }
   // Pépites jamais vues : les mieux notées qu'on n'a pas encore commencées
-  const scoreOfItem = (i) => { const r = parseJson(i.ratings, null); return (r && r.score) || (i.vote ? i.vote * 10 : 0); };
+  const scoreOfItem = (i) => i._score;
   // Les avis « j'ai aimé / bof » font remonter les genres aimés et descendre les autres
   const taste = genreTaste(p.id);
-  const gems = unseen.filter((i) => scoreOfItem(i) >= 74).sort((a, b) => (scoreOfItem(b) + 4 * tasteScore(taste, parseJson(b.genres, []))) - (scoreOfItem(a) + 4 * tasteScore(taste, parseJson(a.genres, [])))).slice(0, 18);
+  const gems = unseen.filter((i) => scoreOfItem(i) >= 74).sort((a, b) => (scoreOfItem(b) + 4 * tasteScore(taste, b._genres)) - (scoreOfItem(a) + 4 * tasteScore(taste, a._genres))).slice(0, 18);
   if (gems.length >= 3) rows.push({ id: 'gems', title: 'Pépites que vous n’avez pas vues', items: gems.map((i) => C(i)) });
   // Courts : moins d'1 h 30
   const shorts = unseen.filter((i) => i.type === 'movie' && (i.runtime || (i.duration ? i.duration / 60 : 999)) <= 90).sort((a, b) => scoreOfItem(b) - scoreOfItem(a)).slice(0, 18);
@@ -785,7 +880,7 @@ router.get('/api/home', (ctx) => {
   }
 
   // 5. Populaires : popularité TMDB + ce que le foyer regarde le plus
-  const plays = new Map(all(`SELECT COALESCE(i.show_id, i.id) AS tid, COUNT(*) AS n FROM progress pr JOIN items i ON i.id = pr.item_id GROUP BY tid`).map((r) => [r.tid, r.n]));
+  const plays = householdPlays();
   const scored = base.filter((i) => i.type !== 'clip').map((i) => ({ i, s: Math.log10((i.popularity || 0) + 1) * 10 + (plays.get(i.id) || 0) * 6 + (i.vote || 0) }))
     .filter((x) => x.s > 0).sort((a, b) => b.s - a.s);
   if (scored.length >= 4) rows.push({ id: 'popular', title: 'Populaires', items: scored.slice(0, 20).map((x) => C(x.i)) });
@@ -807,7 +902,7 @@ router.get('/api/home', (ctx) => {
   if (top.length >= 4) rows.push({ id: 'top', title: 'Les mieux notés', items: top.slice(0, 10).map((i) => C(i)) });
 
   const genres = new Map();
-  for (const i of base) for (const g of parseJson(i.genres, [])) { if (!genres.has(g)) genres.set(g, []); genres.get(g).push(i); }
+  for (const i of base) for (const g of i._genres) { if (!genres.has(g)) genres.set(g, []); genres.get(g).push(i); }
   for (const [g, list] of seededShuffle([...genres.entries()].filter(([, l]) => l.length >= 4), day).slice(0, 4)) {
     rows.push({ id: `g:${g}`, title: g, items: seededShuffle(list, day + g.length).slice(0, 24).map((i) => C(i)) });
   }
@@ -981,7 +1076,7 @@ router.get('/api/items/:id', async (ctx) => {
     const seasons = all("SELECT * FROM items WHERE type='season' AND show_id=? ORDER BY season_num = 0, season_num", item.id);
     const eps = all("SELECT * FROM items WHERE type='episode' AND show_id=? ORDER BY season_num, episode_num", item.id);
     const pm = progressMap(p.id, eps.map((e) => e.id));
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDay();
     // Sans données TMDB : guide des épisodes de TVmaze (sans clé), attendu au plus 3,5 s
     const noTmdb = !seasons.some((s) => parseJson(s.tmdb_eps, []).length);
     // Guide TVmaze aussi quand des saisons entières manquent (TMDB ne donne que leur nombre d'épisodes)
@@ -1065,10 +1160,10 @@ router.get('/api/items/:id', async (ctx) => {
     out.totalDuration = eps.reduce((n, e) => n + (e.duration || 0), 0);
   }
   // Saga : les autres films de la même collection présents dans Venus
-  const age = ageClause(p);
   if (out.credits && out.credits.collection) {
     const cid = out.credits.collection.id;
-    const list = all(`SELECT i.* FROM items i WHERE i.type = 'movie' AND i.credits LIKE ? AND ${age.sql}`, `%"collection":{"id":${cid},%`, ...age.args)
+    const inAge = topFilter(p);
+    const list = topItems().rows.filter((i) => i.type === 'movie' && i._cred && i._cred.collection && i._cred.collection.id === cid && inAge(i))
       .sort((a, b) => (a.release_date || String(a.year)).localeCompare(b.release_date || String(b.year)));
     if (list.length > 1) out.saga = { name: out.credits.collection.name, items: list.map((x) => card(x)) };
   }
@@ -1084,19 +1179,22 @@ router.get('/api/items/:id', async (ctx) => {
     const cr = parseJson(item.credits, {}) || {};
     const castNames = (cr.cast || []).slice(0, 10).map((x) => x.name);
     const dirNames = [...(cr.directors || []), ...(cr.creators || [])].map((x) => x.name);
-    const cands = all(`SELECT i.* FROM items i WHERE i.type IN ('movie','show') AND i.id != ? AND ${age.sql}`, item.id, ...age.args);
+    // Candidats : le catalogue en mémoire (genres et distribution déjà décodés), filtré comme les listes du profil
+    const keep = topFilter(p);
+    const cands = topItems().rows.filter((c) => c.type !== 'clip' && c.id !== item.id && keep(c));
+    const NOBODY = { cast: [], directors: [], creators: [] };
     const scored = cands.map((c) => {
-      const g = parseJson(c.genres, []).filter((x) => genres.includes(x)).length;
-      const cc = parseJson(c.credits, {}) || {};
-      const shared = (cc.cast || []).filter((x) => castNames.includes(x.name)).length;
-      const sameDir = [...(cc.directors || []), ...(cc.creators || [])].some((x) => dirNames.includes(x.name));
+      const g = c._genres.filter((x) => genres.includes(x)).length;
+      const cc = c._cred || NOBODY;
+      const shared = cc.cast.filter((x) => castNames.includes(x.name)).length;
+      const sameDir = [...cc.directors, ...cc.creators].some((x) => dirNames.includes(x.name));
       return { c, s: g + shared * 1.5 + (sameDir ? 2 : 0) + (c.type === item.type ? 0.5 : 0) + ((c.category === 'anime') === (item.category === 'anime') ? 0.5 : -1), g, shared, cc };
     });
     out.similar = scored.filter((x) => x.g >= 1 || x.shared >= 1).sort((a, b) => b.s - a.s).slice(0, 18).map((x) => card(x.c));
     // Avec les mêmes acteurs : une rangée par acteur principal présent dans d'autres titres de la médiathèque
     out.withCast = castNames.slice(0, 5).map((name) => ({
       name, role: ((cr.cast || []).find((x) => x.name === name) || {}).role || '', photo: ((cr.cast || []).find((x) => x.name === name) || {}).photo || null,
-      items: scored.filter((x) => (x.cc.cast || []).some((p) => p.name === name) || (x.cc.directors || []).some((p) => p.name === name)).sort((a, b) => (b.c.year || 0) - (a.c.year || 0)).slice(0, 18).map((x) => card(x.c)),
+      items: scored.filter((x) => x.cc.cast.some((q) => q.name === name) || x.cc.directors.some((q) => q.name === name)).sort((a, b) => (b.c.year || 0) - (a.c.year || 0)).slice(0, 18).map((x) => card(x.c)),
     })).filter((r) => r.items.length).slice(0, 3);
   }
   // Compression (admin) : copie prête à valider, en cours, ou proposition avec le gain estimé
@@ -1224,7 +1322,7 @@ router.get('/api/stats', (ctx) => {
       sh.secs += t; shows.set(r.show_id, sh);
     } else if (r.type === 'movie' && r.watched) movies.push({ id: r.id, title: r.title, poster: r.poster, at: r.updated_at });
   }
-  const days = new Set(yr.map((r) => new Date(r.updated_at).toISOString().slice(0, 10)));
+  const days = new Set(yr.map((r) => localDay(r.updated_at)));
   // Plus longue série de jours consécutifs avec au moins une lecture
   let best = 0, cur = 0, prev = null;
   for (const d of [...days].sort()) { const t = Date.parse(d); cur = prev != null && t - prev === 864e5 ? cur + 1 : 1; best = Math.max(best, cur); prev = t; }
@@ -1255,7 +1353,7 @@ router.get('/api/stats', (ctx) => {
     // Calendrier : minutes regardées chaque jour de l'année (temps réel de lecture, sinon reconstitué)
     calendar: (() => {
       const m = new Map(all('SELECT day, seconds FROM watch_time WHERE profile_id = ? AND day LIKE ?', p.id, `${year}-%`).map((r) => [r.day, Math.round(r.seconds / 60)]));
-      if (!m.size) for (const r of yr) { const k = new Date(r.updated_at).toISOString().slice(0, 10); m.set(k, (m.get(k) || 0) + Math.round(secs(r) / 60)); }
+      if (!m.size) for (const r of yr) { const k = localDay(r.updated_at); m.set(k, (m.get(k) || 0) + Math.round(secs(r) / 60)); }
       return Object.fromEntries(m);
     })(),
     topAnime: [...shows.values()].filter((x) => x.anime && (x.eps || x.secs >= 600)).sort((a, b) => b.secs - a.secs).slice(0, 6).map((x) => ({ ...x, hours: Math.round(x.secs / 36) / 100 })),
@@ -1309,10 +1407,14 @@ router.post('/api/items/:id/mylist', (ctx) => {
   const p = requireProfile(ctx);
   const id = Number(ctx.params.id);
   const exists = get('SELECT 1 FROM mylist WHERE profile_id=? AND item_id=?', p.id, id);
+  const it = get('SELECT * FROM items WHERE id = ?', id);
   if (exists) run('DELETE FROM mylist WHERE profile_id=? AND item_id=?', p.id, id);
-  else run('INSERT INTO mylist(profile_id, item_id, added_at) VALUES(?, ?, ?)', p.id, id, Date.now());
+  else {
+    // Titre inconnu (erreur 500 avant) ou que ce profil n'a pas le droit de voir (âge, bibliothèque)
+    if (!it || !visible(p, it)) throw new HttpError(404, 'Introuvable');
+    run('INSERT INTO mylist(profile_id, item_id, added_at) VALUES(?, ?, ?)', p.id, id, Date.now());
+  }
   // Série ajoutée à « Ma liste » : ses nouvelles saisons seront demandées à Seerr
-  const it = get('SELECT type FROM items WHERE id = ?', id);
   const follows = !exists && it && it.type === 'show' && seerrOn() && followMode() !== 'off';
   if (follows) setTimeout(() => runWatch().catch(() => {}), 2000);
   sendJson(ctx.res, { inList: !exists, follows });
@@ -1460,8 +1562,8 @@ router.post('/api/admin/channels/check', async (ctx) => {
 // Bande-annonce à la demande (sans clé TMDB) : recherche YouTube côté serveur, mémorisée
 const trailerLimiter = new Map();
 router.post('/api/items/:id/trailer', async (ctx) => {
-  requireProfile(ctx);
   const id = Number(ctx.params.id);
+  requireVisible(ctx, get('SELECT * FROM items WHERE id = ?', id));
   const last = trailerLimiter.get(id) || 0;
   if (Date.now() - last < 5000) throw new HttpError(429, 'Un instant…');
   trailerLimiter.set(id, Date.now());
@@ -1472,7 +1574,7 @@ router.post('/api/items/:id/watched', async (ctx) => {
   const p = requireProfile(ctx);
   const b = await readBody(ctx.req);
   const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
-  if (!item) throw new HttpError(404, 'Introuvable');
+  if (!item || !visible(p, item)) throw new HttpError(404, 'Introuvable');
   const targets = item.type === 'show' ? all("SELECT id, duration FROM items WHERE type='episode' AND show_id=?", item.id)
     : item.type === 'season' ? all("SELECT id, duration FROM items WHERE type='episode' AND parent_id=?", item.id) : [item];
   traktWatched(p.id, targets.map((t) => t.id), b.watched !== false);
@@ -1493,6 +1595,7 @@ router.post('/api/progress', async (ctx) => {
   let pos = Math.max(0, Number(b.position) || 0);
   const dur = Math.max(0, Number(b.duration) || 0);
   if (!id) throw new HttpError(400, 'itemId requis');
+  if (!visible(p, get('SELECT * FROM items WHERE id = ?', id))) throw new HttpError(404, 'Introuvable');
   // Endormi devant l'écran : aucun geste depuis longtemps alors que la vidéo défile → la reprise se fait au
   // dernier geste (moins une minute), pas là où la vidéo s'est arrêtée toute seule
   const sleepMin = Number(getSetting('sleep_rewind_min', 45)) || 45;
@@ -1523,7 +1626,7 @@ router.post('/api/nowplaying', async (ctx) => {
   const b = await readBody(ctx.req);
   if (b.stop) { stopHeartbeat(ctx.auth.token); return sendJson(ctx.res, { ok: true }); }
   const item = get('SELECT i.*, s.title AS show_title, s.poster AS show_poster, s.backdrop AS show_backdrop FROM items i LEFT JOIN items s ON s.id = i.show_id WHERE i.id = ?', Number(b.itemId));
-  if (!item) throw new HttpError(404, 'Introuvable');
+  if (!item || !visible(p, item)) throw new HttpError(404, 'Introuvable');
   const label = item.type === 'episode' ? `${item.show_title} S${item.season_num}É${item.episode_num}` : item.title;
   heartbeat(ctx.auth.token, {
     itemId: item.id, label, title: item.title, showTitle: item.show_title || null, showId: item.show_id || null, type: item.type,
@@ -1984,7 +2087,7 @@ router.get('/img/:name', async (ctx) => {
     ctx.res.setHeader('Vary', 'Accept');
     const out = path.join(imagesDir, 'w', `${w}_${name.replace(/\.(jpe?g|png|webp)$/i, webp ? '.webp' : '.jpg')}`);
     if (!fs.existsSync(out)) {
-      if (!resizing.has(out)) resizing.set(out, resizeImage(src, out, w, webp).finally(() => resizing.delete(out)));
+      if (!resizing.has(out)) resizing.set(out, resizeSlot().then(() => resizeImage(src, out, w, webp)).finally(() => { resizeDone(); resizing.delete(out); }));
       const ok = await resizing.get(out);
       if (!ok) return sendFile(ctx.req, ctx.res, src, { cache: 'public, max-age=2592000, immutable' });
     }
@@ -1993,6 +2096,13 @@ router.get('/img/:name', async (ctx) => {
   sendFile(ctx.req, ctx.res, src, { cache: 'public, max-age=2592000, immutable' });
 });
 const resizing = new Map();
+// Quelques réductions d'images à la fois, pas plus : la première ouverture d'une grille de 70 affiches lançait
+// sinon 70 ffmpeg d'un coup (jusqu'à 100 en HTTP/2), de quoi faire bégayer une lecture en cours sur un petit NAS
+const RESIZE_MAX = Math.max(2, Math.min(4, Math.floor(os.cpus().length / 2)));
+let resizeActive = 0;
+const resizeWaiting = [];
+const resizeSlot = () => new Promise((resolve) => { if (resizeActive < RESIZE_MAX) { resizeActive++; resolve(); } else resizeWaiting.push(resolve); });
+const resizeDone = () => { const next = resizeWaiting.shift(); if (next) next(); else resizeActive--; };
 let webpCheck = null;
 const webpOk = () => (webpCheck ||= new Promise((resolve) => execFile(config.ffmpeg, ['-hide_banner', '-encoders'], { timeout: 10000 }, (e, out) => resolve(!e && /libwebp/.test(String(out))))));
 function resizeImage(src, out, w, webp = false) {
@@ -2112,6 +2222,8 @@ router.post('/api/items/:id/subtitles', async (ctx) => {
   const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
   if (!item || !visible(p, item)) throw new HttpError(404, 'Introuvable');
   const b = await readBody(ctx.req);
+  // Sans numéro de fichier valide : demande invalide (et non une panne d'OpenSubtitles)
+  if (!(Number(b.fileId) > 0)) throw new HttpError(400, 'Sous-titre à télécharger non précisé');
   try { sendJson(ctx.res, await downloadSub(item.id, b.fileId, b.lang)); } catch (e) { throw new HttpError(502, e.message); }
 });
 
@@ -2216,6 +2328,7 @@ router.get('/api/admin', (ctx) => {
       omdbConfigured: !!omdbKey(), simklConfigured: !!simklId(), traktConfigured: !!traktId(), traktSecretConfigured: !!traktSecret(), posterSource: posterSource(), seerrUrl: seerrConf().url, seerrConfigured: seerrOn(), seerrAuto: autoRequest(), seerrFollow: followMode(), opensubtitlesConfigured: osOn(), notify: { ...channels(), telegramToken: channels().telegramToken ? '••••' : '', discord: channels().discord ? '••••' : '', notifyNew: String(getSetting('notify_new', '1')) !== '0', tgMedia: String(getSetting('tg_media', '1')) !== '0', tgDownloads: String(getSetting('tg_downloads', '1')) !== '0', notifyEpisodes: String(getSetting('notify_episodes', '1')) !== '0', push: pushCount() }, autoBackup: String(getSetting('auto_backup', '1')) !== '0', backupCopyDir: getSetting('backup_copy_dir', ''), postersFree: getSetting('posters_free', '1') !== '0', opensubtitlesUser: getSetting('opensubtitles_user', ''),
     },
     system: { cpus: os.cpus().length, load: os.loadavg()[0], memFree: os.freemem(), memTotal: os.totalmem(), uptime: process.uptime() },
+    clock: clockInfo(),
   });
 });
 
@@ -2247,7 +2360,7 @@ router.get('/api/admin/dashboard', (ctx) => {
     server: {
       name: getSetting('server_name', 'Venus'), version: config.version, uptime: process.uptime(), node: process.version,
       os: `${os.type()} ${os.release()}`, platform: process.platform, arch: process.arch, host: os.hostname(), runtime: runtime.kind,
-      canRestart: supervised(), hw: { type: hw.type, label: hw.label, tested: hw.tested }, ui: nextUiInfo(),
+      canRestart: supervised(), hw: { type: hw.type, label: hw.label, tested: hw.tested }, ui: nextUiInfo(), clock: clockInfo(),
     },
     counts: { movie: counts.movie || 0, show: (counts.show || 0) - anime, anime, episode: counts.episode || 0, clip: counts.clip || 0, channel: counts.channel || 0, season: counts.season || 0, track: counts.track || 0, photo: counts.photo || 0, book: (counts.book || 0) + (counts.audiobook || 0) },
     totals: { size: tot.size || 0, hours: Math.round((tot.dur || 0) / 3600) },
@@ -2634,7 +2747,25 @@ const SETTINGS_SCHEMA = {
   smtpFrom: V.email({ label: 'Expéditeur' }), twofaEmail: V.email({ label: 'Adresse de l’administrateur' }), twofaMode: V.oneOf(['off', 'new_device']),
   forceHttps: V.oneOf(['off', 'remote', 'all']),
   trickplay: V.oneOf(['auto', 'play', 'off']),
+  timezone: V.str({ max: 64, label: 'Fuseau horaire' }),
 };
+// L'appareil de l'administrateur annonce son fuseau horaire. Tant qu'aucun fuseau n'a été choisi dans Venus et que
+// la demande vient du réseau local (l'administrateur est donc là où se trouve le serveur), le serveur l'adopte :
+// sous Docker il tourne sinon à l'heure de Paris, et les horaires des enfants ou les tâches de nuit sont décalés.
+router.post('/api/admin/clock', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req, 1024), { zone: V.str({ max: 64 }) }, { required: ['zone'] });
+  if (!validZone(b.zone)) throw new HttpError(400, 'Fuseau horaire inconnu');
+  let adopted = false;
+  // Jamais « UTC » ni « Etc/… » : c'est le réglage d'usine de certains appareils, pas un lieu
+  if (!chosenZone() && isPrivateIp(ctx.ip) && /^[A-Z][A-Za-z_]+\/[A-Za-z_\-/]+$/.test(b.zone) && !/^Etc\//.test(b.zone) && zoneOffset(b.zone) !== zoneOffset(serverZone())) {
+    const before = serverZone();
+    setZone(b.zone);
+    adopted = true;
+    logActivity('admin', `Heure du serveur réglée sur ${b.zone} d’après l’appareil de ${me.name} (avant : ${before}). Réglages → Serveur pour la changer.`);
+  }
+  sendJson(ctx.res, { ...clockInfo(), adopted, device: b.zone, same: zoneOffset(b.zone) === zoneOffset(serverZone()) });
+});
 router.put('/api/admin/settings', async (ctx) => {
   requireAdmin(ctx);
   const b = validate(await readBody(ctx.req, 64 * 1024), SETTINGS_SCHEMA);
@@ -2702,6 +2833,13 @@ router.put('/api/admin/settings', async (ctx) => {
   if (b.maxSessions) setSetting('max_sessions', b.maxSessions);
   if (typeof b.detectSegments === 'boolean') setSetting('detect_segments', b.detectSegments ? '1' : '0');
   if (b.trickplay) { setSetting('trickplay', b.trickplay); if (b.trickplay === 'auto') runTask('trickplay').catch(() => {}); }
+  // Heure du serveur : fuseau choisi (vide = celui de la machine), appliqué tout de suite
+  if (b.timezone !== undefined) {
+    if (b.timezone && !validZone(b.timezone)) throw new HttpError(400, 'Fuseau horaire inconnu');
+    const before = serverZone();
+    setZone(b.timezone);
+    if (serverZone() !== before) logActivity('admin', `Heure du serveur : ${serverZone()} (au lieu de ${before})`);
+  }
   if (b.scanInterval) setSetting('scan_interval', b.scanInterval);
   if (b.kidsAllowUnrated !== undefined) setSetting('kids_allow_unrated', !!b.kidsAllowUnrated);
   if (b.metadataLang) setSetting('metadata_lang', b.metadataLang);
@@ -2735,7 +2873,10 @@ function publicLibrary(l) {
   const exists = l.type === 'iptv' && (/^https?:/i.test(l.path) || l.path === FREE_TV || l.path === IPTV_WORLD) ? true : fs.existsSync(l.path) && (!r || !st || st.ok);
   return {
     id: l.id, name: l.name, type: l.type, path: l.type === 'iptv' ? maskUrl(l.path) : l.path, exists, ...diskInfo(l),
-    network: r ? { proto: r.proto, address: describe(r), user: r.user || null, writable: !!r.writable, ok: st ? st.ok : null, error: st ? st.error : null } : null,
+    network: r ? { proto: r.proto, address: describe(r), user: r.user || null, writable: !!r.writable, ok: st ? st.ok : null,
+      error: !exists && r.passLost ? 'Mot de passe du partage à ressaisir : il était chiffré avec une autre clé (base restaurée sans son fichier secret.key).' : st ? st.error : null,
+      // Identifiant ou mot de passe refusé (ou illisible) : « Reconnecter » les redemande, la source reste en place
+      askLogin: !exists && r.proto !== 'nfs' && (!!r.passLost || loginRefused(st && st.error)) } : null,
   };
 }
 
@@ -2786,7 +2927,7 @@ router.post('/api/admin/libraries', async (ctx) => {
     const dup = all('SELECT * FROM libraries WHERE remote IS NOT NULL').find((l) => { const x = remoteOf(l); return x && x.host === remote.host && x.share === remote.share && (x.sub || '') === remote.sub && l.type === b.type; });
     if (dup) throw new HttpError(409, 'Ce partage est déjà ajouté pour ce type de contenu');
     const placeholder = `pending:${Date.now()}:${Math.random()}`;
-    const id = Number(run('INSERT INTO libraries(name, type, path, remote) VALUES(?, ?, ?, ?)', name, b.type, placeholder, JSON.stringify(remote)).lastInsertRowid);
+    const id = Number(run('INSERT INTO libraries(name, type, path, remote) VALUES(?, ?, ?, ?)', name, b.type, placeholder, packRemote(remote)).lastInsertRowid);
     const res = await mountRemote(id, remote);
     if (!res.ok) {
       run('DELETE FROM libraries WHERE id = ?', id);
@@ -2799,7 +2940,7 @@ router.post('/api/admin/libraries', async (ctx) => {
       await unmountRemote(id, remote);
       throw new HttpError(400, `Le dossier « ${remote.sub} » n’existe pas dans ce partage`);
     }
-    run('UPDATE libraries SET path = ?, remote = ? WHERE id = ?', full, JSON.stringify(remote), id);
+    run('UPDATE libraries SET path = ?, remote = ? WHERE id = ?', full, packRemote(remote), id);
     netState.set(id, { ok: true, error: null, at: Date.now() });
     scanAll();
     return sendJson(ctx.res, { ok: true, path: full });
@@ -2828,14 +2969,34 @@ router.post('/api/admin/libraries', async (ctx) => {
   sendJson(ctx.res, { ok: true });
 });
 
+// Reconnexion d'un partage réseau. Avec un identifiant et un mot de passe dans la demande, ce sont eux qui sont
+// essayés, puis gardés s'ils ouvrent le partage : mot de passe changé sur le NAS, ou base restaurée sur une autre
+// machine sans sa clé (secret.key) — le mot de passe chiffré n'est alors plus lisible. La source reste la même :
+// la retirer puis la remettre effacerait ses titres, « Ma liste » et l'avancement des lectures.
 router.post('/api/admin/libraries/:id/reconnect', async (ctx) => {
-  requireAdmin(ctx);
+  const me = requireAdmin(ctx);
   const lib = get('SELECT * FROM libraries WHERE id = ?', Number(ctx.params.id));
   const r = remoteOf(lib);
   if (!r) throw new HttpError(400, 'Ce n’est pas une source réseau');
+  const b = validate(await readBody(ctx.req, 4096), { user: V.str({ max: 120 }), pass: V.str({ max: 200, trim: false }), domain: V.str({ max: 120 }) });
+  const fresh = b.user !== undefined || b.pass !== undefined || b.domain !== undefined;
+  if (fresh) {
+    if (r.proto === 'nfs') throw new HttpError(400, 'Un partage NFS n’a ni identifiant ni mot de passe');
+    // Une ligne seulement : ces valeurs vont dans le fichier d'identifiants du montage
+    if ([b.user, b.pass, b.domain].some((x) => x && /[\r\n]/.test(x))) throw new HttpError(400, 'Identifiant ou mot de passe invalide');
+    // Déjà monté : les nouveaux identifiants ne seraient pas essayés (et rien n'est à réparer)
+    if (remoteReady(lib)) throw new HttpError(409, 'Ce partage est déjà connecté');
+    if (b.user !== undefined) r.user = b.user;
+    if (b.pass !== undefined) r.pass = b.pass;
+    if (b.domain !== undefined) r.domain = b.domain;
+  }
   const res = await mountRemote(lib.id, r);
   netState.set(lib.id, { ok: res.ok, error: res.error || null, at: Date.now() });
   if (!res.ok) throw new HttpError(422, res.error);
+  if (fresh) {
+    run('UPDATE libraries SET remote = ? WHERE id = ?', packRemote(r), lib.id);
+    logActivity('admin', `${me.name} a ressaisi les identifiants du partage « ${lib.name} »`);
+  }
   scanAll();
   sendJson(ctx.res, { ok: true });
 });
@@ -3609,6 +3770,7 @@ router.get('/api/admin/export', (ctx) => {
   fs.mkdirSync(path.dirname(snap), { recursive: true });
   try { fs.unlinkSync(snap); } catch { /* */ }
   db.exec(`VACUUM INTO '${snap.replace(/'/g, "''")}'`);
+  try { fs.chmodSync(snap, 0o600); } catch { /* Windows */ }
   const stamp = new Date().toISOString().slice(0, 10);
   ctx.res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="venus-export-${stamp}.tar.gz"`, 'Cache-Control': 'no-store' });
   // tar : base (sous le nom venus.db), images, sous-titres récupérés, CSS perso. Jamais les vidéos ni les clés TLS.
@@ -3675,7 +3837,7 @@ router.del('/api/admin/trash', (ctx) => { const me = requireAdmin(ctx); let coun
 router.post('/api/items/:id/forget', (ctx) => {
   const p = requireProfile(ctx);
   const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
-  if (!item) throw new HttpError(404, 'Introuvable');
+  if (!item || !visible(p, item)) throw new HttpError(404, 'Introuvable');
   if (item.type === 'show') run("DELETE FROM progress WHERE profile_id = ? AND item_id IN (SELECT id FROM items WHERE show_id = ?) AND watched = 0", p.id, item.id);
   else if (item.type === 'episode') run("DELETE FROM progress WHERE profile_id = ? AND item_id IN (SELECT id FROM items WHERE show_id = ?) AND watched = 0", p.id, item.show_id);
   else run('DELETE FROM progress WHERE profile_id = ? AND item_id = ? AND watched = 0', p.id, item.id);
@@ -3714,7 +3876,7 @@ router.post('/api/admin/changelog/seen', async (ctx) => { requireAdmin(ctx); set
 router.post('/api/items/:id/opinion', async (ctx) => {
   const p = requireProfile(ctx);
   const b = validate(await readBody(ctx.req, 1024), { liked: V.nullable(V.bool()) }, {});
-  if (!get('SELECT 1 FROM items WHERE id = ?', Number(ctx.params.id))) throw new HttpError(404, 'Introuvable');
+  if (!visible(p, get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)))) throw new HttpError(404, 'Introuvable');
   setOpinion(p.id, Number(ctx.params.id), b.liked);
   sendJson(ctx.res, { ok: true });
 });
@@ -3806,7 +3968,7 @@ router.post('/api/items/:id/subtitles/generate', async (ctx) => {
   } catch (e) { throw new HttpError(400, e.message); }
 });
 router.get('/api/items/:id/subtitles/generate', (ctx) => {
-  requireProfile(ctx);
+  requireVisible(ctx, get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id)));
   const j = jobOf(Number(ctx.params.id));
   sendJson(ctx.res, j ? { id: j.id, phase: j.phase, pct: j.pct, error: j.error, done: !!j.result, sub: j.result ? j.result.sub : null } : { none: true });
 });
@@ -3838,7 +4000,9 @@ router.post('/api/admin/convert', async (ctx) => {
   const p = requireAdmin(ctx);
   const b = await readBody(ctx.req, 64 * 1024);
   let ids = Array.isArray(b.ids) ? b.ids.map(Number).filter(Boolean).slice(0, 2000) : [];
-  if (b.all) ids = convertSuggestions({ libraryId: Number(b.library) || null, limit: 2000 }).items.map((x) => x.id);
+  // « Tout compresser » sert à gagner de la place : les vidéos dont la copie ne serait pas plus légère (déjà très
+  // légères, proposées seulement parce que leur format oblige à convertir pendant la lecture) restent au cas par cas
+  if (b.all) ids = convertSuggestions({ libraryId: Number(b.library) || null, limit: 2000 }).items.filter((x) => x.gain > 0).map((x) => x.id);
   const n = queueConversions(ids, b.opts || {}, p.name);
   if (n) logActivity('admin', `${p.name} a lancé la compression de ${n} vidéo(s)`);
   sendJson(ctx.res, { queued: n });

@@ -338,6 +338,7 @@ function System({ d }) {
         <div className="sys">
           <div className="sys-row"><span>Processeur</span><b>{s.cpuModel.replace(/\(R\)|\(TM\)|CPU|@.*$/g, '').trim()}</b></div>
           <div className="sys-row"><span>Venus utilise</span><b>{fmtBytes(s.rss)}</b></div>
+          <ClockRow clock={d.server.clock} />
           <div className="sys-row"><span>Interface</span><b>{d.server.ui && d.server.ui.ready ? 'Next.js (nouvelle)' : 'Classique (de secours)'}</b><small>{d.server.ui && d.server.ui.ready ? `${d.server.ui.restarts ? `${d.server.ui.restarts} relance(s) · ` : ''}pages Next.js servies` : d.server.ui && d.server.ui.enabled ? `La nouvelle interface ne répond pas${d.server.ui.error ? ` : ${d.server.ui.error}` : ''} — l’ancienne est servie en attendant` : 'Nouvelle interface non construite ou désactivée (VENUS_UI=classic)'}</small></div>
           <div className="sys-row"><span>Accélération</span><b>{d.server.hw.label || 'Processeur seul'}</b><small>{d.server.hw.type && d.server.hw.type !== 'none' ? (d.server.hw.tested ? 'Testée et fonctionnelle' : 'Détectée') : 'Aucune carte graphique : conversions plus lentes'}</small></div>
           {s.disks.map((k, i) => <div key={i} className="sys-row"><span>Disque</span><b>{`${fmtBytes(k.total - k.free)} / ${fmtBytes(k.total)}`}</b><Meter pct={((k.total - k.free) / k.total) * 100} /><small>{`${fmtBytes(k.free)} libres · ${k.names.join(', ')}`}</small></div>)}
@@ -382,5 +383,17 @@ function Libs({ d, alone }) {
         {bad.map((l) => <div key={l.id} className="dev"><span className="dev-dot bad" title={!l.exists ? 'Dossier introuvable' : 'Injoignable'} /><div className="grow"><b>{l.name}</b><span>{`${!l.exists ? 'Dossier introuvable' : 'Partage réseau injoignable'} · ${l.network ? l.network.address : l.path}`}</span></div></div>)}
       </div>
     </section>
+  );
+}
+
+// Heure du serveur, comparée à celle de cet appareil (un écart décale les horaires des enfants et les tâches de nuit)
+function ClockRow({ clock: c }) {
+  if (!c) return null;
+  const dev = -new Date().getTimezoneOffset(), off = dev !== c.offset;
+  const hhmm = new Date().toLocaleTimeString('fr-FR', { timeZone: c.zone, hour: '2-digit', minute: '2-digit' });
+  return (
+    <div className="sys-row"><span>Heure du serveur</span><b>{`${hhmm} · ${c.zone.replace(/_/g, ' ')}`}</b>
+      <small className={off ? 'error-text' : undefined}>{off ? `${Math.abs(dev - c.offset) / 60} h d’écart avec cet appareil : horaires des enfants et tâches de nuit décalés. Réglages → Serveur pour corriger.` : 'Même heure que cet appareil'}</small>
+    </div>
   );
 }

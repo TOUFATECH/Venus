@@ -3,7 +3,7 @@
 // notifications, lecture, performances, mise à jour, serveur et sauvegardes
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
-import { api, toast, go } from '../../lib/hooks';
+import { api, toast, go, openSheet } from '../../lib/hooks';
 import { Icon, Avatar } from '../Icon';
 import { openSourceWizard } from './SourceWizard';
 import { fixMatch } from './Details';
@@ -37,6 +37,43 @@ function useLoad(path, deps = []) {
 }
 
 // ---------------------------------------------------------------- médiathèques et TV
+// Partage réseau injoignable : nouvel essai avec les identifiants gardés. S'ils sont refusés (mot de passe changé
+// sur le NAS) ou illisibles (base restaurée sans sa clé de chiffrement), ils sont redemandés : la source reste en
+// place, avec ses titres et l'avancement des lectures — la retirer puis la remettre les effacerait.
+async function reconnect(l, refresh) {
+  if (l.network.askLogin) return shareLogin(l, refresh);
+  try { await api(`/api/admin/libraries/${l.id}/reconnect`, { method: 'POST' }); toast('Partage reconnecté'); refresh(); }
+  catch (e) {
+    toast(e.message, true);
+    const a = await refresh();
+    const now = a && a.libraries ? a.libraries.find((x) => x.id === l.id) : null;
+    if (now && now.network && now.network.askLogin) shareLogin(now, refresh);
+  }
+}
+const shareLogin = (l, refresh) => openSheet('Identifiants du partage', (close) => <ShareLogin l={l} close={close} refresh={refresh} />);
+function ShareLogin({ l, close, refresh }) {
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
+    e.preventDefault(); setErr(''); setBusy(true);
+    const fd = new FormData(e.currentTarget);
+    try {
+      await api(`/api/admin/libraries/${l.id}/reconnect`, { method: 'POST', body: { user: String(fd.get('user') || '').trim(), pass: String(fd.get('pass') || '') } });
+      toast('Partage reconnecté', { type: 'success' }); close(); refresh();
+    } catch (e2) { setErr(e2.message); setBusy(false); }
+  };
+  return (
+    <form onSubmit={submit}>
+      <p className="muted">{`${l.network.address} — ${l.network.error || 'identifiant ou mot de passe refusé'}`}</p>
+      <p className="muted small">La source reste en place : vos titres, « Ma liste » et l’avancement des lectures sont conservés.</p>
+      <Field label="Identifiant"><input className="input" name="user" maxLength={120} defaultValue={l.network.user || ''} autoComplete="off" autoCapitalize="none" spellCheck={false} required /></Field>
+      <Field label="Mot de passe"><input className="input" name="pass" type="password" maxLength={200} autoComplete="off" /></Field>
+      <p className="error-text" role="alert">{err}</p>
+      <div className="form-actions"><button className="btn btn-play f" type="submit" disabled={busy}><Icon name="wifi" />{busy ? 'Connexion…' : 'Reconnecter'}</button></div>
+    </form>
+  );
+}
+
 export function LibraryBox({ a, refresh, iptv }) {
   const s = a.scan;
   const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
@@ -73,7 +110,7 @@ export function LibraryBox({ a, refresh, iptv }) {
                       : !l.exists ? <small className="warn">{l.network ? 'Partage injoignable' : 'Dossier introuvable'}</small>
                         : type !== 'iptv' && !l.writable ? <small className="muted">Lecture seule</small> : null}
                   </div>
-                  {l.network && !l.exists ? <Busy onClick={async () => { try { await api(`/api/admin/libraries/${l.id}/reconnect`, { method: 'POST' }); toast('Partage reconnecté'); } catch (e) { toast(e.message, true); } refresh(); }}>Reconnecter</Busy> : null}
+                  {l.network && !l.exists ? <Busy onClick={() => reconnect(l, refresh)}>Reconnecter</Busy> : null}
                   <button className="btn btn-small btn-danger f" aria-label={`Retirer ${libLabel(l)}`} onClick={async () => {
                     if (!(await confirm(`Retirer « ${libLabel(l)} » de Venus ? Vos fichiers ne sont pas supprimés.`, 'Retirer'))) return;
                     await api(`/api/admin/libraries/${l.id}`, { method: 'DELETE' }); refresh();
@@ -816,6 +853,37 @@ export function SubtitlesBox({ a, refresh }) {
 }
 
 // ---------------------------------------------------------------- serveur : nom, mot de passe du foyer, fréquence d'analyse
+// Heure du serveur : les horaires des profils enfants, le temps d'écran du jour, les tâches de nuit (compression,
+// copies optimisées, sauvegardes) et « Aujourd'hui / Demain » la suivent. Sous Docker, elle vaut l'heure de Paris
+// tant qu'on ne l'a pas réglée : le fuseau de cet appareil est proposé d'un clic.
+const offsetLabel = (min) => `UTC${min < 0 ? '−' : '+'}${Math.floor(Math.abs(min) / 60)}${Math.abs(min) % 60 ? `:${String(Math.abs(min) % 60).padStart(2, '0')}` : ''}`;
+function ZoneField({ clock }) {
+  const [c, setC] = useState(clock);
+  const device = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })();
+  const zones = (() => { try { return Intl.supportedValuesOf('timeZone'); } catch { return []; } })();
+  if (!c) return null;
+  const list = [...new Set([c.zone, device, ...zones].filter(Boolean))].sort((x, y) => x.localeCompare(y));
+  const deviceOffset = -new Date().getTimezoneOffset();
+  const hhmm = new Date(Date.now()).toLocaleTimeString('fr-FR', { timeZone: c.zone, hour: '2-digit', minute: '2-digit' });
+  const save = async (timezone) => {
+    try { await putSettings({ timezone }); const x = await api('/api/admin'); setC(x.clock); toast(`Heure du serveur : ${x.clock.zone.replace(/_/g, ' ')}`, { type: 'success' }); } catch (e) { toast(e.message, true); }
+  };
+  return (
+    <Field label="Heure du serveur (fuseau horaire)" hint={`Il est ${hhmm} pour le serveur (${c.zone}, ${offsetLabel(c.offset)}). Les horaires des profils enfants, le temps d’écran du jour, les tâches de nuit et les sauvegardes suivent cette heure.`}>
+      <select className="input" key={c.zone + (c.chosen ? '1' : '0')} defaultValue={c.chosen ? c.zone : ''} onChange={(e) => save(e.target.value)}>
+        <option value="">{`Celui de la machine (${c.system})`}</option>
+        {list.map((z) => <option key={z} value={z}>{z.replace(/_/g, ' ')}</option>)}
+      </select>
+      {device && deviceOffset !== c.offset ? (
+        <p className="error-text" role="alert" style={{ margin: '8px 0 0' }}>
+          {`Cet appareil est à l’heure de ${device.replace(/_/g, ' ')} (${offsetLabel(deviceOffset)}) : ${Math.abs(deviceOffset - c.offset) / 60} h d’écart avec le serveur. `}
+          <button type="button" className="btn btn-small f" style={{ marginLeft: 6 }} onClick={() => save(device)}>{`Utiliser ${device.replace(/_/g, ' ')}`}</button>
+        </p>
+      ) : null}
+    </Field>
+  );
+}
+
 export function ServerBox({ a }) {
   const [pass, setPass] = useState('');
   const name = useRef(null);
@@ -830,6 +898,7 @@ export function ServerBox({ a }) {
         <input className="input" type="password" placeholder="Nouveau mot de passe" autoComplete="new-password" minLength={10} maxLength={200} value={pass} onChange={(e) => setPass(e.target.value)} />
       </Field>
       <PasswordMeter value={pass} />
+      <ZoneField clock={a.clock} />
       <Field label="Vérifier les nouveautés toutes les (minutes)" hint="Les ajouts sont aussi détectés automatiquement quand c’est possible."><input ref={interval} className="input" type="number" min={5} defaultValue={a.settings.scanInterval} /></Field>
       <Actions>
         <Busy onClick={async () => {

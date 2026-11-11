@@ -1,5 +1,6 @@
 // Venus — point d'entrée du serveur
 import './logbuf.js'; // journal du serveur (tableau de bord) : chargé en premier
+import './clock.js'; // fuseau horaire choisi dans Venus : appliqué avant tout calcul de date
 import { warmUpcoming, wantedArrivals } from './upcoming.js';
 import { runOptimize } from './optimize.js';
 import { checkNas } from './nas-health.js';

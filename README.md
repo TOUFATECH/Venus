@@ -248,7 +248,7 @@ npm run web:build         # construction de production (servie ensuite par Venus
 ### Tests
 
 ```bash
-npm run web:build && npm test   # 116 tests dans un vrai navigateur (Playwright)
+npm run web:build && npm test   # 125 tests dans un vrai navigateur (Playwright)
 cd tests && npm run analyse     # analyse du code (variables inconnues, règles React…)
 ```
 
@@ -286,7 +286,7 @@ scripts/           installateurs Linux / Windows / Mac / Proxmox, test de charge
 
 | Contrôle | Résultat |
 |---|---|
-| Contrôle de sécurité (`npm run security`) | **25 / 25** protections vérifiées |
+| Contrôle de sécurité (`npm run security`) | **34 / 34** protections vérifiées |
 | Test de charge (`node scripts/load-test.mjs`) : 50 utilisateurs, 90 s, lectures vidéo et chaînes | 0 erreur, p95 ≤ 21 ms, 0 coupure |
 | Endurance (3 séries de charge) | mémoire stable (208 → 213 Mo), descripteurs stables |
 | Exploration des 213 routes de l'API avec des entrées invalides | aucune erreur 500 |
@@ -351,6 +351,7 @@ Venus sert aussi HTTPS (en **HTTP/2**) sur le port **8920** avec un certificat a
 | Variable | Par défaut | Rôle |
 |---|---|---|
 | `PORT` | `8096` | Port HTTP |
+| `TZ` | `Europe/Paris` (Docker) | Fuseau horaire de départ. Il se règle ensuite dans Réglages → Serveur ; sans choix, Venus adopte celui de l'appareil de l'administrateur (réseau local) quand il diffère |
 | `DATA_DIR` | `/config` (Docker), `./data` | Base de données, affiches, cache |
 | `TRANSCODE_DIR` | `/transcode` (Docker) | Fichiers temporaires de conversion |
 | `MOVIES_PATH` / `SHOWS_PATH` / `ANIME_PATH` / `CLIPS_PATH` | `/media/films`… | Dossiers proposés à l'installation |

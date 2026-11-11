@@ -9,11 +9,16 @@ import { useVenus } from './Venus';
 import Card, { Picture, FramePoster } from './Card';
 import { Icon } from './Icon';
 import Upcoming, { Wishes } from './pages/Upcoming';
+import { isBackNav } from '../lib/scroll';
 
+const PAGE = 72; // cartes dessinées par paquet
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés', clip: 'Clips', mylist: 'Ma liste' };
 const PATHS = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips', mylist: '/liste' };
 const rel = (i) => i.released || (i.year ? `${i.year}-01-01` : '');
-const cmpTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base', numeric: true });
+// Un seul comparateur pour tous les tris par titre (localeCompare en recréait un à chaque comparaison : sur
+// 5 000 films, le tri alphabétique prenait plusieurs dixièmes de seconde)
+const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
+const cmpTitle = (a, b) => collator.compare(a.title || '', b.title || '');
 const norm = (i, src) => {
   const r = i.ratings || {};
   if (!src) return r.score || (i.vote ? i.vote * 10 : 0);
@@ -77,6 +82,8 @@ function Library({ kind, tabs }) {
   const { search, tick } = useVenus();
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
+  // Retour sur cette page : la grille reprend la longueur qu'elle avait, pour retrouver sa position d'un coup
+  const [back] = useState(() => isBackNav());
 
   useEffect(() => {
     let dead = false;
@@ -89,7 +96,7 @@ function Library({ kind, tabs }) {
 
   if (error) return <div className="page"><div className="empty"><h2>Impossible d’afficher cette page</h2><p>{error.message}</p></div></div>;
   if (!items) return <SkeletonGrid />;
-  return <LibraryView kind={kind} items={items} tabs={tabs} wantGenre={search ? search.get('genre') : null} storeKey={key} />;
+  return <LibraryView kind={kind} items={items} tabs={tabs} wantGenre={search ? search.get('genre') : null} storeKey={key} back={back} />;
 }
 
 function SkeletonGrid() {
@@ -102,7 +109,7 @@ function SkeletonGrid() {
   );
 }
 
-function LibraryView({ kind, items, tabs, wantGenre, storeKey }) {
+function LibraryView({ kind, items, tabs, wantGenre, storeKey, back }) {
   const L = shared();
   const { app, components, queue: Q } = L;
   const isClip = kind === 'clip';
@@ -157,17 +164,27 @@ function LibraryView({ kind, items, tabs, wantGenre, storeKey }) {
   const shownRef = useRef(shown);
   shownRef.current = shown;
 
-  // Grandes médiathèques : d'abord ce qui tient à l'écran, le reste par paquets en approchant du bas
-  const [limit, setLimit] = useState(72);
+  // Grandes médiathèques : d'abord ce qui tient à l'écran, le reste par paquets en approchant du bas. Pendant les
+  // temps morts, deux paquets de plus sont préparés d'avance, pas davantage : avant, la grille entière finissait
+  // dessinée même sans défiler (5 000 films = plus de 100 000 éléments dans la page, lourds pour une télé ou un
+  // téléphone). En revenant sur la page, elle reprend la longueur atteinte (gardée le temps de la session).
+  const limitKey = `vn_limit_${kind}`;
+  const [limit, setLimit] = useState(() => {
+    if (!back) return PAGE;
+    try { return Math.max(PAGE, Math.min(PAGE * 20, Number(sessionStorage.getItem(limitKey)) || 0)); } catch { return PAGE; }
+  });
   const sentinel = useRef(null);
-  useEffect(() => { setLimit(72); }, [f, view]);
+  const firstRun = useRef(true);
+  useEffect(() => { if (firstRun.current) { firstRun.current = false; return; } setLimit(PAGE); }, [f, view]);
+  useEffect(() => { try { sessionStorage.setItem(limitKey, String(limit)); } catch { /* stockage indisponible */ } }, [limit, limitKey]);
   useEffect(() => {
     if (limit >= shown.length || !sentinel.current) return undefined;
-    const obs = new IntersectionObserver((en) => { if (en.some((e) => e.isIntersecting)) setLimit((n) => n + 72); }, { rootMargin: '1200px 0px' });
+    const obs = new IntersectionObserver((en) => { if (en.some((e) => e.isIntersecting)) setLimit((n) => n + PAGE); }, { rootMargin: '1200px 0px' });
     obs.observe(sentinel.current);
+    if (limit >= PAGE * 3) return () => obs.disconnect();
     const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 200));
     const cancel = window.cancelIdleCallback || clearTimeout;
-    const h = idle(() => setLimit((n) => n + 72), { timeout: 1500 });
+    const h = idle(() => setLimit((n) => (n < PAGE * 3 ? n + PAGE : n)), { timeout: 1500 });
     return () => { obs.disconnect(); cancel(h); };
   }, [limit, shown.length]);
 
@@ -223,7 +240,7 @@ function LibraryView({ kind, items, tabs, wantGenre, storeKey }) {
           <button ref={sortBtn} className="tool f" aria-haspopup="true" aria-expanded={menu === 'sort'} aria-label={`Trier : ${s ? `${s[1]}, ${s[3][f.desc ? 1 : 0]}` : 'ordre de la liste'}`} onClick={() => setMenu(menu === 'sort' ? null : 'sort')}>
             <Icon name="sort" /><span className="lbl">{s ? s[1] : 'Ordre de la liste'}</span>{f.desc && f.sort !== 'random' ? <small>↑</small> : null}
           </button>
-          <button ref={filterBtn} className={`tool f${filtersOn ? ' on' : ''}`} aria-haspopup="true" aria-expanded={menu === 'filter'} onClick={() => setMenu(menu === 'filter' ? null : 'filter')}>
+          <button ref={filterBtn} className={`tool f${filtersOn ? ' on' : ''}`} aria-haspopup="true" aria-expanded={menu === 'filter'} aria-label={filtersOn ? `Filtres : ${filtersOn} actif${filtersOn > 1 ? 's' : ''}` : 'Filtres'} onClick={() => setMenu(menu === 'filter' ? null : 'filter')}>
             <Icon name="filter" /><span className="lbl">Filtres</span>{filtersOn ? <b className="tool-n">{filtersOn}</b> : null}
           </button>
           <div className="seg icons" role="group" aria-label="Affichage">
@@ -231,7 +248,7 @@ function LibraryView({ kind, items, tabs, wantGenre, storeKey }) {
               <button key={id} className={`seg-b f${view === id ? ' on' : ''}`} title={label} aria-label={`Affichage : ${label}`} aria-pressed={String(view === id)} onClick={() => { setView(id); store.set(`vn_view_${kind}`, id, true); }}><Icon name={ic} /></button>
             ))}
           </div>
-          <button className="tool f" title="Ouvrir un titre au hasard parmi ceux affichés" disabled={!shown.length} onClick={randomOpen}><Icon name="shuffle" /><span className="lbl">Au hasard</span></button>
+          <button className="tool f" title="Ouvrir un titre au hasard parmi ceux affichés" aria-label="Au hasard : ouvrir un titre parmi ceux affichés" disabled={!shown.length} onClick={randomOpen}><Icon name="shuffle" /><span className="lbl">Au hasard</span></button>
         </div>
       </div>
       <div className="active-filters" hidden={!tags.length}>{tags}</div>

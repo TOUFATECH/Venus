@@ -11,6 +11,7 @@ import { notify } from './notify.js';
 import { sendMail, smtpConf } from './smtp.js';
 import { listTasks } from './tasks.js';
 import { twofaEmail } from './twofa.js';
+import { localDay } from './clock.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS file_checks (item_id INTEGER PRIMARY KEY, checked_at INTEGER, mtime INTEGER, ok INTEGER, error TEXT)`);
 
@@ -21,7 +22,7 @@ export function weeklyReport() {
   const since = Date.now() - 7 * 864e5;
   const added = all("SELECT title, type FROM items WHERE added_at > ? AND type IN ('movie','show') AND version_of IS NULL ORDER BY added_at DESC", since);
   const eps = get("SELECT COUNT(*) n FROM items WHERE added_at > ? AND type = 'episode'", since).n;
-  const day = new Date(since).toISOString().slice(0, 10);
+  const day = localDay(since);
   const time = all('SELECT p.name, SUM(w.seconds) s FROM watch_time w JOIN profiles p ON p.id = w.profile_id WHERE w.day >= ? GROUP BY p.name ORDER BY s DESC', day);
   let disk = null; try { const st = fs.statfsSync(config.dataDir); disk = { free: st.bavail * st.bsize, total: st.blocks * st.bsize }; } catch { /* */ }
   const failed = listTasks().filter((t) => t.lastError);

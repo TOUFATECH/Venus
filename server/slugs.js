@@ -4,7 +4,7 @@
 //   clips    daft-punk-around-the-world chaînes  france-24
 // Deux titres identiques : le second reçoit son numéro (dune-2021~851).
 // Les anciennes adresses en Majuscules.Avec.Des.Points restent comprises (comparaison sans casse ni ponctuation).
-import { all } from './db.js';
+import { all, itemsVersion } from './db.js';
 
 const pad = (n) => String(n ?? 0).padStart(2, '0');
 // Un titre devient une adresse lisible : minuscules, sans accents, mots séparés par des tirets
@@ -32,11 +32,14 @@ function baseSlug(i, showTitles) {
   }
 }
 
-let bySlug = new Map(), byId = new Map(), builtAt = 0, sig = '';
+let bySlug = new Map(), byId = new Map(), builtAt = 0, sig = '', checkedV = -1;
 function ensure() {
   const now = Date.now();
-  if (now - builtAt < 3000 && byId.size) return;
+  // Rien n'a été écrit dans la table des titres depuis la dernière vérification : rien à refaire. (Avant, toutes
+  // les 3 secondes, la table entière était relue pour le savoir : 45 ms par requête avec 40 000 titres.)
+  if (byId.size && (checkedV === itemsVersion || now - builtAt < 3000)) return;
   builtAt = now;
+  checkedV = itemsVersion;
   const [r] = all('SELECT COUNT(*) AS n, MAX(id) AS m, TOTAL(LENGTH(title)) AS t, TOTAL(year) AS y, TOTAL(LENGTH(original_title)) AS o FROM items');
   const s = `${r.n}:${r.m}:${r.t}:${r.y}:${r.o}`;
   if (s === sig && byId.size) return;
@@ -94,4 +97,4 @@ export function resolveSlug(slug) {
   return bySlug.get(s.toLowerCase()) || bySlug.get(cleanName(base)) || (tilde ? Number(tilde[1]) : null);
 }
 // Après une modification du titre (correction d'identification, nouvel épisode…)
-export function refreshSlugs() { sig = ''; builtAt = 0; }
+export function refreshSlugs() { sig = ''; builtAt = 0; checkedV = -1; }

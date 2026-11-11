@@ -9,6 +9,7 @@ import { HttpError, parseCookies } from './http.js';
 import { guardAttempt, failAttempt, okAttempt } from './security.js';
 import { accessProblem, permsOf } from './perms.js';
 import { profileFromApiKey } from './apikeys.js';
+import { localDay } from './clock.js';
 
 const TOKEN_TTL = 180 * 864e5;
 const TOKEN_IDLE = 45 * 864e5;
@@ -127,8 +128,7 @@ export function resetRate(kind, ip) { okAttempt(kind, ip); }
 function dailyLeftOf(p) {
   const r = permsOf(p);
   if (r.admin || !r.dailyMinutes) return null;
-  const day = new Date().toISOString().slice(0, 10);
-  const row = get('SELECT seconds FROM watch_time WHERE profile_id = ? AND day = ?', p.id, day);
+  const row = get('SELECT seconds FROM watch_time WHERE profile_id = ? AND day = ?', p.id, localDay());
   return Math.max(0, Math.round(r.dailyMinutes - Number(row ? row.seconds : 0) / 60));
 }
 export function publicProfile(p) {

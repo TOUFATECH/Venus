@@ -13,7 +13,7 @@ const isActive = (href, path) => (href === '/' ? path === '/' : path.startsWith(
 function NavLink({ href, label, icon, path, className = '' }) {
   const on = isActive(href, path);
   return (
-    <Link href={href} className={`${className} f${on ? ' active' : ''}`.trim()} aria-current={on ? 'page' : undefined}>
+    <Link href={href} className={`${className} f${on ? ' active' : ''}`.trim()} aria-current={on ? 'page' : undefined} aria-label={label}>
       {icon ? <Icon name={icon} /> : null}<span>{label}</span>
     </Link>
   );

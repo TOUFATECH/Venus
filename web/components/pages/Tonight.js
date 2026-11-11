@@ -138,7 +138,7 @@ export default function Tonight() {
     body = (
       <>
         <div className="tonight-head"><Icon name={menu.todayIcon()} /><span>{`${greeting()} ${app.state.profile.name}`}</span></div>
-        <div className="steps-dots" aria-label={`Question ${step + 1} sur 3`}>{steps.map((_, i) => <span key={i} className={i <= step ? 'on' : ''} />)}</div>
+        <div className="steps-dots" role="img" aria-label={`Question ${step + 1} sur 3`}>{steps.map((_, i) => <span key={i} className={i <= step ? 'on' : ''} />)}</div>
         <h1 className="tonight-q">{question}</h1>
         <div className="choice-grid">
           {opts.map(([id, label, sub], i) => <button key={id} className="choice f" data-autofocus={i === 0 ? 'true' : undefined} onClick={() => answer(key, id)}><b>{label}</b><small>{sub}</small></button>)}

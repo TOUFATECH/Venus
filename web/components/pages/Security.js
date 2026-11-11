@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
 import { useApi, useTitle, api, toast, go } from '../../lib/hooks';
 import { Icon } from '../Icon';
+import { Field } from '../Field';
 import { PageError, PageLoading } from '../PageState';
 
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
@@ -17,7 +18,6 @@ const KIND = {
   deconnexion: 'Déconnexion', journal: 'Journal', installation: 'Installation', 'erreur-serveur': 'Erreur serveur', 'cle-api': 'Clé API',
 };
 const confirm = (msg, label) => shared().ui.confirmSheet(msg, label);
-export const Field = ({ label, hint, children }) => <div className="field"><label>{label}</label>{children}{hint ? <small>{hint}</small> : null}</div>;
 
 export default function Security() {
   useTitle('Sécurité');
@@ -225,7 +225,7 @@ function Log({ d, reload }) {
       </div>
       <p className="muted">Connexions, essais ratés, requêtes suspectes, blocages et changements de droits. Les 5 000 derniers évènements sont gardés.</p>
       {rows.length ? (
-        <div className="sec-table">
+        <div className="sec-table" tabIndex={0} role="region" aria-label="Journal de sécurité">
           {rows.slice(0, 200).map((x, i) => <div key={i} className={`sec-ev sv-${x.severity}`}><span className="sec-when">{when(x.at)}</span><span className="sec-kind">{KIND[x.kind] || x.kind}</span><span className="sec-detail">{x.detail}</span><span className="sec-ip">{x.ip || ''}</span></div>)}
         </div>
       ) : <p className="muted">Rien à signaler.</p>}

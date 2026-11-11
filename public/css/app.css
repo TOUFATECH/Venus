@@ -913,11 +913,12 @@ html.touch .row-arrow, html.tv .row-arrow { display: none; }
 
 /* Affiche d'accueil : points cliquables avec progression, flèches, transition du texte */
 .hero-dots { display: flex; gap: 6px; align-items: center; }
-.hero-dots button { position: relative; width: 8px; height: 8px; padding: 0; border: 0; border-radius: 4px; background: rgba(236,234,228,.3); cursor: pointer; overflow: hidden; transition: width .35s var(--ease), background .2s; }
-.hero-dots button::before { content: ''; position: absolute; inset: -10px -3px; }
+/* La zone sensible dépasse le point (::before) : pas de « overflow: hidden » sur le bouton, qui la rognait à 8 px */
+.hero-dots button { position: relative; width: 8px; height: 8px; padding: 0; border: 0; border-radius: 4px; background: rgba(236,234,228,.3); cursor: pointer; transition: width .35s var(--ease), background .2s; }
+.hero-dots button::before { content: ''; position: absolute; inset: -12px -3px; }
 .hero-dots button:hover { background: rgba(236,234,228,.6); }
 .hero-dots button.on { width: 38px; background: rgba(236,234,228,.3); }
-.hero-dots button i { position: absolute; inset: 0; width: 0; background: var(--paper); }
+.hero-dots button i { position: absolute; inset: 0; width: 0; background: var(--paper); border-radius: inherit; }
 .hero-dots button.on i { animation: dotfill var(--rotate, 8s) linear forwards; }
 .hero.paused .hero-dots button.on i { animation-play-state: paused; }
 @keyframes dotfill { to { width: 100%; } }
@@ -985,6 +986,7 @@ html.touch .p-volrange { display: none; }
 .sheet.side .ep-panel { flex: 1; min-height: 0; }
 .ep-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .ep-head .chips { flex: 1; overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap; }
+.ep-head .chips .chip { flex: none; white-space: nowrap; }
 .ep-count { color: var(--haze); font-size: .8rem; white-space: nowrap; }
 .ep-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; margin: 0 -8px; padding: 0 8px; scrollbar-width: thin; }
 .ep-row { display: grid; grid-template-columns: 128px 1fr; gap: 12px; align-items: start; padding: 8px; border: 0; border-radius: 10px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .2s, transform .2s var(--ease); }

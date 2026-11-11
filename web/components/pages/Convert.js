@@ -11,6 +11,10 @@ const QUALS = [['max', 'Maximale'], ['high', 'Haute'], ['balanced', 'Équilibré
 const LANGS = [['fre', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['ger', 'Allemand'], ['ita', 'Italien'], ['ara', 'Arabe'], ['kor', 'Coréen'], ['chi', 'Chinois'], ['por', 'Portugais']];
 const langName = (c) => (LANGS.find((l) => l[0] === c) || [])[1] || (c === 'und' ? 'Langue inconnue' : c.toUpperCase());
 const pct = (a, b) => (a && b ? Math.round((1 - b / a) * 100) : 0);
+// Écart de taille en clair : « −35 % » quand la copie est plus légère, « +13 % » quand elle serait plus lourde (une
+// vidéo déjà très légère, proposée parce que son format oblige à la convertir à chaque lecture), jamais « −-13 % »
+const delta = (p) => (p > 0 ? `−${p} %` : p < 0 ? `+${-p} %` : 'même taille');
+const freed = (r, later) => (r.saved > 0 ? `Validé : ${fmtGo(r.saved)} libérés${later ? ' dans 7 jours (corbeille)' : ''}` : 'Validé : la copie remplace l’original');
 const epLabel = (x) => (x.type === 'episode' && x.show ? `${x.show} · S${x.season} É${x.episode} · ${x.title}` : `${x.title}${x.year ? ` (${x.year})` : ''}`);
 
 export function ConvertBox() {
@@ -71,14 +75,14 @@ export function ConvertBox() {
             {items.map((x) => (
               <label key={x.id} className="conv-row">
                 <input type="checkbox" checked={sel.has(x.id)} onChange={(e) => { const n = new Set(sel); if (e.target.checked) n.add(x.id); else n.delete(x.id); setSel(n); }} aria-label={`Sélectionner ${x.title}`} />
-                <span className="conv-txt"><b>{epLabel(x)}</b><small>{`${fmtGo(x.size)} → ≈ ${fmtGo(x.estimated)} (−${Math.round(x.gain * 100)} %) · ${x.why.join(' · ')}`}</small></span>
+                <span className="conv-txt"><b>{epLabel(x)}</b><small>{`${fmtGo(x.size)} → ≈ ${fmtGo(x.estimated)} (${delta(Math.round(x.gain * 100))}) · ${x.why.join(' · ')}`}</small></span>
               </label>
             ))}
           </div>
           {sug.items.length > 12 ? <button className="btn btn-ghost btn-small f" onClick={() => setShowAll(!showAll)}>{showAll ? 'Réduire' : `Voir les ${sug.items.length}`}</button> : null}
           <Actions>
             <Busy className="btn btn-small btn-play f" onClick={() => queue([...sel])} disabled={!sel.size}>{`Compresser la sélection (${sel.size})`}</Busy>
-            <Busy className="btn btn-small btn-ghost f" onClick={async () => { if (await confirm(`Mettre en file les ${sug.items.length} vidéos proposées ? Elles seront compressées une par une ; rien n’est supprimé avant votre validation.`, 'Tout compresser')) await queue([], true); }}>Tout compresser</Busy>
+            <Busy className="btn btn-small btn-ghost f" onClick={async () => { if (await confirm('Mettre en file toutes les vidéos proposées qui gagnent de la place ? Elles seront compressées une par une ; rien n’est supprimé avant votre validation.', 'Tout compresser')) await queue([], true); }}>Tout compresser</Busy>
           </Actions>
         </>
       )}
@@ -100,7 +104,7 @@ export function ConvertBox() {
 function DoneRow({ c, reload }) {
   return (
     <div className="conv-row">
-      <span className="conv-txt"><b>{epLabel(c)}</b><small>{`${fmtGo(c.sizeBefore)} → ${fmtGo(c.sizeAfter)} (−${pct(c.sizeBefore, c.sizeAfter)} %)${c.encoder ? ` · ${c.encoder}` : ''}`}</small></span>
+      <span className="conv-txt"><b>{epLabel(c)}</b><small>{`${fmtGo(c.sizeBefore)} → ${fmtGo(c.sizeAfter)} (${delta(pct(c.sizeBefore, c.sizeAfter))})${c.encoder ? ` · ${c.encoder}` : ''}`}</small></span>
       <div className="conv-actions">
         <button className="btn btn-ghost btn-small f" onClick={() => go(`/lecture/${c.itemId}`)}><Icon name="play" />Lire la copie</button>
         <button className="btn btn-ghost btn-small f" onClick={() => go(`/lecture/${c.itemId}?src=original`)}>Lire l’original</button>
@@ -116,8 +120,8 @@ export function ValidateBtn({ c, reload, label = 'Valider' }) {
       openSheet('Valider la copie compressée', (close) => (
         <div className="req-sheet">
           <p>{`La copie (${fmtGo(c.sizeAfter)}) remplace l’original (${fmtGo(c.sizeBefore)}) et prend son nom. Que faire de l’original ?`}</p>
-          <button className="btn btn-play f" onClick={async () => { try { const r = await api(`/api/admin/convert/${c.id}/validate`, { method: 'POST', body: { purge: false } }); toast(`Validé : ${fmtGo(r.saved)} libérés dans 7 jours (corbeille)`); } catch (e) { toast(e.message, true); } close(); reload(); resolve(); }}>Corbeille 7 jours (recommandé)</button>
-          <button className="btn btn-ghost f" onClick={async () => { if (!(await confirm('Supprimer définitivement l’original, tout de suite ? Impossible de revenir en arrière.', 'Supprimer définitivement'))) return; try { const r = await api(`/api/admin/convert/${c.id}/validate`, { method: 'POST', body: { purge: true } }); toast(`Validé : ${fmtGo(r.saved)} libérés`); } catch (e) { toast(e.message, true); } close(); reload(); resolve(); }}>Supprimer définitivement maintenant</button>
+          <button className="btn btn-play f" onClick={async () => { try { const r = await api(`/api/admin/convert/${c.id}/validate`, { method: 'POST', body: { purge: false } }); toast(freed(r, true)); } catch (e) { toast(e.message, true); } close(); reload(); resolve(); }}>Corbeille 7 jours (recommandé)</button>
+          <button className="btn btn-ghost f" onClick={async () => { if (!(await confirm('Supprimer définitivement l’original, tout de suite ? Impossible de revenir en arrière.', 'Supprimer définitivement'))) return; try { const r = await api(`/api/admin/convert/${c.id}/validate`, { method: 'POST', body: { purge: true } }); toast(freed(r, false)); } catch (e) { toast(e.message, true); } close(); reload(); resolve(); }}>Supprimer définitivement maintenant</button>
           <p className="muted small">Radarr ou Sonarr, s’ils sont reliés, relisent le dossier pour retrouver le nouveau fichier au lieu de croire la vidéo perdue.</p>
         </div>
       ), { onClose: resolve });
@@ -143,15 +147,17 @@ export function CompressNote({ d, reload }) {
   if (c.status === 'suggested') {
     const present = [...new Set((c.audio || []).map((a) => a.lang))];
     const chosen = langs || present;
+    // Copie pas plus légère que l'original : on le dit (elle sert à lire la vidéo partout sans conversion, pas à gagner de la place)
+    const gain = Math.round((est ? est.gain : c.gain) * 100);
     return (
       <div className="compress-note">
-        <p><Icon name="disk" />{` Cette vidéo peut être compressée : ${fmtGo(c.size)} → ≈ ${fmtGo(est ? est.estimated : c.estimated)} (−${Math.round((est ? est.gain : c.gain) * 100)} %)${(est ? est.height : c.height) ? ` · ${est ? est.height : c.height}p` : ''} · ${c.why.join(' · ')}.`}</p>
+        <p><Icon name="disk" />{` ${gain > 0 ? 'Cette vidéo peut être compressée' : 'Cette vidéo peut être convertie pour être lue partout sans attente, sans gain de place'} : ${fmtGo(c.size)} → ≈ ${fmtGo(est ? est.estimated : c.estimated)} (${delta(gain)})${(est ? est.height : c.height) ? ` · ${est ? est.height : c.height}p` : ''} · ${c.why.join(' · ')}.`}</p>
         <div className="conv-choices">
           <label><span>Qualité</span><select className="f" value={choice.quality || ''} onChange={(e) => setChoice({ ...choice, quality: e.target.value || null })}><option value="">Réglage général</option>{QUALS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
           <label><span>Définition</span><select className="f" value={choice.maxHeight == null ? '' : String(choice.maxHeight)} onChange={(e) => setChoice({ ...choice, maxHeight: e.target.value === '' ? null : Number(e.target.value) })}><option value="">Réglage général</option>{DEFS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
         </div>
         {present.length > 1 ? <div className="chips">{present.map((l) => <button key={l} type="button" className={`chip f${chosen.includes(l) ? ' on' : ''}`} aria-pressed={String(chosen.includes(l))} onClick={() => setLangs(chosen.includes(l) ? (chosen.length > 1 ? chosen.filter((x) => x !== l) : chosen) : [...chosen, l])}>{langName(l)}</button>)}<small className="muted">Langues gardées dans la copie</small></div> : null}
-        <button className="btn btn-ghost btn-small f" disabled={busy} onClick={async () => { setBusy(true); try { await api('/api/admin/convert', { method: 'POST', body: { ids: [d.id], opts: chosenOpts(present) } }); toast('Compression lancée : vous serez prévenu quand la copie sera prête'); reload(); } catch (e) { toast(e.message, true); } finally { setBusy(false); } }}><Icon name="disk" />Compresser (l’original est conservé)</button>
+        <button className="btn btn-ghost btn-small f" disabled={busy} onClick={async () => { setBusy(true); try { await api('/api/admin/convert', { method: 'POST', body: { ids: [d.id], opts: chosenOpts(present) } }); toast('Compression lancée : vous serez prévenu quand la copie sera prête'); reload(); } catch (e) { toast(e.message, true); } finally { setBusy(false); } }}><Icon name="disk" />{gain > 0 ? 'Compresser (l’original est conservé)' : 'Convertir (l’original est conservé)'}</button>
       </div>
     );
   }
@@ -159,7 +165,7 @@ export function CompressNote({ d, reload }) {
   if (c.status === 'done') {
     return (
       <div className="compress-note ok">
-        <p><Icon name="check" />{` Copie compressée prête : ${fmtGo(c.sizeBefore)} → ${fmtGo(c.sizeAfter)} (−${pct(c.sizeBefore, c.sizeAfter)} %). « Lire » lit désormais la copie ; vérifiez-la, puis validez pour supprimer l’original.`}</p>
+        <p><Icon name="check" />{` ${c.sizeAfter < c.sizeBefore ? 'Copie compressée prête' : 'Copie prête, sans gain de place (la vidéo était déjà très légère)'} : ${fmtGo(c.sizeBefore)} → ${fmtGo(c.sizeAfter)} (${delta(pct(c.sizeBefore, c.sizeAfter))}). « Lire » lit désormais la copie ; vérifiez-la, puis validez pour supprimer l’original.`}</p>
         <div className="conv-actions">
           <button className="btn btn-ghost btn-small f" onClick={() => go(`/lecture/${d.id}?src=original`)}>Lire l’original</button>
           <ValidateBtn c={{ ...c, itemId: d.id }} reload={reload} label="Valider la copie" />

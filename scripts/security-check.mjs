@@ -119,6 +119,26 @@ try {
   for (let i = 0; i < 7; i++) codes.push((await req('/api/login', { method: 'POST', body: JSON.stringify({ password: `faux-${i}` }) })).status);
   check('Force brute : pause après 5 essais', codes.slice(0, 5).every((c) => c === 401) && codes.slice(5).every((c) => c === 429), codes.join(','));
 
+  // Entrées mal formées : jamais d'erreur interne
+  r = await fetch(`${B}/api/status`, { headers: { cookie: 'vn_token=%E0%A4%A' } });
+  check('Cookie mal encodé ignoré (pas d’erreur 500)', r.status === 200, String(r.status));
+  r = await req('/api/items/999999/mylist', { method: 'POST', headers: auth, body: '{}' });
+  check('Titre inconnu : « introuvable », pas une erreur 500', r.status === 404, String(r.status));
+
+  // Secrets des services : chiffrés dans la base, jamais en clair (une sauvegarde ne les révèle pas)
+  const SECRET = 'secret-de-webhook-a-ne-pas-lire';
+  await req('/api/admin/webhooks', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Essai', url: 'http://127.0.0.1:9/h', secret: SECRET, events: ['library.added'] }) });
+  await req('/api/admin/music-meta', { method: 'PUT', headers: auth, body: JSON.stringify({ acoustidKey: 'cle-de-service-a-ne-pas-lire' }) });
+  const { DatabaseSync } = await import('node:sqlite');
+  const sdb = new DatabaseSync(path.join(dir, 'venus.db'), { readOnly: true });
+  const stored = sdb.prepare("SELECT key, value FROM settings WHERE key IN ('webhooks', 'acoustid_key')").all();
+  sdb.close();
+  check('Clés des services et secrets des webhooks chiffrés dans la base', stored.length === 2 && stored.every((x) => x.value.includes('enc1:') && !x.value.includes('a-ne-pas-lire')), stored.map((x) => `${x.key}:${x.value.slice(0, 12)}`).join(' '));
+  r = await req('/api/admin/backups', { method: 'POST', headers: auth, body: '{}' });
+  const bk = await r.json();
+  const mode = process.platform === 'win32' ? 0o600 : fs.statSync(path.join(dir, 'backups', bk.name)).mode & 0o777;
+  check('Sauvegarde lisible par Venus seulement (droits 600)', r.ok && mode === 0o600, mode.toString(8));
+
   // Erreurs sans détails
   r = await req('/api/items/abc', { headers: auth });
   const body = await r.text();

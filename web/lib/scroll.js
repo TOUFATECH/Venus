@@ -33,6 +33,9 @@ if (typeof window !== 'undefined') {
   document.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { clearTimeout(saveT); save(); } }, { capture: true });
 }
 
+/** Vrai pendant l'affichage d'une page où l'on revient (bouton Retour, geste) : elle doit se redessiner aussi longue qu'avant */
+export const isBackNav = () => popped;
+
 /** Appelé à chaque changement de page (adresse complète) */
 export function pageChanged(url) {
   // La nouvelle page est déjà affichée : on n'enregistre plus rien pour l'ancienne (fait au clic / au retour)

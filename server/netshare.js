@@ -8,7 +8,7 @@ import dns from 'node:dns/promises';
 import { execFile, execFileSync } from 'node:child_process';
 const require_mount = () => execFileSync('mount', [], { timeout: 3000 }).toString();
 import { config } from './config.js';
-import { all, run } from './db.js';
+import { all, run, sealText, unsealText } from './db.js';
 import { runtime, mountAdvice } from './env.js';
 
 const PLATFORM = process.platform; // linux | darwin | win32
@@ -233,8 +233,33 @@ export function remoteReady(lib) {
 
 export function remoteOf(lib) {
   if (!lib || !lib.remote) return null;
-  try { return JSON.parse(lib.remote); } catch { return null; }
+  try {
+    const r = JSON.parse(lib.remote);
+    if (r && r.pass) {
+      // Chiffré avec une autre clé (base restaurée sur une autre machine sans son fichier secret.key) : illisible.
+      // Le partage reste en place, son mot de passe se ressaisit dans Réglages → Sources → Reconnecter.
+      const clear = unsealText(r.pass, null);
+      if (clear === null) { r.pass = ''; r.passLost = true; } else r.pass = clear;
+    }
+    return r;
+  } catch { return null; }
 }
+// Ce qui est écrit dans la base : le mot de passe du partage est chiffré (comme les clés d'API), une copie de la
+// base ou une sauvegarde ne le révèle pas
+export function packRemote(remote) {
+  const r = { ...remote };
+  delete r.passLost;
+  return JSON.stringify({ ...r, pass: r.pass ? sealText(r.pass) : '' });
+}
+// Le montage a-t-il échoué à cause de l'identifiant ou du mot de passe ? (l'interface propose alors de les ressaisir)
+export const loginRefused = (error) => /^Accès refusé/.test(String(error || ''));
+// Bases d'une version précédente : mots de passe encore en clair chiffrés au démarrage
+try {
+  for (const lib of all('SELECT id, remote FROM libraries WHERE remote IS NOT NULL')) {
+    let r; try { r = JSON.parse(lib.remote); } catch { continue; }
+    if (r && r.pass && !String(r.pass).startsWith('enc1:')) run('UPDATE libraries SET remote = ? WHERE id = ?', packRemote(r), lib.id);
+  }
+} catch (e) { console.warn('[partages] chiffrement des mots de passe :', e.message); }
 
 // État des sources réseau (pour les réglages)
 export const netState = new Map(); // id -> { ok, error, at }

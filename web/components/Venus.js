@@ -100,6 +100,17 @@ function App({ children }) {
     const { app, api } = L;
     try { sessionStorage.setItem('vn_nav', '1'); } catch { /* */ }
     document.documentElement.classList.toggle('kids', !!app.state.profile?.isKids);
+    // Heure du serveur : l'administrateur annonce le fuseau de son appareil, une fois par session (pas depuis une
+    // télé, dont l'horloge est souvent mal réglée). À la maison et tant que rien n'a été choisi, le serveur l'adopte.
+    if (app.state.profile?.isAdmin && !document.documentElement.classList.contains('tv')) {
+      try {
+        if (!sessionStorage.getItem('vn_clock')) {
+          sessionStorage.setItem('vn_clock', '1');
+          const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (zone) api.api('/api/admin/clock', { method: 'POST', body: { zone } }).then((r) => { if (r && r.adopted) L.ui.toast(`Heure du serveur réglée sur ${zone.replace(/_/g, ' ')} (Réglages → Serveur pour la changer)`); }).catch(() => {});
+        }
+      } catch { /* stockage indisponible */ }
+    }
     app.listenEvents();
     if (document.documentElement.classList.contains('tv') && !window.__vnPairing) {
       window.__vnPairing = true;
