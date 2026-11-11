@@ -191,6 +191,17 @@ export let progressVersion = 1;
 const touchesProgress = (sql) => /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*\b(progress|profiles)\b/i.test(sql);
 export const run = (sql, ...p) => { const r = q(sql).run(...p); if (touchesItems(sql)) itemsVersion++; if (touchesProgress(sql)) progressVersion++; return r; };
 
+// Écritures faites par un autre programme sur la même base (outil de maintenance, restauration, sqlite3 à la main) :
+// SQLite change alors « data_version ». Vérifié à chaque requête (quelques microsecondes) pour que les listes gardées
+// en mémoire ne restent jamais en retard sur la base.
+let dataVersion = null;
+const dvStmt = db.prepare('PRAGMA data_version');
+export function checkExternalWrites() {
+  const v = dvStmt.get().data_version;
+  if (dataVersion !== null && v !== dataVersion) { itemsVersion++; progressVersion++; }
+  dataVersion = v;
+}
+
 export function tx(fn) {
   db.exec('BEGIN');
   try { const r = fn(); db.exec('COMMIT'); itemsVersion++; progressVersion++; return r; }

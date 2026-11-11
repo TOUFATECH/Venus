@@ -43,7 +43,7 @@ import { startBackups } from './backup.js';
 import { stopAllSessions } from './stream.js';
 import { mountAll, watchMounts } from './netshare.js';
 import { runtime } from './env.js';
-import { getSetting, setSetting, all } from './db.js';
+import { getSetting, setSetting, all, checkExternalWrites } from './db.js';
 import fs from 'node:fs';
 import { contentSecurityPolicy, clientIp, isSecure, inspectRequest, isBanned, applyHeaders, handlePreflight, checkCsrf, checkHpp, rateLimit, requireHttps, publicError, suspicious, onSecurityAlert } from './security.js';
 import { tlsOptions } from './tls.js';
@@ -87,6 +87,7 @@ async function handle(req, res) {
   if (!res.req) res.req = req;
   const ip = clientIp(req);
   ctx.ip = ip;
+  if (url.pathname.startsWith('/api/')) checkExternalWrites();
   const secure = isSecure(req);
   try {
     // En-têtes de sécurité (CSP, anti-clickjacking, CORS limité aux flux vidéo…)
