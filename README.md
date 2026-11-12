@@ -27,6 +27,7 @@ Un serveur multimédia léger et auto-hébergé, avec une interface de salle de 
 | **Lecture intelligente** | Lecture directe quand l'appareil sait lire le fichier, simple « remux » sinon, conversion matérielle (NVIDIA, Intel, AMD, Apple, Raspberry Pi) en dernier recours. |
 | **Toute la maison** | Profils avec code PIN, comptes locaux ou **invitations par e-mail**, profils enfants (temps d'écran, âge), séances à plusieurs. |
 | **Automatique** | Affiches et résumés en français, « À venir » relié à Radarr / Sonarr / Seerr, notifications Telegram, mises à jour en un clic. |
+| **Odin dans Venus** | La mascotte d'**Odin** (l'assistant de la maison, où Venus s'appelle **Freyja**) se pose en bas de chaque page et l'explique, fait le tour de Venus et, une fois Odin relié (Réglages → Thème et menu → Odin : adresse + jeton, gardé chiffré sur le serveur), lui transmet tes questions. Jamais sur l'image pendant la lecture ; 10 touchers rapides la cachent sur l'appareil, elle revient dans les Réglages. |
 
 ---
 

@@ -3986,3 +3986,36 @@ html.lite .hero-poster { animation: none; }
 .compress-note .chips { align-items: center; }
 .compress-note .chips small { margin-left: 4px; }
 @media (max-width: 700px) { .conv-row { flex-wrap: wrap; } .conv-actions { justify-content: flex-start; } }
+
+/* ---------------------------------------------------------------- Odin dans Venus (mascotte et guide) */
+.vn-odin { position: fixed; right: max(16px, env(safe-area-inset-right)); bottom: calc(18px + env(safe-area-inset-bottom)); z-index: 60; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; pointer-events: none; }
+.vn-odin > * { pointer-events: auto; }
+.vn-odin-btn { width: 64px; height: 64px; border: 0; padding: 0; background: none; cursor: pointer; border-radius: 50%; filter: drop-shadow(0 0 14px #edb03d66) drop-shadow(0 8px 12px rgba(0,0,0,.4)); }
+.vn-odin-btn:focus-visible { outline: 3px solid var(--accent, #edb03d); outline-offset: 3px; }
+.vn-odin-face { display: block; animation: vn-odin-perch 2.8s ease-in-out infinite; }
+.vn-odin-orbit { transform-origin: 60px 60px; animation: vn-odin-orbit 9s linear infinite; }
+.vn-odin-eyes { transform-origin: 60px 56px; animation: vn-odin-blink 4.5s infinite; }
+.vn-odin-bubble { max-width: 240px; padding: 9px 12px; border-radius: 14px 14px 4px 14px; background: #16234a; color: #c9d6ff; font-size: 13.5px; line-height: 1.4; box-shadow: 0 10px 24px rgba(0,0,0,.4); }
+.vn-odin-panel { width: min(360px, calc(100vw - 32px)); max-height: min(70vh, 560px); overflow: auto; border-radius: 22px; background: rgba(18,22,34,.96); color: #eef0f6; border: 1px solid rgba(255,255,255,.1); box-shadow: 0 24px 60px rgba(0,0,0,.5); padding: 14px; display: flex; flex-direction: column; gap: 12px; backdrop-filter: blur(14px); }
+.vn-odin-panel header { display: flex; align-items: baseline; gap: 8px; }
+.vn-odin-panel header b { font-size: 16px; }
+.vn-odin-panel header span { font-size: 12.5px; opacity: .65; }
+.vn-odin-x { margin-left: auto; width: 32px; height: 32px; border-radius: 10px; border: 0; background: rgba(255,255,255,.08); color: inherit; font-size: 18px; cursor: pointer; }
+.vn-odin-page { padding: 10px 12px; border-radius: 14px; background: rgba(255,255,255,.05); }
+.vn-odin-page b { font-size: 14.5px; }
+.vn-odin-page p { margin: 4px 0 0; font-size: 13.5px; line-height: 1.5; opacity: .85; }
+.vn-odin-answer { padding: 10px 12px; border-radius: 14px 14px 14px 4px; background: #16234a; color: #c9d6ff; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; }
+.vn-odin-ask { display: flex; gap: 6px; }
+.vn-odin-ask input { flex: 1; min-width: 0; height: 40px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: inherit; padding: 0 12px; font: inherit; font-size: 14px; }
+.vn-odin-ask button { width: 42px; border-radius: 12px; border: 0; background: #edb03d; color: #1a1006; font-weight: 800; cursor: pointer; }
+.vn-odin-ask button:disabled { opacity: .5; cursor: default; }
+.vn-odin-hint { margin: 0; font-size: 12.5px; opacity: .7; }
+.vn-odin-tour { display: flex; flex-wrap: wrap; gap: 6px; }
+.vn-odin-tour a { height: 30px; padding: 0 11px; border-radius: 999px; background: rgba(255,255,255,.07); color: inherit; text-decoration: none; font-size: 12.5px; display: inline-flex; align-items: center; }
+.vn-odin-tour a.on { background: #edb03d; color: #1a1006; font-weight: 700; }
+@keyframes vn-odin-perch { 0%, 100% { transform: translateY(0); } 45% { transform: translateY(-7px) scaleY(1.04); } 55% { transform: translateY(0) scale(1.05, .95); } }
+@keyframes vn-odin-orbit { to { transform: rotate(360deg); } }
+@keyframes vn-odin-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+@media (max-width: 760px) { .vn-odin { bottom: calc(78px + env(safe-area-inset-bottom)); } .vn-odin-btn { width: 52px; height: 52px; } .vn-odin-face { width: 52px; height: 52px; } }
+.vn-odin-panel:not(:hover) ~ .vn-odin-btn .vn-odin-face { animation-duration: 2.8s; }
+@media (prefers-reduced-motion: reduce) { .vn-odin-face, .vn-odin-orbit, .vn-odin-eyes { animation: none; } }

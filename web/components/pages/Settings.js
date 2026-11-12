@@ -3,6 +3,7 @@
 // Une rubrique à la fois : colonne à gauche sur ordinateur, bande défilante sur téléphone.
 import { TraktLinkBox, ImportBox, RemoteBox, TranscribeBox, LightsBox } from './SettingsExtra';
 import { ConvertBox } from './Convert';
+import { odinShown, setOdinShown } from '../OdinGuide';
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
 import { useTitle, api, toast, go } from '../../lib/hooks';
@@ -92,7 +93,7 @@ export default function Settings() {
   let content;
   if (tab === 'profil') content = <><MyBox me={me} /><TraktLinkBox /></>;
   else if (tab === 'appareil') content = <DeviceBox />;
-  else if (tab === 'affichage') content = <><ThemeBox /><FluidBox /><MenuBox me={me} /></>;
+  else if (tab === 'affichage') content = <><ThemeBox /><FluidBox /><MenuBox me={me} /><OdinBox me={me} /></>;
   else if (tab === 'perf') content = <><PerfBoxes /><ConvertBox /></>;
   else if (tab === 'maj') content = <UpdateBox />;
   else if (error && !a) content = <p className="error-text">{error.message}</p>;
@@ -346,6 +347,37 @@ function MenuBox({ me }) {
       <Actions>
         <button className="btn btn-small btn-ghost f" onClick={() => { M.resetMenuPrefs(me.id); setP(M.menuPrefs(me.id)); toast('Menu d’origine rétabli'); }}>Rétablir le menu d’origine</button>
       </Actions>
+    </section>
+  );
+}
+
+// Odin : la mascotte sur cet appareil (tous) et le lien avec Odin (administrateur : adresse + jeton, jamais réaffiché)
+function OdinBox({ me }) {
+  const [shown, setShown] = useState(() => (typeof window === 'undefined' ? true : odinShown()));
+  const [conf, setConf] = useState(null);
+  const [url, setUrl] = useState('');
+  const [token, setToken] = useState('');
+  useEffect(() => { setShown(odinShown()); if (me.isAdmin) api('/api/admin/odin').then((c) => { setConf(c); setUrl(c.url || ''); }).catch(() => {}); }, []);
+  const save = async () => {
+    try {
+      const body = { url }; if (token) body.token = token;
+      const c = await api('/api/admin/odin', { method: 'PUT', body });
+      setConf(c); setToken(''); toast(c.reachable ? 'Odin est relié' : 'Enregistré, mais Odin ne répond pas à cette adresse', !c.reachable);
+    } catch (e) { toast(e.message, true); }
+  };
+  return (
+    <section className="box" id="odin">
+      <h2>Odin</h2>
+      <p>La mascotte d’Odin se pose en bas de l’écran et t’explique chaque page de Venus. Dix touchers rapides la cachent ; elle revient ici.</p>
+      <Switch key={shown ? 'on' : 'off'} label="Odin sur cet appareil" hint="Jamais sur l’image pendant la lecture" checked={shown} onChange={(e) => { setShown(e.target.checked); setOdinShown(e.target.checked); saved(); }} />
+      {me.isAdmin ? (
+        <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+          <p className="muted">Relier Venus à Odin (Venus y s’appelle « Freyja ») : la famille peut lui poser des questions depuis Venus. Le jeton se crée dans Odin (Réglages → Accès) et reste sur le serveur.</p>
+          <Field label="Adresse d’Odin"><input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.1.10:7777" /></Field>
+          <Field label="Jeton d’Odin"><input className="input" type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder={conf && conf.hasToken ? '•••••••• (enregistré)' : 'colle le jeton'} /></Field>
+          <Actions><button className="btn f" onClick={save}>Enregistrer</button>{conf ? <span className="muted">{conf.url ? (conf.reachable ? 'Odin répond' : 'Odin ne répond pas') : 'Pas relié'}</span> : null}</Actions>
+        </div>
+      ) : null}
     </section>
   );
 }

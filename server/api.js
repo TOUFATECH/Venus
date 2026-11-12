@@ -71,6 +71,7 @@ import { searchSubs, downloadSub, osOn, resetOsLogin } from './subtitles.js';
 import { listBackups, makeBackup, scheduleRestore, backupPath } from './backup.js';
 import { prepare as prepareDownload, listJobs, getJob, cancelJob, niceName } from './downloads.js';
 import { notify, vapidPublicKey, savePushSub, removePushSub, pushCount, channels } from './notify.js';
+import { odinConf, odinLinked, odinPing, saveOdin, askOdin } from './odin.js';
 import { control, deviceId, logActivity, recentActivity, heartbeat, stopHeartbeat, nowPlaying, tokenOfDevice, loginCode, useLoginCode, loginCodeActive } from './activity.js';
 import { scheduleRatings, refreshRatings, omdbKey, simklId, ratingsPending } from './ratings.js';
 import { wishlistOf, inWishlist, addWish, removeWish, runWatch, watchState, autoRequest, followMode, seerrLogin, listSeerrUsers, seerrUsers, linkSeerrUser, seerrUserOf } from './watch.js';
@@ -1295,6 +1296,25 @@ router.get('/api/people/films', async (ctx) => {
   const items = list.map((x) => ({ ...x, key: `imdb:${x.imdb}`, nas: byImdb.get(x.imdb) || byTitle.get(`${x.kind}|${String(x.title).toLowerCase()}|${x.year || ''}`) || null, wanted: wanted.has(`imdb:${x.imdb}`) }))
     .filter((x) => !kids || x.nas);
   sendJson(ctx.res, { items, radarr: arrOn('radarr'), sonarr: arrOn('sonarr'), kids });
+});
+
+// ---------------------------------------------------------------- Odin (l'assistant de la maison ; Venus y s'appelle Freyja)
+// Tout profil connecté voit si Odin est relié et peut lui poser une question ; seul l'administrateur règle le lien.
+router.get('/api/odin', (ctx) => { requireProfile(ctx); sendJson(ctx.res, { linked: odinLinked() }); });
+router.post('/api/odin/ask', async (ctx) => {
+  const p = requireProfile(ctx);
+  const b = await readBody(ctx.req, 8 * 1024);
+  try { sendJson(ctx.res, { text: await askOdin(b && b.q, b && b.page) }); }
+  catch (e) { throw new HttpError(e.status || 502, e.message); }
+  logActivity('odin', `${p.name} a posé une question à Odin depuis Venus`);
+});
+router.get('/api/admin/odin', async (ctx) => { requireAdmin(ctx); const c = odinConf(); sendJson(ctx.res, { url: c.url, hasToken: Boolean(c.token), reachable: await odinPing() }); });
+router.put('/api/admin/odin', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = await readBody(ctx.req, 8 * 1024) || {};
+  try { saveOdin({ url: b.url, token: b.token }); } catch (e) { throw new HttpError(e.status || 400, e.message); }
+  logSecurity('odin', ctx.ip, `${me.name} a ${b.token ? 'changé le lien avec' : 'réglé l’adresse d’'} Odin`, 'info');
+  const c = odinConf(); sendJson(ctx.res, { url: c.url, hasToken: Boolean(c.token), reachable: await odinPing() });
 });
 
 router.get('/api/mylist', (ctx) => {

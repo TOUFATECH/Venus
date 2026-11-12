@@ -1,6 +1,7 @@
 'use client';
 // Coque de Venus : rail (ordinateur, TV), barre du haut et onglets (mobile). Mise en page en flexbox ;
 // chaque thème (planète) la place différemment : rail à gauche, menu en haut, dock en bas… (html[data-layout]).
+import OdinGuide from './OdinGuide';
 import Palette from './Palette';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
@@ -90,7 +91,7 @@ export default function Shell({ path, bare, children }) {
     prevActive.current = a ? a.getAttribute('href') : null;
   }, [path]);
 
-  if (bare || !p) return <div id="app">{children}{p ? <Palette /> : null}</div>;
+  if (bare || !p) return <div id="app">{children}{p ? <Palette /> : null}{p ? <OdinGuide path={path} /> : null}</div>;
 
   const { shown, more } = menu.menuItems(p, app.hasCat);
   const RAIL_MAX = menu.RAIL_MAX;
@@ -130,6 +131,7 @@ export default function Shell({ path, bare, children }) {
       {children}
       {waves ? <Waves /> : null}
       <Palette />
+      <OdinGuide path={path} />
       <nav className="tabbar">
         {tabItems.map((it) => <ItemLink key={it.id} it={it} path={path} />)}
         <button className="f tab-more" aria-label="Toutes les sections" data-more="1" onClick={() => app.openAll(all.filter((it) => !tabItems.includes(it)))}><Icon name="apps" /><span>Tout</span></button>
