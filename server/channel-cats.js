@@ -31,6 +31,18 @@ export function channelCat(title, group) {
   return RULES.find(([c]) => c === 'Généraliste')[1].test(t) ? 'Généraliste' : 'Autres';
 }
 
+/** Catégorie d'une chaîne d'une liste M3U ajoutée par l'utilisateur : celle de son fichier (group-title).
+ *  Groupe reconnu (« FOOT FR », « Japan », « Kids ») → catégorie de Venus ; groupe inconnu → le nom du groupe
+ *  lui-même devient la catégorie ; groupe absent ou qui ne dit que le pays / la qualité → d'après le nom. */
+export function fileCat(title, group) {
+  const g = String(group || '').split(/[;|]/)[0].replace(/[★☆|•●▶►#*_=-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const ng = norm(g);
+  if (!ng || /^(fr|france|french|francais|vip|hd|fhd|uhd|4k|sd|hevc|h265|backup|all|tous|tout|live|direct|chaines?|channels?|tv|iptv|other|autres?|divers|\d+)( (fr|france|hd|fhd|4k|uhd|sd|vip|tv))*$/.test(ng)) return channelCat(title, '');
+  for (const [cat, re] of RULES) if (cat !== 'Généraliste' && re.test(ng)) return cat;
+  if (/\btnt\b|general|generaliste|entertain|divertissement/.test(ng)) return 'Généraliste';
+  return g.length > 32 ? `${g.slice(0, 31)}…` : g.charAt(0).toUpperCase() + g.slice(1).toLowerCase().replace(/\b(fr|tv|hd|uk|us|vip)\b/g, (m) => m.toUpperCase());
+}
+
 /** Chaîne à ne jamais cacher, même si un test échoue : Mayotte La 1ère et les autres La 1ère ne diffusent
  *  pas tous leurs programmes en continu sur Internet (écran noir pendant certains programmes). */
 export const neverHide = (title) => /\b(la )?1(è|e)re\b|mayotte/i.test(String(title || ''));

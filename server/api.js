@@ -1,7 +1,7 @@
 // Routes de l'API
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { channelCat, neverHide, CATEGORIES } from './channel-cats.js';
+import { channelCat, fileCat, neverHide, CATEGORIES } from './channel-cats.js';
 import { checkSource, importSource } from './import-media.js';
 import { remoteStatus, startRemote } from './remote-access.js';
 import { startLink, pollLink, unlink, linkState, importTrakt, traktWatched, setTraktPush, traktSecret } from './trakt-sync.js';
@@ -982,9 +982,11 @@ router.get('/api/library', (ctx) => {
     if (type === 'channel') {
       // État de la chaîne d'après la dernière vérification (images reçues ou non)
       const health = new Map(items.map((i) => [i.id, i]));
+      // Listes intégrées (chaînes gratuites, monde) : catégories de Venus ; listes M3U ajoutées : celles du fichier
+      const builtIn = new Set(all('SELECT id FROM libraries WHERE path IN (?, ?)', FREE_TV, IPTV_WORLD).map((l) => l.id));
       for (const c of cards) {
         const i = health.get(c.id);
-        c.cat = channelCat(c.title, c.group);
+        c.cat = i && !builtIn.has(i.library_id) ? fileCat(c.title, c.group) : channelCat(c.title, c.group);
         // Mayotte La 1ère et les autres La 1ère restent toujours visibles (programmes parfois non diffusés sur Internet)
         if (i && i.ch_ok === 0) { if (neverHide(c.title)) c.flaky = i.ch_error || 'Aucune image reçue'; else { c.down = true; c.downWhy = i.ch_error || 'Aucune image reçue'; } }
       }

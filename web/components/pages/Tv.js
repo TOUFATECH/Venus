@@ -157,7 +157,9 @@ function ChannelsView({ all, nn, admin }) {
   const counts = tally(channels.filter((c) => !isPluto(c)));
   const plutoCounts = tally(pluto);
   // Sport (les matchs) en avant, juste après les favoris ; Pluto TV dans son propre onglet
-  const cats = CAT_ORDER.filter((k) => counts.has(k) && k !== 'Sport');
+  // Catégories de Venus d'abord, puis celles venues des fichiers M3U ajoutés (groupes du fichier), par ordre alphabétique
+  const extra = [...counts.keys()].filter((k) => !CAT_ORDER.includes(k)).sort((a, b) => a.localeCompare(b, 'fr'));
+  const cats = [...CAT_ORDER.filter((k) => counts.has(k) && k !== 'Sport' && k !== 'Autres'), ...extra, ...(counts.has('Autres') ? ['Autres'] : [])];
   const plutoCats = CAT_ORDER.filter((k) => plutoCounts.has(k));
   const [sub, setSub] = useState('');
   const [group, setGroupS] = useState(() => { try { return localStorage.getItem('vn.tv.cat') || ''; } catch { return ''; } });
