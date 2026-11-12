@@ -6,11 +6,11 @@ const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-
 // Du plus précis au plus général : la première règle qui correspond l'emporte
 const RULES = [
   ['Outre-mer', /\b1(e|ere|re)\b|la 1ere|outre.?mer|mayotte|reunion|antenne reunion|kweli|guadeloupe|martinique|guyane|polynesie|tahiti|caledonie|wallis|saint.?pierre|antilles|kajou|telekreol|atv\b|eclair tv|zouk/],
-  ['Animé / Manga', /anim(e|es|é|ation)?\b|manga|one piece|yu.?gi.?oh|naruto|pokemon|dragon ?ball|wasabi|sailor|captain tsubasa|olive (et|&) tom|saint seiya|goldorak|ladybug|miraculous|crunchyroll|\badn\b|otaku|hero ?tv|\bgong\b|game one|j.?one/],
+  ['Animé / Manga', /anim(e|es|é|ation)?\b|manga|detective conan|digimon|doraemon|beyblade|inazuma|one piece|yu.?gi.?oh|naruto|pokemon|dragon ?ball|wasabi|sailor|captain tsubasa|olive (et|&) tom|saint seiya|goldorak|ladybug|miraculous|crunchyroll|\badn\b|otaku|hero ?tv|\bgong\b|game one|j.?one/],
   ['Japon', /\bnhk\b|weathernews|japon|japan|\.jp\b|tokyo|fuji ?tv|nippon|asahi|\btbs\b/],
-  ['Jeunesse', /kids?\b|enfant|junior|jeunesse|gulli|tiji|okoo|piwi|toon|cartoon|ludo|teletoon|baby|famille|family|disney|nick/],
+  ['Jeunesse', /schtroumpf|bob l.eponge|barbie|tortues ninja|icarly|charlotte aux fraises|mattel|\bteen\b|kids?\b|enfant|junior|jeunesse|gulli|tiji|okoo|piwi|toon|cartoon|ludo|teletoon|baby|famille|family|disney|nick/],
   ['Sport', /\bauto\b|sport|cricket|kabaddi|foot|\bequipe\b|rugby|tennis|golf|moto|fight|combat|racing|\bf1\b|ufc|nba|nfl|olymp|athle|surf|bike|velo|cyclisme|equidia|chess|echecs|poker|wwe|catch/],
-  ['Info', /\binfo|news|\bbfm\b|cnews|\blci\b|france ?24|euronews|i24|\blcp\b|public senat|journal|actu|meteo|weather|bloomberg|cnn|\bsky\b|rfi\b|tv5monde info|figaro|le monde|politique|business|legislative|\d+ ?24\b|24 ?\d*$|africa ?24|francophonie/],
+  ['Info', /\binfo|news|\bbfm\b|cnews|\blci\b|france ?24|euronews|i24|\blcp\b|public senat|journal|actu|meteo|weather|bloomberg|cnn|\bsky\b|rfi\b|tv5monde info|figaro|(?<!tout )le monde|politique|business|legislative|\d+ ?24\b|24 ?\d*$|africa ?24|francophonie/],
   ['Histoire', /histoire|history|patrimoine|guerre|\bwar\b|heritage|chasse/],
   ['Documentaire', /outdoor|docu|decouverte|discovery|nature|science|animaux|animal|wild|planete|planet|explore|geo\b|national ?geo|ushuaia|voyage|travel|sciences?|crime|enquete|investigation|survival/],
   ['Films', /film|cine|movie|cinema|western|thriller|horreur|horror|action|polar|comedie\b|comedy|hollywood|classic|blockbuster/],

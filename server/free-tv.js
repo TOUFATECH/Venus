@@ -42,10 +42,11 @@ export async function buildFreeTv() {
   // Le guide des programmes gratuit (XML-TV-Fr) est déclaré dans l'en-tête : Venus le télécharge tout seul
   const out = ['#EXTM3U url-tvg="venus:guide-fr"'];
   const seen = new Set();
-  const add = (name, url, { logo = '', group = '', opts = [], id = '' } = {}) => {
+  const add = (name, url, { logo = '', group = '', opts = [], id = '', official = false } = {}) => {
     const k = key(name);
-    // En français seulement : les versions en d'autres langues (France 24 English, TV5Monde Latin America…) sont écartées
-    if (NOT_FRENCH.test(name) || PAY_TV.test(name)) return;
+    // En français seulement : les versions en d'autres langues (France 24 English, TV5Monde Latin America…) sont écartées.
+    // Chaînes officielles gratuites (Pluto TV) : diffusées par le service lui-même, gardées même si leur nom ressemble à une chaîne payante (MTV Classics…)
+    if (!official && (NOT_FRENCH.test(name) || PAY_TV.test(name))) return;
     // Bloquées hors de leur pays, ou qui ne diffusent pas en continu : souvent écran noir, on ne les reprend pas
     if (/\[(Geo-blocked|Not 24\/7)\]/i.test(name)) return;
     if (!url || seen.has(k)) return;
@@ -75,10 +76,26 @@ export async function buildFreeTv() {
       }
     }
   }
-  // 3 bis. Animé et manga en français : chaînes gratuites financées par la publicité (Pluto TV, Rakuten TV,
-  //        Samsung TV Plus), recensées par iptv-org. On ne prend que les chaînes animé / manga / dessins animés.
+  // 3 bis. Pluto TV France : TOUTES ses chaînes (gratuites, financées par la publicité, diffusées par Pluto TV
+  //        lui-même), recensées par iptv-org. Groupe « Pluto TV » ; la catégorie vient du nom (Ciné…, Animé…),
+  //        sinon « Séries » (la plupart sont des chaînes d'une seule série : Daria, Alerte Cobra…).
+  try {
+    let info = null, opts = [];
+    for (const raw of (await text(`${IPTV_ORG}/fr_pluto.m3u`)).split(/\r?\n/)) {
+      const line = raw.trim();
+      if (line.startsWith('#EXTINF')) { info = line; opts = []; }
+      else if (line.startsWith('#EXTVLCOPT')) opts.push(line);
+      else if (info && /^https?:\/\//i.test(line)) {
+        const name = info.slice(info.lastIndexOf(',') + 1).replace(/\s+by Pluto TV$/i, ' (Pluto TV)');
+        const reality = /r[ée]alit[ée]|reality|dating|marseillais|catfish|teen mom|z'amours|y'a que la v[ée]rit[ée]|qui veut gagner|adjug[ée]/i.test(name);
+        add(/pluto/i.test(name) ? name : `${name} (Pluto TV)`, line, { logo: (/tvg-logo="([^"]*)"/i.exec(info) || [])[1] || '', group: reality ? 'Pluto TV Divertissement' : 'Pluto TV Séries', opts, id: (/tvg-id="([^"]*)"/i.exec(info) || [])[1] || '', official: true });
+        info = null;
+      }
+    }
+  } catch (e) { console.warn('[chaînes gratuites] Pluto TV :', e.message); }
+  // 3 ter. Animé et manga en français sur Rakuten TV et Samsung TV Plus (gratuites, avec publicité) : seulement l'animé.
   const ANIME = /anim|manga|one piece|yu-?gi-?oh|naruto|pok[eé]mon|dragon ?ball|wasabi|toons|sailor|captain tsubasa|olive (et|&) tom|saint seiya|goldorak|ladybug|miraculous/i;
-  for (const f of ['fr_pluto.m3u', 'fr_rakuten.m3u', 'fr_samsung.m3u']) {
+  for (const f of ['fr_rakuten.m3u', 'fr_samsung.m3u']) {
     let tx = '';
     try { tx = await text(`${IPTV_ORG}/${f}`); } catch (e) { console.warn('[chaînes gratuites] animé :', e.message); continue; }
     let info = null, opts = [];
