@@ -32,11 +32,14 @@ export function channelCat(title, group) {
 }
 
 /** Catégorie d'une chaîne d'une liste M3U ajoutée par l'utilisateur : celle de son fichier (group-title).
- *  Groupe reconnu (« FOOT FR », « Japan », « Kids ») → catégorie de Venus ; groupe inconnu → le nom du groupe
+ *  Le nom de la chaîne prime s'il est explicite ; sinon groupe reconnu (« FOOT FR », « Japan », « Kids ») → catégorie de Venus ; groupe inconnu → le nom du groupe
  *  lui-même devient la catégorie ; groupe absent ou qui ne dit que le pays / la qualité → d'après le nom. */
 export function fileCat(title, group) {
   const g = String(group || '').split(/[;|]/)[0].replace(/[★☆|•●▶►#*_=-]+/g, ' ').replace(/\s+/g, ' ').trim();
   const ng = norm(g);
+  // Un nom explicite prime (« Mangas TV » dans « Divertissement » reste un animé)
+  const nt = norm(title);
+  for (const [cat, re] of RULES) if (cat !== 'Généraliste' && re.test(nt)) return cat;
   if (!ng || /^(fr|france|french|francais|vip|hd|fhd|uhd|4k|sd|hevc|h265|backup|all|tous|tout|live|direct|chaines?|channels?|tv|iptv|other|autres?|divers|\d+)( (fr|france|hd|fhd|4k|uhd|sd|vip|tv))*$/.test(ng)) return channelCat(title, '');
   for (const [cat, re] of RULES) if (cat !== 'Généraliste' && re.test(ng)) return cat;
   if (/\btnt\b|general|generaliste|entertain|divertissement/.test(ng)) return 'Généraliste';
