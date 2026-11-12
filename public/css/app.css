@@ -3996,3 +3996,9 @@ html.lite .hero-poster { animation: none; }
 .compress-note .chips { align-items: center; }
 .compress-note .chips small { margin-left: 4px; }
 @media (max-width: 700px) { .conv-row { flex-wrap: wrap; } .conv-actions { justify-content: flex-start; } }
+
+/* TV : onglet Pluto TV et ses sous-catégories */
+.chip.chip-pluto { border-color: #ffe14d; }
+.chip.chip-pluto.on { background: #ffe14d; color: #111; }
+.tv-sub { margin-top: 6px; padding-left: 10px; border-left: 3px solid #ffe14d; }
+.tv-sub .chip { font-size: .8rem; padding: 4px 10px; }

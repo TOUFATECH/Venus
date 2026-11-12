@@ -18,6 +18,9 @@ const playPath = (id) => shared().components.playPath(id);
 const CAT_ORDER = ['Outre-mer', 'Info', 'Généraliste', 'Films', 'Séries', 'Animé / Manga', 'Jeunesse', 'Documentaire', 'Histoire', 'Culture', 'Sport', 'Musique', 'Cuisine & maison', 'Japon', 'Autres'];
 const FAV = '★';
 const RECENT = '↺';
+// Onglet à part pour Pluto TV (128 chaînes gratuites) : elles ne se mêlent plus aux autres catégories
+const PLUTO = 'pluto';
+const isPluto = (c) => /pluto ?tv/i.test(`${c.title} ${c.group || ''}`);
 // Arrêt d'une lecture en cours (le jeton accompagne la demande : une suppression sans lui serait refusée)
 const stopSession = (id, relay) => {
   const t = shared().api.auth.token;
@@ -149,8 +152,14 @@ function ChannelsView({ all, nn, admin }) {
   const [channels, setChannels] = useState(() => all.filter((c) => !c.down));
   const down = all.filter((c) => c.down);
   const [favs, setFavs] = useState(() => new Set(all.filter((c) => c.fav).map((c) => c.id)));
-  const counts = channels.reduce((m, c) => m.set(c.cat || 'Autres', (m.get(c.cat || 'Autres') || 0) + 1), new Map());
-  const cats = CAT_ORDER.filter((k) => counts.has(k));
+  const tally = (list) => list.reduce((m, c) => m.set(c.cat || 'Autres', (m.get(c.cat || 'Autres') || 0) + 1), new Map());
+  const pluto = channels.filter(isPluto);
+  const counts = tally(channels.filter((c) => !isPluto(c)));
+  const plutoCounts = tally(pluto);
+  // Sport (les matchs) en avant, juste après les favoris ; Pluto TV dans son propre onglet
+  const cats = CAT_ORDER.filter((k) => counts.has(k) && k !== 'Sport');
+  const plutoCats = CAT_ORDER.filter((k) => plutoCounts.has(k));
+  const [sub, setSub] = useState('');
   const [group, setGroupS] = useState(() => { try { return localStorage.getItem('vn.tv.cat') || ''; } catch { return ''; } });
   const setGroup = (g) => { setGroupS(g); try { localStorage.setItem('vn.tv.cat', g); } catch { /* */ } };
   const toggleFav = async (c) => {
@@ -177,13 +186,14 @@ function ChannelsView({ all, nn, admin }) {
   const grid = useRef(null);
   const [recentIds, setRecentIds] = useState(() => all.filter((c) => c.recent != null).sort((a, b) => a.recent - b.recent).map((c) => c.id));
   const recents = recentIds.map((id) => channels.find((c) => c.id === id)).filter(Boolean);
-  const inGroup = (c) => !group || (group === FAV ? favs.has(c.id) : group === RECENT ? recentIds.includes(c.id) : (c.cat || 'Autres') === group);
+  const inGroup = (c) => !group || (group === FAV ? favs.has(c.id) : group === RECENT ? recentIds.includes(c.id)
+    : group === PLUTO ? isPluto(c) && (!sub || (c.cat || 'Autres') === sub) : !isPluto(c) && (c.cat || 'Autres') === group);
   let visible = channels.filter((c) => inGroup(c) && (!q.trim() || norm(`${c.title} ${c.group || ''} ${c.cat || ''}`).includes(norm(q.trim()))));
   if (group === RECENT) visible = visible.sort((a, b) => recentIds.indexOf(a.id) - recentIds.indexOf(b.id));
   const visRef = useRef(visible); visRef.current = visible;
   // Des milliers de chaînes possibles : on en affiche 120, puis « Afficher plus »
   const [limit, setLimit] = useState(120);
-  useEffect(() => setLimit(120), [group, q]);
+  useEffect(() => setLimit(120), [group, sub, q]);
   const chRef = useRef(channels); chRef.current = channels;
   // Chaîne d'avant (bouton « Dernière chaîne », comme sur une box) et liste des récentes
   const prevCh = useRef(null);
@@ -242,10 +252,20 @@ function ChannelsView({ all, nn, admin }) {
                   onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); if (visible[0]) choose(visible[0]); } else if (e.key === 'ArrowDown') { e.preventDefault(); grid.current.querySelector('.tile')?.focus(); } else if (e.key === 'Escape') setQ(''); }} />
               </div>
               <div className="chips tv-cats" role="group" aria-label="Catégories de chaînes">
-                {[['', 'Toutes', channels.length], [FAV, '★ Favoris', favs.size], ...(recents.length ? [[RECENT, '↺ Récentes', recents.length]] : []), ...cats.map((k) => [k, k, counts.get(k)])].map(([id, label, n]) => (
-                  <button key={id || 'all'} className={`chip f${id === group ? ' on' : ''}`} aria-pressed={String(id === group)} onClick={() => setGroup(id)}>{label}<small className="chip-n">{n}</small></button>
+                {[['', 'Toutes', channels.length], [FAV, '★ Favoris', favs.size], ...(recents.length ? [[RECENT, '↺ Récentes', recents.length]] : []),
+                  ...(counts.has('Sport') ? [['Sport', '⚽ Sport & matchs', counts.get('Sport')]] : []),
+                  ...(pluto.length ? [[PLUTO, 'Pluto TV', pluto.length]] : []),
+                  ...cats.map((k) => [k, k, counts.get(k)])].map(([id, label, n]) => (
+                  <button key={id || 'all'} className={`chip f${id === group ? ' on' : ''}${id === PLUTO ? ' chip-pluto' : ''}`} aria-pressed={String(id === group)} onClick={() => { setGroup(id); setSub(''); }}>{label}<small className="chip-n">{n}</small></button>
                 ))}
               </div>
+              {group === PLUTO && plutoCats.length > 1 ? (
+                <div className="chips tv-cats tv-sub" role="group" aria-label="Catégories Pluto TV">
+                  {[['', 'Tout Pluto TV', pluto.length], ...plutoCats.map((k) => [k, k, plutoCounts.get(k)])].map(([id, label, n]) => (
+                    <button key={id || 'tout'} className={`chip chip-small f${id === sub ? ' on' : ''}`} aria-pressed={String(id === sub)} onClick={() => setSub(id)}>{label}<small className="chip-n">{n}</small></button>
+                  ))}
+                </div>
+              ) : null}
               {group === FAV ? (
                 <div className="tv-fav-tools">
                   <a className="btn btn-ghost btn-small f" href="/api/channels/favorites.m3u" download="venus-chaines-favorites.m3u"><Icon name="download" />Télécharger mes favoris (M3U)</a>
