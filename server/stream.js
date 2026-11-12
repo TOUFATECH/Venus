@@ -163,6 +163,8 @@ class HlsSession {
       ...p.input,
       ...(live ? NET_INPUT(this.input) : []),
       ...(!live && this.offset + this.resumeOffset() > 0 ? ['-ss', String(this.offset + this.resumeOffset())] : []),
+      // Tests automatisés : conversion à 8× le temps réel au plus, pour pouvoir l'interrompre en route (sinon un court extrait est fini avant)
+      ...(!live && process.env.VENUS_TEST_HOOKS === '1' ? ['-readrate', '8'] : []),
       '-fflags', live ? '+genpts+discardcorrupt' : '+genpts',
       // Direct : analyse courte (le codec est déjà connu grâce à l'analyse gardée en mémoire) = démarrage plus rapide
       '-analyzeduration', live ? (this.probe && this.probe.video ? '1500000' : '3M') : '20M', '-probesize', live ? (this.probe && this.probe.video ? '1500000' : '3M') : '20M',
