@@ -44,6 +44,8 @@ export default async function RootLayout({ children }) {
         <Venus>{children}</Venus>
         <noscript>Venus a besoin de JavaScript pour fonctionner.</noscript>
         {(inline.body || []).map(script)}
+        {/* Les pouvoirs d'Odin (copie de son moteur) : actifs seulement si Odin est relié et qu'ils sont activés dans Odin. */}
+        <script nonce={nonce} src={`${b}/js/odin-powers.js`} defer />
       </body>
     </html>
   );

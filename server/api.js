@@ -71,7 +71,7 @@ import { searchSubs, downloadSub, osOn, resetOsLogin } from './subtitles.js';
 import { listBackups, makeBackup, scheduleRestore, backupPath } from './backup.js';
 import { prepare as prepareDownload, listJobs, getJob, cancelJob, niceName } from './downloads.js';
 import { notify, vapidPublicKey, savePushSub, removePushSub, pushCount, channels } from './notify.js';
-import { odinConf, odinLinked, odinPing, saveOdin, askOdin } from './odin.js';
+import { odinConf, odinLinked, odinPing, saveOdin, askOdin, odinMascotte, forgetMascotte } from './odin.js';
 import { control, deviceId, logActivity, recentActivity, heartbeat, stopHeartbeat, nowPlaying, tokenOfDevice, loginCode, useLoginCode, loginCodeActive } from './activity.js';
 import { scheduleRatings, refreshRatings, omdbKey, simklId, ratingsPending } from './ratings.js';
 import { wishlistOf, inWishlist, addWish, removeWish, runWatch, watchState, autoRequest, followMode, seerrLogin, listSeerrUsers, seerrUsers, linkSeerrUser, seerrUserOf } from './watch.js';
@@ -1301,6 +1301,8 @@ router.get('/api/people/films', async (ctx) => {
 // ---------------------------------------------------------------- Odin (l'assistant de la maison ; Venus y s'appelle Freyja)
 // Tout profil connecté voit si Odin est relié et peut lui poser une question ; seul l'administrateur règle le lien.
 router.get('/api/odin', (ctx) => { requireProfile(ctx); sendJson(ctx.res, { linked: odinLinked() }); });
+// Odin d'aujourd'hui dans Venus : caché ou non, fête du jour (couleur, habit), pouvoirs (réglés dans Odin).
+router.get('/api/odin/mascotte', async (ctx) => { requireProfile(ctx); sendJson(ctx.res, { linked: odinLinked(), ...((await odinMascotte()) || {}) }); });
 router.post('/api/odin/ask', async (ctx) => {
   const p = requireProfile(ctx);
   const b = await readBody(ctx.req, 8 * 1024);
@@ -1312,7 +1314,7 @@ router.get('/api/admin/odin', async (ctx) => { requireAdmin(ctx); const c = odin
 router.put('/api/admin/odin', async (ctx) => {
   const me = requireAdmin(ctx);
   const b = await readBody(ctx.req, 8 * 1024) || {};
-  try { saveOdin({ url: b.url, token: b.token }); } catch (e) { throw new HttpError(e.status || 400, e.message); }
+  try { saveOdin({ url: b.url, token: b.token }); forgetMascotte(); } catch (e) { throw new HttpError(e.status || 400, e.message); }
   logSecurity('odin', ctx.ip, `${me.name} a ${b.token ? 'changé le lien avec' : 'réglé l’adresse d’'} Odin`, 'info');
   const c = odinConf(); sendJson(ctx.res, { url: c.url, hasToken: Boolean(c.token), reachable: await odinPing() });
 });

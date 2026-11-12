@@ -15,6 +15,11 @@ test('Odin explique la page, répond, se cache et revient', async ({ page }) => 
       });
       return;
     }
+    if (req.method === 'GET' && req.url === '/api/mascotte') {
+      if (req.headers.authorization !== 'Bearer jeton-de-test') { res.writeHead(401); return res.end(); }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify({ ok: true, cache: false, event: { id: 'noel', name: 'Noël', color: '#2f8f4e', accessory: 'bonnet', says: 'Joyeux Noël !' }, pouvoirs: { actif: true, quand: { ouvre: true, ferme: true }, choix: 'favoris', favoris: ['feu'], force: 'normale' } }));
+    }
     res.writeHead(200); res.end('ok');
   });
   await new Promise((r) => odin.listen(0, '127.0.0.1', r));
@@ -42,6 +47,19 @@ test('Odin explique la page, répond, se cache et revient', async ({ page }) => 
     await page.getByLabel('Ta question pour Odin').press('Enter');
     await expect(page.locator('.vn-odin-answer')).toContainText('rangés par date');
     expect(got).toContain('Depuis Venus (Freyja), page Films');
+    // Odin d'aujourd'hui : bonnet de Noël et pouvoirs activés (réglés dans Odin)
+    await expect(page.locator('.vn-odin-btn .vn-odin-acc')).toHaveCount(1);
+    await expect.poll(() => page.evaluate(() => Boolean(window.OdinPowers && window.OdinPowers.cfg.actif))).toBe(true);
+    // Fermer quelque chose : le pouvoir joue sur un fantôme (l'élément est déjà parti)
+    await page.evaluate(() => { const d = document.createElement('div'); d.className = 'card'; d.style.cssText = 'position:fixed;left:200px;top:200px;width:240px;height:80px;z-index:5;background:#333'; d.innerHTML = '<button aria-label="Supprimer">×</button>'; document.body.append(d); d.querySelector('button').onclick = () => d.remove(); });
+    await page.getByRole('button', { name: 'Supprimer' }).click();
+    await expect.poll(() => page.evaluate(() => document.querySelectorAll('#odinPowers div').length)).toBeGreaterThan(5);
+    // Une vidéo lancée en grand : Odin disparaît ; en pause, il revient
+    await page.evaluate(async () => { const c = document.createElement('canvas'); c.width = 64; c.height = 36; const g = c.getContext('2d'); setInterval(() => { g.fillStyle = `hsl(${Date.now() % 360},70%,50%)`; g.fillRect(0, 0, 64, 36); }, 50); const v = document.createElement('video'); v.id = 'essai'; v.muted = true; v.style.cssText = 'position:fixed;inset:0;width:100vw;height:100vh;z-index:1'; v.srcObject = c.captureStream(20); document.body.append(v); await v.play(); });
+    await expect(page.locator('.vn-odin-btn')).toHaveCount(0);
+    await page.evaluate(() => document.getElementById('essai').pause());
+    await expect(page.locator('.vn-odin-btn')).toBeVisible();
+    await page.evaluate(() => document.getElementById('essai').remove());
     // 10 touchers rapides : caché sur cet appareil
     await page.locator('.vn-odin-x').click();
     await page.evaluate(() => { for (let k = 0; k < 10; k++) document.querySelector('.vn-odin-btn')?.click(); });

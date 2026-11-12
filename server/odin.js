@@ -47,3 +47,27 @@ export async function askOdin(text, page = '', fetchImpl = fetch) {
   if (!r.ok) throw Object.assign(new Error(`Odin ne répond pas (${r.status})`), { status: 502 });
   return (await r.text()).slice(0, 8000);
 }
+
+/** Odin d'aujourd'hui (caché ou non, fête du jour, couleur, pouvoirs) : demandé à Odin, gardé 5 minutes. */
+let mascotte = { at: 0, v: null };
+export async function odinMascotte(fetchImpl = fetch) {
+  const { url, token } = odinConf();
+  if (!url || !token) return null;
+  if (mascotte.v && Date.now() - mascotte.at < 5 * 60_000) return mascotte.v;
+  try {
+    const r = await fetchImpl(`${url}/api/mascotte`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(6000) });
+    if (!r.ok) throw new Error(String(r.status));
+    const d = await r.json();
+    // Seulement ce dont Venus a besoin (rien d'autre ne passe au navigateur).
+    const p = d.pouvoirs && typeof d.pouvoirs === 'object' ? d.pouvoirs : {};
+    const v = {
+      cache: d.cache === true,
+      event: d.event && typeof d.event === 'object' ? { id: String(d.event.id || ''), name: String(d.event.name || ''), color: /^#[0-9a-f]{6}$/i.test(d.event.color) ? d.event.color : undefined, eyes: d.event.eyes ? '#2a2f3a' : undefined, accessory: String(d.event.accessory || ''), says: String(d.event.says || '').slice(0, 120) } : null,
+      color: /^#[0-9a-f]{6}$/i.test(d.odin?.color || '') ? d.odin.color : undefined,
+      pouvoirs: { actif: p.actif === true, quand: p.quand || {}, choix: p.choix, favoris: Array.isArray(p.favoris) ? p.favoris.slice(0, 36) : [], force: p.force, son: p.son === true, pouvoir: p.pouvoir },
+    };
+    mascotte = { at: Date.now(), v };
+    return v;
+  } catch { return mascotte.v; }
+}
+export function forgetMascotte() { mascotte = { at: 0, v: null }; }
