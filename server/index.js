@@ -1,5 +1,6 @@
 // Venus — point d'entrée du serveur
 import './logbuf.js'; // journal du serveur (tableau de bord) : chargé en premier
+import { checkVfArrivals } from './vf.js';
 import './clock.js'; // fuseau horaire choisi dans Venus : appliqué avant tout calcul de date
 import { warmUpcoming, wantedArrivals } from './upcoming.js';
 import { runOptimize } from './optimize.js';
@@ -200,12 +201,16 @@ async function main() {
   setInterval(() => warmUpcoming().catch(() => {}), 5.5 * 3600e3).unref();
   // Nouveautés : notification, et les envies arrivées passent dans « Ma liste » (avec notification à la personne)
   let watchSoon = null, tgSoon = null;
+  let vfSoon = null;
+  setTimeout(() => checkVfArrivals().catch(() => {}), 60e3);
   events.on('library', (d) => {
     if (d && d.added && d.added.length) {
       libraryAdded(d.added);
       // Fiches Telegram (affiche, résumé, date, état) : quelques minutes après, le temps que l'affiche arrive
       clearTimeout(tgSoon); tgSoon = setTimeout(() => announceArrivals().catch((e) => console.warn('[telegram]', e.message)), 4 * 60e3);
       announceNewEpisodes().catch((e) => console.warn('[nouveaux épisodes]', e.message));
+      // VF arrivée (film remplacé par sa version française, épisodes en VF) : après l'analyse des nouveaux fichiers
+      clearTimeout(vfSoon); vfSoon = setTimeout(() => checkVfArrivals().catch((e) => console.warn('[vf]', e.message)), 3 * 60e3);
       emitHook('library.added', { titles: d.added.slice(0, 50), count: d.added.length });
       clearTimeout(watchSoon); watchSoon = setTimeout(() => runWatch().catch(() => {}), 90000);
     }

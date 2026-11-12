@@ -39,7 +39,7 @@ const SORTS = [
 ];
 const STATUS = [['all', 'Tous'], ['unseen', 'Non vus'], ['progress', 'En cours'], ['seen', 'Vus']];
 const AGES = [['0', 'Tous publics', (a) => a == null || a <= 7], ['10', '10 ans et plus', (a) => a === 10], ['12', '12 ans et plus', (a) => a === 12], ['16', '16 ans et plus', (a) => a === 16], ['18', '18 ans et plus', (a) => a >= 18]];
-const QUALITY = [['4K', '4K', (i) => i.res === '4K'], ['HDR', 'HDR', (i) => i.hdr], ['1080p', 'Full HD', (i) => i.res === '1080p'], ['SD', 'Basse définition', (i) => i.res === 'SD' || i.res === '720p']];
+const QUALITY = [['4K', '4K', (i) => i.res === '4K'], ['HDR', 'HDR', (i) => i.hdr], ['1080p', 'Full HD', (i) => i.res === '1080p'], ['SD', 'Basse définition', (i) => i.res === 'SD' || i.res === '720p'], ['VF', 'VF disponible', (i) => !!i.vf]];
 const SCORES = [['60', '6 et plus'], ['70', '7 et plus'], ['80', '8 et plus']];
 const VIEWS = [['poster', 'Affiches', 'grid4'], ['wide', 'Vignettes', 'film'], ['list', 'Liste', 'rows']];
 const EMPTY = { genres: [], decades: [], ages: [], quality: [], studios: [], minScore: '' };
@@ -85,10 +85,31 @@ function Library({ kind, tabs }) {
   // Retour sur cette page : la grille reprend la longueur qu'elle avait, pour retrouver sa position d'un coup
   const [back] = useState(() => isBackNav());
 
+  const [total, setTotal] = useState(0);
   useEffect(() => {
     let dead = false;
-    (kind === 'mylist' ? api.api('/api/mylist') : api.api(`/api/library?type=${kind}`))
-      .then((d) => { if (!dead) setItems(d); })
+    if (kind === 'mylist') {
+      api.api('/api/mylist').then((d) => { if (!dead) { setItems(d); setTotal(0); } }).catch((e) => { if (!dead) setError(e); }).finally(() => app.hideBoot());
+      return () => { dead = true; };
+    }
+    // Par morceaux : le premier écran (dans le tri choisi) s'affiche tout de suite, le reste arrive ensuite.
+    // Au retour sur la page, la grille reprend sa longueur : on prend alors tout d'un coup.
+    const saved = store.get(key, {}) || {};
+    const sort = ['added', 'az', 'year', 'score', 'popular'].includes(saved.sort) ? saved.sort : 'added';
+    const q = `/api/library?type=${kind}&lite=1&sort=${sort}${saved.desc ? '&desc=1' : ''}`;
+    const first = back ? 0 : PAGE * 2;
+    api.api(first ? `${q}&limit=${first}` : q)
+      .then((d) => {
+        if (dead) return;
+        setItems(d.items); app.hideBoot();
+        if (!first || d.items.length >= d.total) { setTotal(0); return; }
+        setTotal(d.total);
+        return api.api(`${q}&offset=${first}`).then((r) => {
+          if (dead) return;
+          const seen = new Set(d.items.map((x) => x.id));
+          setItems([...d.items, ...r.items.filter((x) => !seen.has(x.id))]); setTotal(0);
+        });
+      })
       .catch((e) => { if (!dead) setError(e); })
       .finally(() => app.hideBoot());
     return () => { dead = true; };
@@ -96,7 +117,7 @@ function Library({ kind, tabs }) {
 
   if (error) return <div className="page"><div className="empty"><h2>Impossible d’afficher cette page</h2><p>{error.message}</p></div></div>;
   if (!items) return <SkeletonGrid />;
-  return <LibraryView kind={kind} items={items} tabs={tabs} wantGenre={search ? search.get('genre') : null} storeKey={key} back={back} />;
+  return <LibraryView kind={kind} items={items} total={total} tabs={tabs} wantGenre={search ? search.get('genre') : null} storeKey={key} back={back} />;
 }
 
 function SkeletonGrid() {
@@ -109,7 +130,7 @@ function SkeletonGrid() {
   );
 }
 
-function LibraryView({ kind, items, tabs, wantGenre, storeKey, back }) {
+function LibraryView({ kind, items, total = 0, tabs, wantGenre, storeKey, back }) {
   const L = shared();
   const { app, components, queue: Q } = L;
   const isClip = kind === 'clip';
@@ -130,6 +151,8 @@ function LibraryView({ kind, items, tabs, wantGenre, storeKey, back }) {
   });
   const [view, setView] = useState(() => store.get(`vn_view_${kind}`, isClip ? 'wide' : 'poster', true));
   const [order, setOrder] = useState(() => shuffleSeed(items.length));
+  // La suite de la liste vient d'arriver : l'ordre au hasard couvre aussi les nouveaux titres
+  useEffect(() => { if (order.length !== items.length) setOrder(shuffleSeed(items.length)); }, [items.length]);
   const update = useCallback((patch) => setF((old) => { const n = { ...old, ...(typeof patch === 'function' ? patch(old) : patch) }; store.set(storeKey, n); return n; }), [storeKey]);
 
   // Valeurs proposées dans les filtres, d'après ce qu'il y a vraiment dans la médiathèque
@@ -222,7 +245,7 @@ function LibraryView({ kind, items, tabs, wantGenre, storeKey, back }) {
       <div className="page-head">
         <div className="head-left">
           <h1>{TITLES[kind]}</h1>
-          <p className="count" aria-live="polite">{`${shown.length}${shown.length !== items.length ? ` sur ${items.length}` : ''} ${word}${items.length > 1 ? 's' : ''}`}</p>
+          <p className="count" aria-live="polite">{total > items.length ? `${items.length} sur ${total} ${word}s · chargement…` : `${shown.length}${shown.length !== items.length ? ` sur ${items.length}` : ''} ${word}${items.length > 1 ? 's' : ''}`}</p>
         </div>
         {tabs || (isClip
           ? <div className="actions play-all" hidden={shown.length < 1}>

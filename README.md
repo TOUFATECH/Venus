@@ -180,6 +180,8 @@ cd /opt/Venus && git pull && bash update.sh
 
 - **Films, Séries, Animés, Clips** : tri (date d'ajout, sortie, note, popularité, durée…), filtres (genres, années, note, classification, qualité, studios), affiches / vignettes / liste.
 - **À venir** : sorties et épisodes jour par jour, **Disponible** ou **Pas disponible** sur le NAS, suggestions de titres absents ; le ♡ met en favori **et** lance le téléchargement (Radarr / Sonarr), calendrier à s'abonner (iCal).
+- **VF** : badge « VF » sur les affiches (piste audio française ; « VF 12 » quand seule une partie des épisodes l'a), filtre « VF disponible », pastille par épisode. **Chercher en VF** (fiche → ⋯, administrateur) : Radarr / Sonarr cherchent la version française (format « VF (Venus) » et copie « + VF » du profil de qualité, créés une fois ; vos autres titres ne changent pas) ; une notification arrive avec la VF.
+- **Grandes médiathèques** : la liste arrive par morceaux (les premières affiches tout de suite, la suite en arrière-plan).
 - **Recherche instantanée** en français : « un film drôle de moins d'1 h 30 des années 90 », acteurs, genres, et titres pas encore dans Venus.
 - **Fiches complètes** : distribution et équipe **avec leurs photos**, filmographie de chaque acteur, notes des sites (IMDb, Rotten Tomatoes, Metacritic, AniList…), emplacement du fichier sur le NAS.
 - **Survol** : contour lumineux animé de l'affiche, bande-annonce, fiche préchargée pour s'ouvrir instantanément.
@@ -269,6 +271,7 @@ server/            API et services — Node.js ≥ 22, aucune dépendance
   scanner.js         analyse des bibliothèques, surveillance des dossiers
   netshare.js        partages SMB / NFS, recherche des NAS
   upcoming.js        « À venir », favoris envoyés à Radarr / Sonarr, calendrier iCal
+  vf.js              VF disponible, « Chercher en VF », arrivées et épisode précis (pour Odin)
   invites.js, auth.js, security.js, twofa.js   comptes, invitations, sécurité
   notify.js, telegram-media.js                 notifications et fiches Telegram
   metadata.js, posters.js, ratings.js, credits-free.js   affiches, notes, distribution

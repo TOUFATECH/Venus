@@ -130,6 +130,10 @@ function DetailsView({ d: initial }) {
     ));
     return s;
   };
+  const askVf = async () => {
+    try { const r = await api(`/api/items/${d.id}/vf`, { method: 'POST' }); toast(r.text, { type: 'success' }); setD({ ...d, vfWanted: true }); }
+    catch (e) { toast(e.message, true); }
+  };
   const moreOptions = () => {
     const admin = profile.isAdmin;
     openSheet(d.title, (close) => (
@@ -137,6 +141,7 @@ function DetailsView({ d: initial }) {
         <button className="opt ic f" onClick={() => { close(); addToSheet(d); }}><Icon name="list" />Ajouter à une liste de lecture<small>{admin ? 'ou à une collection' : ''}</small></button>
         {admin ? <button className="opt ic f" onClick={() => { close(); editInfo(d); }}><Icon name="edit" />Modifier les infos<small>Titre, résumé, année, genres, âge</small></button> : null}
         {admin && !isClip ? <button className="opt ic f" onClick={() => { close(); chooseImages(d); }}><Icon name="grid4" />Choisir les images<small>Affiche, fond, logo (TMDB, Trakt)</small></button> : null}
+        {admin && (d.type === 'movie' || isShow) && !(d.vf && d.vf.state === 'vf') ? <button className="opt ic f" onClick={() => { close(); askVf(); }}><Icon name="search" />{d.vfWanted ? 'Relancer la recherche en VF' : 'Chercher en VF'}<small>{isShow ? 'Sonarr' : 'Radarr'} cherche la version française ; tu es prévenu à son arrivée</small></button> : null}
         {admin && !isClip ? <button className="opt ic f" onClick={() => { close(); fixMatch(d); }}><Icon name="search" />Corriger l’identification<small>Ce n’est pas le bon titre</small></button> : null}
       </div>
     ));
@@ -179,6 +184,7 @@ function DetailsView({ d: initial }) {
               {d.vote && !(d.ratings && d.ratings.score) ? <span>{`${d.vote.toFixed(1).replace('.', ',')}/10`}</span> : null}
               {!isShow && d.runtime ? <span>{ui.fmtRuntime(d.runtime)}</span> : null}
               {isShow ? <span>{`${d.seasons.length} saison${d.seasons.length > 1 ? 's' : ''}, ${nEps} épisode${nEps > 1 ? 's' : ''}`}</span> : null}
+              {d.vf && d.vf.state !== 'vo' ? <span className="badge vf" title="Piste audio française">{d.vf.state === 'partiel' ? `VF ${d.vf.vf}/${d.vf.n} ép.` : 'VF disponible'}</span> : null}
               {target && !(isShow && !d.nextUp) && total ? <span className="ends-at">{`Se termine à ${hhmm(now + (total - endPos) * 1000)}`}</span> : null}
             </div>
             {d.genres && d.genres.length ? <div className="genre-links">{d.genres.map((g) => <button key={g} className="tag f" onClick={() => go(`${libOf(d)}?genre=${encodeURIComponent(g)}`)}>{g}</button>)}</div> : null}
@@ -506,7 +512,7 @@ function EpisodeRow({ e, current, onToggle }) {
           {pct > 0 && !seen ? <div className="bar"><i style={{ width: `${pct}%` }} /></div> : null}
           {current ? <span className="ep-badge now">{p && !seen && p.position > 0 ? 'En cours' : 'À suivre'}</span> : isNew ? <span className="ep-badge">Nouveau</span> : null}
         </div>
-        <div className="ep-line"><b>{num}</b>{dur ? <span>{`${dur} min`}</span> : null}</div>
+        <div className="ep-line"><b>{num}</b>{dur ? <span>{`${dur} min`}</span> : null}{e.vf ? <span className="vf-ep" title="VF disponible">VF</span> : null}</div>
       </button>
       <button className={`ep-toggle f${seen ? ' on' : ''}`} aria-label={seen ? `Marquer l’${num.toLowerCase()} comme non vu` : `Marquer l’${num.toLowerCase()} comme vu`} title={seen ? 'Vu — cliquer pour marquer non vu' : 'Marquer comme vu'} onClick={(ev) => { ev.stopPropagation(); onToggle(!seen); }}><Icon name={seen ? 'check' : 'eye'} /></button>
     </div>

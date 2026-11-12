@@ -39,6 +39,7 @@ import { describe as describeShare } from './netshare.js';
 import { optimizedFor, markUsed, pauseForPlayback, optStatus, runOptimize, clearAll as clearOptimized } from './optimize.js';
 import { convertStatus, suggestions as convertSuggestions, saveConvertSettings, queue as queueConversions, cancel as cancelConversion, validate as validateConversion, runConversions, pauseConversions, conversionFor, reasonFor as convertReason, convertSettings, estimate as convertEstimate } from './convert.js';
 import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
+import { vfOf, vfEpisodes, wantFrench, arrivals, pickEpisode } from './vf.js';
 import { checkUpdate, runUpdate, localCommit, updaterInfo, setUpdatePrefs } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
 import { moveToTrash, recordTrash, listTrash, restoreTrash, purgeTrash, KEEP_DAYS } from './trash.js';
@@ -312,6 +313,11 @@ function withStatus(c, idx) {
     c.status = !p ? 'unseen' : p.watched ? 'seen' : p.position > 0 ? 'progress' : 'unseen';
     if (p && !c.progress) c.progress = { position: p.position, duration: p.duration, watched: !!p.watched };
     c.played = p ? p.updated_at : null;
+  }
+  if (c.type === 'movie' || c.type === 'show') {
+    // VF : piste audio française (série : tous les épisodes analysés, ou une partie)
+    const v = vfOf(c);
+    if (v && v.state !== 'vo') { c.vf = v.state; if (c.type === 'show') c.vfn = `${v.vf}/${v.n}`; }
   }
   return c;
 }
@@ -920,6 +926,31 @@ router.get('/api/home', (ctx) => {
 
 // Bibliothèque d'une source, avec l'état vu / non vu pour le profil (filtres et tris côté interface)
 const libraryCache = new Map();
+// Carte allégée pour les grandes listes (Films, Séries, Animés, Clips) : sans les champs vides, sans la
+// bande-annonce ni les noms des acteurs, résumé coupé à deux lignes. Le premier écran part seul, le reste ensuite.
+function liteCard(c) {
+  const o = {};
+  for (const [k, v] of Object.entries(c)) {
+    if (v == null || v === '' || v === false || (Array.isArray(v) && !v.length) || k === 'trailer') continue;
+    // Les personnes servent à la recherche générale, pas aux grilles ; les liens des notes, à la fiche du titre
+    if ((k === 'originalTitle' && c.type !== 'clip') || k === 'people') continue;
+    if (k === 'ratings' && v && typeof v === 'object') { const r = {}; for (const [src, x] of Object.entries(v)) r[src] = x && typeof x === 'object' ? { v: x.v, max: x.max } : x; o.ratings = r; continue; }
+    o[k] = v;
+  }
+  // Le résumé de la vue en liste tient sur deux lignes
+  if (o.overview && o.overview.length > 170) o.overview = `${o.overview.slice(0, 167).replace(/\s+\S*$/, '')}…`;
+  return o;
+}
+// Tris du premier morceau envoyé (le même ordre que l'écran) ; l'interface retrie de toute façon la liste complète
+const LITE_SORTS = {
+  added: (a, b) => (b.added || 0) - (a.added || 0),
+  az: (a, b) => libCollator.compare(a.title || '', b.title || ''),
+  year: (a, b) => (b.year || 0) - (a.year || 0),
+  score: (a, b) => ((b.ratings && b.ratings.score) || (b.vote || 0) * 10) - ((a.ratings && a.ratings.score) || (a.vote || 0) * 10),
+  popular: (a, b) => (b.popularity || 0) - (a.popularity || 0),
+};
+const libCollator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
+
 router.get('/api/library', (ctx) => {
   const p = requireProfile(ctx);
   const age = ageClause(p);
@@ -973,7 +1004,55 @@ router.get('/api/library', (ctx) => {
     const recent = new Map((getSetting(`tv_recent:${p.id}`, []) || []).map((id, i) => [id, i]));
     return sendJson(ctx.res, base.cards.map((c) => { const x = { ...c }; if (recent.has(c.id)) x.recent = recent.get(c.id); if (favs.has(c.id)) { x.fav = true; if (x.down) { x.flaky = x.downWhy; delete x.down; delete x.downWhy; } } return x; }));
   }
+  // Liste par morceaux (?lite=1&limit=…&offset=…&sort=…) : le premier écran part tout de suite, le reste ensuite
+  const sp = ctx.url.searchParams;
+  if (sp.get('lite') === '1') {
+    if (!base.lite) base.lite = base.cards.map(liteCard);
+    const sort = LITE_SORTS[sp.get('sort')] ? sp.get('sort') : 'added', desc = sp.get('desc') === '1';
+    const limit = Math.max(0, Math.min(100000, Number(sp.get('limit')) || 0)), offset = Math.max(0, Number(sp.get('offset')) || 0);
+    let list = base.lite;
+    if (limit || offset) {
+      const k = `sorted_${sort}_${desc ? 1 : 0}`;
+      if (!base[k]) { base[k] = [...base.lite].sort(LITE_SORTS[sort]); if (desc) base[k].reverse(); }
+      list = base[k].slice(offset, limit ? offset + limit : undefined);
+    }
+    return sendJson(ctx.res, { total: base.lite.length, offset, items: list.map((c) => withStatus({ ...c }, idx)) });
+  }
   sendJson(ctx.res, base.cards.map((c) => withStatus({ ...c }, idx)));
+});
+
+// « Chercher en VF » : Radarr / Sonarr cherchent la version française de ce titre (administrateur)
+router.post('/api/items/:id/vf', async (ctx) => {
+  requireAdmin(ctx);
+  const item = get('SELECT * FROM items WHERE id = ?', Number(ctx.params.id));
+  if (!item) throw new HttpError(404, 'Introuvable');
+  const r = await wantFrench(item);
+  logActivity('request', `VF demandée pour « ${item.title} »`);
+  sendJson(ctx.res, r);
+});
+
+// Fil des arrivées (épisodes, films, VF) depuis une date : lu par Odin pour prévenir
+router.get('/api/arrivals', (ctx) => {
+  const p = requireProfile(ctx);
+  const sp = ctx.url.searchParams;
+  const since = Math.max(0, Number(sp.get('since')) || Date.now() - 86400e3);
+  const list = arrivals(since, Math.min(300, Number(sp.get('limit')) || 100)).filter((a) => {
+    const it = get('SELECT * FROM items WHERE id = ?', a.showId || a.id);
+    return it && visible(p, it);
+  });
+  sendJson(ctx.res, { now: Date.now(), items: list });
+});
+
+// Un épisode précis d'une série : ?which=last|next|first, ou ?s=2&e=5 (Odin : « mets le dernier épisode de… »)
+router.get('/api/shows/:id/episode', (ctx) => {
+  const p = requireProfile(ctx);
+  const show = get("SELECT * FROM items WHERE id = ? AND type = 'show'", Number(ctx.params.id));
+  if (!show || !visible(p, show)) throw new HttpError(404, 'Série introuvable');
+  const sp = ctx.url.searchParams, e = Number(sp.get('e')) || null, se = sp.get('s') ? Number(sp.get('s')) : null, w = sp.get('which');
+  const which = e ? 'exact' : ['last', 'first', 'next'].includes(w) ? w : 'next';
+  const ep = pickEpisode(show.id, which, { season: se, episode: e, profileId: p.id });
+  if (!ep) throw new HttpError(404, e ? `Épisode ${se != null ? `S${se} ` : ''}E${e} introuvable` : 'Aucun épisode');
+  sendJson(ctx.res, { show: { id: show.id, title: show.title }, ...ep, path: pathFor(ep.id), play: pathFor(ep.id, { play: true }) });
 });
 
 router.get('/api/items/:id', async (ctx) => {
@@ -988,6 +1067,8 @@ router.get('/api/items/:id', async (ctx) => {
   out.imdbId = item.imdb_id;
   out.credits = parseJson(item.credits, null);
   out.trailerFull = parseJson(item.trailer, null);
+  out.vf = vfOf(item);
+  out.vfWanted = !!(getSetting('vf_wanted', {}) || {})[item.id];
   // Qui l'a déjà vu dans la maison (avatars sur la fiche)
   out.opinion = opinionOf(p.id, item.id);
   // Provenance des infos et du visuel (pour l'écran « À propos »)
@@ -1082,6 +1163,7 @@ router.get('/api/items/:id', async (ctx) => {
     // Guide TVmaze aussi quand des saisons entières manquent (TMDB ne donne que leur nombre d'épisodes)
     const tmdbMissingSeasons = parseJson(item.tmdb_seasons, []).some((x) => x.n > 0 && !seasons.some((s) => s.season_num === x.n) && x.count > 0);
     const guide = noTmdb || tmdbMissingSeasons ? await guideFor(item.id).catch(() => []) : [];
+    const frEps = vfEpisodes(item.id);
     out.seasons = seasons.map((s) => {
       const list = eps.filter((e) => e.parent_id === s.id);
       // Épisodes déjà diffusés (d'après TMDB, sinon TVmaze) mais absents des dossiers
@@ -1103,6 +1185,7 @@ router.get('/api/items/:id', async (ctx) => {
         episodes: list.map((e) => {
           const c = card(e, pm.get(e.id));
           c.duration = e.duration; c.episodeEnd = e.episode_end;
+          if (e.probe) c.vf = frEps.has(e.id);
           return c;
         }),
         missing,

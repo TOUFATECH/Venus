@@ -152,6 +152,11 @@ export default function Card({ item: initial, poster = false, rank = null, queue
               {item.status === 'progress' && item.unseen != null && item.unseen < item.episodes ? `${item.episodes - item.unseen}/${item.episodes}` : `${item.episodes} ép.`}
             </span>
           : null}
+        {item.vf
+          ? <span className={`vf-pill${item.vf === 'partiel' ? ' part' : ''}`} title={item.vf === 'partiel' ? `VF disponible pour ${item.vfn || 'une partie des'} épisodes` : 'VF disponible (piste audio française)'}>
+              {item.vf === 'partiel' && item.vfn ? `VF ${item.vfn.split('/')[0]}` : 'VF'}
+            </span>
+          : null}
         {item.type === 'show' && item.newEps && item.status !== 'seen'
           ? <span className="new-pill" title={`${item.newEps} épisode${item.newEps > 1 ? 's' : ''} ajouté${item.newEps > 1 ? 's' : ''} cette semaine`}>{`+${item.newEps} nouveau${item.newEps > 1 ? 'x' : ''}`}</span>
           : null}
