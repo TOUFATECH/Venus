@@ -17,6 +17,7 @@ import { HttpError } from './http.js';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { isPrivateIp } from './security.js';
+import { isFtv, ftvPlaylist } from './ftv.js';
 
 const BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const relays = new Map(); // id → { itemId, url, hosts:Set, headers, touched }
@@ -192,11 +193,18 @@ export async function servePlaylistRelay(ctx, id) {
     try { merge(r, key, await fetchMedia(r, key)); } catch { /* on sert ce qu'on a */ }
     return sendPl(ctx, rewritePlaylist(buildMedia(r.media.get(key)), key, id, r.hosts));
   }
-  const res = await fetch(url, { headers: r.headers, redirect: 'follow', signal: AbortSignal.timeout(12000) }).catch((e) => { throw new HttpError(502, `Chaîne injoignable (${e.message})`); });
-  if (!res.ok) throw new HttpError(res.status === 404 ? 404 : 502, `La chaîne répond ${res.status}`);
-  await checkFinal(r, res);
-  const final = new URL(res.url || url.href); r.hosts.add(final.host);
-  const text = await res.text();
+  let text, final;
+  if (isFtv(url.href) && !/\.ftven\.fr$/i.test(url.hostname)) {
+    // France TV (Mayotte La 1ère…) : liste servie avec un jeton frais (celui de la liste publique expire)
+    const f = await ftvPlaylist(url.href).catch((e) => { throw new HttpError(502, `Chaîne injoignable (${e.message})`); });
+    text = f.text; final = url; for (const h of f.hosts) r.hosts.add(h);
+  } else {
+    const res = await fetch(url, { headers: r.headers, redirect: 'follow', signal: AbortSignal.timeout(12000) }).catch((e) => { throw new HttpError(502, `Chaîne injoignable (${e.message})`); });
+    if (!res.ok) throw new HttpError(res.status === 404 ? 404 : 502, `La chaîne répond ${res.status}`);
+    await checkFinal(r, res);
+    final = new URL(res.url || url.href); r.hosts.add(final.host);
+    text = await res.text();
+  }
   if (!/^\s*#EXTM3U/.test(text)) throw new HttpError(502, 'Ce n’est pas un flux HLS');
   if (/#EXTINF/i.test(text)) {
     const st = merge(r, key, parseMedia(text, final.href));

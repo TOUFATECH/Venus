@@ -5,6 +5,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import { config } from './config.js';
+import { liveSource } from './ftv.js';
 import { hw, videoPipelines } from './hw.js';
 import { NET_INPUT } from './probe.js';
 import { getSetting } from './db.js';
@@ -479,10 +480,11 @@ function captureShot(item, out, urgent = false) {
   // File pleine : on ne garde que les demandes de la page (les préparations d'avance attendront la prochaine fois)
   if (shotBusy >= 4 && shotQueue.length >= SHOT_QUEUE_MAX && !urgent) return Promise.reject(new HttpError(503, 'Occupé'));
   const p = new Promise((resolve, reject) => {
-    const job = () => {
+    const job = async () => {
       shotBusy++;
-      execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...NET_INPUT(item.stream_url).filter((x, i, a) => !/reconnect/.test(x) && !/reconnect/.test(a[i - 1] || '')),
-        '-analyzeduration', '3M', '-probesize', '3M', '-i', item.stream_url, '-frames:v', '1', '-vf', 'scale=480:-2', '-q:v', '6', '-y', out + '.tmp.jpg'],
+      const src = await liveSource(item.stream_url); // France TV : jeton frais
+      execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...NET_INPUT(src).filter((x, i, a) => !/reconnect/.test(x) && !/reconnect/.test(a[i - 1] || '')),
+        '-analyzeduration', '3M', '-probesize', '3M', '-i', src, '-frames:v', '1', '-vf', 'scale=480:-2', '-q:v', '6', '-y', out + '.tmp.jpg'],
       { timeout: 15000 }, (err) => {
         shotBusy--; shotInflight.delete(out);
         const next = shotQueue.shift(); if (next) next();

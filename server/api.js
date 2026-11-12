@@ -39,6 +39,7 @@ import { describe as describeShare } from './netshare.js';
 import { optimizedFor, markUsed, pauseForPlayback, optStatus, runOptimize, clearAll as clearOptimized } from './optimize.js';
 import { convertStatus, suggestions as convertSuggestions, saveConvertSettings, queue as queueConversions, cancel as cancelConversion, validate as validateConversion, runConversions, pauseConversions, conversionFor, reasonFor as convertReason, convertSettings, estimate as convertEstimate } from './convert.js';
 import { upcomingMovies, upcomingShows, wantedOf, addWanted, removeWanted, grab } from './upcoming.js';
+import { liveSource } from './ftv.js';
 import { vfOf, vfEpisodes, wantFrench, arrivals, pickEpisode } from './vf.js';
 import { checkUpdate, runUpdate, localCommit, updaterInfo, setUpdatePrefs } from './update.js';
 import { duplicateGroups, renamePlan, applyRenames, removeEmptyDirs } from './library-tools.js';
@@ -2047,7 +2048,9 @@ async function playChannel(ctx, p, item, b) {
   else if (!b.preview) setSetting(`last_channel:${p.id}`, { id: item.id, at: Date.now() });
   void caps;
   if (b.replace) sessions.get(b.replace)?.stop();
-  const s = startSession({ item, probe: probe || { video: null, audio: [], subs: [], bitrate: 0 }, decision, start: 0, profileId: p.id, quality: 'auto', live: true });
+  // France TV : ffmpeg lit une copie de la liste au jeton frais
+  const src = await liveSource(item.stream_url);
+  const s = startSession({ item: src === item.stream_url ? item : { ...item, stream_url: src }, probe: probe || { video: null, audio: [], subs: [], bitrate: 0 }, decision, start: 0, profileId: p.id, quality: 'auto', live: true });
   sendJson(ctx.res, {
     itemId: item.id, slug: slugFor(item.id), path: `/tv/${channelNumber(item)}-${slugFor(item.id)}`, type: 'channel', live: true, mode: decision.mode, reason: decision.reason, url: `/api/hls/${s.id}/index.m3u8`,
     sessionId: s.id, offset: 0, hwLabel: decision.mode === 'transcode' ? hw.label : null, duration: 0,

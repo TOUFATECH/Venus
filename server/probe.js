@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
+import { isFtvFile, FTV_ARGS, liveSource } from './ftv.js';
 
 const TEXT_SUBS = new Set(['subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text', 'tx3g']);
 
@@ -31,6 +32,8 @@ function containerOf(file, formatName = '') {
 // certaines chaînes exigent (lignes #EXTVLCOPT de la liste M3U, gardées dans stream_opts)
 const BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 export const NET_INPUT = (url) => {
+  // Copie rafraîchie d'une chaîne France TV (jeton neuf) : fichier local qui ne pointe que vers France TV
+  if (isFtvFile(url)) return FTV_ARGS;
   if (!/^https?:/i.test(url)) return [];
   let o = {};
   try { o = JSON.parse((get('SELECT stream_opts FROM items WHERE stream_url = ? AND stream_opts IS NOT NULL LIMIT 1', url) || {}).stream_opts || '{}') || {}; } catch { /* */ }
@@ -42,7 +45,7 @@ export const NET_INPUT = (url) => {
 // Analyse des chaînes gardée (mémoire + base) : le codec d'une chaîne change rarement. Elle sert tout de suite
 // (démarrage plus rapide) et se rafraîchit en arrière-plan au-delà d'une heure.
 const liveCache = new Map();
-const probeNet = (url) => probeFile(url, [...NET_INPUT(url).filter((x, i, a) => !/reconnect/.test(x) && !/reconnect/.test(a[i - 1] || '')), '-analyzeduration', '3000000', '-probesize', '3000000'], 15000);
+const probeNet = async (u) => { const url = await liveSource(u); return probeFile(url, [...NET_INPUT(url).filter((x, i, a) => !/reconnect/.test(x) && !/reconnect/.test(a[i - 1] || '')), '-analyzeduration', '3000000', '-probesize', '3000000'], 15000); };
 /** Analyse déjà connue (mémoire ou base), sans aller sur le réseau ; null sinon. */
 export function cachedProbe(url) {
   let c = liveCache.get(url);

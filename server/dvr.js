@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
+import { liveSource } from './ftv.js';
 import { db, all, get, run, getSetting } from './db.js';
 import { NET_INPUT, probeFile } from './probe.js';
 import { programsBetween } from './epg.js';
@@ -53,7 +54,13 @@ function dvrLibrary() {
   return lib;
 }
 
-function start(rec) {
+const starting = new Set();
+async function start(rec) {
+  if (starting.has(rec.id)) return;
+  starting.add(rec.id);
+  try { await startNow(rec); } finally { starting.delete(rec.id); }
+}
+async function startNow(rec) {
   const ch = get('SELECT * FROM items WHERE id = ?', rec.channel_id);
   if (!ch || !ch.stream_url) { run("UPDATE recordings SET status = 'failed', error = ? WHERE id = ?", 'Chaîne introuvable', rec.id); return; }
   const lib = dvrLibrary();
@@ -62,7 +69,8 @@ function start(rec) {
   const file = path.join(lib.path, safe(rec.title), `${safe(rec.title)}${rec.sub ? ` - ${safe(rec.sub)}` : ''} (${stamp}).ts`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const seconds = Math.max(30, Math.round((rec.stop + pad().after - Date.now()) / 1000));
-  const args = ['-hide_banner', '-loglevel', 'error', ...NET_INPUT(ch.stream_url), '-i', ch.stream_url, '-map', '0:v?', '-map', '0:a?', '-map', '0:s?', '-c', 'copy', '-t', String(seconds), '-f', 'mpegts', '-y', file];
+  const src = await liveSource(ch.stream_url); // France TV : jeton frais
+  const args = ['-hide_banner', '-loglevel', 'error', ...NET_INPUT(src), '-i', src, '-map', '0:v?', '-map', '0:a?', '-map', '0:s?', '-c', 'copy', '-t', String(seconds), '-f', 'mpegts', '-y', file];
   const p = spawn(config.ffmpeg, args, { stdio: ['ignore', 'ignore', 'pipe'] });
   let err = '';
   p.stderr.on('data', (d) => { err = (err + d).slice(-2000); });
@@ -120,7 +128,7 @@ export function startDvr() {
     const now = Date.now();
     for (const r of all("SELECT * FROM recordings WHERE status = 'scheduled' AND start - ? <= ?", pad().before, now)) {
       if (r.stop + pad().after < now) { run("UPDATE recordings SET status = 'failed', error = 'Heure dépassée (Venus était arrêté)' WHERE id = ?", r.id); continue; }
-      start(r);
+      start(r).catch((e) => console.warn("[enregistrement]", e.message));
     }
   };
   setInterval(tick, 20000).unref();

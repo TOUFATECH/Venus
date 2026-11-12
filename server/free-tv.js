@@ -11,6 +11,7 @@
 // La vérification ouvre chaque chaîne avec ffmpeg et attend une image : une chaîne qui n'en donne pas est
 // marquée « hors service » et cachée de la page TV (on la revérifie le lendemain).
 import { execFile } from 'node:child_process';
+import { liveSource } from './ftv.js';
 import { all, get, run, getSetting, setSetting } from './db.js';
 import { config } from './config.js';
 import { NET_INPUT } from './probe.js';
@@ -237,7 +238,8 @@ export function ensureIptvWorld() {
 
 // Une chaîne fonctionne si ffmpeg en lit 4 secondes d'images, sans s'arrêter, en moins de 25 s.
 // (une seule image ne suffit pas : beaucoup de flux donnent une image puis se coupent)
-export function testOne(url) {
+export async function testOne(u) {
+  const url = await liveSource(u); // France TV : jeton frais
   return new Promise((resolve) => {
     const t0 = Date.now();
     execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...NET_INPUT(url).filter((x, i, a) => !/reconnect/.test(x) && !/reconnect/.test(a[i - 1] || '')),
