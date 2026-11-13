@@ -62,3 +62,39 @@ test('un pair partage, un autre télécharge (.torrent puis magnet) : fichiers i
     assert.ok(C.remove(hm, { files: true })); assert.ok(!fs.existsSync(path.join(tmp, 'c', 'Film.2024.mkv')));
   } finally { A.stop(); B.stop(); C.stop(); tracker.close(); fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('web seeds (BEP 19) : sans aucun pair, les pièces arrivent en HTTP (plages), vérifiées ; un serveur menteur est écarté', { timeout: 60000 }, async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'folk-ws-'));
+  const src = path.join(tmp, 'pub'); fs.mkdirSync(path.join(src, 'DomainePublic'), { recursive: true });
+  fs.writeFileSync(path.join(src, 'DomainePublic', 'film.mp4'), crypto.randomBytes(1024 * 1024 + 77));
+  fs.writeFileSync(path.join(src, 'DomainePublic', 'film.srt'), crypto.randomBytes(40000));
+  let menteur = false, ranges = 0;
+  const srv = http.createServer((req, res) => {
+    const f = path.join(src, decodeURIComponent(new URL(req.url, 'http://x').pathname.replace(/^\/download\//, '')));
+    if (!f.startsWith(src) || !fs.existsSync(f)) { res.statusCode = 404; return res.end(); }
+    const data = fs.readFileSync(f), m = /bytes=(\d+)-(\d+)/.exec(req.headers.range || '');
+    if (!m) { res.end(data); return; }
+    ranges++;
+    const part = Buffer.from(data.subarray(Number(m[1]), Number(m[2]) + 1)); if (menteur) part.fill(7);
+    res.writeHead(206, { 'Content-Range': `bytes ${m[1]}-${m[2]}/${data.length}`, 'Content-Length': part.length }); res.end(part);
+  });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  const ws = `http://127.0.0.1:${srv.address().port}/download/`;
+  const tor = createTorrent(path.join(src, 'DomainePublic'), { pieceLength: 64 * 1024, urlList: [ws] });
+  assert.deepEqual(parseTorrent(tor).webseeds, [ws]);
+  assert.deepEqual(parseMagnet(`magnet:?xt=urn:btih:${'a'.repeat(40)}&ws=${encodeURIComponent(ws)}&ws=ftp://x`).webseeds, [ws]);
+  const D = await new Folkvangr({ port: 0, host: '127.0.0.1' }).start();
+  try {
+    const h = await D.add(tor, { dir: path.join(tmp, 'd') });
+    let st; for (let k = 0; k < 150 && !(st = D.list().find((x) => x.id === h)).done; k++) { await new Promise((r) => setTimeout(r, 200)); D.torrents.get(h).webSeed(); }
+    assert.ok(st.done, `pas fini : ${JSON.stringify(st)}`); assert.ok(ranges > 10, 'téléchargé par plages HTTP');
+    for (const f of ['film.mp4', 'film.srt']) assert.ok(fs.readFileSync(path.join(tmp, 'd', 'DomainePublic', f)).equals(fs.readFileSync(path.join(src, 'DomainePublic', f))));
+    D.remove(h, { files: true });
+    // Serveur qui renvoie de fausses données : aucune pièce acceptée, le serveur est mis de côté
+    menteur = true;
+    const h2 = await D.add(tor, { dir: path.join(tmp, 'e') });
+    const t2 = D.torrents.get(h2);
+    for (let k = 0; k < 40 && t2.webseeds[0].until === 0; k++) { await new Promise((r) => setTimeout(r, 100)); t2.webSeed(); }
+    assert.equal(t2.storage.count, 0, 'aucune pièce fausse écrite'); assert.ok(t2.webseeds[0].until > Date.now(), 'serveur menteur écarté 10 min');
+  } finally { D.stop(); srv.close(); fs.rmSync(tmp, { recursive: true, force: true }); }
+});

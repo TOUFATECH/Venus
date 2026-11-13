@@ -12,7 +12,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { db, all, get, run, getSetting, setSetting } from '../db.js';
 import { config } from '../config.js';
-import { best, libraryName, parseRelease, DEFAULT_PROFILE } from './release.js';
+import { best, libraryName, parseRelease, DEFAULT_PROFILE, profileFor, cleanCategories, CATEGORIES } from './release.js';
 import { client as externalClient } from './sources.js';
 import { bygulSearch, countGrab, sourcesHealth } from './bygul.js';
 
@@ -27,7 +27,18 @@ db.exec('CREATE INDEX IF NOT EXISTS idx_media_wants_status ON media_wants(status
 db.exec(`CREATE TABLE IF NOT EXISTS media_log (id INTEGER PRIMARY KEY, at INTEGER, want_id INTEGER, text TEXT)`);
 
 // ---------------------------------------------------------------- réglages
-export const acquireConf = () => ({ on: String(getSetting('acquire_on', '0')) === '1', client: getSetting('acquire_client', null), profil: { ...DEFAULT_PROFILE, ...(getSetting('acquire_profile', {}) || {}) }, roots: getSetting('acquire_roots', {}) || {}, upgrade: String(getSetting('acquire_upgrade', '1')) !== '0', keepSeeding: String(getSetting('acquire_seed', '1')) !== '0' });
+// lots : combien d'envies cherchées par passage, et la pause entre deux recherches (pour ne pas saturer les sources)
+const LOTS = { taille: 10, pauseS: 4, ameliorations: 5 };
+export const acquireConf = () => ({
+  on: String(getSetting('acquire_on', '0')) === '1', client: getSetting('acquire_client', null),
+  profil: { ...DEFAULT_PROFILE, ...(getSetting('acquire_profile', {}) || {}) },
+  categories: cleanCategories(getSetting('acquire_categories', {}) || {}),
+  lots: { ...LOTS, ...(getSetting('acquire_lots', {}) || {}) },
+  roots: getSetting('acquire_roots', {}) || {}, upgrade: String(getSetting('acquire_upgrade', '1')) !== '0', keepSeeding: String(getSetting('acquire_seed', '1')) !== '0',
+});
+/** Les filtres de chaque catégorie tels qu'appliqués (départ + réglages). */
+export const filtersView = () => { const c = acquireConf().categories; return Object.fromEntries(Object.keys(CATEGORIES).map((k) => [k, { ...profileFor(KIND_OF_CAT[k], c), reglee: !!c[k] }])); };
+const KIND_OF_CAT = { films: { kind: 'movie' }, animation: { kind: 'movie', anime: true }, series: { kind: 'episode' }, animes: { kind: 'episode', anime: true }, musique: { kind: 'album' }, livres: { kind: 'book' }, livres_audio: { kind: 'audiobook' } };
 export const acquireOn = () => acquireConf().on;
 export function saveAcquire(b) {
   if (b.on !== undefined) setSetting('acquire_on', b.on ? '1' : '0');
@@ -36,6 +47,16 @@ export function saveAcquire(b) {
   if (b.upgrade !== undefined) setSetting('acquire_upgrade', b.upgrade ? '1' : '0');
   if (b.keepSeeding !== undefined) setSetting('acquire_seed', b.keepSeeding ? '1' : '0');
   if (b.client !== undefined) setSetting('acquire_client', b.client);
+  if (b.categories) {
+    // null pour une catégorie = retour au filtre de départ
+    const cur = acquireConf().categories, next = { ...cur };
+    for (const [k, v] of Object.entries(b.categories)) { if (!CATEGORIES[k]) throw new Error(`catégorie inconnue : ${k}`); if (v === null) delete next[k]; else next[k] = { ...(cur[k] || {}), ...v, ...(v.langues ? { langues: { ...(cur[k]?.langues || {}), ...v.langues } } : {}) }; }
+    setSetting('acquire_categories', cleanCategories(next));
+  }
+  if (b.lots) {
+    const n = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Math.round(Number(v)))) : d), cur = acquireConf().lots;
+    setSetting('acquire_lots', { taille: n(b.lots.taille, 1, 100, cur.taille), pauseS: n(b.lots.pauseS, 0, 120, cur.pauseS), ameliorations: n(b.lots.ameliorations, 0, 50, cur.ameliorations) });
+  }
 }
 export const listSources = () => sourcesHealth();
 export function addSource({ name, kind, url, key }) {
@@ -70,11 +91,27 @@ export function addWant(w) {
 const today = () => new Date().toISOString().slice(0, 10);
 export const label = (w) => (w.kind === 'episode' ? `${w.title} S${String(w.season).padStart(2, '0')}E${String(w.episode).padStart(2, '0')}` : w.kind === 'album' ? `${w.artist} — ${w.title}` : w.kind === 'book' || w.kind === 'audiobook' ? `${w.title}${w.author ? ` (${w.author})` : ''}` : `${w.title}${w.year ? ` (${w.year})` : ''}`);
 export function removeWant(id) { run('DELETE FROM media_wants WHERE id = ?', Number(id)); }
+/**
+ * Retiré des favoris / de « À venir » (et plus personne ne le veut) : les recherches s'arrêtent, les téléchargements
+ * en cours sont annulés (fichiers partiels supprimés). Ce qui est déjà rangé dans la médiathèque n'est pas touché.
+ */
+export async function cancelFor(showKey, deps = defaultDeps) {
+  const l = wantsList('show_key = ?', showKey); if (!l.length) return { cancelled: 0 };
+  const ids = new Set(l.filter((w) => w.status === 'telechargement' && w.grab?.id).map((w) => w.grab.id));
+  for (const id of ids) {
+    // Une saison complète partagée avec une autre envie encore voulue n'est pas annulée
+    if (get("SELECT 1 FROM media_wants WHERE show_key <> ? AND status = 'telechargement' AND grab LIKE ?", showKey, `%${String(id).replace(/[%_]/g, '')}%`)) continue;
+    await deps.engine().remove(id, true).catch(() => {});
+  }
+  run('DELETE FROM media_wants WHERE show_key = ?', showKey);
+  log(null, `Retiré : ${l[0].title} (${l.length} envie(s) arrêtée(s)${ids.size ? `, ${ids.size} téléchargement(s) annulé(s)` : ''})`);
+  return { cancelled: l.length, downloads: ids.size };
+}
 
 /** Une envie de Venus (♡ « Mes envies ») → envies du moteur : le film, ou chaque épisode déjà diffusé de la série. */
 export async function fromWish(profile, x, deps = defaultDeps) {
   if (profile?.max_age != null) return { state: 'kids' };
-  if (x.type === 'movie') { addWant({ kind: 'movie', title: x.title, original: x.original, year: x.date ? Number(x.date.slice(0, 4)) : null, tmdbId: x.tmdbId, date: x.date, profileId: profile?.id }); return { state: 'processing' }; }
+  if (x.type === 'movie') { addWant({ kind: 'movie', title: x.title, original: x.original, year: x.date ? Number(x.date.slice(0, 4)) : null, tmdbId: x.tmdbId, date: x.date, anime: x.anime, profileId: profile?.id }); return { state: 'processing' }; }
   const n = await followShow({ tmdbId: x.tmdbId, title: x.title, original: x.original, anime: x.anime, profileId: profile?.id }, deps).catch((e) => { log(null, `${x.title} : épisodes introuvables (${e.message})`); return 0; });
   return { state: 'processing', episodes: n };
 }
@@ -99,13 +136,13 @@ const nextDelay = (w) => { const age = Date.now() - (w.added_at || Date.now()); 
 export async function searchWant(w, deps = defaultDeps) {
   const conf = acquireConf();
   if (!deps.hasSources()) return { ok: false, why: 'aucune source : ajoute une source dans Bygul (Réglages → Médias automatiques)' };
-  const want = { kind: w.kind, title: w.title, original: w.original, year: w.year, season: w.season, episode: w.episode, artist: w.artist, author: w.author };
+  const want = { kind: w.kind, title: w.title, original: w.original, year: w.year, season: w.season, episode: w.episode, artist: w.artist, author: w.author, anime: !!w.anime };
   const queries = [want, ...(w.original && w.original !== w.title ? [{ ...want, searchTitle: w.original }] : [])];
   let results = [], errors = [];
   for (const q of queries) { const r = await deps.search(q); results = results.concat(r.results); errors = errors.concat(r.errors); }
   const seen = new Set(); results = results.filter((r) => { const k = r.infohash || r.link; if (seen.has(k)) return false; seen.add(k); return true; });
   const deja = w.status === 'range' ? (w.score ?? 0) : null;
-  const b = best(want, results, conf.profil, deja, w.tried || []);
+  const b = best(want, results, profileFor(want, conf.categories), deja, w.tried || []);
   run('UPDATE media_wants SET last_search = ?, next_search = ? WHERE id = ?', Date.now(), Date.now() + nextDelay(w), w.id);
   if (!b.pick) {
     const why = results.length ? `${results.length} résultat(s), aucun ne convient (${[...new Set(b.rejected.map((x) => x.why))].slice(0, 3).join(' ; ')})` : errors.length ? `sources en panne : ${errors.slice(0, 2).join(' ; ')}` : 'rien trouvé pour l’instant';
@@ -115,7 +152,7 @@ export async function searchWant(w, deps = defaultDeps) {
   await grab(w, b.pick, deps);
   return { ok: true, pick: b.pick };
 }
-async function grab(w, pick, deps) {
+export async function grab(w, pick, deps = defaultDeps) {
   const tag = `venus-${w.id}-${crypto.randomBytes(3).toString('hex')}`;
   const engine = deps.engine();
   const id = await engine.add(pick.r, tag, deps.downloadDir(w));
@@ -128,6 +165,7 @@ async function grab(w, pick, deps) {
 }
 
 // ---------------------------------------------------------------- suivi des téléchargements et rangement
+const EXEC = /\.(exe|scr|bat|cmd|msi|com|vbs|vbe|js|jse|wsf|jar|apk|lnk|ps1|pif|hta|cpl|dll|sh|run|bin|app|dmg|deb|rpm)$/i;
 const VIDEO = /\.(mkv|mp4|m4v|avi|mov|ts|m2ts|webm|wmv)$/i, AUDIO = /\.(flac|mp3|m4a|aac|ogg|opus|wav|alac)$/i, BOOK = /\.(epub|pdf|mobi|azw3?|cbz|cbr)$/i, AUDIOBOOK = /\.(m4b|mp3|m4a|aac|ogg|opus)$/i;
 function filesUnder(p) {
   let st; try { st = fs.statSync(p); } catch { return []; }
@@ -144,8 +182,16 @@ function place(src, dest) {
 }
 /** Range les fichiers d'un téléchargement fini pour les envies qui l'attendent. */
 export function importDone(item, wants, deps = defaultDeps) {
-  const conf = acquireConf(), files = filesUnder(item.path).filter((f) => !/sample/i.test(f.path));
+  const conf = acquireConf(), all0 = filesUnder(item.path), files = all0.filter((f) => !/sample/i.test(f.path));
   const done = [];
+  // Un fichier exécutable dans un téléchargement de média = piège : rien n'est rangé, le téléchargement est supprimé,
+  // la version est notée « essayée » et une autre sera cherchée.
+  const exe = all0.find((f) => EXEC.test(f.path));
+  if (exe) {
+    for (const w of wants) { run('UPDATE media_wants SET status = ?, tried = ?, grab = NULL, next_search = 0, note = ? WHERE id = ?', w.file ? 'range' : 'attente', JSON.stringify([...(w.tried || []), w.grab?.link].filter(Boolean)), `fichier exécutable bloqué (${path.basename(exe.path)}) : une autre version sera cherchée`, w.id); log(w.id, `Fichier exécutable bloqué, téléchargement supprimé : ${path.basename(exe.path)}`); }
+    if (item.id) deps.engine().remove(item.id, true).catch(() => {});
+    return done;
+  }
   for (const w of wants) {
     const root = deps.rootFor(w); if (!root) { run('UPDATE media_wants SET status = ?, note = ? WHERE id = ?', 'erreur', 'aucun dossier de médiathèque pour ce type (Réglages → Médias automatiques)', w.id); continue; }
     const want = { kind: w.kind, title: w.title, year: w.year, season: w.season, episode: w.episode, artist: w.artist, author: w.author };
@@ -193,19 +239,26 @@ export async function poll(deps = defaultDeps) {
   return { active: active.length, imported: n };
 }
 /** Un passage : cherche ce qui manque (et les meilleures versions), sans tout chercher à la fois. */
-export async function searchDue(deps = defaultDeps, limit = 15) {
-  const conf = acquireConf(), now = Date.now();
+export async function searchDue(deps = defaultDeps, limit = null) {
+  const conf = acquireConf(), now = Date.now(); limit ??= conf.lots.taille;
   run("UPDATE media_wants SET status = 'attente' WHERE status = 'pas_sorti' AND release_date <= ?", today());
   const due = wantsList("status IN ('attente','pas_trouve') AND (next_search IS NULL OR next_search <= ?)", now).slice(0, limit);
-  if (conf.upgrade) due.push(...wantsList("status = 'range' AND cible = 0 AND kind IN ('movie','episode') AND (next_search IS NULL OR next_search <= ?) AND done_at > ?", now, now - 60 * 864e5).slice(0, 5));
+  if (conf.upgrade) due.push(...wantsList("status = 'range' AND cible = 0 AND kind IN ('movie','episode') AND (next_search IS NULL OR next_search <= ?) AND done_at > ?", now, now - 60 * 864e5).slice(0, conf.lots.ameliorations));
   const out = [];
-  for (const w of due) { try { out.push({ id: w.id, ...(await searchWant(w, deps)) }); } catch (e) { log(w.id, `Recherche impossible : ${e.message}`); } }
+  // Par lots : une envie après l'autre, avec une pause, pour ne pas saturer les sources. Le reste attend le passage suivant.
+  for (const [i, w] of due.entries()) {
+    if (i && conf.lots.pauseS) await deps.sleep(conf.lots.pauseS * 1000);
+    // Les autres épisodes d'une saison déjà prise en entier ne sont pas recherchés
+    const fresh = wantById(w.id); if (!fresh || (fresh.status === 'telechargement' && w.status !== 'telechargement')) continue;
+    try { out.push({ id: w.id, ...(await searchWant(fresh, deps)) }); } catch (e) { log(w.id, `Recherche impossible : ${e.message}`); }
+  }
   return out;
 }
 
 // ---------------------------------------------------------------- dépendances réelles (remplaçables dans les tests)
 export const defaultDeps = {
   fetch: (...a) => fetch(...a),
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   hasSources: () => !!get('SELECT 1 FROM media_sources WHERE enabled = 1 LIMIT 1'),
   search: (want) => bygulSearch(want),
   tmdb: async (p) => (await import('../metadata.js')).tmdb(p),
@@ -228,10 +281,17 @@ export const setNativeEngine = (f) => { native = f; };
 const nativeEngine = () => { if (!native) throw new Error('Le moteur de téléchargement de Venus (Fólkvangr) n’est pas chargé'); return native(); };
 
 // ---------------------------------------------------------------- tâche de fond
-let timers = [];
+let timers = [], looking = false, kickTimer = null;
+const look = async () => {
+  if (!acquireOn() || looking) return; looking = true;
+  try { await searchDue(); } catch (e) { console.warn('[médias] recherche :', e.message); } finally { looking = false; }
+};
+/** Une envie vient d'arriver (♡, À venir, Télécharger) : la recherche part dans quelques secondes, sans attendre le passage. */
+export function kickSearch(delay = 5000) {
+  if (kickTimer) return; kickTimer = setTimeout(() => { kickTimer = null; look(); }, delay); kickTimer.unref?.();
+}
 export function startAcquire() {
   const tick = async () => { if (!acquireOn()) return; try { await poll(); } catch (e) { console.warn('[médias] suivi :', e.message); } };
-  const look = async () => { if (!acquireOn()) return; try { await searchDue(); } catch (e) { console.warn('[médias] recherche :', e.message); } };
   timers = [setInterval(tick, 60000), setInterval(look, 15 * 60000), setTimeout(look, 90000)];
   for (const t of timers) t.unref?.();
 }

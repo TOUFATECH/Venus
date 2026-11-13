@@ -47,3 +47,34 @@ test('sources : test (capacités), priorités, doublons, santé avec pause, stat
   B.setSource(a, { enabled: false }); assert.equal((await B.bygulSearch({ kind: 'movie', title: 'Orage' }, fetcher)).sources, 1);
   assert.equal(B.parseCaps('<caps><searching><book-search available="yes"/></searching></caps>').livres, true);
 });
+
+test('import depuis Prowlarr : actifs / coupés repris, passage par l’API Torznab de Prowlarr, pas de doublon au nouvel import', async () => {
+  let enable2 = false, calls = [];
+  const fetcher = async (u, o = {}) => {
+    calls.push({ u, key: o.headers?.['X-Api-Key'] });
+    if (o.headers?.['X-Api-Key'] !== 'cle-prowlarr-123') return new Response('', { status: 401 });
+    return Response.json([
+      { id: 1, name: 'Indexeur Un', enable: true, protocol: 'torrent', priority: 10 },
+      { id: 2, name: 'Indexeur Deux', enable: enable2, protocol: 'torrent', priority: 25 },
+      { id: 3, name: 'Usenet Trois', enable: true, protocol: 'usenet' },
+    ]);
+  };
+  await assert.rejects(B.importProwlarr({ url: 'http://prowlarr.test:9696', key: 'mauvaise-cle' }, fetcher), /refuse la clé/);
+  await assert.rejects(B.importProwlarr({ url: 'ftp://x', key: 'cle-prowlarr-123' }, fetcher), /invalide/);
+  const r = await B.importProwlarr({ url: 'http://prowlarr.test:9696/', key: 'cle-prowlarr-123' }, fetcher);
+  assert.deepEqual([r.added, r.updated, r.active, r.disabled, r.total], [3, 0, 2, 1, 3]);
+  assert.equal(calls.at(-1).u, 'http://prowlarr.test:9696/api/v1/indexer');
+  const mine = B.sourcesHealth().filter((s) => /^prowlarr:/.test(s.origin || ''));
+  assert.equal(mine.length, 3);
+  const deux = mine.find((s) => s.name === 'Indexeur Deux');
+  assert.equal(deux.enabled, false); assert.equal(deux.url, 'http://prowlarr.test:9696/2/api'); assert.equal(deux.key, undefined, 'clé jamais renvoyée');
+  assert.equal(mine.find((s) => s.name === 'Usenet Trois').kind, 'newznab'); assert.equal(mine.find((s) => s.name === 'Indexeur Un').priority, 10);
+  enable2 = true;
+  const r2 = await B.importProwlarr({ url: 'http://prowlarr.test:9696', key: 'cle-prowlarr-123' }, fetcher);
+  assert.deepEqual([r2.added, r2.updated, r2.active], [0, 3, 3]);
+  assert.equal(B.sourcesHealth().find((s) => s.name === 'Indexeur Deux').enabled, true);
+  // Test de toutes les sources actives, une à une
+  const caps = async (u) => (new URL(u).searchParams.get('t') === 'caps' ? new Response(CAPS) : new Response('', { status: 500 }));
+  const t = await B.testAll(caps); assert.ok(t.length >= 3 && t.filter((x) => /Indexeur|Usenet/.test(x.name)).every((x) => x.ok));
+  for (const s of mine) E.removeSource(s.id);
+});

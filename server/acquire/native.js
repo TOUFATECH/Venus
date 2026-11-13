@@ -23,7 +23,7 @@ export function folkvangr() {
 setNativeEngine(() => ({
   add: async (rel, tag, dir) => (await folkvangr()).add(rel.link, { tags: [tag], dir }),
   list: async () => (await folkvangr()).list(),
-  remove: async (id) => (await folkvangr()).remove(id),
+  remove: async (id, files = false) => (await folkvangr()).remove(id, { files }),
 }));
 /** Au démarrage de Venus : reprend les téléchargements en cours (s'il y en a). */
 export function resumeFolkvangr() { if (all('SELECT 1 FROM folk_torrents LIMIT 1').length) folkvangr().catch((e) => console.warn('[fólkvangr]', e.message)); }

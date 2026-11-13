@@ -26,21 +26,22 @@ function world(results) {
   const added = [], files = new Map(), state = new Map();
   const movies = path.join(tmp, 'Films'), shows = path.join(tmp, 'Series'), dl = path.join(tmp, 'dl');
   for (const d of [movies, shows, dl]) fs.mkdirSync(d, { recursive: true });
-  const trashed = [];
+  const trashed = [], slept = [], removed = [];
   const deps = {
     ...E.defaultDeps,
+    sleep: async (ms) => { slept.push(ms); },
     fetch: async (u) => { const q = new URL(u); const key = `${q.searchParams.get('t')}|${q.searchParams.get('q')}|${q.searchParams.get('season') ?? ''}|${q.searchParams.get('ep') ?? ''}`; return new Response(feed(results(key, q) ?? []), { status: 200 }); },
     hasSources: () => true,
     search: async (want) => { const { searchAll } = await import('../../server/acquire/sources.js'); return searchAll([{ name: 'Essai', kind: 'torznab', url: 'http://source.test/api', key: 'k', enabled: true }], want, deps.fetch); },
     tmdb: async (p) => (p === '/tv/77' ? { name: 'Brigade Nord', seasons: [{ season_number: 1 }] } : { episodes: [{ episode_number: 1, air_date: '2025-01-01' }, { episode_number: 2, air_date: '2025-01-08' }, { episode_number: 3, air_date: '2099-01-01' }] }),
     episodesInLibrary: () => new Set(['1:1']),
-    engine: () => ({ name: 'faux', add: async (rel, tag) => { added.push({ rel, tag }); state.set(rel.infohash, { id: rel.infohash, tags: [tag], name: rel.title, progress: 30, done: false, failed: false, path: files.get(rel.infohash) }); return rel.infohash; }, list: async () => [...state.values()], remove: async () => {} }),
+    engine: () => ({ name: 'faux', add: async (rel, tag) => { added.push({ rel, tag }); state.set(rel.infohash, { id: rel.infohash, tags: [tag], name: rel.title, progress: 30, done: false, failed: false, path: files.get(rel.infohash) }); return rel.infohash; }, list: async () => [...state.values()], remove: async (id, files) => { removed.push({ id, files }); state.delete(id); } }),
     rootFor: (w) => (w.kind === 'movie' ? movies : shows),
     trash: (f) => { trashed.push(f); fs.rmSync(f, { force: true }); },
     scan: () => {},
   };
   const finish = (hash, rel) => { const f = path.join(dl, rel); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, 'video'); const s = state.get(hash); Object.assign(s, { done: true, progress: 100, path: path.join(dl, rel.split('/')[0]) }); };
-  return { deps, added, state, finish, movies, shows, trashed };
+  return { deps, added, state, finish, movies, shows, trashed, slept, removed, dl };
 }
 
 test('film : ♡ → meilleure version VF 1080p → téléchargement → rangé dans la médiathèque', async () => {
@@ -85,7 +86,6 @@ test('série : les épisodes diffusés manquants deviennent des envies ; une sai
 
 test('meilleure version : une VF arrivée remplace la VOSTFR (l’ancienne part à la corbeille) ; rien de mieux = on garde', async () => {
   let vf = false;
-  E.saveAcquire({ profil: { langue: 'vf_puis_vo' } });
   const W = world((k) => (k.startsWith('movie|Nuit Blanche') ? [
     { t: 'Nuit.Blanche.2021.VOSTFR.1080p.WEB', l: 'magnet:?xt=urn:btih:' + '1'.repeat(40), h: '1'.repeat(40) },
     ...(vf ? [{ t: 'Nuit.Blanche.2021.FRENCH.1080p.WEB', l: 'magnet:?xt=urn:btih:' + '2'.repeat(40), h: '2'.repeat(40) }] : []),
@@ -99,7 +99,64 @@ test('meilleure version : une VF arrivée remplace la VOSTFR (l’ancienne part 
   vf = true; await E.searchWant(E.wantById(id), W.deps);
   W.finish('2'.repeat(40), 'Nuit.Blanche.2021.FRENCH.1080p.WEB/x.mkv'); await E.poll(W.deps);
   w = E.wantById(id); assert.equal(w.cible, 1); assert.match(w.file, /\[1080p VF\]\.mkv$/); assert.deepEqual(W.trashed, [old]);
-  E.saveAcquire({ profil: { langue: 'vf' } });
+});
+
+test('filtres par catégorie réglables : Films sans VOSTFR, animés en VOSTFR 480p, retour au filtre de départ', async () => {
+  const W = world((k) => (k.startsWith('movie|Brume') ? [{ t: 'Brume.2024.VOSTFR.1080p.WEB', l: 'magnet:?xt=urn:btih:' + '3'.repeat(40), h: '3'.repeat(40) }]
+    : k.startsWith('tvsearch|Kaze') ? [{ t: '[SubsPlease] Kaze - 05 (480p) VOSTFR', l: 'magnet:?xt=urn:btih:' + '4'.repeat(40), h: '4'.repeat(40), s: 3e8 }] : []));
+  E.saveAcquire({ categories: { films: { langues: { vostfr: -500 } } } });
+  assert.equal(E.acquireConf().categories.films.langues.vostfr, -500);
+  assert.equal(E.filtersView().films.langues.vostfr, -500); assert.equal(E.filtersView().films.reglee, true); assert.equal(E.filtersView().series.reglee, false);
+  const f = E.addWant({ kind: 'movie', title: 'Brume', year: 2024, tmdbId: 9100 });
+  const r = await E.searchWant(E.wantById(f), W.deps); assert.equal(r.ok, false); assert.match(r.why, /VOSTFR/);
+  const a = E.addWant({ kind: 'episode', title: 'Kaze', season: 1, episode: 5, showKey: 'tv:9200', anime: true });
+  assert.ok((await E.searchWant(E.wantById(a), W.deps)).ok, 'animé : VOSTFR 480p accepté, numéro absolu « - 05 »');
+  assert.throws(() => E.saveAcquire({ categories: { inconnue: {} } }), /catégorie inconnue/);
+  E.saveAcquire({ categories: { films: { min: 9999, langues: { vf: 'x' } } } });
+  assert.equal(E.acquireConf().categories.films.min, 2160, 'valeurs bornées'); assert.equal(E.acquireConf().categories.films.langues.vf, undefined);
+  E.saveAcquire({ categories: { films: null } }); assert.equal(E.acquireConf().categories.films, undefined, 'retour au filtre de départ');
+  assert.ok((await E.searchWant(E.wantById(f), W.deps)).ok, 'VOSTFR de nouveau acceptée (en attendant la VF)');
+  await E.cancelFor('movie:9100', W.deps); await E.cancelFor('tv:9200', W.deps);
+});
+
+test('fichier exécutable dans un téléchargement : rien n’est rangé, le téléchargement est supprimé, une autre version sera cherchée', async () => {
+  const W = world((k) => (k.startsWith('movie|Piege') ? [{ t: 'Piege.2023.MULTi.1080p.WEB', l: 'magnet:?xt=urn:btih:' + '5'.repeat(40), h: '5'.repeat(40) }] : []));
+  const id = E.addWant({ kind: 'movie', title: 'Piege', year: 2023, tmdbId: 9300 });
+  await E.searchWant(E.wantById(id), W.deps);
+  W.finish('5'.repeat(40), 'Piege.2023.MULTi.1080p.WEB/Piege.mkv');
+  fs.writeFileSync(path.join(W.dl, 'Piege.2023.MULTi.1080p.WEB', 'Lecteur.exe'), 'MZ');
+  await E.poll(W.deps);
+  const w = E.wantById(id);
+  assert.equal(w.status, 'attente'); assert.equal(w.file, null); assert.match(w.note, /exécutable bloqué/);
+  assert.deepEqual(w.tried, ['magnet:?xt=urn:btih:' + '5'.repeat(40)]);
+  assert.deepEqual(W.removed, [{ id: '5'.repeat(40), files: true }]);
+  assert.ok(!fs.existsSync(path.join(W.movies, 'Piege (2023)')));
+  await E.cancelFor('movie:9300', W.deps);
+});
+
+test('par lots : taille du lot et pause entre deux recherches ; retirer annule les téléchargements', async () => {
+  const W = world((k) => { const n = /^movie\|Lot (\w)/.exec(k)?.[1]; return n ? [{ t: `Lot.${n}.2020.MULTi.1080p.WEB`, l: `magnet:?xt=urn:btih:${n.repeat(40)}`, h: n.repeat(40) }] : []; });
+  E.saveAcquire({ lots: { taille: 3, pauseS: 2 } });
+  for (const n of ['a', 'b', 'c', 'd', 'e']) E.addWant({ kind: 'movie', title: `Lot ${n}`, year: 2020, tmdbId: 9400 + n.charCodeAt(0) });
+  const s1 = await E.searchDue(W.deps);
+  assert.equal(s1.length, 3, 'lot de 3'); assert.deepEqual(W.slept, [2000, 2000], 'pause de 2 s entre deux recherches');
+  const s2 = await E.searchDue(W.deps); assert.equal(s2.length, 2, 'le reste au passage suivant');
+  assert.equal(W.added.length, 5);
+  const r = await E.cancelFor(`movie:${9400 + 97}`, W.deps);
+  assert.deepEqual(r, { cancelled: 1, downloads: 1 }); assert.deepEqual(W.removed[0], { id: 'a'.repeat(40), files: true });
+  assert.equal(E.wantsList('show_key = ?', `movie:${9400 + 97}`).length, 0);
+  for (const n of ['b', 'c', 'd', 'e']) await E.cancelFor(`movie:${9400 + n.charCodeAt(0)}`, W.deps);
+  E.saveAcquire({ lots: { taille: 10, pauseS: 4 } });
+});
+
+test('Bygul : au plus N recherches par minute et par source', async () => {
+  const B = await import('../../server/acquire/bygul.js');
+  B.resetSlots();
+  const s = { id: 999, rpm: 2 };
+  assert.equal(B.slotWait(s, 1000), 0); assert.equal(B.slotWait(s, 2000), 0);
+  assert.equal(B.slotWait(s, 3000), 58000, 'troisième recherche : attendre que la première ait une minute');
+  assert.equal(B.slotWait(s, 61001), 0);
+  assert.equal(B.rpmOf({ rpm: 500 }), 120); assert.equal(B.rpmOf({}), 10);
 });
 
 test('sources : ajout vérifié, aucune par défaut', () => {
@@ -109,4 +166,21 @@ test('sources : ajout vérifié, aucune par défaut', () => {
   const id = E.addSource({ name: 'Mon indexeur', kind: 'torznab', url: 'http://192.168.1.20:9117/api', key: 'secret' });
   assert.ok(id > 0); assert.equal(E.listSources()[0].key, undefined, 'la clé n’est jamais renvoyée');
   E.removeSource(id); assert.equal(E.listSources().length, 0);
+});
+
+test('autotest : domaine public d’archive.org → téléchargement → rangé → vérifié → tout retiré', async () => {
+  const S = await import('../../server/acquire/selftest.js');
+  const W = world(() => []);
+  const deps = { ...W.deps, search: async () => ({ sources: 2, results: [{}], errors: [] }), engine: () => ({ name: 'venus',
+    add: async (rel, tag) => { W.added.push({ rel, tag }); const h = 'c'.repeat(40); W.state.set(h, { id: h, tags: [tag], name: rel.title, progress: 0, done: false, failed: false }); setTimeout(() => {
+      const f = path.join(W.dl, 'skel', 'Skeleton_Dance.mp4'); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, Buffer.alloc(300 * 1024, 1)); Object.assign(W.state.get(h), { done: true, progress: 100, path: path.join(W.dl, 'skel') }); }, 30); return h; },
+    list: async () => [...W.state.values()], remove: async (id, files) => { W.removed.push({ id, files }); } }) };
+  assert.throws(() => S.startSelfTest({ id: '../etc' }, deps), /invalide/);
+  const st = await S.startSelfTest(S.DEFAULT_ITEM, deps, { wait: true, everyMs: 20, sleep: (ms) => new Promise((r) => setTimeout(r, ms)) });
+  assert.equal(st.result, 'réussi', JSON.stringify(st.steps));
+  assert.equal(W.added[0].rel.link, 'https://archive.org/download/public-domain-spotlight-the-skeleton-dance/public-domain-spotlight-the-skeleton-dance_archive.torrent');
+  assert.ok(st.steps.some((s) => /Rangé dans la médiathèque/.test(s.text))); assert.ok(st.steps.some((s) => /Fichier vérifié/.test(s.text)));
+  assert.deepEqual(W.removed, [{ id: 'c'.repeat(40), files: true }]);
+  assert.ok(!fs.existsSync(path.join(W.movies, 'The Skeleton Dance (1929)')), 'fichier rangé retiré');
+  assert.equal(E.wantsList("show_key LIKE 'autotest:%'").length, 0, 'envie retirée');
 });

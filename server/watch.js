@@ -10,7 +10,7 @@ import { db, all, get, run, getSetting, setSetting } from './db.js';
 import { seerr, seerrOn, seerrConf, seerrRequest, mediaState, libraryIndex } from './discover.js';
 import { logActivity } from './activity.js';
 import { notify } from './notify.js';
-import { acquireOn, fromWish, followShow, wantsList } from './acquire/engine.js';
+import { acquireOn, fromWish, followShow, wantsList, cancelFor, kickSearch } from './acquire/engine.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS wishlist (
   profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
@@ -80,13 +80,17 @@ export async function addWish(profile, x) {
   // Profils enfants : l'envie est notée, un adulte décide de la demande
   let request = null;
   // Médias automatiques de Venus (Hnoss) : le ♡ lance la recherche et le téléchargement tout de suite
-  if (acquireOn() && autoRequest() && profile.max_age == null) request = await fromWish(profile, { ...x, type });
+  if (acquireOn() && autoRequest() && profile.max_age == null) { request = await fromWish(profile, { ...x, type }); kickSearch(); }
   else if (seerrOn() && autoRequest() && profile.max_age == null) request = await requestWish(profile.id, type, x.tmdbId);
   return { inWishlist: true, request };
 }
-export function removeWish(profileId, type, tmdbId) {
-  run('DELETE FROM wishlist WHERE profile_id=? AND media_type=? AND tmdb_id=?', profileId, type === 'movie' ? 'movie' : 'tv', tmdbId);
-  return { inWishlist: false };
+export async function removeWish(profileId, type, tmdbId) {
+  const t = type === 'movie' ? 'movie' : 'tv';
+  run('DELETE FROM wishlist WHERE profile_id=? AND media_type=? AND tmdb_id=?', profileId, t, tmdbId);
+  // Plus personne ne le veut (ni en ♡, ni dans « À venir ») : le moteur de Venus arrête de le chercher
+  let cancelled = null;
+  if (acquireOn() && !get('SELECT 1 FROM wishlist WHERE media_type=? AND tmdb_id=?', t, tmdbId) && !get(t === 'movie' ? "SELECT 1 FROM wanted WHERE tmdb_id = ? AND kind = 'movie'" : "SELECT 1 FROM wanted WHERE tmdb_id = ? AND kind <> 'movie'", tmdbId)) cancelled = await cancelFor(`${t}:${tmdbId}`).catch(() => null);
+  return { inWishlist: false, cancelled };
 }
 
 async function requestWish(profileId, type, tmdbId) {
@@ -154,7 +158,7 @@ export async function runWatch() {
       watchState.followed = ids.size;
       for (const [tmdbId, info] of ids) {
         try {
-          if (acquireOn()) { const sh = get("SELECT title, original_title FROM items WHERE type = 'show' AND tmdb_id = ?", tmdbId) || get("SELECT title, original FROM wishlist WHERE media_type = 'tv' AND tmdb_id = ? LIMIT 1", tmdbId) || {}; requested += await followShow({ tmdbId, title: sh.title, original: sh.original_title || sh.original, profileId: info.profileId }); }
+          if (acquireOn()) { const sh = get("SELECT title, original_title, category FROM items WHERE type = 'show' AND tmdb_id = ?", tmdbId) || get("SELECT title, original, anime FROM wishlist WHERE media_type = 'tv' AND tmdb_id = ? LIMIT 1", tmdbId) || {}; requested += await followShow({ tmdbId, title: sh.title, original: sh.original_title || sh.original, anime: sh.category === 'anime' || !!sh.anime, profileId: info.profileId }); }
           else requested += await followSeerr(tmdbId, info);
         } catch (e) { watchState.error = e.message; }
         await new Promise((r) => setTimeout(r, 300));

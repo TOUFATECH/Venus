@@ -15,6 +15,7 @@ import { tmdb, tmdbKey, lang } from './metadata.js';
 import { arrOn, call as arrCall, arrKnown, arrGrab, arrRemove } from './arr.js';
 import { logActivity } from './activity.js';
 import { notify } from './notify.js';
+import { acquireOn, fromWish, addWant, cancelFor, kickSearch, wantById, searchWant } from './acquire/engine.js';
 
 const TVMAZE = process.env.VENUS_TVMAZE_API || 'https://api.tvmaze.com';
 const DAY = 864e5;
@@ -70,9 +71,43 @@ export function wantedOf(profileId) {
   }));
 }
 const appOf = (kind) => (kind === 'movie' ? 'radarr' : 'sonarr');
-// Envoi à Radarr / Sonarr (profils adultes seulement)
+// Le numéro TMDB d'un titre de « À venir » (séries TVmaze / animés AniList n'en ont pas toujours) : TMDB, par le titre
+async function tmdbOf(w) {
+  if (w.tmdb) return Number(w.tmdb);
+  if (!tmdbKey()) return null;
+  const type = w.kind === 'movie' ? 'movie' : 'tv';
+  if (w.tvdb) { const d = await tmdb(`/find/${w.tvdb}`, { external_source: 'tvdb_id' }).catch(() => null); const hit = d?.tv_results?.[0]; if (hit) return hit.id; }
+  if (/^imdb:/.test(w.key)) { const d = await tmdb(`/find/${w.key.slice(5)}`, { external_source: 'imdb_id' }).catch(() => null); const hit = (type === 'movie' ? d?.movie_results : d?.tv_results)?.[0]; if (hit) return hit.id; }
+  const d = await tmdb(`/search/${type}`, { query: w.title, ...(w.year ? { [type === 'movie' ? 'year' : 'first_air_date_year']: w.year } : {}) }).catch(() => null);
+  const res = d?.results || [];
+  return (w.kind === 'anime' ? res.find((x) => (x.genre_ids || []).includes(16)) : null)?.id ?? res[0]?.id ?? null;
+}
+/** Médias automatiques de Venus allumés : le titre passe directement au moteur (recherche, filtre, téléchargement). */
+async function sendNative(profile, w, { now = false } = {}) {
+  const tmdbId = await tmdbOf(w);
+  const type = w.kind === 'movie' ? 'movie' : 'tv';
+  let r;
+  if (tmdbId) {
+    run('UPDATE wanted SET tmdb_id = ? WHERE key = ? AND tmdb_id IS NULL', tmdbId, w.key);
+    r = await fromWish(profile, { type, title: w.title, tmdbId, date: w.date, anime: w.kind === 'anime' });
+  } else if (w.kind === 'movie') {
+    r = { state: 'processing', id: addWant({ kind: 'movie', title: w.title, year: w.year, date: w.date, profileId: profile.id }) };
+  } else throw new Error('Série introuvable dans TMDB (clé TMDB manquante ?) : le moteur de Venus ne peut pas lister ses épisodes');
+  if (r.state === 'kids') return null;
+  run('UPDATE wanted SET sent_at = ?, error = NULL, venus_added = 1, arr_app = ? WHERE key = ?', Date.now(), 'venus', w.key);
+  logActivity('request', `${profile.name} a demandé « ${w.title} » (médias automatiques de Venus)`);
+  // « Télécharger » : un film est cherché tout de suite ; sinon la recherche part dans quelques secondes, par lots
+  if (now && type === 'movie' && tmdbId) { const id = get('SELECT id FROM media_wants WHERE show_key = ?', `movie:${tmdbId}`)?.id; if (id) return { ...r, title: w.title, search: await searchWant(wantById(id)).catch((e) => ({ ok: false, why: e.message })) }; }
+  kickSearch();
+  return { ...r, title: w.title, engine: 'venus' };
+}
+// Envoi au moteur de Venus, sinon à Radarr / Sonarr (profils adultes seulement)
 async function send(profile, w) {
-  if (profile.max_age != null || !arrOn(appOf(w.kind))) return null;
+  if (profile.max_age != null) return null;
+  if (acquireOn()) {
+    try { return await sendNative(profile, w); } catch (e) { run('UPDATE wanted SET error = ? WHERE profile_id = ? AND key = ?', String(e.message).slice(0, 200), profile.id, w.key); return { error: e.message }; }
+  }
+  if (!arrOn(appOf(w.kind))) return null;
   try {
     const r = await arrGrab({ kind: w.kind, tmdb: w.tmdb, tvdb: w.tvdb, imdb: /^imdb:/.test(w.key) ? w.key.slice(5) : null, title: w.title, year: w.year });
     run('UPDATE wanted SET sent_at = ?, error = NULL WHERE profile_id = ? AND key = ?', Date.now(), profile.id, w.key);
@@ -103,6 +138,13 @@ export async function addWanted(profile, w, { download = true } = {}) {
 export async function removeWanted(profileId, key) {
   const row = get('SELECT * FROM wanted WHERE profile_id = ? AND key = ?', profileId, key);
   run('DELETE FROM wanted WHERE profile_id = ? AND key = ?', profileId, key);
+  // Moteur de Venus : plus personne ne le veut (ni dans « À venir », ni en ♡) → recherches arrêtées, téléchargements annulés
+  if (row && row.arr_app === 'venus' && !get('SELECT 1 FROM wanted WHERE key = ?', key)) {
+    const t = row.kind === 'movie' ? 'movie' : 'tv';
+    if (!row.tmdb_id) return { wanted: false, removed: false, cancelled: row.kind === 'movie' ? await cancelFor(`movie:${row.title}`).catch(() => null) : null };
+    if (get('SELECT 1 FROM wishlist WHERE media_type = ? AND tmdb_id = ?', t, row.tmdb_id)) return { wanted: false, removed: false };
+    return { wanted: false, removed: false, cancelled: await cancelFor(`${t}:${row.tmdb_id}`).catch(() => null) };
+  }
   if (!row || !row.venus_added || !row.arr_id || get('SELECT 1 FROM wanted WHERE key = ?', key)) return { wanted: false, removed: false };
   try {
     const removed = await arrRemove(row.arr_app || appOf(row.kind), row.arr_id);
@@ -111,6 +153,10 @@ export async function removeWanted(profileId, key) {
   } catch (e) { return { wanted: false, removed: false, error: e.message }; }
 }
 export async function grab(profile, w) {
+  if (acquireOn()) {
+    if (profile.max_age != null) throw Object.assign(new Error('Un profil enfant ne lance pas de téléchargement'), { status: 403 });
+    return sendNative(profile, w, { now: true });
+  }
   if (!arrOn(appOf(w.kind))) throw Object.assign(new Error(`${w.kind === 'movie' ? 'Radarr' : 'Sonarr'} n’est pas relié (Réglages → Demandes)`), { status: 400 });
   const r = await arrGrab({ kind: w.kind, tmdb: w.tmdb, tvdb: w.tvdb, imdb: /^imdb:/.test(w.key) ? w.key.slice(5) : null, title: w.title, year: w.year });
   logActivity('request', `${profile.name} a demandé « ${r.title} »${r.already ? ' (déjà demandé)' : ''}`);

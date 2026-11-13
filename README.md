@@ -179,7 +179,7 @@ cd /opt/Venus && git pull && bash update.sh
 ### Trouver
 
 - **Films, Séries, Animés, Clips** : tri (date d'ajout, sortie, note, popularité, durée…), filtres (genres, années, note, classification, qualité, studios), affiches / vignettes / liste.
-- **À venir** : sorties et épisodes jour par jour, **Disponible** ou **Pas disponible** sur le NAS, suggestions de titres absents ; le ♡ met en favori **et** lance le téléchargement (Radarr / Sonarr), calendrier à s'abonner (iCal).
+- **À venir** : sorties et épisodes jour par jour, **Disponible** ou **Pas disponible** sur le NAS, suggestions de titres absents ; le ♡ met en favori **et** lance le téléchargement (moteur de Venus, ou Radarr / Sonarr), calendrier à s'abonner (iCal).
 - **Recherche instantanée** en français : « un film drôle de moins d'1 h 30 des années 90 », acteurs, genres, et titres pas encore dans Venus.
 - **Fiches complètes** : distribution et équipe **avec leurs photos**, filmographie de chaque acteur, notes des sites (IMDb, Rotten Tomatoes, Metacritic, AniList…), emplacement du fichier sur le NAS.
 - **Survol** : contour lumineux animé de l'affiche, bande-annonce, fiche préchargée pour s'ouvrir instantanément.
@@ -196,6 +196,11 @@ cd /opt/Venus && git pull && bash update.sh
 ### Administrer
 
 - **Tableau de bord** : lectures en cours, appareils, tâches planifiées, journal, **santé du NAS**, performances (GPU, mémoire, copies optimisées).
+- **Médias automatiques (moteur intégré, sans Radarr / Sonarr)** : le ♡, « À venir » (favori ou **Télécharger**) et les demandes passent directement au moteur de Venus : recherche dans **Bygul** (tes sources Torznab / Newznab, ou **import de tes indexeurs Prowlarr** avec leur état actif / coupé), filtre de la catégorie, téléchargement par **Fólkvangr** (BitTorrent intégré, web seeds HTTP) ou ton client (qBittorrent, Transmission, SABnzbd), rangement dans la médiathèque, puis meilleure version (VF arrivée, meilleure qualité).
+  - **Filtres par catégorie**, réglables : Films (720p–4K, MULTI / VF, VOSTFR en attendant la VF, anglais refusé), Films d'animation (480p accepté avant 2000), Séries (480p–1080p, VF, HEVC favorisé), Animés (400p–1080p, VF ou VOSTFR, numérotation « - 05 »), Musique (FLAC, MP3 320), Livres et livres audio (en français). Caméscope, fichiers exécutables et faux médias toujours refusés ; un exécutable trouvé dans un téléchargement le fait supprimer.
+  - **Par lots** : nombre de recherches par passage, pause entre deux, et au plus N recherches par minute et par source, pour ne pas saturer les indexeurs.
+  - **Autotest** : un film du domaine public d'archive.org traverse toute la chaîne (Bygul, téléchargement, rangement, vérification), puis tout est retiré.
+  - Jamais de contournement de captcha : les sources protégées passent par ton Prowlarr / tes réglages.
 - **Seerr, Radarr, Sonarr, Lidarr, LazyLibrarian / Bookshelf** : envies, séries suivies, nouvelles saisons demandées automatiquement ; albums, artistes et livres demandés depuis Venus (Readarr étant arrêté depuis juin 2025, Venus parle à ses deux successeurs).
 - **Médiathèque** : doublons, renommage façon Plex / Jellyfin, corbeille 7 jours, qualité (4K, HDR, débits), sauvegardes nocturnes restaurables.
 - **Compression des vidéos** (Réglages → Performance, et sur chaque fiche) : Venus repère les fichiers qui gagneraient à être recompressés (HEVC/AV1 10 bits, vieux codecs, débits excessifs) et propose une copie H.264 8 bits CRF 20, 1080p au choix, AAC, sous-titres texte conservés, langues audio à garder au choix (français, anglais…). La copie `.venus.mp4` est écrite à côté de l'original ; rien n'est supprimé tant que vous ne l'avez pas lue et **validée** : l'original passe alors en corbeille 7 jours (ou est supprimé tout de suite), la copie prend son nom et Radarr / Sonarr sont prévenus. Lecture directe sans conversion sur tous les appareils, place gagnée sur le NAS.

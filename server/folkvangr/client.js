@@ -1,5 +1,6 @@
 // Fólkvangr · le moteur de téléchargement de Venus (BitTorrent, écrit pour Venus, sans bibliothèque).
-// Fichiers .torrent et liens magnet (métadonnées reçues des pairs, vérifiées), traqueurs HTTP et UDP, pièces
+// Fichiers .torrent et liens magnet (métadonnées reçues des pairs, vérifiées), traqueurs HTTP et UDP, web seeds
+// HTTP (BEP 19 : archive.org, miroirs ; chaque pièce reçue est vérifiée comme celles des pairs), pièces
 // vérifiées avant écriture, plusieurs pairs à la fois (pièces les plus rares d'abord, fin accélérée), partage
 // limité (ratio ou durée), reprise après redémarrage. Limites : pas encore de DHT (un magnet sans traqueur ne
 // trouve pas de pairs), pas de chiffrement de protocole (MSE).
@@ -21,6 +22,7 @@ class Torrent {
     this.c = c; this.rec = rec; this.infoHash = rec.infoHash; this.tags = rec.tags || []; this.dir = rec.dir;
     this.meta = null; this.storage = null; this.wires = new Set(); this.known = new Map(); this.trackers = rec.announce || [];
     this.inflight = new Map(); this.avail = null; this.metaParts = new Map(); this.metaSize = 0; this.error = null;
+    this.webseeds = (rec.webseeds || []).map((url) => ({ url, busy: 0, fails: 0, until: 0 })); this.wsPieces = new Set();
     this.uploaded = rec.uploaded || 0; this.downloadedNow = 0; this.speed = 0; this.lastBytes = 0; this.nextAnnounce = 0; this.stopped = !!rec.stopped; this.doneAt = rec.doneAt || null;
     if (rec.info) this.setInfo(Buffer.from(rec.info, 'base64'));
   }
@@ -84,7 +86,7 @@ class Torrent {
     const t = this.meta, s = this.storage, mine = () => [...this.inflight.values()].filter((r) => r.w === w).length;
     const tryPiece = (i) => { for (let b = 0; b < s.blocksOf(i) && mine() < 12; b++) { const k = `${i}:${b * BLOCK}`; if (this.inflight.has(k) || s.partial.get(i)?.got.has(b)) continue; const len = Math.min(BLOCK, s.pieceSize(i) - b * BLOCK); this.inflight.set(k, { w, at: now() }); w.request(i, b * BLOCK, len); } };
     for (const i of s.partial.keys()) { if (mine() >= 12) return; if (bit(w.peerHave, i)) tryPiece(i); }
-    const order = [...Array(t.count).keys()].filter((i) => !s.has(i) && !s.partial.has(i) && bit(w.peerHave, i)).sort((a, b) => this.avail[a] - this.avail[b] || Math.random() - 0.5);
+    const order = [...Array(t.count).keys()].filter((i) => !s.has(i) && !s.partial.has(i) && !this.wsPieces.has(i) && bit(w.peerHave, i)).sort((a, b) => this.avail[a] - this.avail[b] || Math.random() - 0.5);
     for (const i of order) { if (mine() >= 12) return; tryPiece(i); }
     // Fin du téléchargement : on redemande aussi les blocs lents à un autre pair
     if (mine() < 4) for (const [k, r] of this.inflight) { if (mine() >= 12) break; if (r.w !== w && now() - r.at > 5000) { const [i, begin] = k.split(':').map(Number); if (bit(w.peerHave, i)) w.request(i, begin, Math.min(BLOCK, s.pieceSize(i) - begin)); } }
@@ -96,6 +98,46 @@ class Torrent {
     if (r === 'mauvaise') { w.bad = (w.bad || 0) + 1; if (w.bad > 3) w.destroy(); }
     if (r === 'ok' && this.storage.has(i)) { for (const x of this.wires) x.have(i); if (this.storage.done) this.finished(); }
     this.fill(w);
+  }
+  // ----- web seeds (BEP 19) : une pièce entière demandée en HTTP (Range), fichier par fichier, puis vérifiée
+  wsUrl(ws, f) {
+    const enc = (p) => p.split(path.sep).map(encodeURIComponent).join('/');
+    if (this.meta.files.length === 1 && f.path === this.meta.name) return ws.url.endsWith('/') ? ws.url + encodeURIComponent(this.meta.name) : ws.url;
+    return (ws.url.endsWith('/') ? ws.url : `${ws.url}/`) + enc(f.path);
+  }
+  webSeed() {
+    if (!this.meta || this.stopped || this.storage.done || !this.webseeds.length) return;
+    const s = this.storage;
+    for (const ws of this.webseeds) {
+      while (ws.busy < 2 && ws.until <= now()) {
+        // Les pièces que les pairs n'ont pas d'abord, puis les autres ; jamais une pièce déjà en cours
+        const busyPeers = new Set([...this.inflight.keys()].map((k) => Number(k.split(':')[0])));
+        let i = -1, best = Infinity;
+        for (let k = 0; k < this.meta.count; k++) if (!s.has(k) && !this.wsPieces.has(k) && !busyPeers.has(k) && !s.partial.has(k) && this.avail[k] < best) { best = this.avail[k]; i = k; if (!best) break; }
+        if (i < 0) return;
+        this.wsPieces.add(i); ws.busy++;
+        void this.wsFetch(ws, i).then((ok) => { ws.busy--; this.wsPieces.delete(i); if (ok) { ws.fails = 0; } else if (++ws.fails >= 5) { ws.until = now() + 10 * 60e3; ws.fails = 0; } if (!this.stopped) this.webSeed(); });
+      }
+    }
+  }
+  async wsFetch(ws, i) {
+    const s = this.storage, size = s.pieceSize(i), start = i * this.meta.pieceLength, buf = Buffer.alloc(size);
+    try {
+      for (const sp of s.spans(start, start + size)) {
+        const r = await this.c.fetcher(this.wsUrl(ws, sp.f), { headers: { Range: `bytes=${sp.fileAt}-${sp.fileAt + sp.len - 1}` }, signal: AbortSignal.timeout(120000) });
+        if (r.status !== 206 && !(r.status === 200 && sp.fileAt === 0 && sp.len === sp.f.length)) return false; // le serveur doit respecter la plage
+        const b = Buffer.from(await r.arrayBuffer()); if (b.length !== sp.len) return false;
+        b.copy(buf, sp.bufAt);
+      }
+    } catch { return false; }
+    if (this.stopped || s.has(i)) return true;
+    let res = 'partiel';
+    for (let b = 0; b < size; b += BLOCK) res = s.write(i, b, buf.subarray(b, Math.min(size, b + BLOCK)));
+    this.downloadedNow += size;
+    if (res !== 'ok' || !s.has(i)) return false; // pièce fausse : le serveur est noté en échec
+    for (const x of this.wires) x.have(i);
+    if (s.done) this.finished();
+    return true;
   }
   finished() { if (this.doneAt) return; this.doneAt = now(); this.rec.doneAt = this.doneAt; this.c.save(); this.storage.close(); for (const w of this.wires) w.notInterested(); void this.announceAll('completed'); this.c.onDone?.(this.status()); }
   async announceAll(event) {
@@ -114,6 +156,7 @@ class Torrent {
     // Partage : les pairs intéressés qui nous envoient le plus sont servis d'abord
     if (this.meta) { const l = [...this.wires].filter((w) => w.peerInterested).sort((a, b) => b.downloaded - a.downloaded); l.forEach((w, k) => (k < 8 && this.wantSeed() ? w.unchoke() : w.choke())); }
     for (const w of this.wires) this.fill(w);
+    this.webSeed();
     this.connectMore();
     this.rec.uploaded = this.uploaded;
   }
@@ -166,7 +209,7 @@ export class Folkvangr {
     let t = this.torrents.get(infoHash);
     if (!t) {
       fs.mkdirSync(dir, { recursive: true });
-      t = new Torrent(this, { infoHash, tags, dir, name: meta?.name || magnet.name, announce: meta ? meta.announce : magnet.announce, added: now(), ...(meta ? { info: meta.infoBuf.toString('base64') } : {}) });
+      t = new Torrent(this, { infoHash, tags, dir, name: meta?.name || magnet.name, announce: meta ? meta.announce : magnet.announce, webseeds: meta ? meta.webseeds : magnet.webseeds, added: now(), ...(meta ? { info: meta.infoBuf.toString('base64') } : {}) });
       this.torrents.set(infoHash, t); this.save();
     } else { t.tags = [...new Set([...t.tags, ...tags])]; t.rec.tags = t.tags; t.stopped = false; this.save(); }
     t.addPeers(peers); t.tick();

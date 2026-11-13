@@ -1,6 +1,7 @@
 // Routes de l'API
-import { acquireOn, acquireConf, saveAcquire, listSources, addSource, removeSource, wantsList, wantById, removeWant, searchWant, recentLog, wishState, grabManual, addWant } from './acquire/engine.js';
-import { setSource, testSource, manualSearch } from './acquire/bygul.js';
+import { acquireOn, acquireConf, saveAcquire, filtersView, listSources, addSource, removeSource, wantsList, wantById, removeWant, searchWant, recentLog, wishState, grabManual, addWant } from './acquire/engine.js';
+import { setSource, testSource, manualSearch, importProwlarr, testAll } from './acquire/bygul.js';
+import { startSelfTest, state as selfTestState, DEFAULT_ITEM as SELFTEST_ITEM } from './acquire/selftest.js';
 import { writeDump } from './db-copy.js';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -2172,11 +2173,11 @@ router.post('/api/wishlist', async (ctx) => {
   const id = item.tmdbId || await resolveTmdb(item).catch(() => null);
   if (!id) throw new HttpError(404, 'Titre introuvable sur TMDB');
   const r = await addWish(p, { ...b, type: item.type, tmdbId: id });
-  sendJson(ctx.res, { tmdbId: id, ...r, auto: autoRequest() && seerrOn() && p.max_age == null });
+  sendJson(ctx.res, { tmdbId: id, ...r, auto: autoRequest() && (seerrOn() || acquireOn()) && p.max_age == null });
 });
-router.del('/api/wishlist/:type/:tmdbId', (ctx) => {
+router.del('/api/wishlist/:type/:tmdbId', async (ctx) => {
   const p = requireProfile(ctx);
-  sendJson(ctx.res, removeWish(p.id, ctx.params.type, Number(ctx.params.tmdbId)));
+  sendJson(ctx.res, await removeWish(p.id, ctx.params.type, Number(ctx.params.tmdbId)));
 });
 
 // ------------------------------------------------------------------ Seerr : connexion par compte, utilisateurs, suivi
@@ -3677,14 +3678,14 @@ router.post('/api/admin/import', async (ctx) => {
 router.get('/api/admin/acquire', (ctx) => {
   requireAdmin(ctx);
   const c = acquireConf(), cl = c.client ? { ...c.client, password: c.client.password ? '••••' : '', key: c.client.key ? '••••' : '' } : null;
-  sendJson(ctx.res, { ...c, client: cl, sources: listSources(), wants: wantsList().slice(0, 300), log: recentLog(80) });
+  sendJson(ctx.res, { ...c, client: cl, filtres: filtersView(), sources: listSources(), wants: wantsList().slice(0, 300), log: recentLog(80) });
 });
 router.put('/api/admin/acquire', async (ctx) => {
   const me = requireAdmin(ctx);
   const b = await readBody(ctx.req, 32768);
   if (b.client && typeof b.client === 'object') { const old = acquireConf().client || {}; b.client = { type: String(b.client.type || 'venus'), url: String(b.client.url || ''), user: String(b.client.user || ''), password: b.client.password && b.client.password !== '••••' ? String(b.client.password) : old.password || '', key: b.client.key && b.client.key !== '••••' ? String(b.client.key) : old.key || '', category: String(b.client.category || 'venus') }; }
-  saveAcquire({ on: b.on, profil: b.profil, roots: b.roots, upgrade: b.upgrade, keepSeeding: b.keepSeeding, client: b.client });
-  logActivity('settings', `${me.name} a changé les médias automatiques`);
+  try { saveAcquire({ on: b.on, profil: b.profil, roots: b.roots, upgrade: b.upgrade, keepSeeding: b.keepSeeding, client: b.client, categories: b.categories && typeof b.categories === 'object' ? b.categories : undefined, lots: b.lots && typeof b.lots === 'object' ? b.lots : undefined }); } catch (e) { throw new HttpError(400, e.message); }
+  logActivity('settings', `${me.name} a changé les médias automatiques${b.categories ? ` (filtres : ${Object.keys(b.categories).join(', ')})` : ''}`);
   sendJson(ctx.res, { ok: true });
 });
 router.post('/api/admin/acquire/sources', async (ctx) => {
@@ -3699,23 +3700,41 @@ router.del('/api/admin/acquire/sources/:id', (ctx) => { requireAdmin(ctx); remov
 router.put('/api/admin/acquire/sources/:id', async (ctx) => {
   requireAdmin(ctx);
   const b = await readBody(ctx.req);
-  try { setSource(Number(ctx.params.id), { enabled: typeof b.enabled === 'boolean' ? b.enabled : undefined, priority: b.priority, kinds: Array.isArray(b.kinds) ? b.kinds : undefined, name: b.name }); } catch (e) { throw new HttpError(404, e.message); }
+  try { setSource(Number(ctx.params.id), { enabled: typeof b.enabled === 'boolean' ? b.enabled : undefined, priority: b.priority, kinds: Array.isArray(b.kinds) ? b.kinds : undefined, name: b.name, rpm: b.rpm }); } catch (e) { throw new HttpError(404, e.message); }
   sendJson(ctx.res, { ok: true });
 });
 // Une envie ajoutée à la main (album, livre, livre audio, ou film / épisode précis) : cherchée et téléchargée par le moteur
 router.post('/api/admin/acquire/wants', async (ctx) => {
   const me = requireAdmin(ctx);
-  const b = validate(await readBody(ctx.req), { kind: V.oneOf(['movie', 'episode', 'album', 'book', 'audiobook']), title: V.str({ min: 1, max: 300 }), artist: V.str({ max: 200 }), author: V.str({ max: 200 }), year: V.int({ min: 1880, max: 2200 }), season: V.int({ min: 0, max: 200 }), episode: V.int({ min: 0, max: 5000 }), tmdbId: V.int({ min: 1, max: 1e9 }) }, { required: ['kind', 'title'] });
+  const b = validate(await readBody(ctx.req), { kind: V.oneOf(['movie', 'episode', 'album', 'book', 'audiobook']), title: V.str({ min: 1, max: 300 }), artist: V.str({ max: 200 }), author: V.str({ max: 200 }), year: V.int({ min: 1880, max: 2200 }), season: V.int({ min: 0, max: 200 }), episode: V.int({ min: 0, max: 5000 }), tmdbId: V.int({ min: 1, max: 1e9 }), anime: V.bool() }, { required: ['kind', 'title'] });
   if (b.kind === 'album' && !b.artist) throw new HttpError(400, 'Artiste manquant');
   const id = addWant({ ...b, profileId: me.id, showKey: b.kind === 'episode' ? `tv:${b.tmdbId ?? b.title.toLowerCase()}` : undefined });
   logActivity('settings', `${me.name} a demandé « ${b.title} »`);
   sendJson(ctx.res, { ok: true, id, search: await searchWant(wantById(id)).catch((e) => ({ ok: false, why: e.message })) });
 });
 router.post('/api/admin/acquire/sources/:id/test', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await testSource(Number(ctx.params.id))); });
+// Bygul : importer les indexeurs de ton Prowlarr (passent par l'API Torznab de Prowlarr), tester toutes les sources
+router.post('/api/admin/acquire/sources/import-prowlarr', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req), { url: V.str({ max: 500 }), key: V.str({ max: 200 }) }, { required: ['url', 'key'] });
+  let r; try { r = await importProwlarr(b); } catch (e) { throw new HttpError(400, e.message); }
+  logActivity('settings', `${me.name} a importé ${r.total} indexeur(s) de Prowlarr (${r.active} actif(s))`);
+  sendJson(ctx.res, r);
+});
+// Autotest de bout en bout avec un film du domaine public d'archive.org, puis tout est retiré
+router.get('/api/admin/acquire/selftest', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, selfTestState); });
+router.post('/api/admin/acquire/selftest', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req), { id: V.str({ max: 100 }), title: V.str({ max: 200 }), year: V.int({ min: 1880, max: 2200 }) });
+  let r; try { r = startSelfTest(b.id ? { id: b.id, title: b.title || b.id, year: b.year || null } : SELFTEST_ITEM); } catch (e) { throw new HttpError(409, e.message); }
+  logActivity('settings', `${me.name} a lancé l’autotest des médias automatiques (archive.org : ${r.item.id})`);
+  sendJson(ctx.res, r);
+});
+router.post('/api/admin/acquire/sources/test-all', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await testAll()); });
 router.get('/api/admin/acquire/search', async (ctx) => {
   requireAdmin(ctx);
   const q = ctx.url.searchParams;
-  try { sendJson(ctx.res, await manualSearch({ q: q.get('q'), kind: ['movie', 'episode', 'album', 'book', 'audiobook'].includes(q.get('kind')) ? q.get('kind') : 'movie', year: q.get('year'), season: q.get('season'), episode: q.get('episode') }, acquireConf().profil)); }
+  try { sendJson(ctx.res, await manualSearch({ q: q.get('q'), kind: ['movie', 'episode', 'album', 'book', 'audiobook'].includes(q.get('kind')) ? q.get('kind') : 'movie', year: q.get('year'), season: q.get('season'), episode: q.get('episode'), anime: q.get('anime') === '1' }, acquireConf().categories)); }
   catch (e) { throw new HttpError(400, e.message); }
 });
 router.post('/api/admin/acquire/grab', async (ctx) => {

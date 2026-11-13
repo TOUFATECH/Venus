@@ -1,7 +1,7 @@
 // Médias automatiques : lecture des noms de versions et choix de la meilleure (node --test tests/unit)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRelease, score, best, libraryName, DEFAULT_PROFILE } from '../../server/acquire/release.js';
+import { parseRelease, score, best, libraryName, DEFAULT_PROFILE, profileFor } from '../../server/acquire/release.js';
 
 test('lit un nom de version : titre, année, qualité, source, langue, épisodes', () => {
   const a = parseRelease('Dune.Part.Two.2024.MULTi.TRUEFRENCH.1080p.BluRay.x265-NoTag');
@@ -14,18 +14,30 @@ test('lit un nom de version : titre, année, qualité, source, langue, épisodes
   assert.equal(parseRelease('Blade.Runner.2049.2017.FRENCH.2160p').year, 2017, 'le nombre du titre n\'est pas l\'année');
 });
 
-test('note : VF d\'abord, puis qualité ; refuse CAM, autre titre, autre année, VOSTFR si VF exigée, tailles folles', () => {
+test('filtres par catégorie : langue (MULTI / VF / VOSTFR / sans français), qualité, taille, exécutables, CAM', () => {
   const want = { kind: 'movie', title: 'Dune : Deuxième partie', original: 'Dune Part Two', year: 2024 };
   const R = (title, size = 8e9, seeders = 20) => ({ title, size, seeders });
   assert.equal(score(want, R('Dune.Part.Two.2024.1080p.HDCAM')).why, 'caméscope (CAM / TS) : jamais');
   assert.match(score(want, R('Dune.2021.FRENCH.1080p.WEB')).why, /autre titre/);
-  assert.match(score(want, R('Dune.Part.Two.2019.FRENCH.1080p.WEB')).why, /autre année/);
-  assert.match(score(want, R('Dune.Part.Two.2024.VOSTFR.1080p.WEB')).why, /VOSTFR/);
+  assert.match(score(want, R('Dune.Part.Two.2024.1080p.WEB.x264')).why, /sans français : refusé par le filtre Films \(-500\)/);
+  assert.match(score(want, R('Dune.Part.Two.2024.FRENCH.480p.WEB')).why, /480p : hors du filtre Films \(720p à 2160p\)/);
   assert.match(score(want, R('Dune.Part.Two.2024.FRENCH.1080p.WEB', 90e9)).why, /taille/);
-  const vf1080 = score(want, R('Dune.Part.Two.2024.MULTi.1080p.WEB.x264')), vf720 = score(want, R('Dune.Part.Two.2024.FRENCH.720p.WEB')), vf4k = score(want, R('Dune.Part.Two.2024.MULTi.2160p.WEB'));
-  assert.ok(vf1080.ok && vf720.ok && vf4k.ok); assert.ok(vf1080.score > vf4k.score && vf4k.score > vf720.score, 'cible 1080p, puis 4K, puis 720p');
-  assert.ok(vf1080.cible && !vf720.cible);
-  const vo = score(want, R('Dune.Part.Two.2024.VOSTFR.1080p.WEB'), { ...DEFAULT_PROFILE, langue: 'vf_puis_vo' }); assert.ok(vo.ok && vo.score < vf720.score);
+  assert.match(score(want, R('Dune.Part.Two.2024.MULTi.1080p.WEB.exe')).why, /exécutable/);
+  const multi = score(want, R('Dune.Part.Two.2024.MULTi.1080p.BluRay.x265')), vf720 = score(want, R('Dune.Part.Two.2024.FRENCH.720p.WEB')), uhd = score(want, R('Dune.Part.Two.2024.MULTi.2160p.WEB')), vost = score(want, R('Dune.Part.Two.2024.VOSTFR.1080p.WEB'));
+  assert.ok(multi.ok && vf720.ok && uhd.ok && vost.ok, 'une nouveauté sans français peut venir en VOSTFR');
+  assert.ok(multi.score > uhd.score && uhd.score > vf720.score && vf720.score > vost.score, 'MULTI 1080p, puis 4K, puis 720p, et la VOSTFR en dernier');
+  assert.ok(multi.cible && !vost.cible, 'la VOSTFR sera remplacée par la VF');
+  const a = { kind: 'episode', anime: true, title: 'Frieren', season: 1, episode: 3 };
+  assert.ok(score(a, R('[Team] Frieren S01E03 VOSTFR 480p', 3e8)).ok);
+  assert.ok(score(a, R('Frieren.S01E03.VOSTFR.1080p.WEB', 1e9)).cible);
+  assert.ok(score(a, R('Frieren S01E03 RAW 1080p', 1e9)).ok);
+  assert.equal(profileFor(a).cat, 'animes');
+  const s = { kind: 'episode', title: 'The Bear', season: 3, episode: 1 };
+  assert.match(score(s, R('The.Bear.S03E01.1080p.WEB.H264', 2e9)).why, /sans français/);
+  assert.match(score(s, R('The.Bear.S03E01.MULTI.2160p.WEB', 5e9)).why, /2160p : hors du filtre Séries/);
+  assert.ok(score(s, R('The.Bear.S03E01.MULTI.1080p.WEB.x265', 2e9)).score > score(s, R('The.Bear.S03E01.MULTI.1080p.WEB.x264', 2e9)).score, 'HEVC favorisé (+60)');
+  assert.ok(score({ kind: 'movie', anime: true, title: 'Le Roi et l Oiseau', year: 1980 }, R('Le.Roi.et.l.Oiseau.1980.FRENCH.480p.DVDRip', 1e9)).ok, 'film d’animation ancien : 480p accepté');
+  assert.ok(score(want, R('Dune.Part.Two.2024.1080p.WEB.x264'), profileFor(want, { films: { langues: { vo: 0 } } })).ok, 'filtre réglé');
 });
 
 test('séries : bon épisode, saison complète, meilleure version, amélioration seulement si mieux', () => {
