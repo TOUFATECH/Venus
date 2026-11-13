@@ -7,12 +7,13 @@ const { sab, port, conf } = workerData;
 const flag = new Int32Array(sab);
 let pg = null;
 const known = new Set(), typed = new Set();
-const reply = (m) => { port.postMessage(m); Atomics.store(flag, 0, 1); Atomics.notify(flag, 0); };
+const send = (m, id) => { port.postMessage({ ...m, id }); Atomics.store(flag, 0, 1); Atomics.notify(flag, 0); };
 async function conn() { if (!pg || pg.closed) pg = await Pg.connect({ ...conf, app: 'venus', timeoutMs: 15000 }); return pg; }
 const typesOf = (params) => params.map((v) => (typeof v === 'number' ? (Number.isInteger(v) ? 20 : 701) : typeof v === 'boolean' ? 20 : typeof v === 'bigint' ? 20 : v && (Buffer.isBuffer(v) || v instanceof Uint8Array) ? 17 : 25));
 const norm = (params) => params.map((v) => (v === undefined ? null : typeof v === 'boolean' ? (v ? 1 : 0) : v));
 
 port.on('message', async (m) => {
+  const reply = (x) => send(x, m.id);
   try {
     const c = await conn();
     if (m.op === 'simple') { const r = await c.simple(m.sql); return reply({ ok: true, count: r.at(-1)?.count ?? 0 }); }

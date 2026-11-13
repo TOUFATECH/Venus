@@ -1,5 +1,5 @@
 // Routes de l'API
-import { acquireOn, acquireConf, saveAcquire, listSources, addSource, removeSource, wantsList, wantById, removeWant, searchWant, recentLog, wishState, grabManual } from './acquire/engine.js';
+import { acquireOn, acquireConf, saveAcquire, listSources, addSource, removeSource, wantsList, wantById, removeWant, searchWant, recentLog, wishState, grabManual, addWant } from './acquire/engine.js';
 import { setSource, testSource, manualSearch } from './acquire/bygul.js';
 import { writeDump } from './db-copy.js';
 import fs from 'node:fs';
@@ -3701,6 +3701,15 @@ router.put('/api/admin/acquire/sources/:id', async (ctx) => {
   const b = await readBody(ctx.req);
   try { setSource(Number(ctx.params.id), { enabled: typeof b.enabled === 'boolean' ? b.enabled : undefined, priority: b.priority, kinds: Array.isArray(b.kinds) ? b.kinds : undefined, name: b.name }); } catch (e) { throw new HttpError(404, e.message); }
   sendJson(ctx.res, { ok: true });
+});
+// Une envie ajoutée à la main (album, livre, livre audio, ou film / épisode précis) : cherchée et téléchargée par le moteur
+router.post('/api/admin/acquire/wants', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req), { kind: V.oneOf(['movie', 'episode', 'album', 'book', 'audiobook']), title: V.str({ min: 1, max: 300 }), artist: V.str({ max: 200 }), author: V.str({ max: 200 }), year: V.int({ min: 1880, max: 2200 }), season: V.int({ min: 0, max: 200 }), episode: V.int({ min: 0, max: 5000 }), tmdbId: V.int({ min: 1, max: 1e9 }) }, { required: ['kind', 'title'] });
+  if (b.kind === 'album' && !b.artist) throw new HttpError(400, 'Artiste manquant');
+  const id = addWant({ ...b, profileId: me.id, showKey: b.kind === 'episode' ? `tv:${b.tmdbId ?? b.title.toLowerCase()}` : undefined });
+  logActivity('settings', `${me.name} a demandé « ${b.title} »`);
+  sendJson(ctx.res, { ok: true, id, search: await searchWant(wantById(id)).catch((e) => ({ ok: false, why: e.message })) });
 });
 router.post('/api/admin/acquire/sources/:id/test', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await testSource(Number(ctx.params.id))); });
 router.get('/api/admin/acquire/search', async (ctx) => {

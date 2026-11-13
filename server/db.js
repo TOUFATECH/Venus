@@ -26,13 +26,24 @@ const sab = new SharedArrayBuffer(4), flag = new Int32Array(sab);
 const { port1, port2 } = new MessageChannel();
 const worker = new Worker(new URL('./db-worker.js', import.meta.url), { workerData: { sab, port: port2, conf: pgConf() }, transferList: [port2] });
 worker.unref();
-let inTx = 0;
+let inTx = 0, seq = 0;
+const nap = new Int32Array(new SharedArrayBuffer(4));
 function call(msg) {
+  const id = ++seq;
   Atomics.store(flag, 0, 0);
-  port1.postMessage({ ...msg, tx: inTx > 0 });
-  if (Atomics.wait(flag, 0, 0, 180000) === 'timed-out') throw new Error('PostgreSQL ne répond pas (3 min)');
-  const m = receiveMessageOnPort(port1)?.message;
-  if (!m) throw new Error('PostgreSQL : réponse perdue');
+  port1.postMessage({ ...msg, id, tx: inTx > 0 });
+  const until = Date.now() + 180000;
+  let m;
+  // La réponse porte le numéro de la demande : une réponse en retard (ou en avance sur le signal) n'est jamais
+  // prise pour celle d'une autre demande.
+  for (;;) {
+    Atomics.wait(flag, 0, 0, 50);
+    let x;
+    while ((x = receiveMessageOnPort(port1))) { if (x.message.id === id) { m = x.message; break; } }
+    if (m) break;
+    if (Date.now() > until) throw new Error('PostgreSQL ne répond pas (3 min)');
+    Atomics.store(flag, 0, 0); Atomics.wait(nap, 0, 0, 1);
+  }
   if (!m.ok) { const e = new Error(`${m.error.message}${m.error.detail ? ` (${m.error.detail})` : ''}`); e.code = m.error.code; if (process.env.VENUS_SQL_DEBUG) e.message += `\n  SQL : ${msg.sql}`; throw e; }
   return m;
 }
