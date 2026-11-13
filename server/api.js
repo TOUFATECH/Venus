@@ -1,4 +1,6 @@
 // Routes de l'API
+import { acquireOn, acquireConf, saveAcquire, listSources, addSource, removeSource, wantsList, wantById, removeWant, searchWant, recentLog, wishState } from './acquire/engine.js';
+import { writeDump } from './db-copy.js';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { channelCat, neverHide, CATEGORIES } from './channel-cats.js';
@@ -840,7 +842,7 @@ router.get('/api/library', (ctx) => {
   if (!base || base.v !== itemsVersion) {
     const items = all(`SELECT i.* FROM items i WHERE ${where} AND ${age.sql} ORDER BY ${type === 'channel' ? 'i.episode_num' : 'i.sort_title'}`, ...age.args);
     // Résolution du premier épisode d'une série, pour le filtre « 4K / HDR »
-    const firstProbe = type === 'channel' ? new Map() : new Map(all(`SELECT show_id, probe FROM items WHERE type = 'episode' AND probe IS NOT NULL GROUP BY show_id`).map((r) => [r.show_id, r.probe]));
+    const firstProbe = type === 'channel' ? new Map() : new Map(all(`SELECT DISTINCT ON (show_id) show_id, probe FROM items WHERE type = 'episode' AND probe IS NOT NULL ORDER BY show_id, id`).map((r) => [r.show_id, r.probe]));
     const cards = items.map((i) => {
       const c = card(i);
       if (type !== 'channel') {
@@ -2148,8 +2150,9 @@ router.get('/api/wishlist', async (ctx) => {
   const p = requireProfile(ctx);
   const list = wishlistOf(p.id);
   // État Seerr de chaque titre (demandé, en téléchargement, disponible…), en parallèle et mis en cache
-  if (seerrOn()) await Promise.all(list.map(async (w) => { try { w.seerr = await seerrStatus(w.type, w.tmdbId); } catch (e) { w.seerr = { state: 'error', error: e.message }; } }));
-  sendJson(ctx.res, { seerr: seerrOn(), auto: autoRequest(), follow: followMode(), kids: p.max_age != null, items: list });
+  if (acquireOn()) for (const w of list) w.seerr = wishState(w.type, w.tmdbId);
+  else if (seerrOn()) await Promise.all(list.map(async (w) => { try { w.seerr = await seerrStatus(w.type, w.tmdbId); } catch (e) { w.seerr = { state: 'error', error: e.message }; } }));
+  sendJson(ctx.res, { seerr: seerrOn() || acquireOn(), native: acquireOn(), auto: autoRequest(), follow: followMode(), kids: p.max_age != null, items: list });
 });
 router.get('/api/wishlist/has', async (ctx) => {
   const p = requireProfile(ctx);
@@ -3399,8 +3402,8 @@ router.get('/api/lyrics/:id', (ctx) => {
 router.get('/api/photos', (ctx) => {
   const p = requireProfile(ctx);
   const lib = libOk(p);
-  const rows = all(`SELECT i.key, i.grp, COUNT(*) AS n, MAX(i.release_date) AS last, MIN(i.id) AS first FROM items i WHERE i.type = 'photo' AND ${lib.sql} GROUP BY i.key ORDER BY last DESC`, ...lib.args);
-  const covers = new Map(all(`SELECT i.key, i.id FROM items i WHERE i.type = 'photo' AND ${lib.sql} GROUP BY i.key HAVING i.release_date = MAX(i.release_date)`, ...lib.args).map((r) => [r.key, r.id]));
+  const rows = all(`SELECT i.key, MIN(i.grp) AS grp, COUNT(*) AS n, MAX(i.release_date) AS last, MIN(i.id) AS first FROM items i WHERE i.type = 'photo' AND ${lib.sql} GROUP BY i.key ORDER BY last DESC`, ...lib.args);
+  const covers = new Map(all(`SELECT DISTINCT ON (i.key) i.key, i.id FROM items i WHERE i.type = 'photo' AND ${lib.sql} ORDER BY i.key, i.release_date DESC NULLS LAST`, ...lib.args).map((r) => [r.key, r.id]));
   sendJson(ctx.res, rows.map((r) => ({ key: r.key, slug: cleanName(r.key), name: r.grp, count: r.n, last: r.last, cover: covers.get(r.key) || r.first })));
 });
 router.get('/api/photos/album', (ctx) => {
@@ -3624,14 +3627,14 @@ router.post('/api/admin/rename', async (ctx) => {
 router.get('/api/admin/export', (ctx) => {
   requireAdmin(ctx);
   const dir = config.dataDir;
-  const snap = path.join(dir, 'backups', 'export-tmp.db');
+  const snap = path.join(dir, 'backups', 'export-tmp.json.gz');
   fs.mkdirSync(path.dirname(snap), { recursive: true });
   try { fs.unlinkSync(snap); } catch { /* */ }
-  db.exec(`VACUUM INTO '${snap.replace(/'/g, "''")}'`);
+  writeDump(snap);
   const stamp = new Date().toISOString().slice(0, 10);
   ctx.res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': `attachment; filename="venus-export-${stamp}.tar.gz"`, 'Cache-Control': 'no-store' });
-  // tar : base (sous le nom venus.db), images, sous-titres récupérés, CSS perso. Jamais les vidéos ni les clés TLS.
-  const args = ['-czf', '-', '-C', dir, '--transform', 's|^backups/export-tmp.db$|venus.db|', 'backups/export-tmp.db', ...['images', 'subs'].filter((d) => fs.existsSync(path.join(dir, d)))];
+  // tar : base (sous le nom venus.json.gz), images, sous-titres récupérés, CSS perso. Jamais les vidéos ni les clés TLS.
+  const args = ['-czf', '-', '-C', dir, '--transform', 's|^backups/export-tmp.json.gz$|venus.json.gz|', 'backups/export-tmp.json.gz', ...['images', 'subs'].filter((d) => fs.existsSync(path.join(dir, d)))];
   const t = spawn('tar', args, { stdio: ['ignore', 'pipe', 'pipe'] });
   t.stdout.pipe(ctx.res);
   t.on('close', () => { try { fs.unlinkSync(snap); } catch { /* */ } });
@@ -3651,21 +3654,52 @@ router.post('/api/admin/import', async (ctx) => {
   const total = entries.reduce((n, l) => n + (Number(l.split(/\s+/)[2]) || 0), 0);
   if (unsafe || total > 20 * 1024 ** 3) { fs.rmSync(tmp, { recursive: true, force: true }); throw new HttpError(400, unsafe ? 'Archive refusée : elle contient des liens ou des chemins non autorisés' : 'Archive trop grosse une fois décompressée'); }
   const r = await new Promise((resolve) => { const t = spawn('tar', ['-xzf', file, '-C', tmp, '--no-same-owner', '--no-same-permissions'], { stdio: 'ignore' }); t.on('close', (code) => resolve(code)); });
-  if (r !== 0 || !fs.existsSync(path.join(tmp, 'venus.db'))) { fs.rmSync(tmp, { recursive: true, force: true }); throw new HttpError(400, 'Archive illisible : attendu un export Venus (.tar.gz)'); }
+  const dbName = fs.existsSync(path.join(tmp, 'venus.json.gz')) ? 'venus.json.gz' : 'venus.db';
+  if (r !== 0 || !fs.existsSync(path.join(tmp, dbName))) { fs.rmSync(tmp, { recursive: true, force: true }); throw new HttpError(400, 'Archive illisible : attendu un export Venus (.tar.gz)'); }
   // Images et sous-titres : ajoutés sans écraser ; base : restaurée au prochain démarrage (comme une sauvegarde)
   for (const sub of ['images', 'subs']) {
     const src = path.join(tmp, sub); if (!fs.existsSync(src)) continue;
     fs.mkdirSync(path.join(dir, sub), { recursive: true });
     for (const f of fs.readdirSync(src)) { try { if (!fs.lstatSync(path.join(src, f)).isFile() || !/^[\w.-]+$/.test(f)) continue; fs.copyFileSync(path.join(src, f), path.join(dir, sub, f), fs.constants.COPYFILE_EXCL); } catch { /* déjà là */ } }
   }
-  const name = `venus-import-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.db`;
-  fs.copyFileSync(path.join(tmp, 'venus.db'), path.join(dir, 'backups', name));
+  const name = `venus-import-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.${dbName === 'venus.db' ? 'db' : 'json.gz'}`;
+  fs.copyFileSync(path.join(tmp, dbName), path.join(dir, 'backups', name));
   fs.rmSync(tmp, { recursive: true, force: true });
   makeBackup({ manual: true });
   scheduleRestore(name);
   logActivity('server', `${me.name} a importé une archive Venus`);
   sendJson(ctx.res, { ok: true, restarting: supervised() });
 });
+
+// ---------------------------------------------------------------- médias automatiques (Hnoss, Gersemi, Hildisvíni, Fólkvangr, Sjöfn)
+// Réglages, sources (ajoutées par l'administrateur, aucune par défaut), envies et journal. Les clés ne sont jamais renvoyées.
+router.get('/api/admin/acquire', (ctx) => {
+  requireAdmin(ctx);
+  const c = acquireConf(), cl = c.client ? { ...c.client, password: c.client.password ? '••••' : '', key: c.client.key ? '••••' : '' } : null;
+  sendJson(ctx.res, { ...c, client: cl, sources: listSources(), wants: wantsList().slice(0, 300), log: recentLog(80) });
+});
+router.put('/api/admin/acquire', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = await readBody(ctx.req, 32768);
+  if (b.client && typeof b.client === 'object') { const old = acquireConf().client || {}; b.client = { type: String(b.client.type || 'venus'), url: String(b.client.url || ''), user: String(b.client.user || ''), password: b.client.password && b.client.password !== '••••' ? String(b.client.password) : old.password || '', key: b.client.key && b.client.key !== '••••' ? String(b.client.key) : old.key || '', category: String(b.client.category || 'venus') }; }
+  saveAcquire({ on: b.on, profil: b.profil, roots: b.roots, upgrade: b.upgrade, keepSeeding: b.keepSeeding, client: b.client });
+  logActivity('settings', `${me.name} a changé les médias automatiques`);
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/admin/acquire/sources', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req), { name: V.str({ max: 80 }), kind: V.oneOf(['torznab', 'newznab']), url: V.str({ max: 500 }), key: V.str({ max: 200 }) }, { required: ['kind', 'url'] });
+  let id; try { id = addSource(b); } catch (e) { throw new HttpError(400, e.message); }
+  logActivity('settings', `${me.name} a ajouté la source « ${b.name || b.url} »`);
+  sendJson(ctx.res, { ok: true, id });
+});
+router.del('/api/admin/acquire/sources/:id', (ctx) => { requireAdmin(ctx); removeSource(Number(ctx.params.id)); sendJson(ctx.res, { ok: true }); });
+router.post('/api/admin/acquire/wants/:id/search', async (ctx) => {
+  requireAdmin(ctx);
+  const w = wantById(Number(ctx.params.id)); if (!w) throw new HttpError(404, 'Envie introuvable');
+  sendJson(ctx.res, await searchWant(w).catch((e) => ({ ok: false, why: e.message })));
+});
+router.del('/api/admin/acquire/wants/:id', (ctx) => { requireAdmin(ctx); removeWant(Number(ctx.params.id)); sendJson(ctx.res, { ok: true }); });
 
 // ---------------------------------------------------------------- état du serveur (outil de surveillance : réponse minimale sans session)
 router.get('/api/health', (ctx) => {

@@ -1,6 +1,6 @@
 // Parcours principaux sur ordinateur : regarder un film, mini-lecteur, recherche, ma liste, musique, réglages
 import path from 'node:path';
-import { test, expect, ouvrir, etat } from './outils.mjs';
+import { test, expect, ouvrir, etat, baseVenus } from './outils.mjs';
 
 test('film : fiche, lecture, retour et mini-lecteur', async ({ page }) => {
   await ouvrir(page, '/films');
@@ -126,21 +126,20 @@ test('accueil : les nouveautés défilent à la une (3 films, 5 animés, 2 séri
   }
   expect(await page.locator('.hero-bg img').first().getAttribute('src').catch(() => '')).toMatch(/w=(1280|1920|2560|3840)|thumb|^$/);
   // Côté serveur : seules les sorties de moins d'un an passent à la une dès qu'il y en a trois ; les autres complètent sinon
-  const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
+  const db = await baseVenus();
   const soon = new Date(Date.now() - 20 * 864e5).toISOString().slice(0, 10);
-  db.prepare("UPDATE items SET release_date = ? WHERE type = 'movie' AND title IN ('Nuit Blanche', 'Orage')").run(soon);
-  db.prepare("UPDATE items SET release_date = ? WHERE type = 'episode' AND show_id IN (SELECT id FROM items WHERE title = 'Brigade Nord')").run(soon);
-  db.close();
+  await db.run("UPDATE items SET release_date = ? WHERE type = 'movie' AND title IN ('Nuit Blanche', 'Orage')", soon);
+  await db.run("UPDATE items SET release_date = ? WHERE type = 'episode' AND show_id IN (SELECT id FROM items WHERE title = 'Brigade Nord')", soon);
+  await db.close();
   const fresh = await api('/api/home');
   const titles = fresh.hero.map((h) => h.title);
   expect(titles).toContain('Nuit Blanche');
   expect(titles).toContain('Orage');
   expect(titles).toContain('Brigade Nord');
   expect(titles).not.toContain('Le Grand Voyage');
-  const db2 = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
-  db2.prepare("UPDATE items SET release_date = NULL WHERE release_date = ?").run(soon);
-  db2.close();
+  const db2 = await baseVenus();
+  await db2.run("UPDATE items SET release_date = NULL WHERE release_date = ?", soon);
+  await db2.close();
 });
 
 test('séries : chaque saison a sa propre affiche', async ({ page, api }) => {
@@ -158,15 +157,14 @@ test('séries : chaque saison a sa propre affiche', async ({ page, api }) => {
 });
 
 test('séries : saisons absentes et épisodes manquants ou à venir affichés', async ({ page, api }) => {
-  const { DatabaseSync } = await import('node:sqlite');
   const lib = await api('/api/library?type=show');
   const show = (Array.isArray(lib) ? lib : lib.items).find((x) => /Brigade Nord/.test(x.title));
-  const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
+  const db = await baseVenus();
   const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
   // TMDB connaît 3 saisons ; la saison 2 a un épisode 2 diffusé et un épisode 3 à venir
-  db.prepare('UPDATE items SET tmdb_seasons = ? WHERE id = ?').run(JSON.stringify([{ n: 1, count: 2, air: day(-400) }, { n: 2, count: 3, air: day(-30) }, { n: 3, count: 4, air: day(-10), name: 'Saison 3' }]), show.id);
-  db.prepare("UPDATE items SET tmdb_eps = ? WHERE type = 'season' AND show_id = ? AND season_num = 2").run(JSON.stringify([{ n: 1, air: day(-30) }, { n: 2, air: day(-20), title: 'Le retour' }, { n: 3, air: day(15) }]), show.id);
-  db.close();
+  await db.run('UPDATE items SET tmdb_seasons = ? WHERE id = ?', JSON.stringify([{ n: 1, count: 2, air: day(-400) }, { n: 2, count: 3, air: day(-30) }, { n: 3, count: 4, air: day(-10), name: 'Saison 3' }]), show.id);
+  await db.run("UPDATE items SET tmdb_eps = ? WHERE type = 'season' AND show_id = ? AND season_num = 2", JSON.stringify([{ n: 1, air: day(-30) }, { n: 2, air: day(-20), title: 'Le retour' }, { n: 3, air: day(15) }]), show.id);
+  await db.close();
   const d = await api(`/api/items/${show.id}`);
   expect(d.seasons.length).toBe(2);
   expect(d.absentSeasons.map((s) => s.number)).toEqual([3]);

@@ -183,6 +183,26 @@ foreach ($l in [IO.File]::ReadAllLines($ConfFile)) {
 }
 $port = if ($conf['PORT']) { $conf['PORT'] } else { '8096' }
 
+# ---------------------------------------------------------------- base PostgreSQL (sur ce PC)
+if (-not $conf['VENUS_DATABASE_URL']) {
+  $pgBin = 'C:\Program Files\PostgreSQL\18\bin'
+  $super = -join ((48..57 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
+  $dbPass = -join ((48..57 + 97..122) | Get-Random -Count 24 | ForEach-Object { [char]$_ })
+  if (-not (Test-Path (Join-Path $pgBin 'psql.exe'))) {
+    Say 'Installation de PostgreSQL 18 (base de donnees de Venus)...'
+    winget install -e --id PostgreSQL.PostgreSQL.18 --silent --accept-package-agreements --accept-source-agreements --override "--mode unattended --unattendedmodeui none --superpassword $super --serverport 5432" | Out-Null
+  }
+  if (-not (Test-Path (Join-Path $pgBin 'psql.exe'))) { Fail 'PostgreSQL ne s est pas installe. Installez PostgreSQL 18, puis ajoutez VENUS_DATABASE_URL=postgres://venus:motdepasse@127.0.0.1:5432/venus dans le fichier de reglages, et relancez ce script.' }
+  $env:PGPASSWORD = $super
+  & (Join-Path $pgBin 'psql.exe') -U postgres -h 127.0.0.1 -d postgres -qc "DO `$`$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'venus') THEN CREATE ROLE venus LOGIN; END IF; END `$`$; ALTER ROLE venus PASSWORD '$dbPass';" | Out-Null
+  $has = & (Join-Path $pgBin 'psql.exe') -U postgres -h 127.0.0.1 -d postgres -qAtc "SELECT 1 FROM pg_database WHERE datname = 'venus'"
+  if ($has -ne '1') { & (Join-Path $pgBin 'createdb.exe') -U postgres -h 127.0.0.1 -O venus venus | Out-Null }
+  Remove-Item Env:PGPASSWORD
+  $conf['VENUS_DATABASE_URL'] = "postgres://venus:$dbPass@127.0.0.1:5432/venus"
+  Add-Content -Path $ConfFile -Value "VENUS_DATABASE_URL=$($conf['VENUS_DATABASE_URL'])" -Encoding UTF8
+  Ok 'Base PostgreSQL venus creee'
+}
+
 # Lanceur : chcp 65001 pour les accents dans les noms de fichiers, variables de Venus, journal
 $cmdLines = @('@echo off', 'chcp 65001 >nul', "cd /d `"$AppDir`"",
   "set `"NODE_ENV=production`"", "set `"DATA_DIR=$DataDir`"", "set `"TRANSCODE_DIR=$Transcode`"",

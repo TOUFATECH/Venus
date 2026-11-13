@@ -58,7 +58,7 @@ export function transcodeSummary() {
   const since = Date.now() - 30 * 864e5;
   const byDevice = all('SELECT device, COUNT(*) n FROM transcode_log WHERE at > ? GROUP BY device ORDER BY n DESC LIMIT 8', since);
   const byReason = all('SELECT reason, codec, container, COUNT(*) n FROM transcode_log WHERE at > ? GROUP BY reason, codec, container ORDER BY n DESC LIMIT 8', since);
-  const files = all('SELECT i.id, i.title, i.path, t.codec, t.container, COUNT(*) n FROM transcode_log t JOIN items i ON i.id = t.item_id WHERE t.at > ? GROUP BY i.id ORDER BY n DESC LIMIT 10', since);
+  const files = all('SELECT i.id, i.title, i.path, MIN(t.codec) codec, MIN(t.container) container, COUNT(*) n FROM transcode_log t JOIN items i ON i.id = t.item_id WHERE t.at > ? GROUP BY i.id ORDER BY n DESC LIMIT 10', since);
   const advice = [];
   for (const r of byReason) {
     const hevc = /hevc|h\.?265/i.test(`${r.reason} ${r.codec}`), av1 = /av1/i.test(`${r.reason} ${r.codec}`), cont = /conteneur|avi|wmv|mkv/i.test(`${r.reason} ${r.container}`), audio = /audio|dts|truehd|ac3/i.test(r.reason);

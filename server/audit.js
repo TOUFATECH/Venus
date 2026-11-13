@@ -3,7 +3,7 @@
 // l'administrateur quand un nouveau point « à corriger » apparaît.
 import fs from 'node:fs';
 import path from 'node:path';
-import { all, get, getSetting, setSetting } from './db.js';
+import { all, get, getSetting, setSetting, pgConf } from './db.js';
 import { config } from './config.js';
 import { httpsMode, logSecurity } from './security.js';
 import { twofaOn } from './twofa.js';
@@ -54,9 +54,12 @@ export async function runSecurityAudit() {
     if (process.platform !== 'win32' && (st.mode & 0o077)) add('warn', 'Clé de chiffrement lisible par d’autres', 'secret.key devrait n’être lisible que par Venus.', `chmod 600 ${path.join(config.dataDir, 'secret.key')}`);
     else add('ok', 'Clés d’API chiffrées', 'Les clés et mots de passe des services sont chiffrés dans la base (AES-256-GCM).');
   } catch { add('ok', 'Clés d’API chiffrées', process.env.VENUS_SECRET ? 'Clé fournie par VENUS_SECRET.' : 'Aucun secret enregistré pour l’instant.'); }
+  // Base PostgreSQL : connexion chiffrée si elle n'est pas sur cette machine ; mot de passe hors du code
   try {
-    const st = fs.statSync(path.join(config.dataDir, 'venus.db'));
-    if (process.platform !== 'win32' && (st.mode & 0o004)) add('warn', 'Base de données lisible par tous', 'D’autres comptes de la machine peuvent la lire.', `chmod 600 ${path.join(config.dataDir, 'venus.db')}*`);
+    const c = pgConf();
+    const local = c.host.startsWith('/') || /^(127\.|localhost$|::1$)/.test(c.host);
+    if (!local && c.ssl === 'non') add('warn', 'Base de données sans chiffrement', 'La connexion à PostgreSQL passe en clair sur le réseau.', 'Ajoutez ?sslmode=require à VENUS_DATABASE_URL');
+    else add('ok', 'Base de données PostgreSQL', local ? 'Sur cette machine.' : 'Connexion chiffrée si le serveur l’accepte.');
   } catch { /* */ }
 
   // Sauvegardes

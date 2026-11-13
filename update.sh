@@ -94,6 +94,8 @@ fi
 # Fichiers utilisés par docker compose (dans .env, que docker compose lit tout seul)
 FILES="docker-compose.yml"; [ -f "$OVR" ] && FILES="$FILES:$OVR"; FILES="$FILES:$HW"; [ -f "$UPD" ] && FILES="$FILES:$UPD"
 touch .env; grep -v '^COMPOSE_FILE=' .env > .env.tmp || true; echo "COMPOSE_FILE=$FILES" >> .env.tmp; mv .env.tmp .env
+# Base PostgreSQL : un mot de passe généré une fois, gardé dans .env (lisible seulement par vous)
+if ! grep -q '^VENUS_DB_PASSWORD=' .env; then echo "VENUS_DB_PASSWORD=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> .env; chmod 600 .env; say "Mot de passe de la base PostgreSQL créé (.env)"; fi
 
 say "Construction et redémarrage (quelques minutes)…"
 if [ "$FROM_APP" = 1 ]; then $DC up -d --build venus; else $DC up -d --build; fi

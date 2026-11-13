@@ -2,13 +2,13 @@
 // accès hors de la maison (tunnel), écran de veille. Les services extérieurs sont simulés par un petit serveur.
 import http from 'node:http';
 import path from 'node:path';
-import { test, expect, ouvrir, etat } from './outils.mjs';
+import { test, expect, ouvrir, etat, baseVenus } from './outils.mjs';
 
 test.describe.configure({ mode: 'serial' });
 const sent = [];
 let mock;
 const port = () => Number(new URL(etat().base).port) + 3;
-const sql = async (fn) => { const { DatabaseSync } = await import('node:sqlite'); const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db')); try { return fn(db); } finally { db.close(); } };
+const sql = async (fn) => { const db = await baseVenus(); try { return await fn(db); } finally { await db.close(); } };
 
 test.beforeAll(async () => {
   let polls = 0;
@@ -55,12 +55,12 @@ test.afterAll(() => mock && mock.close());
 test('Trakt : relier le compte avec un code, importer l’historique, envoyer ce qui est vu', async ({ page, api }) => {
   const lib = await api('/api/library');
   const orage = lib.find((x) => x.title === 'Orage'), bn = lib.find((x) => /Brigade Nord/.test(x.title)), nuit = lib.find((x) => x.title === 'Nuit Blanche');
-  await sql((db) => {
-    db.prepare("INSERT INTO settings(key, value) VALUES('trakt_client_id', '\"id-test\"'), ('trakt_client_secret', '\"secret-test\"') ON CONFLICT(key) DO UPDATE SET value = excluded.value").run();
-    db.prepare('UPDATE items SET tmdb_id = 9001 WHERE id = ?').run(orage.id);
-    db.prepare('UPDATE items SET tmdb_id = 9100 WHERE id = ?').run(bn.id);
-    db.prepare('UPDATE items SET tmdb_id = 9002 WHERE id = ?').run(nuit.id);
-    db.prepare('DELETE FROM progress').run();
+  await sql(async (db) => {
+    await db.run("INSERT INTO settings(key, value) VALUES('trakt_client_id', '\"id-test\"'), ('trakt_client_secret', '\"secret-test\"') ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+    await db.run('UPDATE items SET tmdb_id = 9001 WHERE id = ?', orage.id);
+    await db.run('UPDATE items SET tmdb_id = 9100 WHERE id = ?', bn.id);
+    await db.run('UPDATE items SET tmdb_id = 9002 WHERE id = ?', nuit.id);
+    await db.run('DELETE FROM progress');
   });
   await ouvrir(page, '/reglages?onglet=profil');
   await page.getByRole('button', { name: 'Relier mon compte Trakt' }).click();
@@ -70,7 +70,7 @@ test('Trakt : relier le compte avec un code, importer l’historique, envoyer ce
   await expect.poll(async () => (await api('/api/trakt')).lastImport, { timeout: 10_000 }).toBeTruthy();
   const st = await api('/api/trakt');
   expect(st.imported).toEqual({ movies: 1, episodes: 1, resumed: 1 });
-  const rows = await sql((db) => db.prepare('SELECT i.title, i.season_num s, i.episode_num e, p.watched, p.position FROM progress p JOIN items i ON i.id = p.item_id').all());
+  const rows = await sql((db) => db.all('SELECT i.title, i.season_num s, i.episode_num e, p.watched, p.position FROM progress p JOIN items i ON i.id = p.item_id'));
   expect(rows.find((r) => r.title === 'Orage').watched).toBe(1);
   expect(rows.find((r) => r.s === 1 && r.e === 1).watched).toBe(1);
   expect(rows.find((r) => r.s === 1 && r.e === 2).position).toBeGreaterThan(0);
@@ -84,7 +84,7 @@ test('Trakt : relier le compte avec un code, importer l’historique, envoyer ce
   await api(`/api/items/${nuit.id}/watched`, { method: 'POST', body: { watched: false } });
   await expect.poll(() => sent.filter((x) => x.path === '/sync/history/remove').length, { timeout: 10_000 }).toBe(1);
   // Les jetons sont chiffrés dans la base
-  const raw = await sql((db) => db.prepare("SELECT value FROM settings WHERE key LIKE 'trakt_auth:%'").get());
+  const raw = await sql((db) => db.get("SELECT value FROM settings WHERE key LIKE 'trakt_auth:%'"));
   expect(raw.value).not.toContain('jeton');
   await page.getByRole('button', { name: 'Délier' }).click();
   await page.getByRole('button', { name: 'Délier' }).last().click();
@@ -92,7 +92,7 @@ test('Trakt : relier le compte avec un code, importer l’historique, envoyer ce
 });
 
 test('import depuis Jellyfin (par l’interface) et Plex', async ({ page, api }) => {
-  await sql((db) => db.prepare('DELETE FROM progress').run());
+  await sql((db) => db.run('DELETE FROM progress'));
   await ouvrir(page, '/reglages?onglet=import');
   await page.getByPlaceholder('http://192.168.1.126:8097').fill(`http://127.0.0.1:${port()}`);
   await page.locator('#import input[type=password]').fill('cle-jf');
@@ -102,7 +102,7 @@ test('import depuis Jellyfin (par l’interface) et Plex', async ({ page, api })
   await expect(page.locator('.import-res')).toContainText('2 vu(s)');
   await expect(page.locator('.import-res')).toContainText('1 lecture(s) en cours');
   await expect(page.locator('.import-res')).toContainText('1 absent(s) de Venus');
-  const rows = await sql((db) => db.prepare('SELECT i.title, i.season_num s, i.episode_num e, p.watched, p.position FROM progress p JOIN items i ON i.id = p.item_id').all());
+  const rows = await sql((db) => db.all('SELECT i.title, i.season_num s, i.episode_num e, p.watched, p.position FROM progress p JOIN items i ON i.id = p.item_id'));
   expect(rows.find((r) => r.title === 'Le Grand Voyage').watched).toBe(1); // retrouvé par le nom du fichier
   expect(rows.find((r) => r.s === 2 && r.e === 1).watched).toBe(1);        // retrouvé par série + numéro
   expect(rows.find((r) => r.title === 'Nuit Blanche').position).toBe(600);
@@ -112,7 +112,7 @@ test('import depuis Jellyfin (par l’interface) et Plex', async ({ page, api })
   expect(chk.name).toBe('Plex du salon');
   const r = await api('/api/admin/import/run', { method: 'POST', body: { kind: 'plex', url: `http://127.0.0.1:${port()}`, token: 'jeton-plex', profileId: profiles[0].id } });
   expect(r.watched).toBe(1);
-  await sql((db) => db.prepare('DELETE FROM progress').run());
+  await sql((db) => db.run('DELETE FROM progress'));
 });
 
 test('accès hors de la maison : lien rapide, puis coupure', async ({ page, api }) => {
@@ -134,8 +134,8 @@ test('accès hors de la maison : lien rapide, puis coupure', async ({ page, api 
 });
 
 test('écran de veille : apparaît sans activité, disparaît au premier geste', async ({ page }) => {
-  await sql((db) => db.prepare("UPDATE items SET backdrop = poster WHERE type = 'season' AND poster IS NOT NULL").run());
-  await sql((db) => { const p = db.prepare("SELECT poster FROM items WHERE type = 'season' AND poster IS NOT NULL LIMIT 1").get(); db.prepare("UPDATE items SET backdrop = ? WHERE type IN ('movie', 'show')").run(p.poster); });
+  await sql((db) => db.run("UPDATE items SET backdrop = poster WHERE type = 'season' AND poster IS NOT NULL"));
+  await sql(async (db) => { const p = await db.get("SELECT poster FROM items WHERE type = 'season' AND poster IS NOT NULL LIMIT 1"); await db.run("UPDATE items SET backdrop = ? WHERE type IN ('movie', 'show')", p.poster); });
   await page.addInitScript(() => localStorage.setItem('vn_pref_screensaver', '0.05')); // 3 secondes
   await ouvrir(page, '/films');
   await expect(page.locator('.saver')).toBeVisible({ timeout: 15_000 });

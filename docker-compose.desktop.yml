@@ -24,9 +24,13 @@ services:
       - apparmor:unconfined
       # Aucun programme du conteneur ne peut gagner de droits supplémentaires (setuid…)
       - no-new-privileges:true
+    depends_on:
+      venus-db:
+        condition: service_healthy
     environment:
       - TZ=${TZ:-Europe/Paris}
       - PORT=8096
+      - VENUS_DATABASE_URL=postgres://venus:${VENUS_DB_PASSWORD:?mot de passe de la base absent de .env}@venus-db:5432/venus
       - LAN_SUBNET=${LAN_SUBNET:-192.168.1}
       - TMDB_API_KEY=${TMDB_API_KEY:-}
     volumes:
@@ -37,5 +41,23 @@ services:
       - "${VENUS_ANIME:-./media/animes}:/media/animes"
       - "${VENUS_CLIPS:-./media/clips}:/media/clips"
 
+  # Base de données de Venus (PostgreSQL), seulement joignable par Venus
+  venus-db:
+    image: postgres:18-alpine
+    container_name: venus-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=venus
+      - POSTGRES_DB=venus
+      - POSTGRES_PASSWORD=${VENUS_DB_PASSWORD:?mot de passe de la base absent de .env}
+    volumes:
+      - venus-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U venus -d venus"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   venus-transcode:
+  venus-db:

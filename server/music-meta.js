@@ -49,7 +49,7 @@ export async function coverFor(rgId) {
 // ------------------------------------------------------------------ albums
 // Les albums présents sur le NAS : un par clé « artiste|album » des pistes
 export function nasAlbums() {
-  return all("SELECT key, original_title AS artist, grp AS album, MIN(year) AS year, MIN(poster) AS cover, COUNT(*) AS n, MAX(mtime) AS mtime FROM items WHERE type = 'track' AND category = 'music' GROUP BY key");
+  return all("SELECT key, MIN(original_title) AS artist, MIN(grp) AS album, MIN(year) AS year, MIN(poster) AS cover, COUNT(*) AS n, MAX(mtime) AS mtime FROM items WHERE type = 'track' AND category = 'music' GROUP BY key");
 }
 export const albumMeta = (key) => { const r = get('SELECT * FROM music_albums WHERE key = ?', key); if (!r) return null; return { ...r, tracks: parse(r.tracks) }; };
 const parse = (s) => { try { return JSON.parse(s || '[]'); } catch { return []; } };

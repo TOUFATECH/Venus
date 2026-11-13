@@ -1,6 +1,6 @@
 // Vidéo (mode nuit, image dans l'image, apparence des sous-titres) et thèmes (automatique, par profil, teinte de la fiche)
 import path from 'node:path';
-import { test, expect, ouvrir, etat } from './outils.mjs';
+import { test, expect, ouvrir, etat, baseVenus } from './outils.mjs';
 
 test('lecteur : mode nuit, image dans l’image, apparence des sous-titres gardée par profil', async ({ page, api }) => {
   await ouvrir(page, '/films/orage-2018/lecture');
@@ -48,11 +48,10 @@ test('thèmes : automatique selon l’appareil, gardé par profil', async ({ pag
 });
 
 test('fiche teintée de la couleur de son affiche', async ({ page, api }) => {
-  const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
-  const red = db.prepare("SELECT poster FROM items WHERE type = 'season' AND poster LIKE 'l\\_%' ESCAPE '\\' ORDER BY season_num LIMIT 1").get();
-  db.prepare("UPDATE items SET poster = ? WHERE type = 'movie' AND title = 'Nuit Blanche'").run(red.poster);
-  db.close();
+  const db = await baseVenus();
+  const red = await db.get("SELECT poster FROM items WHERE type = 'season' AND poster LIKE 'l\\_%' ESCAPE '\\' ORDER BY season_num LIMIT 1");
+  await db.run("UPDATE items SET poster = ? WHERE type = 'movie' AND title = 'Nuit Blanche'", red.poster);
+  await db.close();
   await api('/api/library?type=movie');
   await ouvrir(page, '/films/nuit-blanche-2021');
   await expect(page.locator('.details.amb')).toBeVisible();

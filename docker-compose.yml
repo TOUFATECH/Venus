@@ -17,9 +17,14 @@ services:
       - apparmor:unconfined
       # Aucun programme du conteneur ne peut gagner de droits supplémentaires (setuid…)
       - no-new-privileges:true
+    depends_on:
+      venus-db:
+        condition: service_healthy
     environment:
       - TZ=Europe/Paris
       - PORT=8096
+      # Base PostgreSQL (service venus-db ci-dessous ; mot de passe généré par install.sh / update.sh dans .env)
+      - VENUS_DATABASE_URL=postgres://venus:${VENUS_DB_PASSWORD:?mot de passe de la base absent de .env : lancez ./update.sh}@127.0.0.1:${VENUS_DB_PORT:-5433}/venus
       # - TMDB_API_KEY=votre_cle      # facultatif : peut aussi se saisir dans l'interface
       # - HWACCEL=auto                # auto | nvenc | vaapi | qsv | v4l2m2m | none
       # Sécurité (voir SECURITY.md) :
@@ -38,3 +43,25 @@ services:
     # À la main :
     #   Intel / AMD :   devices: ["/dev/dri:/dev/dri"]
     #   NVIDIA      :   voir docker-compose.override.example.yml
+
+  # Base de données de Venus (PostgreSQL). Joignable seulement depuis cette machine (127.0.0.1).
+  # Une base existante (par exemple créée par Urðr dans Odin) convient aussi : changez VENUS_DATABASE_URL et retirez ce service.
+  venus-db:
+    image: postgres:18-alpine
+    container_name: venus-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=venus
+      - POSTGRES_DB=venus
+      - POSTGRES_PASSWORD=${VENUS_DB_PASSWORD:?mot de passe de la base absent de .env : lancez ./update.sh}
+    ports:
+      - "127.0.0.1:${VENUS_DB_PORT:-5433}:5432"
+    volumes:
+      - ./config/postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U venus -d venus"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true

@@ -7,7 +7,7 @@ import zlib from 'node:zlib';
 import { Readable } from 'node:stream';
 import { db, all, get, run, tx, getSetting, setSetting } from './db.js';
 
-db.exec(`CREATE TABLE IF NOT EXISTS epg (channel_id INTEGER REFERENCES items(id) ON DELETE CASCADE, start INTEGER, stop INTEGER, title TEXT, sub TEXT, descr TEXT, cat TEXT, icon TEXT, ep TEXT);
+db.exec(`CREATE TABLE IF NOT EXISTS epg (id INTEGER PRIMARY KEY, channel_id INTEGER REFERENCES items(id) ON DELETE CASCADE, start INTEGER, stop INTEGER, title TEXT, sub TEXT, descr TEXT, cat TEXT, icon TEXT, ep TEXT);
 CREATE INDEX IF NOT EXISTS idx_epg ON epg(channel_id, start);`);
 
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\b(hd|fhd|uhd|4k|sd|fr|\|)\b/g, '').replace(/[^a-z0-9]+/g, '');
@@ -134,8 +134,8 @@ export async function refreshEpg(progress = () => {}) {
 }
 
 export const pruneEpg = () => run('DELETE FROM epg WHERE stop < ?', Date.now() - 6 * 3600e3);
-export const programsBetween = (from, to, ids = null) => all(`SELECT rowid AS id, channel_id AS channel, start, stop, title, sub, descr, cat, icon, ep FROM epg WHERE stop > ? AND start < ?${ids ? ` AND channel_id IN (${ids.map(() => '?').join(',') || 'NULL'})` : ''} ORDER BY channel_id, start`, from, to, ...(ids || []));
-export const programById = (id) => get('SELECT rowid AS id, channel_id AS channel, start, stop, title, sub, descr, cat, icon, ep FROM epg WHERE rowid = ?', Number(id));
+export const programsBetween = (from, to, ids = null) => all(`SELECT id, channel_id AS channel, start, stop, title, sub, descr, cat, icon, ep FROM epg WHERE stop > ? AND start < ?${ids ? ` AND channel_id IN (${ids.map(() => '?').join(',') || 'NULL'})` : ''} ORDER BY channel_id, start`, from, to, ...(ids || []));
+export const programById = (id) => get('SELECT id, channel_id AS channel, start, stop, title, sub, descr, cat, icon, ep FROM epg WHERE id = ?', Number(id));
 export function nowNext(ids) {
   const now = Date.now();
   const list = programsBetween(now, now + 6 * 3600e3, ids);

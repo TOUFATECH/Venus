@@ -1,36 +1,81 @@
-// Base SQLite intégrée à Node (aucune dépendance native à compiler)
-import { DatabaseSync } from 'node:sqlite';
+// Base de données de Venus : PostgreSQL (zéro SQLite). Venus garde son usage simple de la base (all / get / run,
+// réponses immédiates) : un fil à part parle à PostgreSQL et le fil principal attend sa réponse. Le SQL écrit
+// pour Venus est adapté à PostgreSQL au passage (sql-pg.js).
+// Connexion : VENUS_DATABASE_URL (ou DATABASE_URL), ou le fichier postgres.json du dossier de données
+// ({ "url": "postgres://venus:motdepasse@hote:5432/venus" }) ; une base créée par Urðr (Odin) convient.
+import { Worker, MessageChannel, receiveMessageOnPort } from 'node:worker_threads';
 import path from 'node:path';
 import { config } from './config.js';
+import { statements, translate, decode } from './sql-pg.js';
 
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 
-// Restauration d'une sauvegarde demandée depuis le tableau de bord : appliquée au démarrage, avant d'ouvrir la base
-const dbFile = path.join(config.dataDir, 'venus.db');
-const pending = path.join(config.dataDir, 'backups', 'restore.pending');
-try {
-  if (fs.existsSync(pending)) {
-    const src = path.join(config.dataDir, 'backups', path.basename(fs.readFileSync(pending, 'utf8').trim()));
-    if (fs.existsSync(src)) {
-      if (fs.existsSync(dbFile)) fs.copyFileSync(dbFile, `${dbFile}.avant-restauration`);
-      for (const ext of ['-wal', '-shm']) { try { fs.unlinkSync(dbFile + ext); } catch { /* */ } }
-      fs.copyFileSync(src, dbFile);
-      console.log(`  ↺ Sauvegarde restaurée : ${path.basename(src)}`);
-    }
-    fs.unlinkSync(pending);
-  }
-} catch (e) { console.warn('[sauvegarde] restauration impossible :', e.message); }
+export function pgConf(env = process.env) {
+  let url = env.VENUS_DATABASE_URL || env.DATABASE_URL || '';
+  if (!url) { try { url = JSON.parse(fs.readFileSync(path.join(config.dataDir, 'postgres.json'), 'utf8')).url || ''; } catch { /* absent */ } }
+  if (!url) throw new Error('Base PostgreSQL non réglée : VENUS_DATABASE_URL=postgres://utilisateur:motdepasse@hote:5432/venus (ou postgres.json dans le dossier de données)');
+  const u = new URL(url);
+  const host = decodeURIComponent(u.hostname || u.searchParams.get('host') || '/var/run/postgresql');
+  const ssl = u.searchParams.get('sslmode');
+  return { host, port: Number(u.port || 5432), user: decodeURIComponent(u.username || 'venus'), password: decodeURIComponent(u.password || ''), database: decodeURIComponent(u.pathname.replace(/^\//, '') || 'venus'), ...(ssl ? { ssl: ssl === 'disable' ? 'non' : ssl === 'require' || ssl === 'verify-full' ? 'obligatoire' : 'si-possible' } : {}) };
+}
 
-export const db = new DatabaseSync(dbFile);
-// La base n'est lisible que par Venus (sessions, réglages)
-for (const f of [dbFile, `${dbFile}-wal`, `${dbFile}-shm`]) { try { fs.chmodSync(f, 0o600); } catch { /* Windows ou fichier absent */ } }
+// ---------------------------------------------------------------- le lien avec le fil PostgreSQL
+const sab = new SharedArrayBuffer(4), flag = new Int32Array(sab);
+const { port1, port2 } = new MessageChannel();
+const worker = new Worker(new URL('./db-worker.js', import.meta.url), { workerData: { sab, port: port2, conf: pgConf() }, transferList: [port2] });
+worker.unref();
+let inTx = 0;
+function call(msg) {
+  Atomics.store(flag, 0, 0);
+  port1.postMessage({ ...msg, tx: inTx > 0 });
+  if (Atomics.wait(flag, 0, 0, 180000) === 'timed-out') throw new Error('PostgreSQL ne répond pas (3 min)');
+  const m = receiveMessageOnPort(port1)?.message;
+  if (!m) throw new Error('PostgreSQL : réponse perdue');
+  if (!m.ok) { const e = new Error(`${m.error.message}${m.error.detail ? ` (${m.error.detail})` : ''}`); e.code = m.error.code; if (process.env.VENUS_SQL_DEBUG) e.message += `\n  SQL : ${msg.sql}`; throw e; }
+  return m;
+}
+const rowsOf = (m) => m.rows.map((r) => { const o = {}; m.fields.forEach(([n, t], i) => { o[n] = decode(t, r[i]); }); return o; });
+
+// Les tables connues (clé primaire, colonne auto-incrémentée, colonnes) : pour adapter INSERT OR REPLACE, RETURNING…
+const schema = new Map();
+for (const r of rowsOf(call({ op: 'query', sql: `SELECT c.table_name t, c.column_name col, c.is_identity id, (SELECT array_to_string(array_agg(k.column_name::text ORDER BY k.ordinal_position), ',') FROM information_schema.table_constraints tc JOIN information_schema.key_column_usage k ON k.constraint_name = tc.constraint_name AND k.table_schema = tc.table_schema WHERE tc.table_schema = current_schema() AND tc.table_name = c.table_name AND tc.constraint_type = 'PRIMARY KEY') pk FROM information_schema.columns c WHERE c.table_schema = current_schema() ORDER BY c.table_name, c.ordinal_position`, params: [] }))) {
+  const s = schema.get(r.t) || { pk: r.pk ? r.pk.split(',') : [], identity: null, cols: [] }; s.cols.push(r.col); if (r.id === 'YES') s.identity = r.col; schema.set(r.t, s);
+}
+
+const translated = new Map();
+const tr = (sql) => { let t = translated.get(sql); if (!t) { t = translate(sql, schema); if (!/^\s*(CREATE|ALTER)\b/i.test(sql)) translated.set(sql, t); } return t; };
+function runOne(sql, params) {
+  const t = tr(sql);
+  if (t.kind === 'skip') return { rows: [], count: 0 };
+  const m = call({ op: 'query', sql: t.sql, params });
+  return { rows: rowsOf(m), count: m.count, returning: t.returning };
+}
+/** Même forme que les requêtes préparées de node:sqlite (all / get / run). */
+function statement(sql) {
+  return {
+    all: (...p) => runOne(sql, p).rows,
+    get: (...p) => runOne(sql, p).rows[0],
+    run: (...p) => { const r = runOne(sql, p); return { changes: r.count, lastInsertRowid: r.returning && r.rows[0] ? r.rows[0][r.returning] : undefined }; },
+    iterate: (...p) => runOne(sql, p).rows[Symbol.iterator](),
+  };
+}
+export const db = {
+  exec(sql) {
+    for (const st of statements(sql)) {
+      if (/^BEGIN\b/i.test(st)) { call({ op: 'simple', sql: 'BEGIN' }); inTx++; continue; }
+      if (/^(COMMIT|END|ROLLBACK)\b/i.test(st)) { inTx = Math.max(0, inTx - 1); call({ op: 'simple', sql: /^ROLLBACK/i.test(st) ? 'ROLLBACK' : 'COMMIT' }); continue; }
+      runOne(st, []);
+    }
+  },
+  prepare: statement,
+  /** Instantané de toutes les tables (sauvegardes, export) : { table: [lignes] }. */
+  tables() { return [...schema.keys()]; },
+  pg: { call, rowsOf },
+};
 
 db.exec(`
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-PRAGMA foreign_keys = ON;
-PRAGMA temp_store = MEMORY;
 
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 
@@ -144,14 +189,6 @@ if (!cols('profiles').includes('ui_prefs')) db.exec('ALTER TABLE profiles ADD CO
 // Reprise « endormi » : la position gardée est celle du dernier geste, pas la fin de la lecture
 if (!cols('progress').includes('asleep')) db.exec('ALTER TABLE progress ADD COLUMN asleep INTEGER DEFAULT 0');
 if (!cols('libraries').includes('remote')) db.exec('ALTER TABLE libraries ADD COLUMN remote TEXT');
-const libSql = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'libraries'").get();
-if (libSql && /CHECK/.test(libSql.sql)) {
-  db.exec(`PRAGMA foreign_keys = OFF; BEGIN;
-    CREATE TABLE libraries_new (id INTEGER PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, path TEXT NOT NULL UNIQUE, remote TEXT);
-    INSERT INTO libraries_new SELECT id, name, type, path, remote FROM libraries;
-    DROP TABLE libraries; ALTER TABLE libraries_new RENAME TO libraries;
-    COMMIT; PRAGMA foreign_keys = ON;`);
-}
 db.exec("UPDATE items SET category = CASE type WHEN 'movie' THEN 'movie' WHEN 'clip' THEN 'clip' WHEN 'channel' THEN 'channel' ELSE (SELECT CASE l.type WHEN 'anime' THEN 'anime' ELSE 'show' END FROM libraries l WHERE l.id = items.library_id) END WHERE category IS NULL");
 db.exec('CREATE INDEX IF NOT EXISTS idx_items_cat ON items(category, type)');
 // Doubles épisodes mal reconnus par une version précédente (ex. « S01E01-2160p »)
@@ -174,6 +211,7 @@ const touchesItems = (sql) => /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*\bitem
 export const run = (sql, ...p) => { const r = q(sql).run(...p); if (touchesItems(sql)) itemsVersion++; return r; };
 
 export function tx(fn) {
+  if (inTx) return fn(); // déjà dans une transaction : on la prolonge
   db.exec('BEGIN');
   try { const r = fn(); db.exec('COMMIT'); itemsVersion++; return r; }
   catch (e) { db.exec('ROLLBACK'); throw e; }

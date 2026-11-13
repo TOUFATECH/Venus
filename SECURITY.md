@@ -26,7 +26,7 @@ Venus est pensé pour la maison, mais il est souvent ouvert sur Internet. Voici 
 | Clickjacking | `X-Frame-Options: DENY` et `frame-ancestors 'none'`. |
 | Autres en-têtes | `nosniff`, `Referrer-Policy`, `Cross-Origin-Opener-Policy`, `Permissions-Policy`, HSTS en HTTPS ; pas de `X-Powered-By`. |
 | Validation | Chaque route vérifie type, longueur et format des champs. Corps JSON : objet uniquement, taille et profondeur limitées, clés `__proto__`/`constructor` supprimées (injection d'objets « NoSQL » et pollution de prototype). Paramètres en double refusés (HPP). |
-| SQL | Requêtes paramétrées partout (SQLite intégré à Node). |
+| SQL | Requêtes paramétrées partout (PostgreSQL : valeurs envoyées à part, jamais collées dans le SQL ; authentification SCRAM-SHA-256, TLS hors de la machine). |
 | Fichiers | Chemins résolus et vérifiés (`realpath`) dans le dossier autorisé ; `..`, octets nuls et liens symboliques sortants refusés. Envois de fichiers : nom nettoyé, extension et contenu (signature) vérifiés, taille limitée. |
 | ReDoS | Aucune expression régulière sur des textes non bornés ; longueur des entrées limitée avant tout test. |
 | Délais | En-têtes : 20 s ; corps : 20 s ; connexion inactive : 2 min ; 900 requêtes par minute par adresse (hors vidéo) ; adresses de plus de 8 Ko refusées. |

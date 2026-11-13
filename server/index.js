@@ -18,6 +18,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
+import { startupCopies } from './db-copy.js';
 import { HttpError, sendJson, serveStatic, buildId } from './http.js';
 import { startNextUi, nextUiReady, nextStaticFile, proxyToNext } from './next-ui.js';
 import { authenticate, migrateTokens } from './auth.js';
@@ -38,6 +39,8 @@ import { runMusicMeta } from './music-meta.js';
 import { runBooksMeta } from './books-meta.js';
 import { refreshRatings } from './ratings.js';
 import { startWatch } from './watch.js';
+import { startAcquire } from './acquire/engine.js';
+import { resumeFolkvangr } from './acquire/native.js';
 import { startBackups } from './backup.js';
 import { stopAllSessions } from './stream.js';
 import { mountAll, watchMounts } from './netshare.js';
@@ -146,6 +149,8 @@ function lanAddresses() {
 }
 
 async function main() {
+  // Base PostgreSQL : restauration demandée, ou reprise unique de l'ancienne base SQLite
+  await startupCopies(config.dataDir).catch((e) => console.warn('[base] reprise :', e.message));
   const where = { docker: 'Docker', lxc: `conteneur LXC ${runtime.unprivileged ? 'non privilégié' : 'privilégié'}`, machine: 'machine' }[runtime.kind];
   console.log(`[système] Venus tourne dans : ${where}${runtime.canMount ? '' : ' (montage réseau non autorisé)'}`);
   migrateTokens();
@@ -209,6 +214,8 @@ async function main() {
     }
   });
   startBackups();
+  startAcquire();
+  resumeFolkvangr();
   // Vignettes d'aperçu de la barre de lecture : préparées en arrière-plan, titre après titre
   // Tâches visibles dans Tableau de bord → Serveur (leur propre minuterie reste celle d'origine)
   defineTask('scan', { label: 'Analyse des bibliothèques', description: 'Cherche les nouveaux fichiers, les fichiers modifiés et supprimés.', when: `Toutes les ${getSetting('scan_interval', 60)} min, et dès qu’un fichier apparaît`, run: async () => { await scanAll(); return 'Analyse terminée'; } });

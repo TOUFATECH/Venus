@@ -14,6 +14,12 @@ export const PASSWORD = 'Foyer-de-test-2026';
 export const PIN = '2468';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+/** Une commande sur le serveur PostgreSQL des tests (créer / effacer la base). */
+export async function baseAdmin(url, sql) {
+  const { Pg } = await import('../../server/pg.js');
+  const u = new URL(url), pg = await Pg.connect({ host: u.hostname, port: Number(u.port || 5432), user: decodeURIComponent(u.username), password: decodeURIComponent(u.password), database: u.pathname.slice(1) || 'postgres' });
+  try { await pg.simple(sql); } finally { await pg.close(); }
+}
 const ff = (...args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
 
 function makeMedia(dir) {
@@ -92,9 +98,14 @@ export default async function globalSetup() {
   fs.writeFileSync(path.join(dir, 'faux-whisper.sh'), '#!/bin/sh\nof=""\nwhile [ $# -gt 0 ]; do if [ "$1" = "-of" ]; then of="$2"; shift; fi; shift; done\necho "whisper_full: auto-detected language: fr (p = 0.98)" >&2\necho "progress = 100%" >&2\nprintf "1\\n00:00:01,000 --> 00:00:03,500\\nBonjour, ici la brigade.\\n\\n2\\n00:00:05,000 --> 00:00:08,000\\nLa mer est calme ce matin.\\n" > "$of.srt"\n', { mode: 0o755 });
   fs.mkdirSync(path.join(dir, 'data', 'models', 'whisper'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'data', 'models', 'whisper', 'ggml-small.bin'), 'modele factice');
+  // Une base PostgreSQL neuve pour ces tests (effacée à la fin) : VENUS_TEST_PG = adresse d'un compte qui peut créer des bases
+  const admin = process.env.VENUS_TEST_PG || 'postgres://postgres:postgres@127.0.0.1:5432/postgres';
+  const pgDb = `venus_e2e_${process.pid}_${Date.now() % 100000}`;
+  await baseAdmin(admin, `CREATE DATABASE ${pgDb}`);
+  const au = new URL(admin); au.pathname = `/${pgDb}`; const pgUrl = au.toString();
   const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'server/index.js'], {
     cwd: root, detached: true, stdio: ['ignore', log, log],
-    env: { ...process.env, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh'), VENUS_WHISPER_BIN: path.join(dir, 'faux-whisper.sh'),
+    env: { ...process.env, VENUS_DATABASE_URL: pgUrl, DATA_DIR: path.join(dir, 'data'), TRANSCODE_DIR: path.join(dir, 'transcode'), PORT: String(port), HTTPS_PORT: String(port + 1), NODE_ENV: 'production', VENUS_IPTV_WORLD: '0', VENUS_TRAKT_API: `http://127.0.0.1:${port + 3}`, VENUS_TRAKT_FLUSH_MS: '400', VENUS_CLOUDFLARED_BIN: path.join(dir, 'faux-cloudflared.sh'), VENUS_WHISPER_BIN: path.join(dir, 'faux-whisper.sh'),
       // Faux MusicBrainz / Cover Art Archive / Open Library / Google Books (démarrés par le test musique-livres)
       VENUS_MUSICBRAINZ_API: `http://127.0.0.1:${port + 5}/mb`, VENUS_COVERART_API: `http://127.0.0.1:${port + 5}/caa`, VENUS_OPENLIBRARY_API: `http://127.0.0.1:${port + 5}/ol`, VENUS_OPENLIBRARY_COVERS: `http://127.0.0.1:${port + 5}/olc`, VENUS_GOOGLEBOOKS_API: `http://127.0.0.1:${port + 5}/gb` },
   });
@@ -138,7 +149,7 @@ export default async function globalSetup() {
     if (i > 120) throw new Error('Interface Next.js absente : lancez « npm run web:build » à la racine de Venus avant les tests.');
     await wait(500);
   }
-  fs.writeFileSync(STATE, JSON.stringify({ base, token, pid: srv.pid, hlsPid: hls.pid, maisonPid: maison.pid, maisonPort: port + 4, dir, logFile }, null, 2));
+  fs.writeFileSync(STATE, JSON.stringify({ base, token, pid: srv.pid, hlsPid: hls.pid, maisonPid: maison.pid, maisonPort: port + 4, dir, logFile, admin, pgDb, pgUrl }, null, 2));
   // Session des tests : l'appareil est déjà connecté sur le profil administrateur
   fs.writeFileSync(path.resolve(here, '..', '.auth.json'), JSON.stringify({ cookies: [], origins: [{ origin: base, localStorage: [{ name: 'vn_token', value: token }] }] }));
   process.env.VENUS_BASE = base;

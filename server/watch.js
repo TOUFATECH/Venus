@@ -10,6 +10,7 @@ import { db, all, get, run, getSetting, setSetting } from './db.js';
 import { seerr, seerrOn, seerrConf, seerrRequest, mediaState, libraryIndex } from './discover.js';
 import { logActivity } from './activity.js';
 import { notify } from './notify.js';
+import { acquireOn, fromWish, followShow, wantsList } from './acquire/engine.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS wishlist (
   profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
@@ -78,7 +79,9 @@ export async function addWish(profile, x) {
   String(x.overview || '').slice(0, 2000) || null, x.anime ? 1 : 0, Date.now());
   // Profils enfants : l'envie est notée, un adulte décide de la demande
   let request = null;
-  if (seerrOn() && autoRequest() && profile.max_age == null) request = await requestWish(profile.id, type, x.tmdbId);
+  // Médias automatiques de Venus (Hnoss) : le ♡ lance la recherche et le téléchargement tout de suite
+  if (acquireOn() && autoRequest() && profile.max_age == null) request = await fromWish(profile, { ...x, type });
+  else if (seerrOn() && autoRequest() && profile.max_age == null) request = await requestWish(profile.id, type, x.tmdbId);
   return { inWishlist: true, request };
 }
 export function removeWish(profileId, type, tmdbId) {
@@ -129,10 +132,15 @@ export async function runWatch() {
         if (w.media_type === 'movie') run('DELETE FROM wishlist WHERE profile_id=? AND media_type=? AND tmdb_id=?', w.profile_id, w.media_type, w.tmdb_id);
         continue;
       }
+      if (acquireOn() && autoRequest() && w.max_age == null) {
+        const key = w.media_type === 'movie' ? `movie:${w.tmdb_id}` : `tv:${w.tmdb_id}`;
+        if (!wantsList('show_key = ?', key).length || w.media_type !== 'movie') { await fromWish({ id: w.profile_id, max_age: null }, { type: w.media_type, title: w.title, original: w.original, tmdbId: w.tmdb_id, date: w.date, anime: !!w.anime }).catch(() => {}); requested++; }
+        continue;
+      }
       if (seerrOn() && autoRequest() && w.max_age == null && (!w.requested_at || w.error)) { await requestWish(w.profile_id, w.media_type, w.tmdb_id); requested++; }
     }
     // 2. Séries suivies : chaque nouvelle saison annoncée est demandée
-    const mode = seerrOn() ? followMode() : 'off';
+    const mode = seerrOn() || acquireOn() ? followMode() : 'off';
     if (mode !== 'off') {
       const ids = new Map(); // tmdb -> { maxLib, profileId }
       const libShows = mode === 'all'
@@ -145,7 +153,10 @@ export async function runWatch() {
       for (const w of all("SELECT tmdb_id, profile_id FROM wishlist WHERE media_type='tv'")) if (!ids.has(w.tmdb_id)) ids.set(w.tmdb_id, { max: 0, profileId: w.profile_id });
       watchState.followed = ids.size;
       for (const [tmdbId, info] of ids) {
-        try { requested += await followShow(tmdbId, info); } catch (e) { watchState.error = e.message; }
+        try {
+          if (acquireOn()) { const sh = get("SELECT title, original_title FROM items WHERE type = 'show' AND tmdb_id = ?", tmdbId) || get("SELECT title, original FROM wishlist WHERE media_type = 'tv' AND tmdb_id = ? LIMIT 1", tmdbId) || {}; requested += await followShow({ tmdbId, title: sh.title, original: sh.original_title || sh.original, profileId: info.profileId }); }
+          else requested += await followSeerr(tmdbId, info);
+        } catch (e) { watchState.error = e.message; }
         await new Promise((r) => setTimeout(r, 300));
       }
     }
@@ -156,7 +167,7 @@ export async function runWatch() {
   return watchState;
 }
 
-async function followShow(tmdbId, { max, profileId }) {
+async function followSeerr(tmdbId, { max, profileId }) {
   const d = await seerr(`/tv/${tmdbId}`);
   const info = d.mediaInfo || {};
   const covered = new Set();

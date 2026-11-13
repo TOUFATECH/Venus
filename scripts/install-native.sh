@@ -170,6 +170,30 @@ else
   sed -i "s#^FFMPEG_PATH=.*#FFMPEG_PATH=${FFMPEG}#; s#^FFPROBE_PATH=.*#FFPROBE_PATH=$(dirname "$FFMPEG")/ffprobe#" "$ENV_FILE"
   ok "Réglages existants conservés ($ENV_FILE)"
 fi
+# ------------------------------------------------------------------ base PostgreSQL (sur cette machine)
+if ! grep -q '^VENUS_DATABASE_URL=' "$ENV_FILE"; then
+  case "$PM" in
+    apt-get) pkg postgresql >/dev/null ;;
+    dnf|yum) pkg postgresql-server >/dev/null; [ -d /var/lib/pgsql/data/base ] || postgresql-setup --initdb >/dev/null 2>&1 || true ;;
+    pacman)  pkg postgresql >/dev/null; [ -d /var/lib/postgres/data/base ] || su - postgres -c "initdb -D /var/lib/postgres/data" >/dev/null ;;
+    zypper)  pkg postgresql-server >/dev/null ;;
+    apk)     pkg postgresql >/dev/null; [ -d /var/lib/postgresql/data/base ] || { mkdir -p /run/postgresql && chown postgres /run/postgresql; su postgres -c "initdb -D /var/lib/postgresql/data" >/dev/null; } ;;
+  esac
+  if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then systemctl enable --now postgresql >/dev/null 2>&1 || true; else (command -v rc-service >/dev/null && rc-service postgresql start) >/dev/null 2>&1 || true; fi
+  for _ in $(seq 1 30); do su postgres -c "psql -qAtc 'select 1'" >/dev/null 2>&1 && break; sleep 1; done
+  DBPASS="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  su postgres -c "psql -qv ON_ERROR_STOP=1" >/dev/null <<SQL || die "Création de la base PostgreSQL impossible"
+DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'venus') THEN CREATE ROLE venus LOGIN; END IF; END \$\$;
+ALTER ROLE venus PASSWORD '${DBPASS}';
+SQL
+  su postgres -c "psql -qAtc \"SELECT 1 FROM pg_database WHERE datname = 'venus'\"" | grep -q 1 || su postgres -c "createdb -O venus venus"
+  echo "VENUS_DATABASE_URL=postgres://venus:${DBPASS}@127.0.0.1:5432/venus" >> "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+  ok "Base PostgreSQL « venus » créée (mot de passe dans $ENV_FILE)"
+else
+  ok "Base PostgreSQL déjà réglée"
+fi
+
 PORT="$(sed -n 's/^PORT=//p' "$ENV_FILE" | tail -1)"; PORT="${PORT:-8096}"
 
 # ------------------------------------------------------------------ service

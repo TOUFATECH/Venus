@@ -1,6 +1,6 @@
 // Rétrospective de l'année et recommandations « Parce que vous avez regardé »
 import path from 'node:path';
-import { test, expect, ouvrir, etat } from './outils.mjs';
+import { test, expect, ouvrir, etat, baseVenus } from './outils.mjs';
 
 test('rétrospective de l’année : écrans qui défilent, au clavier et au toucher', async ({ page, api }) => {
   // Un film et la série Brigade Nord vus en entier cette année
@@ -34,11 +34,10 @@ test('rétrospective de l’année : écrans qui défilent, au clavier et au tou
 });
 
 test('accueil : « Parce que vous avez regardé » d’après ce qu’on a vu', async ({ page, api }) => {
-  const { DatabaseSync } = await import('node:sqlite');
-  const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
+  const db = await baseVenus();
   // Trois films du même genre ; on en regarde un
-  db.prepare("UPDATE items SET genres = '[\"Thriller\",\"Drame\"]' WHERE type = 'movie'").run();
-  db.close();
+  await db.run("UPDATE items SET genres = '[\"Thriller\",\"Drame\"]' WHERE type = 'movie'");
+  await db.close();
   const lib = await api('/api/library?type=movie');
   const film = lib.find((x) => /Orage/.test(x.title));
   await api(`/api/progress/${film.id}`, { method: 'POST', body: { position: 300, duration: 1800 } }).catch(() => null);

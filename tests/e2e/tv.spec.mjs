@@ -1,7 +1,7 @@
 // TV en direct : lecture réelle (chaînes de test servies en local), zapping préparé, dernière chaîne,
 // récentes, multi-écran, rappels de programmes
 import path from 'node:path';
-import { test, expect, ouvrir, etat } from './outils.mjs';
+import { test, expect, ouvrir, etat, baseVenus } from './outils.mjs';
 
 const lit = (loc) => expect.poll(() => loc.evaluate((v) => v.currentTime), { timeout: 20_000 }).toBeGreaterThan(0.3);
 async function chaine(page, nom) {
@@ -52,13 +52,12 @@ test('TV : multi-écran, deux chaînes en même temps, le son suit l’écran ch
 });
 
 test('TV : rappel de programme, notification avant le début', async ({ page, api }) => {
-  const { DatabaseSync } = await import('node:sqlite');
   const chans = await api('/api/library?type=channel');
   const ch = chans.find((c) => c.title === 'Test Bleu');
-  const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
+  const db = await baseVenus();
   const start = Date.now() + 3 * 60000;
-  db.prepare('INSERT INTO epg(channel_id, start, stop, title) VALUES(?, ?, ?, ?)').run(ch.id, start, start + 3600e3, 'Le grand test');
-  db.close();
+  await db.run('INSERT INTO epg(channel_id, start, stop, title) VALUES(?, ?, ?, ?)', ch.id, start, start + 3600e3, 'Le grand test');
+  await db.close();
   const g = await api(`/api/epg?from=${Date.now() - 600000}&to=${Date.now() + 3 * 3600e3}`);
   const prog = (g.programs[ch.id] || []).find((x) => x.title === 'Le grand test');
   expect(prog).toBeTruthy();
@@ -70,10 +69,10 @@ test('TV : rappel de programme, notification avant le début', async ({ page, ap
   const list = await api('/api/epg/reminders');
   expect(list.map((r) => r.title)).toContain('Le grand test');
   // Moins de 5 minutes avant : la notification part (vérifiée dans la base)
-  await expect.poll(() => {
-    const d = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db'));
-    const r = d.prepare("SELECT notified FROM tv_reminders WHERE title = 'Le grand test'").get();
-    d.close();
+  await expect.poll(async () => {
+    const d = await baseVenus();
+    const r = await d.get("SELECT notified FROM tv_reminders WHERE title = 'Le grand test'");
+    await d.close();
     return r && r.notified;
   }, { timeout: 45_000 }).toBe(1);
 });

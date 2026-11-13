@@ -106,6 +106,24 @@ else
   ok "Réglages existants conservés (${CONF})"
 fi
 
+# ------------------------------------------------------------------ base PostgreSQL (Homebrew, sur ce Mac)
+if ! grep -q '^VENUS_DATABASE_URL=' "$CONF"; then
+  PGF=postgresql@18
+  "$BREW" list "$PGF" >/dev/null 2>&1 || "$BREW" install "$PGF" >/dev/null
+  "$BREW" services start "$PGF" >/dev/null 2>&1 || true
+  PGB="$("$BREW" --prefix "$PGF")/bin"
+  for _ in $(seq 1 30); do "$PGB/psql" -d postgres -qAtc 'select 1' >/dev/null 2>&1 && break; sleep 1; done
+  DBPASS="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  "$PGB/psql" -d postgres -qv ON_ERROR_STOP=1 >/dev/null <<SQL || die "Création de la base PostgreSQL impossible"
+DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'venus') THEN CREATE ROLE venus LOGIN; END IF; END \$\$;
+ALTER ROLE venus PASSWORD '${DBPASS}';
+SQL
+  "$PGB/psql" -d postgres -qAtc "SELECT 1 FROM pg_database WHERE datname = 'venus'" | grep -q 1 || "$PGB/createdb" -O venus venus
+  echo "VENUS_DATABASE_URL=postgres://venus:${DBPASS}@127.0.0.1:5432/venus" >> "$CONF"
+  chmod 600 "$CONF"
+  ok "Base PostgreSQL « venus » créée"
+fi
+
 # Variables de lancement : réglages de l'utilisateur + chemins fixes
 ENV_XML=""
 add_env() { ENV_XML="${ENV_XML}      <key>$(xml "$1")</key><string>$(xml "$2")</string>

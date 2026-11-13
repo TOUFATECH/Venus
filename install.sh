@@ -70,7 +70,9 @@ if [ "$OS" = Darwin ]; then
       echo "VENUS_CLIPS=./media/clips"
       echo "VENUS_PORT=8096"
       echo "LAN_SUBNET=${SUBNET%.*}"
+      echo "VENUS_DB_PASSWORD=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
     } > .env
+    chmod 600 .env
     ok "Réglages écrits dans .env"
   fi
   mkdir -p media/films media/series media/animes media/clips config
@@ -140,6 +142,9 @@ ${GPU_BLOCK}
 EOF
 ok "Configuration écrite"
 
+# Base PostgreSQL : un mot de passe généré une fois, gardé dans .env (lisible seulement par vous)
+touch .env; grep -q '^VENUS_DB_PASSWORD=' .env || echo "VENUS_DB_PASSWORD=$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')" >> .env; chmod 600 .env
+mkdir -p config/postgres
 bold "Construction et démarrage (première fois : 2 à 5 minutes)…"
 $DC up -d --build
 

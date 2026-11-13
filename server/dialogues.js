@@ -1,11 +1,17 @@
 // Recherche dans les dialogues : les sous-titres (en français de préférence) de chaque film et épisode sont
-// indexés en texte intégral. « je suis ton père » → le film, la scène, et la lecture à la seconde près.
+// indexés en texte intégral (recherche plein texte de PostgreSQL, sans accents ni majuscules).
+// « je suis ton père » → le film, la scène, et la lecture à la seconde près.
 import fs from 'node:fs';
 import { db, all, get, run } from './db.js';
 import { parseVtt } from './scenes.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS dialogue_index (item_id INTEGER PRIMARY KEY, mtime INTEGER, sub_id TEXT, lang TEXT, n INTEGER, indexed_at INTEGER)`);
-db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS dialogues USING fts5(text, item_id UNINDEXED, start UNINDEXED, stop UNINDEXED, tokenize = 'unicode61 remove_diacritics 2')`);
+db.exec(`CREATE TABLE IF NOT EXISTS dialogues (id INTEGER PRIMARY KEY, text TEXT, item_id INTEGER, start REAL, stop REAL, plain TEXT)`);
+db.exec(`ALTER TABLE dialogues ADD COLUMN IF NOT EXISTS tsv tsvector GENERATED ALWAYS AS (to_tsvector('simple', coalesce(plain, ''))) STORED`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_dialogues_tsv ON dialogues USING GIN (tsv)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_dialogues_item ON dialogues(item_id)');
+/** Sans accents ni majuscules (« Père » → « pere ») : pour l'index et pour la recherche. */
+const plain = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 const pickSub = (probe) => {
   const subs = (probe.subs || []).filter((s) => s.text && !s.forced);
@@ -28,11 +34,11 @@ export async function indexDialogues(item, subtitleVtt) {
     if (last && c.start - last.stop < 0.8 && !/[.!?…]$/.test(last.text) && last.text.length < 160) { last.text += ` ${t}`; last.stop = c.end; }
     else rows.push({ start: c.start, stop: c.end, text: t });
   }
-  const ins = db.prepare('INSERT INTO dialogues(text, item_id, start, stop) VALUES(?, ?, ?, ?)');
+  const ins = db.prepare('INSERT INTO dialogues(text, item_id, start, stop, plain) VALUES(?, ?, ?, ?, ?)');
   db.exec('BEGIN');
   try {
     run('DELETE FROM dialogues WHERE item_id = ?', item.id);
-    for (const r of rows) ins.run(r.text, item.id, Math.round(r.start * 10) / 10, Math.round(r.stop * 10) / 10);
+    for (const r of rows) ins.run(r.text, item.id, Math.round(r.start * 10) / 10, Math.round(r.stop * 10) / 10, plain(r.text));
     run('INSERT INTO dialogue_index(item_id, mtime, sub_id, lang, n, indexed_at) VALUES(?, ?, ?, ?, ?, ?) ON CONFLICT(item_id) DO UPDATE SET mtime = excluded.mtime, sub_id = excluded.sub_id, lang = excluded.lang, n = excluded.n, indexed_at = excluded.indexed_at', item.id, item.mtime, sub.id, sub.lang || null, rows.length, Date.now());
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
@@ -70,13 +76,13 @@ export const dialogueStats = () => ({ items: (get('SELECT COUNT(*) n FROM dialog
 
 /** Recherche : une requête libre → répliques classées, 3 au plus par titre */
 export function searchDialogues(q, { limit = 30 } = {}) {
-  const words = String(q || '').normalize('NFC').match(/[\p{L}\p{N}']+/gu) || [];
+  const words = plain(q).match(/[\p{L}\p{N}]+/gu) || [];
   if (!words.length || words.join('').length < 3) return [];
-  // Expression FTS : chaque mot entre guillemets (ponctuation sans danger), le dernier en préfixe
-  const expr = words.map((w, i) => `"${w.replace(/"/g, '')}"${i === words.length - 1 && w.length >= 3 ? '*' : ''}`).join(' ');
+  // Requête plein texte : tous les mots, le dernier en préfixe ; mots réduits aux lettres et chiffres (sans danger)
+  const expr = words.map((w, i) => `${w}${i === words.length - 1 && w.length >= 3 ? ':*' : ''}`).join(' & ');
   let rows;
   try {
-    rows = all(`SELECT item_id AS itemId, start, stop, text, bm25(dialogues) AS rank FROM dialogues WHERE dialogues MATCH ? ORDER BY rank LIMIT ?`, expr, limit * 4);
+    rows = all(`SELECT item_id AS "itemId", start, stop, text, ts_rank(tsv, to_tsquery('simple', ?)) AS rank FROM dialogues WHERE tsv @@ to_tsquery('simple', ?) ORDER BY rank DESC LIMIT ?`, expr, expr, limit * 4);
   } catch { return []; }
   const per = new Map(), out = [];
   for (const r of rows) {

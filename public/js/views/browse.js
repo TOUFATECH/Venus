@@ -310,6 +310,7 @@ export async function renderWishes(page, tabs) {
   const intro = h('p', { class: 'list-hint' }, !d.seerr
     ? 'Vos favoris pris dans « À venir » (Films, Séries, Animés, bouton ♡) : ils sont envoyés à Radarr ou Sonarr et téléchargés dès leur sortie.'
     : d.kids ? 'Vos envies sont visibles par les adultes de la maison, qui décident du téléchargement.'
+      : d.native && d.auto ? 'Chaque envie est cherchée par Venus dans vos sources, en VF de préférence, téléchargée puis rangée. Les nouveaux épisodes et les meilleures versions arrivent tout seuls.'
       : d.auto ? 'Chaque envie est demandée à Seerr tout de suite : le téléchargement démarre dès que le titre sort. Une fois arrivé, il passe dans « Dans Venus ».'
         : 'Les demandes automatiques sont désactivées : un administrateur peut les activer dans Réglages, Seerr.');
   const paint = () => {
