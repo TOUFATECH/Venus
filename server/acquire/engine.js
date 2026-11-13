@@ -13,9 +13,9 @@ import crypto from 'node:crypto';
 import { db, all, get, run, getSetting, setSetting } from '../db.js';
 import { config } from '../config.js';
 import { best, libraryName, parseRelease, DEFAULT_PROFILE } from './release.js';
-import { searchAll, client as externalClient } from './sources.js';
+import { client as externalClient } from './sources.js';
+import { bygulSearch, countGrab, sourcesHealth } from './bygul.js';
 
-db.exec(`CREATE TABLE IF NOT EXISTS media_sources (id INTEGER PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, url TEXT NOT NULL, key TEXT, enabled INTEGER DEFAULT 1, added_at INTEGER)`);
 db.exec(`CREATE TABLE IF NOT EXISTS media_wants (
   id INTEGER PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, original TEXT, year INTEGER, season INTEGER, episode INTEGER,
   tmdb_id INTEGER, show_key TEXT, artist TEXT, author TEXT, anime INTEGER DEFAULT 0, release_date TEXT, profile_id INTEGER,
@@ -37,8 +37,7 @@ export function saveAcquire(b) {
   if (b.keepSeeding !== undefined) setSetting('acquire_seed', b.keepSeeding ? '1' : '0');
   if (b.client !== undefined) setSetting('acquire_client', b.client);
 }
-const sources = () => all('SELECT * FROM media_sources WHERE enabled = 1 ORDER BY id').map((s) => ({ ...s, enabled: !!s.enabled }));
-export const listSources = () => all('SELECT id, name, kind, url, enabled, added_at FROM media_sources ORDER BY id').map((s) => ({ ...s, enabled: !!s.enabled, keySet: true }));
+export const listSources = () => sourcesHealth();
 export function addSource({ name, kind, url, key }) {
   const u = String(url || '').trim().replace(/\/+$/, '');
   if (!/^https?:\/\/[^\s/]+(:\d+)?(\/[^\s]*)?$/i.test(u)) throw new Error('Adresse invalide (ex. http://192.168.1.20:9117/api/v2.0/indexers/x/results/torznab)');
@@ -98,12 +97,12 @@ export async function followShow(s, deps = defaultDeps) {
 const nextDelay = (w) => { const age = Date.now() - (w.added_at || Date.now()); return age < 864e5 ? 3600e3 : age < 7 * 864e5 ? 6 * 3600e3 : 24 * 3600e3; };
 /** Cherche une envie dans les sources ; prend la meilleure version (ou une meilleure que celle qu'on a). */
 export async function searchWant(w, deps = defaultDeps) {
-  const conf = acquireConf(), src = deps.sources();
-  if (!src.length) return { ok: false, why: 'aucune source : ajoute une source dans Réglages → Médias automatiques' };
+  const conf = acquireConf();
+  if (!deps.hasSources()) return { ok: false, why: 'aucune source : ajoute une source dans Bygul (Réglages → Médias automatiques)' };
   const want = { kind: w.kind, title: w.title, original: w.original, year: w.year, season: w.season, episode: w.episode, artist: w.artist, author: w.author };
   const queries = [want, ...(w.original && w.original !== w.title ? [{ ...want, searchTitle: w.original }] : [])];
   let results = [], errors = [];
-  for (const q of queries) { const r = await searchAll(src, q, deps.fetch); results = results.concat(r.results); errors = errors.concat(r.errors); }
+  for (const q of queries) { const r = await deps.search(q); results = results.concat(r.results); errors = errors.concat(r.errors); }
   const seen = new Set(); results = results.filter((r) => { const k = r.infohash || r.link; if (seen.has(k)) return false; seen.add(k); return true; });
   const deja = w.status === 'range' ? (w.score ?? 0) : null;
   const b = best(want, results, conf.profil, deja, w.tried || []);
@@ -120,6 +119,7 @@ async function grab(w, pick, deps) {
   const tag = `venus-${w.id}-${crypto.randomBytes(3).toString('hex')}`;
   const engine = deps.engine();
   const id = await engine.add(pick.r, tag, deps.downloadDir(w));
+  countGrab(pick.r.sourceId);
   const g = { at: Date.now(), engine: engine.name, id: id || pick.r.infohash || null, tag, title: pick.r.title, link: pick.r.link, score: pick.score, cible: pick.cible, indexer: pick.r.indexer, upgrade: w.status === 'range' };
   run('UPDATE media_wants SET status = ?, progress = 0, grab = ?, note = NULL WHERE id = ?', 'telechargement', JSON.stringify(g), w.id);
   // Une saison complète choisie pour un épisode : les autres épisodes voulus de cette saison la suivent
@@ -206,7 +206,8 @@ export async function searchDue(deps = defaultDeps, limit = 15) {
 // ---------------------------------------------------------------- dépendances réelles (remplaçables dans les tests)
 export const defaultDeps = {
   fetch: (...a) => fetch(...a),
-  sources,
+  hasSources: () => !!get('SELECT 1 FROM media_sources WHERE enabled = 1 LIMIT 1'),
+  search: (want) => bygulSearch(want),
   tmdb: async (p) => (await import('../metadata.js')).tmdb(p),
   episodesInLibrary: (tmdbId) => new Set(all("SELECT e.season_num s, e.episode_num e FROM items e JOIN items s ON s.id = e.show_id WHERE s.tmdb_id = ? AND e.type = 'episode'", tmdbId).map((r) => `${r.s}:${r.e}`)),
   engine: () => {
@@ -245,4 +246,13 @@ export function wishState(type, tmdbId) {
   if (l.some((w) => w.status === 'range')) return { state: 'partial' };
   if (l.some((w) => w.status === 'erreur')) return { state: 'error', error: l.find((w) => w.status === 'erreur').note };
   return { state: 'processing' };
+}
+
+/** Téléchargement choisi à la main dans Bygul : une envie est créée (ou reprise) puis le résultat est téléchargé. */
+export async function grabManual(b, deps = defaultDeps) {
+  const want = { kind: b.kind, title: b.name || b.title, year: b.year, season: b.season, episode: b.episode };
+  const id = addWant({ ...want, showKey: b.kind === 'episode' ? `manuel:${(b.name || b.title).toLowerCase()}` : undefined });
+  const w = wantById(id);
+  await grab(w, { r: { title: b.title, link: b.link, sourceId: b.sourceId, infohash: /btih:([a-f0-9]{40})/i.exec(b.link)?.[1]?.toLowerCase() }, score: 0, cible: false, p: parseRelease(b.title) }, deps);
+  return { ok: true, id };
 }

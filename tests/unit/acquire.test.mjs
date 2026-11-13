@@ -30,7 +30,8 @@ function world(results) {
   const deps = {
     ...E.defaultDeps,
     fetch: async (u) => { const q = new URL(u); const key = `${q.searchParams.get('t')}|${q.searchParams.get('q')}|${q.searchParams.get('season') ?? ''}|${q.searchParams.get('ep') ?? ''}`; return new Response(feed(results(key, q) ?? []), { status: 200 }); },
-    sources: () => [{ name: 'Essai', kind: 'torznab', url: 'http://source.test/api', key: 'k', enabled: true }],
+    hasSources: () => true,
+    search: async (want) => { const { searchAll } = await import('../../server/acquire/sources.js'); return searchAll([{ name: 'Essai', kind: 'torznab', url: 'http://source.test/api', key: 'k', enabled: true }], want, deps.fetch); },
     tmdb: async (p) => (p === '/tv/77' ? { name: 'Brigade Nord', seasons: [{ season_number: 1 }] } : { episodes: [{ episode_number: 1, air_date: '2025-01-01' }, { episode_number: 2, air_date: '2025-01-08' }, { episode_number: 3, air_date: '2099-01-01' }] }),
     episodesInLibrary: () => new Set(['1:1']),
     engine: () => ({ name: 'faux', add: async (rel, tag) => { added.push({ rel, tag }); state.set(rel.infohash, { id: rel.infohash, tags: [tag], name: rel.title, progress: 30, done: false, failed: false, path: files.get(rel.infohash) }); return rel.infohash; }, list: async () => [...state.values()], remove: async () => {} }),

@@ -1,5 +1,6 @@
 // Routes de l'API
-import { acquireOn, acquireConf, saveAcquire, listSources, addSource, removeSource, wantsList, wantById, removeWant, searchWant, recentLog, wishState } from './acquire/engine.js';
+import { acquireOn, acquireConf, saveAcquire, listSources, addSource, removeSource, wantsList, wantById, removeWant, searchWant, recentLog, wishState, grabManual } from './acquire/engine.js';
+import { setSource, testSource, manualSearch } from './acquire/bygul.js';
 import { writeDump } from './db-copy.js';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
@@ -3694,6 +3695,28 @@ router.post('/api/admin/acquire/sources', async (ctx) => {
   sendJson(ctx.res, { ok: true, id });
 });
 router.del('/api/admin/acquire/sources/:id', (ctx) => { requireAdmin(ctx); removeSource(Number(ctx.params.id)); sendJson(ctx.res, { ok: true }); });
+// Bygul : réglage d'une source (activer, priorité, types), test, recherche à la main, téléchargement d'un résultat
+router.put('/api/admin/acquire/sources/:id', async (ctx) => {
+  requireAdmin(ctx);
+  const b = await readBody(ctx.req);
+  try { setSource(Number(ctx.params.id), { enabled: typeof b.enabled === 'boolean' ? b.enabled : undefined, priority: b.priority, kinds: Array.isArray(b.kinds) ? b.kinds : undefined, name: b.name }); } catch (e) { throw new HttpError(404, e.message); }
+  sendJson(ctx.res, { ok: true });
+});
+router.post('/api/admin/acquire/sources/:id/test', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, await testSource(Number(ctx.params.id))); });
+router.get('/api/admin/acquire/search', async (ctx) => {
+  requireAdmin(ctx);
+  const q = ctx.url.searchParams;
+  try { sendJson(ctx.res, await manualSearch({ q: q.get('q'), kind: ['movie', 'episode', 'album', 'book', 'audiobook'].includes(q.get('kind')) ? q.get('kind') : 'movie', year: q.get('year'), season: q.get('season'), episode: q.get('episode') }, acquireConf().profil)); }
+  catch (e) { throw new HttpError(400, e.message); }
+});
+router.post('/api/admin/acquire/grab', async (ctx) => {
+  const me = requireAdmin(ctx);
+  const b = validate(await readBody(ctx.req), { link: V.str({ max: 4000 }), title: V.str({ max: 500 }), sourceId: V.int({ min: 1, max: 1e9 }), kind: V.oneOf(['movie', 'episode', 'album', 'book', 'audiobook']), name: V.str({ max: 300 }), year: V.int({ min: 1880, max: 2200 }), season: V.int({ min: 0, max: 200 }), episode: V.int({ min: 0, max: 5000 }) }, { required: ['link', 'title', 'kind'] });
+  if (!/^(magnet:\?|https?:\/\/)/i.test(b.link)) throw new HttpError(400, 'Lien de téléchargement invalide');
+  let r; try { r = await grabManual(b); } catch (e) { throw new HttpError(400, e.message); }
+  logActivity('settings', `${me.name} a lancé le téléchargement de « ${b.title} »`);
+  sendJson(ctx.res, r);
+});
 router.post('/api/admin/acquire/wants/:id/search', async (ctx) => {
   requireAdmin(ctx);
   const w = wantById(Number(ctx.params.id)); if (!w) throw new HttpError(404, 'Envie introuvable');
