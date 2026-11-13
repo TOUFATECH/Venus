@@ -33,7 +33,7 @@ export const acquireConf = () => ({
   on: String(getSetting('acquire_on', '0')) === '1', client: getSetting('acquire_client', null),
   profil: { ...DEFAULT_PROFILE, ...(getSetting('acquire_profile', {}) || {}) },
   categories: cleanCategories(getSetting('acquire_categories', {}) || {}),
-  lots: { ...LOTS, ...(getSetting('acquire_lots', {}) || {}) },
+  lots: { ...LOTS, ...(getSetting('acquire_lots', {}) || {}), parMinute: Number(getSetting('bygul_rpm', 10)) || 10 },
   roots: getSetting('acquire_roots', {}) || {}, upgrade: String(getSetting('acquire_upgrade', '1')) !== '0', keepSeeding: String(getSetting('acquire_seed', '1')) !== '0',
 });
 /** Les filtres de chaque catégorie tels qu'appliqués (départ + réglages). */
@@ -56,6 +56,8 @@ export function saveAcquire(b) {
   if (b.lots) {
     const n = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Math.round(Number(v)))) : d), cur = acquireConf().lots;
     setSetting('acquire_lots', { taille: n(b.lots.taille, 1, 100, cur.taille), pauseS: n(b.lots.pauseS, 0, 120, cur.pauseS), ameliorations: n(b.lots.ameliorations, 0, 50, cur.ameliorations) });
+    // Limite par défaut de chaque source (recherches par minute), la source peut avoir la sienne
+    if (b.lots.parMinute !== undefined) setSetting('bygul_rpm', n(b.lots.parMinute, 1, 120, 10));
   }
 }
 export const listSources = () => sourcesHealth();

@@ -136,7 +136,7 @@ test('fichier exécutable dans un téléchargement : rien n’est rangé, le té
 
 test('par lots : taille du lot et pause entre deux recherches ; retirer annule les téléchargements', async () => {
   const W = world((k) => { const n = /^movie\|Lot (\w)/.exec(k)?.[1]; return n ? [{ t: `Lot.${n}.2020.MULTi.1080p.WEB`, l: `magnet:?xt=urn:btih:${n.repeat(40)}`, h: n.repeat(40) }] : []; });
-  E.saveAcquire({ lots: { taille: 3, pauseS: 2 } });
+  E.saveAcquire({ lots: { taille: 3, pauseS: 2, parMinute: 4 } }); assert.equal(E.acquireConf().lots.parMinute, 4);
   for (const n of ['a', 'b', 'c', 'd', 'e']) E.addWant({ kind: 'movie', title: `Lot ${n}`, year: 2020, tmdbId: 9400 + n.charCodeAt(0) });
   const s1 = await E.searchDue(W.deps);
   assert.equal(s1.length, 3, 'lot de 3'); assert.deepEqual(W.slept, [2000, 2000], 'pause de 2 s entre deux recherches');
@@ -146,7 +146,7 @@ test('par lots : taille du lot et pause entre deux recherches ; retirer annule l
   assert.deepEqual(r, { cancelled: 1, downloads: 1 }); assert.deepEqual(W.removed[0], { id: 'a'.repeat(40), files: true });
   assert.equal(E.wantsList('show_key = ?', `movie:${9400 + 97}`).length, 0);
   for (const n of ['b', 'c', 'd', 'e']) await E.cancelFor(`movie:${9400 + n.charCodeAt(0)}`, W.deps);
-  E.saveAcquire({ lots: { taille: 10, pauseS: 4 } });
+  E.saveAcquire({ lots: { taille: 10, pauseS: 4, parMinute: 10 } });
 });
 
 test('Bygul : au plus N recherches par minute et par source', async () => {
