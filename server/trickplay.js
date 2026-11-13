@@ -1,4 +1,4 @@
-// Vignettes d'aperçu de la barre de progression (« trickplay », comme Jellyfin et Netflix) :
+// Vignettes d'aperçu de la barre de progression (« trickplay ») :
 // une image toutes les 10 secondes, rangées par planches de 10 × 10 en JPEG.
 // ffmpeg ne décode que les images clés (-skip_frame nokey) : quelques dizaines de secondes par film, sans carte graphique.
 import { execFile } from 'node:child_process';

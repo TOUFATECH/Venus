@@ -1,7 +1,7 @@
 // Génériques (opening / ending) : où commencent et finissent-ils dans chaque épisode ?
 //
 // 1. Chapitres du fichier (fréquents dans les animés : « Opening », « OP », « Ending », « Générique »…)
-// 2. Empreinte audio (chromaprint, comme Plex et Jellyfin) : le générique est la même musique d'un
+// 2. Empreinte audio (chromaprint) : le générique est la même musique d'un
 //    épisode à l'autre. On compare le début (et la fin) de deux épisodes d'une même saison et on
 //    cherche le plus long passage identique.
 //

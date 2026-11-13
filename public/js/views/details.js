@@ -314,7 +314,7 @@ export async function render(main, { id, query }) {
     try { remembered = d.seasons.find((s) => String(s.id) === sessionStorage.getItem(memoKey)); } catch { /* */ }
     const fromPlayer = wantEp && d.seasons.find((s) => s.episodes.some((e) => e.id === wantEp));
     const startSeason = fromPlayer || remembered || d.seasons.find((s) => d.nextUp && s.episodes.some((e) => e.id === d.nextUp.id)) || d.seasons[0];
-    // « À suivre » (comme Jellyfin) : l'image lance l'épisode, son nom mène à l'épisode dans sa saison
+    // « À suivre » : l'image lance l'épisode, son nom mène à l'épisode dans sa saison
     const nu = d.nextUp && !showDone ? d.nextUp : null;
     if (nu) {
       const nuSeason = d.seasons.find((s) => s.episodes.some((e) => e.id === nu.id));

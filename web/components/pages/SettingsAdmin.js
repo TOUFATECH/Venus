@@ -563,7 +563,7 @@ function ArrOne({ app, conf, name, port, reload }) {
   );
 }
 
-// ---------------------------------------------------------------- Seerr (Overseerr / Jellyseerr)
+// ---------------------------------------------------------------- Seerr
 export function SeerrBox({ a, refresh }) {
   const S = a.settings;
   const [how, setHow] = useState('account');
@@ -591,7 +591,7 @@ export function SeerrBox({ a, refresh }) {
       <h2>Seerr : téléchargements automatiques</h2>
       <p>{S.seerrConfigured
         ? 'Seerr est relié. Les titres ajoutés à « Mes envies » (♡ dans Nouveautés) sont demandés tout de suite, même s’ils ne sortent que dans plusieurs mois, et les nouvelles saisons des séries suivies sont demandées dès qu’elles sont annoncées.'
-        : 'Reliez Seerr (Overseerr ou Jellyseerr) : vos envies et les nouvelles saisons de vos séries seront demandées automatiquement, et Radarr / Sonarr les téléchargeront. Le plus simple : se connecter avec un compte administrateur de Seerr, Venus récupère la clé tout seul.'}</p>
+        : 'Reliez Seerr : vos envies et les nouvelles saisons de vos séries seront demandées automatiquement, et Radarr / Sonarr les téléchargeront. Le plus simple : se connecter avec un compte administrateur de Seerr, Venus récupère la clé tout seul.'}</p>
       {S.seerrConfigured ? <div className="auto-pill" style={{ marginBottom: 12 }}><span className="dot" />{`Relié à ${S.seerrUrl}`}</div> : null}
       <form ref={f} onSubmit={connect}>
         <Field label="Adresse de Seerr"><input className="input" name="url" id="seerr-url" placeholder="http://192.168.1.20:5055" defaultValue={S.seerrUrl || ''} inputMode="url" autoComplete="off" /></Field>
@@ -740,7 +740,7 @@ export function PostersBox({ a }) {
   return (
     <section className="box" id="affiches">
       <h2>Affiches</h2>
-      <p>Les affiches viennent de TMDB (avec une clé), ou sans clé d’IMDb, de Cinemeta (Stremio), de Trakt (si un Client ID est renseigné), du site de TMDB, d’IMP Awards, de Wikipédia, d’iTunes, de TVmaze et d’OMDb. Pour un titre précis, vous pouvez choisir parmi plusieurs propositions ou coller l’adresse d’une image trouvée sur n’importe quel site.</p>
+      <p>Les affiches viennent de TMDB (avec une clé), ou sans clé d’IMDb, de Cinemeta, de Trakt (si un Client ID est renseigné), du site de TMDB, d’IMP Awards, de Wikipédia, d’iTunes, de TVmaze et d’OMDb. Pour un titre précis, vous pouvez choisir parmi plusieurs propositions ou coller l’adresse d’une image trouvée sur n’importe quel site.</p>
       <SetSwitch label="Chercher les affiches sur les services gratuits (sans clé)" k="postersFree" checked={a.settings.postersFree !== false} msg={(on) => (on ? 'Recherche gratuite activée' : 'Recherche gratuite désactivée')} />
       <p>{r ? (r.missing.length ? `${r.missing.length} titre${r.missing.length > 1 ? 's' : ''} sans affiche sur ${r.total}.` : `Tous vos ${r.total} titres ont une affiche.`) : ''}</p>
       <div className="poster-missing">

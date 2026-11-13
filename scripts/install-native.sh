@@ -98,7 +98,7 @@ ok "Node.js $("$NODE_BIN" -v) ($NODE_BIN)"
 # ------------------------------------------------------------------ ffmpeg + partages réseau
 FFMPEG=""
 if [ "$PM" = apt-get ] && [ ! -x /usr/lib/jellyfin-ffmpeg/ffmpeg ]; then
-  # ffmpeg de Jellyfin : pilotes Intel / AMD / NVIDIA et tone-mapping HDR inclus
+  # ffmpeg optimisé (dépôt APT tiers signé) : pilotes Intel / AMD / NVIDIA et tone-mapping HDR inclus
   . /etc/os-release
   case "${ID:-}:${ID_LIKE:-}" in
     *ubuntu*) JREPO=ubuntu ;; *) JREPO=debian ;;

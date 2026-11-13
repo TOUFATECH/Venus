@@ -10,7 +10,7 @@ function findFfmpeg(name) {
   if (explicit) return explicit;
   const exe = process.platform === 'win32' ? `${name}.exe` : name;
   const candidates = [
-    // jellyfin-ffmpeg (Docker / Linux) embarque tous les pilotes d'accélération matérielle
+    // ffmpeg optimisé installé par l'image Docker / l'installateur Linux : embarque tous les pilotes d'accélération matérielle
     `/usr/lib/jellyfin-ffmpeg/${name}`,
     // macOS : Homebrew (puces Apple puis Intel)
     '/opt/homebrew/bin/' + name, '/usr/local/bin/' + name,
@@ -22,7 +22,6 @@ function findFfmpeg(name) {
       path.join(env.ProgramData || 'C:\\ProgramData', 'Venus', 'ffmpeg', 'bin', exe),
       path.join(local, 'Microsoft', 'WinGet', 'Links', exe),
       path.join(pf, 'ffmpeg', 'bin', exe),
-      path.join(pf, 'Jellyfin', 'Server', exe),
     );
   }
   for (const c of candidates) { try { if (c && fs.statSync(c).isFile()) return c; } catch { /* absent */ } }

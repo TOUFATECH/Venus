@@ -1906,7 +1906,7 @@ router.put('/api/admin/iptv-org', async (ctx) => {
   sendJson(ctx.res, { ok: true, lists });
 });
 
-// ---------------------------------------------------------------- import depuis Plex / Jellyfin / Emby
+// ---------------------------------------------------------------- import de l'historique depuis un autre serveur multimédia
 router.post('/api/admin/import/check', async (ctx) => {
   requireAdmin(ctx);
   const b = await readBody(ctx.req, 4096);
@@ -1967,7 +1967,7 @@ router.post('/api/channels/:id/favorite', async (ctx) => {
   setSetting(`tv_favs:${p.id}`, list.slice(-500));
   sendJson(ctx.res, { ok: true, fav: b.on !== false, ids: list });
 });
-// Les favoris en liste M3U (VLC, Kodi, une autre application IPTV…)
+// Les favoris en liste M3U (VLC ou une autre application IPTV…)
 const m3uEsc = (s) => String(s || '').replace(/[\r\n"]/g, ' ').trim();
 router.get('/api/channels/favorites.m3u', (ctx) => {
   const p = requireProfile(ctx);
@@ -2727,7 +2727,7 @@ router.post('/api/admin/ratings/refresh', (ctx) => {
   sendJson(ctx.res, { queued: refreshRatings({ force: true }) });
 });
 
-// ------------------------------------------------------------------ modifier les infos d'un titre (comme Jellyfin)
+// ------------------------------------------------------------------ modifier les infos d'un titre
 const EDIT_SCHEMA = {
   title: V.str({ min: 1, max: 200, label: 'Titre' }), originalTitle: V.nullable(V.str({ max: 200 })), year: V.nullable(V.int({ min: 1880, max: 2200, label: 'Année' })),
   overview: V.nullable(V.str({ max: 5000, trim: false })), tagline: V.nullable(V.str({ max: 300 })), genres: V.list(V.str({ min: 1, max: 40 }), { max: 12 }),
@@ -3163,7 +3163,7 @@ router.post('/api/admin/match/:id', async (ctx) => {
   sendJson(ctx.res, { ok: true });
 });
 
-// ------------------------------------------------------------------ collections et listes de lecture (comme Jellyfin)
+// ------------------------------------------------------------------ collections et listes de lecture
 // Sagas : regroupées automatiquement d'après TMDB (Harry Potter, Star Wars…). Collections : faites à la main par
 // l'administrateur, visibles par tous. Listes de lecture : propres à chaque profil, dans l'ordre choisi, lues à la suite.
 function sagas(p) {
@@ -3310,7 +3310,7 @@ router.post('/api/playlists/:id/items', async (ctx) => {
   sendJson(ctx.res, { ok: true, added: addToPlaylist(pl.id, ids), name: pl.name });
 });
 
-// ------------------------------------------------------------------ administration avancée (comme Jellyfin)
+// ------------------------------------------------------------------ administration avancée
 // Tâches planifiées
 router.get('/api/admin/tasks', (ctx) => { requireAdmin(ctx); sendJson(ctx.res, listTasks()); });
 router.post('/api/admin/tasks/:id/run', (ctx) => {

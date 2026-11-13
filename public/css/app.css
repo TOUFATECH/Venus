@@ -2351,7 +2351,7 @@ html:not(.touch) .btn-del:hover { background: rgb(255 77 79 / .22); color: #ff8a
 .pw-text { color: var(--haze); font-size: .8rem; }
 
 /* =====================================================================
-   Thème « Verre » (inspiré de Free My TV, licence MIT) : verre dépoli, coins arrondis,
+   Thème « Verre » : verre dépoli, coins arrondis,
    boutons ronds, clair le jour et sombre la nuit (au lever et au coucher du soleil)
    ===================================================================== */
 html[data-glass] {
@@ -2386,7 +2386,7 @@ html[data-glass] .sheet { background: var(--glass-solid); }
   html[data-glass] main.with-nav { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
 }
 
-/* Boutons en pilule, icônes rondes ; le bouton choisi devient blanc (comme Free My TV) */
+/* Boutons en pilule, icônes rondes ; le bouton choisi devient blanc */
 html[data-glass] .btn, html[data-glass] .chip, html[data-glass] .seg, html[data-glass] .seg-b { border-radius: 999px; }
 html[data-glass] .btn-ghost, html[data-glass] .chip { background: var(--glass); box-shadow: var(--glass-line); border-color: transparent; -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); }
 html[data-glass] .btn-play { background: #fff; color: #1d1d1f; box-shadow: 0 8px 26px rgba(0, 0, 0, .22); }

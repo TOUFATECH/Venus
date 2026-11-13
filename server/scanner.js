@@ -15,7 +15,7 @@ import { scanMediaLibrary } from './media.js';
 
 const VIDEO_EXT = new Set(['.mkv', '.mp4', '.m4v', '.avi', '.mov', '.webm', '.ts', '.m2ts', '.mts', '.wmv', '.flv', '.mpg', '.mpeg', '.vob', '.ogv', '.3gp']);
 const SKIP_DIR = /^(\.|@eaDir$|#recycle$|\$RECYCLE|System Volume Information$|lost\+found$|samples?$)/i;
-// Bonus (noms de dossiers et suffixes de fichiers reconnus par Jellyfin, Plex et Kodi)
+// Bonus (noms de dossiers et suffixes de fichiers les plus répandus)
 const EXTRA_DIRS = { extras: 'extra', extra: 'extra', bonus: 'extra', featurettes: 'featurette', featurette: 'featurette', 'behind the scenes': 'behindthescenes',
   'deleted scenes': 'deleted', interviews: 'interview', interview: 'interview', scenes: 'scene', shorts: 'short', trailers: 'trailer', trailer: 'trailer', others: 'extra', other: 'extra' };
 const EXTRA_SUFFIX = /-(trailer|teaser|featurette|behindthescenes|deleted|deletedscene|interview|scene|short|other|extra)$/i;

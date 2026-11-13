@@ -1,4 +1,4 @@
-// Fichiers .nfo (Kodi, Jellyfin, Emby, tinyMediaManager) : identifiants TMDB / IMDb, titre, année, résumé, genres.
+// Fichiers .nfo (format standard des gestionnaires de médiathèque) : identifiants TMDB / IMDb, titre, année, résumé, genres.
 // L'identifiant donne une identification exacte ; le reste sert quand il n'y a pas de clé TMDB.
 import fs from 'node:fs';
 import path from 'node:path';

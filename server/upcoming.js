@@ -293,7 +293,7 @@ export async function upcomingMovies(profile) {
         poster: x.poster_path ? `${TMDB_IMG}/w342${x.poster_path}` : null, overview: x.overview, arr: known.movies.has(x.id), pop: x.popularity || 0 });
     }
   }
-  // Sans Radarr ni clé TMDB : Trakt (si son identifiant client est renseigné), puis Cinemeta (Stremio, sans clé)
+  // Sans Radarr ni clé TMDB : Trakt (si son identifiant client est renseigné), puis Cinemeta (sans clé)
   if (out.size < 12 && traktId()) {
     const fx = (d) => iso(d);
     const cal = await safe(() => cached(`trakt:cal:${iso(now)}`, 6 * 3600e3, () => traktGet(`/calendars/all/movies/${fx(now - 7 * DAY)}/33`, { extended: 'full,images' })), []);
@@ -312,7 +312,7 @@ export async function upcomingMovies(profile) {
   return finish(profile, entries, 'movie');
 }
 
-// Films annoncés, d'après Cinemeta (catalogue public de Stremio, sans clé) : films de cette année et de la
+// Films annoncés, d'après Cinemeta (catalogue public, sans clé) : films de cette année et de la
 // suivante, classés par popularité ; la date de sortie vient de leur fiche (gardée 24 h)
 async function cinemetaUpcoming(from, to) {
   const years = [...new Set([new Date(from).getUTCFullYear(), new Date().getUTCFullYear(), new Date(to).getUTCFullYear()])];

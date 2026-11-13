@@ -8,7 +8,7 @@ Venus est pensé pour la maison, mais il est souvent ouvert sur Internet. Voici 
 2. **Code PIN pour chaque administrateur** (obligatoire depuis cette version) : Réglages → Profils.
 3. **Mot de passe du foyer solide** : 10 caractères au moins, en mélangeant lettres et chiffres (ou symboles), et pas un mot de passe courant.
 4. **Double authentification par e-mail** : renseignez un serveur d'e-mails (Gmail : `smtp.gmail.com`, port 465, mot de passe d'application), envoyez l'e-mail de test, puis activez-la. Un code à 6 chiffres est alors demandé à chaque nouvel appareil.
-5. **Accès depuis Internet : passez par HTTPS** (Caddy, voir README), jamais par une simple redirection du port 8096.
+5. **Accès depuis Internet : passez par HTTPS** (Caddy, Nginx ou tunnel : voir [docs/deploiement.md](docs/deploiement.md)), jamais par une simple redirection du port 8096.
 
 ## Ce qui est en place
 
@@ -43,7 +43,7 @@ Venus est pensé pour la maison, mais il est souvent ouvert sur Internet. Voici 
 
 ## HTTPS
 
-- **Recommandé depuis Internet** : Caddy (certificat Let's Encrypt automatique), voir README.
+- **Recommandé depuis Internet** : Caddy (certificat Let's Encrypt automatique), voir [docs/deploiement.md](docs/deploiement.md).
 - **Intégré** : port 8920, certificat auto-signé dans `/config/tls` (renouvelé seul). Votre propre certificat : `TLS_CERT=/config/cert.pem` et `TLS_KEY=/config/key.pem`.
 - **Obligation** : `FORCE_HTTPS=remote` (défaut : redirection hors du réseau local), `all` ou `off`. Réglable aussi dans Tableau de bord → Sécurité.
 - Derrière un proxy installé sur une autre machine du réseau : `TRUST_PROXY=1`.

@@ -1,4 +1,4 @@
-// Clés API (comme Jellyfin) : pour des scripts ou des applications (Home Assistant, scripts de
+// Clés API : pour des scripts ou des applications (Home Assistant, scripts de
 // téléchargement…). Envoyées dans l'en-tête « X-Api-Key ». Une clé agit comme l'administrateur
 // principal ; seule son empreinte est gardée, la clé n'est montrée qu'une fois à sa création.
 import crypto from 'node:crypto';

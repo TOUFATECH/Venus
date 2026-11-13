@@ -1,4 +1,4 @@
-// Administration du serveur (comme Jellyfin) : tâches planifiées, journal du serveur, clés API, webhooks, personnalisation
+// Administration du serveur : tâches planifiées, journal du serveur, clés API, webhooks, personnalisation
 import { api } from '../api.js';
 import { h, icon, toast, sheet, confirmSheet } from '../ui.js';
 import { go, state, setTitle } from '../core.js';

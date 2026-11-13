@@ -1,4 +1,4 @@
-// Enregistrements de la TV en direct (DVR), comme Jellyfin : un programme du guide, une émission à
+// Enregistrements de la TV en direct (DVR) : un programme du guide, une émission à
 // chaque diffusion (« série »), ou un créneau libre. ffmpeg copie le flux tel quel (pas de conversion),
 // avec une marge avant et après. Les fichiers vont dans le dossier des enregistrements et apparaissent
 // dans TV → Enregistrements, lisibles comme n'importe quelle vidéo.

@@ -1,4 +1,4 @@
-// Guide des programmes (EPG) au format XMLTV, comme Jellyfin : adresse trouvée dans la liste M3U
+// Guide des programmes (EPG) au format XMLTV : adresse trouvée dans la liste M3U
 // (url-tvg / x-tvg-url), fournie par l'abonnement Xtream, ou ajoutée à la main dans les réglages.
 // Le fichier (souvent gros, parfois compressé en .gz) est lu au fil de l'eau : seules les chaînes
 // présentes dans Venus et les 3 prochains jours sont gardés.

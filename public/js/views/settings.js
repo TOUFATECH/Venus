@@ -521,7 +521,7 @@ export async function render(main, { query } = {}) {
       h('button', { class: 'btn btn-small btn-ghost f', onclick: async () => { const r = await api('/api/admin/ratings/refresh', { method: 'POST' }); toast(`${r.queued} titre(s) en cours de mise à jour`); } }, 'Mettre à jour toutes les notes'));
   }
 
-  // Seerr (Overseerr / Jellyseerr) : demander un titre depuis Nouveautés, Radarr / Sonarr le téléchargent
+  // Seerr : demander un titre depuis Nouveautés, Radarr / Sonarr le téléchargent
   // Radarr (films) et Sonarr (séries, animés) : ce qu'on demande dans l'onglet « Nouveau » s'y ajoute tout seul
   function arrBox() {
     const box = h('section', { class: 'box', id: 'arr' },
@@ -593,7 +593,7 @@ export async function render(main, { query } = {}) {
       h('h2', {}, 'Seerr : téléchargements automatiques'),
       h('p', {}, a.settings.seerrConfigured
         ? 'Seerr est relié. Les titres ajoutés à « Mes envies » (♡ dans Nouveautés) sont demandés tout de suite, même s’ils ne sortent que dans plusieurs mois, et les nouvelles saisons des séries suivies sont demandées dès qu’elles sont annoncées.'
-        : 'Reliez Seerr (Overseerr ou Jellyseerr) : vos envies et les nouvelles saisons de vos séries seront demandées automatiquement, et Radarr / Sonarr les téléchargeront. Le plus simple : se connecter avec un compte administrateur de Seerr, Venus récupère la clé tout seul.'),
+        : 'Reliez Seerr : vos envies et les nouvelles saisons de vos séries seront demandées automatiquement, et Radarr / Sonarr les téléchargeront. Le plus simple : se connecter avec un compte administrateur de Seerr, Venus récupère la clé tout seul.'),
       a.settings.seerrConfigured ? h('div', { class: 'auto-pill', style: { marginBottom: '12px' } }, h('span', { class: 'dot' }), `Relié à ${a.settings.seerrUrl}`) : null,
       field('Adresse de Seerr', url), tabs, accountFields, keyFields, err,
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start' } }, connect,
@@ -706,7 +706,7 @@ export async function render(main, { query } = {}) {
     } }, icon('refresh'), 'Revérifier les affiches automatiques');
     return h('section', { class: 'box', id: 'affiches' },
       h('h2', {}, 'Affiches'),
-      h('p', {}, 'Les affiches viennent de TMDB (avec une clé), ou sans clé d’IMDb, de Cinemeta (Stremio), de Trakt (si un Client ID est renseigné), du site de TMDB, d’IMP Awards, de Wikipédia, d’iTunes, de TVmaze et d’OMDb. Pour un titre précis, vous pouvez choisir parmi plusieurs propositions ou coller l’adresse d’une image trouvée sur n’importe quel site.'),
+      h('p', {}, 'Les affiches viennent de TMDB (avec une clé), ou sans clé d’IMDb, de Cinemeta, de Trakt (si un Client ID est renseigné), du site de TMDB, d’IMP Awards, de Wikipédia, d’iTunes, de TVmaze et d’OMDb. Pour un titre précis, vous pouvez choisir parmi plusieurs propositions ou coller l’adresse d’une image trouvée sur n’importe quel site.'),
       h('label', { class: 'switch' }, h('span', {}, 'Chercher les affiches sur les services gratuits (sans clé)'), h('input', { type: 'checkbox', class: 'f', checked: a.settings.postersFree !== false, onchange: async (e) => { await api('/api/admin/settings', { method: 'PUT', body: { postersFree: e.target.checked } }); toast(e.target.checked ? 'Recherche gratuite activée' : 'Recherche gratuite désactivée'); } })),
       head, list,
       h('div', { class: 'form-actions', style: { justifyContent: 'flex-start', flexWrap: 'wrap' } }, runBtn, testBtn, redoBtn), testOut);
@@ -858,7 +858,7 @@ function editProfile(p, self, onDone) {
   const age = !self ? select(AGES, p ? p.maxAge : '') : null;
   const adminSw = !self && (!p || p.id !== state.profile.id) ? h('label', { class: 'switch' }, h('span', {}, 'Administrateur (accès aux réglages du serveur)'), h('input', { type: 'checkbox', class: 'f', checked: p ? p.isAdmin : false })) : null;
   const err = h('p', { class: 'error-text' });
-  // Droits (comme Jellyfin) : seulement pour les profils non administrateurs, réglés par un administrateur
+  // Droits : seulement pour les profils non administrateurs, réglés par un administrateur
   const perms = { libraries: null, download: true, transcode: true, remote: true, schedule: [], dailyMinutes: 0, ...(p && p.perms ? JSON.parse(JSON.stringify(p.perms)) : {}) };
   const permsBox = !self && !isNew ? h('div', { class: 'perms' }) : null;
   const DAYS = [[1, 'L'], [2, 'M'], [3, 'M'], [4, 'J'], [5, 'V'], [6, 'S'], [0, 'D']];
@@ -1077,7 +1077,7 @@ async function openDuplicates() {
   paint().catch((e) => body.replaceChildren(h('p', { class: 'error-text' }, e.message)));
 }
 
-// Renommage façon Plex / Jellyfin : propositions cochables, puis renommage (la base suit)
+// Renommage standard : propositions cochables, puis renommage (la base suit)
 async function openRename() {
   const body = h('div', { class: 'ren-list' }, h('p', { class: 'muted' }, 'Analyse des noms…'));
   const s = sheet('Renommer les fichiers', body, { wide: true });

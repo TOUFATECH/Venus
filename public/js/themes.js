@@ -44,7 +44,7 @@ export const PLANETS = {
   // (sur ordinateur), affiches aux coins nets qui grandissent au survol, boutons blancs.
   cinema: { night: '#141414', deep: '#181818', raise: '#2f2f2f', glow: '#e50914', name: 'Cinéma', accent: '#e50914', accent2: '#b20710', dir: 'diag', mono: true, topnav: true,
     bands: ['#ff4b55', '#e50914', '#b20710', '#7a0a0f', '#e50914', '#5a0509', '#c40812', '#2a0204'], surface: 'spot', fx: '#ff8088' },
-  // « Verre » (inspiré de Free My TV) : surfaces en verre dépoli, clair le jour et sombre la nuit, au rythme du soleil
+  // « Verre » : surfaces en verre dépoli, clair le jour et sombre la nuit, au rythme du soleil
   verre: { night: '#0b0b0d', deep: '#1c1c1e', raise: '#2c2c2e', glow: '#8fb8ff', name: 'Verre', brand: 'Venus', accent: '#2997ff', accent2: '#5e5ce6', dir: 'diag', glass: true,
     bands: ['#ffffff', '#e4ecf7', '#f6f8fc', '#cddcf0', '#eef3fa', '#b9cbe6', '#e2eaf6', '#9fb4d6'], surface: 'clouds', fx: '#ffffff' },
   // Lagon : abysse, turquoise et corail (une planète-atoll) ; Océan : bleu profond et vagues qui roulent, même mise en page.

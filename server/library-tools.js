@@ -1,6 +1,6 @@
 // Outils de médiathèque (Réglages → Médiathèque) :
 //  - doublons : films présents plusieurs fois (même fiche TMDB ou même titre + année), avec la place récupérable
-//  - renommage : proposer des noms de fichiers et de dossiers lisibles (façon Plex / Jellyfin) après identification,
+//  - renommage : proposer des noms de fichiers et de dossiers lisibles et standards après identification,
 //    puis renommer d'un clic ; la base suit les fichiers (chemins mis à jour, rien n'est ré-analysé)
 import fs from 'node:fs';
 import path from 'node:path';

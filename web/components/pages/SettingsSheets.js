@@ -307,7 +307,7 @@ export function openDuplicates() {
     ))}</Loaded></div>, { wide: true });
 }
 
-// ---------------------------------------------------------------- renommage façon Plex / Jellyfin
+// ---------------------------------------------------------------- renommage standard des fichiers
 export function openRename() {
   openSheet('Renommer les fichiers', (close) => <div className="ren-list"><Loaded load={() => api('/api/admin/rename')}>{({ plan }) => <Rename plan={plan} close={close} />}</Loaded></div>, { wide: true });
 }

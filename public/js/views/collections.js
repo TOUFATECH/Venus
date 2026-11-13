@@ -1,4 +1,4 @@
-// Collections (sagas TMDB et collections de l'administrateur) et listes de lecture de chaque profil (comme Jellyfin)
+// Collections (sagas TMDB et collections de l'administrateur) et listes de lecture de chaque profil
 import { api } from '../api.js';
 import { h, icon, img, toast, sheet, confirmSheet, fmtRuntime, placeholder } from '../ui.js';
 import { card, playPath } from '../components.js';

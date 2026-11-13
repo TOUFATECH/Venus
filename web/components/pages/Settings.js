@@ -29,7 +29,7 @@ export default function Settings() {
     ...(me.isAdmin ? [
       ['Médias', [['medias', 'Médiathèques', 'folder'], ['tv', 'TV en direct', 'live'], ['infos', 'Infos et affiches', 'spark'], ['notes', 'Notes des sites', 'heart'], ['demandes', 'Demandes', 'download']]],
       ['Foyer', [['famille', 'Profils et appareils', 'people'], ['alertes', 'Notifications', 'chat']]],
-      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['perf', 'Performances', 'spark'], ['maj', 'Mise à jour', 'download'], ['serveur', 'Serveur', 'server'], ['distance', 'Accès hors de la maison', 'live'], ['import', 'Importer (Plex, Jellyfin)', 'download'], ['sauvegardes', 'Sauvegardes', 'copy']]],
+      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['perf', 'Performances', 'spark'], ['maj', 'Mise à jour', 'download'], ['serveur', 'Serveur', 'server'], ['distance', 'Accès hors de la maison', 'live'], ['import', 'Importer un historique', 'download'], ['sauvegardes', 'Sauvegardes', 'copy']]],
     ] : []),
   ];
   const TABS = NAV.flatMap(([, items]) => items);

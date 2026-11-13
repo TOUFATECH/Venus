@@ -1,5 +1,5 @@
 // Nouveautés (films, séries, animés sortis ou à venir) et demandes de téléchargement via Seerr
-// (Seerr = Overseerr / Jellyseerr réunis). Seerr transmet la demande à Radarr / Sonarr, qui lancent
+// (Seerr, gestionnaire de demandes). Seerr transmet la demande à Radarr / Sonarr, qui lancent
 // la recherche et le téléchargement automatiquement ; Venus affiche ensuite la progression.
 import { all, get, getSetting } from './db.js';
 import { tmdb, tmdbKey, lang } from './metadata.js';

@@ -1,4 +1,4 @@
-# Venus — image Docker légère avec ffmpeg de Jellyfin (tous les pilotes d'accélération matérielle inclus)
+# Venus — image Docker légère avec un ffmpeg optimisé (tous les pilotes d'accélération matérielle inclus)
 
 # Étape 1 : interface allégée (JS et CSS minifiés). esbuild ne sert qu'ici ; s'il n'est pas téléchargeable,
 # l'interface est gardée telle quelle et la construction continue.
@@ -44,7 +44,7 @@ ENV NODE_ENV=production \
     MOVIES_PATH=/media/films \
     SHOWS_PATH=/media/series
 
-# ffmpeg optimisé (NVENC, VA-API, Quick Sync, tone-mapping HDR) depuis le dépôt Jellyfin,
+# ffmpeg optimisé (NVENC, VA-API, Quick Sync, tone-mapping HDR) depuis un dépôt APT tiers signé,
 # avec repli automatique sur le ffmpeg de Debian si le dépôt est indisponible.
 RUN set -eux; \
     apt-get update; \

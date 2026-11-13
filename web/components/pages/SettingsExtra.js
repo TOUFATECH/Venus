@@ -1,5 +1,5 @@
 'use client';
-// Réglages : compte Trakt du profil, import depuis Plex / Jellyfin, accès hors de la maison
+// Réglages : compte Trakt du profil, import de l'historique d'un autre serveur, accès hors de la maison
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
 import { api, toast } from '../../lib/hooks';
@@ -55,7 +55,7 @@ export function TraktLinkBox() {
   );
 }
 
-// ---------------------------------------------------------------- import Plex / Jellyfin
+// ---------------------------------------------------------------- import de l'historique d'un autre serveur
 export function ImportBox({ a }) {
   const [kind, setKind] = useState('jellyfin');
   const [url, setUrl] = useState('');

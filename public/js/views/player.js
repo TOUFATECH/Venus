@@ -82,7 +82,7 @@ export async function render(main, { id, query }) {
   const fill = h('div', { class: 'p-fill' });
   const buf = h('div', { class: 'p-buf' });
   const knob = h('div', { class: 'p-knob' });
-  // Survol de la barre : vignette de l'instant visé (comme Jellyfin / Netflix), nom du chapitre et heure
+  // Survol de la barre : vignette de l'instant visé , nom du chapitre et heure
   const tipThumb = h('div', { class: 'p-hover-img', hidden: true });
   const tipChap = h('div', { class: 'p-hover-chap', hidden: true });
   const tipTime = h('div', { class: 'p-hover-time' });

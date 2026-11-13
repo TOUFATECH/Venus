@@ -1,4 +1,4 @@
-// Droits par profil (comme Jellyfin) : bibliothèques visibles, téléchargement, lecture convertie,
+// Droits par profil : bibliothèques visibles, téléchargement, lecture convertie,
 // accès depuis l'extérieur et horaires autorisés. Les administrateurs ont toujours tous les droits.
 import { isPrivateIp } from './security.js';
 

@@ -1,5 +1,5 @@
 // Distribution et équipe sans clé TMDB, et filmographie d'une personne.
-//  - Films et séries : fiche Cinemeta (catalogue public de Stremio, à partir de l'identifiant IMDb trouvé sans clé) :
+//  - Films et séries : fiche Cinemeta (catalogue public, à partir de l'identifiant IMDb trouvé sans clé) :
 //    acteurs avec leur rôle et leur photo, réalisation, scénario, note IMDb.
 //  - Séries (si Cinemeta n'a rien) : TVmaze (acteurs, personnages, photos, créateurs).
 //  - Filmographie d'un acteur (films et séries hors de la médiathèque) : Wikidata, avec les affiches de Cinemeta.

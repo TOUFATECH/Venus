@@ -1,4 +1,4 @@
-// Musique, photos et livres (comme Jellyfin) : bibliothèques de type « music », « photos » et « books ».
+// Musique, photos et livres : bibliothèques de type « music », « photos » et « books ».
 //  - Musique : étiquettes des fichiers (titre, artiste, album, n° de piste, disque, année, genre), pochette
 //    (cover.jpg / folder.jpg, sinon celle intégrée au fichier), paroles (.lrc à côté du fichier ou intégrées).
 //  - Photos : rangées par dossier (un dossier = un album), vignettes faites par le serveur.

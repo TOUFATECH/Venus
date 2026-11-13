@@ -223,7 +223,7 @@ export async function findImdb(kind, title, year) {
   return { poster, year: best.y || year || null, genres: [], overview: null, releaseDate: null, imdbId: best.id };
 }
 
-// Cinemeta (catalogue public de Stremio, sans clé) : affiches IMDb via metahub, autre chemin si IMDb bloque
+// Cinemeta (catalogue public de films et séries, sans clé) : affiches IMDb via metahub, autre chemin si IMDb bloque
 export const CINEMETA = process.env.VENUS_CINEMETA_URL || 'https://v3-cinemeta.strem.io';
 export async function findCinemeta(kind, title, year) {
   const t = kind === 'movie' ? 'movie' : 'series';
@@ -379,7 +379,7 @@ export async function fillMissingPosters(onProgress) {
 // ------------------------------------------------------------------ affiches des saisons
 // Chaque saison (série ou animé) a sa propre affiche. Sans elle, l'interface reprend celle de la série et
 // toutes les saisons se ressemblent. Sources, dans l'ordre :
-//   1. les images rangées à côté des vidéos (comme Plex / Jellyfin / Kodi) : « season01-poster.jpg » dans le
+//   1. les images rangées à côté des vidéos (convention de nommage la plus répandue) : « season01-poster.jpg » dans le
 //      dossier de la série, ou « poster.jpg » / « folder.jpg » / « cover.jpg » dans le dossier de la saison ;
 //   2. la liste des saisons déjà connue de TMDB (images publiques, sans clé) ;
 //   3. TVmaze (gratuit, sans clé) ;
@@ -479,8 +479,8 @@ export async function fillSeasonPosters(onProgress) {
 // avec le temps de réponse, le code HTTP et ce qu'il a trouvé. Permet de voir quel service est bloqué.
 export async function testSources(title, year, type = 'movie') {
   const jobs = type === 'movie'
-    ? [['Radarr', 'radarr', () => findArr('movie', title, year)], ['Trakt', 'https://api.trakt.tv', () => findTrakt('movie', title, year)], ['IMDb', IMDB, () => findImdb('movie', title, year)], ['Cinemeta (Stremio)', CINEMETA, () => findCinemeta('movie', title, year)], ['Site TMDB', `${TMDB_WEB}/search/movie`, () => findTmdbWeb('movie', title, year)], ['IMP Awards', IMP, () => findImp(title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('movie', title, year)], ['iTunes', ITUNES, () => findMovie(title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('movie', title, year)]]
-    : [['Sonarr', 'sonarr', () => findArr('tv', title, year)], ['Trakt', 'https://api.trakt.tv', () => findTrakt('tv', title, year)], ['Site TMDB', `${TMDB_WEB}/search/tv`, () => findTmdbWeb('tv', title, year)], ['TVmaze', TVMAZE, () => findShow(title, year, { anime: type === 'anime' })], ['IMDb', IMDB, () => findImdb('tv', title, year)], ['Cinemeta (Stremio)', CINEMETA, () => findCinemeta('tv', title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('tv', title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('tv', title, year)]];
+    ? [['Radarr', 'radarr', () => findArr('movie', title, year)], ['Trakt', 'https://api.trakt.tv', () => findTrakt('movie', title, year)], ['IMDb', IMDB, () => findImdb('movie', title, year)], ['Cinemeta', CINEMETA, () => findCinemeta('movie', title, year)], ['Site TMDB', `${TMDB_WEB}/search/movie`, () => findTmdbWeb('movie', title, year)], ['IMP Awards', IMP, () => findImp(title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('movie', title, year)], ['iTunes', ITUNES, () => findMovie(title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('movie', title, year)]]
+    : [['Sonarr', 'sonarr', () => findArr('tv', title, year)], ['Trakt', 'https://api.trakt.tv', () => findTrakt('tv', title, year)], ['Site TMDB', `${TMDB_WEB}/search/tv`, () => findTmdbWeb('tv', title, year)], ['TVmaze', TVMAZE, () => findShow(title, year, { anime: type === 'anime' })], ['IMDb', IMDB, () => findImdb('tv', title, year)], ['Cinemeta', CINEMETA, () => findCinemeta('tv', title, year)], ['Wikipédia', 'https://en.wikipedia.org', () => findWiki('tv', title, year)], ['OMDb', 'https://www.omdbapi.com', () => findOmdb('tv', title, year)]];
   const out = [];
   for (const [name, base, fn] of jobs) {
     const t0 = Date.now(); for (const k of [...lastStatus.keys()]) if (k.startsWith(base)) lastStatus.delete(k);

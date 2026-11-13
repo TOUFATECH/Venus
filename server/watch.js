@@ -32,7 +32,7 @@ export function linkSeerrUser(profileId, seerrUserId) {
 }
 
 // ------------------------------------------------------------------ connexion avec un compte Seerr (sans copier la clé API)
-// On se connecte comme dans l'interface de Seerr (compte local, Jellyfin/Emby ou Plex), puis on lit la clé API
+// On se connecte comme dans l'interface de Seerr (compte local ou compte de serveur multimédia), puis on lit la clé API
 // dans les réglages de Seerr (compte administrateur nécessaire). Le mot de passe n'est jamais enregistré.
 export async function seerrLogin({ url, method = 'local', user, password, plexToken }) {
   url = String(url || '').trim().replace(/\/+$/, '').replace(/\/api\/v1$/, '');

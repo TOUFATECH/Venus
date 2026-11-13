@@ -44,7 +44,7 @@ export async function tintFrom(src) {
 }
 export function clearTint() { document.documentElement.style.removeProperty('--tint'); }
 
-// Halo lumineux autour de la vidéo (façon Ambilight) : 32×18 pixels, agrandis et floutés en CSS
+// Halo lumineux autour de la vidéo : 32×18 pixels, agrandis et floutés en CSS
 export function ambilight(video, canvas) {
   const ctx = canvas.getContext('2d');
   canvas.width = 32; canvas.height = 18;

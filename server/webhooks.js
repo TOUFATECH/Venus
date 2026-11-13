@@ -1,4 +1,4 @@
-// Webhooks (comme le plugin Webhook de Jellyfin) : Venus envoie un POST JSON à vos adresses quand
+// Webhooks : Venus envoie un POST JSON à vos adresses quand
 // il se passe quelque chose (nouveauté, lecture, connexion, alerte de sécurité). Signature HMAC-SHA256
 // dans l'en-tête « X-Venus-Signature » si un secret est donné. Compatible Home Assistant, n8n, Gotify…
 import crypto from 'node:crypto';

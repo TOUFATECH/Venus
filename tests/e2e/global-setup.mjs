@@ -75,7 +75,7 @@ function makeMedia(dir) {
       '-c:v', 'libx264', '-preset', 'ultrafast', '-g', '50', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-shortest',
       '-f', 'hls', '-hls_time', '2', '-hls_list_size', '0', '-hls_segment_filename', path.join(m('hls', k), 'seg%03d.ts'), path.join(m('hls', k), 'index.m3u8'));
   }
-  // Affiches propres à chaque saison, rangées comme chez Plex / Jellyfin
+  // Affiches propres à chaque saison, rangées selon la convention la plus répandue
   ff('-f', 'lavfi', '-i', 'color=c=red:size=400x600', '-frames:v', '1', m('series', 'Brigade Nord', 'season01-poster.jpg'));
   ff('-f', 'lavfi', '-i', 'color=c=blue:size=400x600', '-frames:v', '1', m('series', 'Brigade Nord', 'Saison 02', 'poster.jpg'));
   ff('-f', 'lavfi', '-i', 'mandelbrot=size=1200x800', '-frames:v', '1', m('photos', 'Vacances', 'coucher.jpg'));

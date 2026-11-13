@@ -1,4 +1,4 @@
-// Guide des programmes TV (grille) et enregistrements, comme Jellyfin
+// Guide des programmes TV (grille) et enregistrements
 import { api } from '../api.js';
 import { h, icon, img, toast, sheet, confirmSheet } from '../ui.js';
 import { go, state } from '../core.js';
