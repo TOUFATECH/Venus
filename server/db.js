@@ -162,6 +162,7 @@ db.exec("UPDATE items SET episode_end = NULL WHERE episode_end IS NOT NULL AND (
 
 // Cache des requêtes préparées
 const cache = new Map();
+// Requête préparée (gardée en cache)
 export function q(sql) {
   let st = cache.get(sql);
   if (!st) { st = db.prepare(sql); cache.set(sql, st); }
@@ -169,6 +170,7 @@ export function q(sql) {
 }
 // Diagnostic : VENUS_SQL_SLOW=50 note dans le journal toute requête de plus de 50 ms (éteint par défaut)
 const SLOW_MS = Number(process.env.VENUS_SQL_SLOW) || 0;
+// Exécute une requête en mesurant sa durée (requêtes lentes signalées)
 const timed = (kind, sql, p) => {
   const t = performance.now();
   const r = q(sql)[kind](...p);
@@ -181,6 +183,7 @@ export const get = SLOW_MS ? (sql, ...p) => timed('get', sql, p) : (sql, ...p) =
 // Compteur des écritures dans la table des titres : permet de garder en mémoire les listes lourdes
 // (bibliothèques entières) et de les reconstruire seulement quand quelque chose a changé
 export let itemsVersion = 1;
+// Signale que la bibliothèque a changé (vide les caches qui en dépendent)
 export const bumpItems = () => { itemsVersion++; };
 // « libraries » aussi : supprimer une bibliothèque efface ses titres en cascade (sans que « items » apparaisse dans
 // la requête) — sans cela, les listes gardées en mémoire montraient encore les titres d'une bibliothèque supprimée
@@ -188,7 +191,9 @@ const touchesItems = (sql) => /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*\b(ite
 // Même principe pour l'avancement des lectures (vu, en cours) : l'état « vu / non vu » de chaque série, calculé sur
 // tous les épisodes, n'est refait que si quelque chose a changé
 export let progressVersion = 1;
+// La requête modifie-t-elle la progression ou les profils ?
 const touchesProgress = (sql) => /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*\b(progress|profiles)\b/i.test(sql);
+// Exécute une requête d'écriture et met à jour les numéros de version des caches
 export const run = (sql, ...p) => { const r = q(sql).run(...p); if (touchesItems(sql)) itemsVersion++; if (touchesProgress(sql)) progressVersion++; return r; };
 
 // Écritures faites par un autre programme sur la même base (outil de maintenance, restauration, sqlite3 à la main) :
@@ -196,12 +201,14 @@ export const run = (sql, ...p) => { const r = q(sql).run(...p); if (touchesItems
 // en mémoire ne restent jamais en retard sur la base.
 let dataVersion = null;
 const dvStmt = db.prepare('PRAGMA data_version');
+// Détecte une écriture faite par un autre processus (caches à vider)
 export function checkExternalWrites() {
   const v = dvStmt.get().data_version;
   if (dataVersion !== null && v !== dataVersion) { itemsVersion++; progressVersion++; }
   dataVersion = v;
 }
 
+// Transaction : tout est appliqué, ou rien en cas d'erreur
 export function tx(fn) {
   db.exec('BEGIN');
   try { const r = fn(); db.exec('COMMIT'); itemsVersion++; progressVersion++; return r; }
@@ -218,6 +225,7 @@ const SECRET_KEYS = new Set(['tmdb_key', 'omdb_key', 'seerr_key', 'telegram_toke
 // « lidarr_key », « bookshelf_key », « lazylibrarian_key », « libretranslate_key », « acoustid_key »…)
 const isSecret = (k) => SECRET_KEYS.has(k) || k.startsWith('trakt_auth:') || /^[a-z0-9]+_key$/.test(k);
 let masterKey = null;
+// Clé de chiffrement principale (VENUS_SECRET ou fichier secret.key créé au premier démarrage)
 function keyOf() {
   if (masterKey) return masterKey;
   if (process.env.VENUS_SECRET) return (masterKey = crypto.createHash('sha256').update(process.env.VENUS_SECRET).digest());
@@ -227,18 +235,21 @@ function keyOf() {
   fs.writeFileSync(f, masterKey.toString('base64'), { mode: 0o600 });
   return masterKey;
 }
+// Chiffre un texte en AES-256-GCM
 function seal(text) {
   const iv = crypto.randomBytes(12);
   const c = crypto.createCipheriv('aes-256-gcm', keyOf(), iv);
   const enc = Buffer.concat([c.update(text, 'utf8'), c.final()]);
   return `enc1:${Buffer.concat([iv, c.getAuthTag(), enc]).toString('base64')}`;
 }
+// Déchiffre un texte chiffré par seal()
 function unseal(v) {
   const b = Buffer.from(v.slice(5), 'base64');
   const d = crypto.createDecipheriv('aes-256-gcm', keyOf(), b.subarray(0, 12));
   d.setAuthTag(b.subarray(12, 28));
   return Buffer.concat([d.update(b.subarray(28)), d.final()]).toString('utf8');
 }
+// Lit un réglage (déchiffré si besoin)
 export function getSetting(key, def = null) {
   const r = get('SELECT value FROM settings WHERE key = ?', key);
   if (!r) return def;
@@ -250,6 +261,7 @@ export function getSetting(key, def = null) {
   }
   return v;
 }
+// Enregistre un réglage (chiffré pour les clés et mots de passe)
 export function setSetting(key, value) {
   let stored = JSON.stringify(value);
   if (isSecret(key) && value != null && value !== '') stored = JSON.stringify(seal(stored));
@@ -258,6 +270,7 @@ export function setSetting(key, value) {
 // Texte chiffré de la même façon, pour un secret rangé ailleurs que dans les réglages (mot de passe d'un partage réseau)
 export const sealText = (text) => (text == null || text === '' ? '' : seal(String(text)));
 let unreadableSaid = false;
+// Déchiffre un texte s'il est chiffré, sinon le renvoie tel quel
 export function unsealText(v, def = '') {
   if (typeof v !== 'string' || !v.startsWith('enc1:')) return v == null ? def : v;
   try { return unseal(v); } catch {

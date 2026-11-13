@@ -10,10 +10,13 @@ const API = 'https://api.opensubtitles.com/api/v1';
 const UA = 'Venus v1.0';
 export const subsDir = path.join(config.dataDir, 'subs');
 const ISO3 = { fr: 'fre', en: 'eng', es: 'spa', de: 'ger', it: 'ita', pt: 'por', 'pt-br': 'por', ja: 'jpn', ar: 'ara', nl: 'dut', ru: 'rus', zh: 'chi', 'zh-cn': 'chi', ko: 'kor', pl: 'pol', tr: 'tur', sv: 'swe' };
+// Clé API OpenSubtitles
 export const osKey = () => getSetting('opensubtitles_key', '') || process.env.OPENSUBTITLES_API_KEY || '';
+// OpenSubtitles est-il réglé ?
 export const osOn = () => !!osKey();
 
 let token = null, tokenAt = 0, baseUrl = API;
+// Appel à l'API OpenSubtitles
 async function os(pathname, { method = 'GET', body, auth = false } = {}) {
   const headers = { 'Api-Key': osKey(), 'User-Agent': UA, Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) };
   if (auth && token) headers.Authorization = `Bearer ${token}`;
@@ -24,6 +27,7 @@ async function os(pathname, { method = 'GET', body, auth = false } = {}) {
   if (!res.ok) throw new Error(j.message || `OpenSubtitles ${res.status}`);
   return j;
 }
+// Connexion au compte OpenSubtitles (plus de téléchargements par jour)
 async function login() {
   const user = getSetting('opensubtitles_user', ''), pass = getSetting('opensubtitles_pass', '');
   if (!user || !pass) return false;
@@ -33,6 +37,7 @@ async function login() {
   if (j.base_url) baseUrl = `https://${String(j.base_url).replace(/^https?:\/\//, '')}/api/v1`;
   return true;
 }
+// Oublie la connexion (après un changement d'identifiants)
 export function resetOsLogin() { token = null; }
 
 // Recherche pour un film ou un épisode de la médiathèque

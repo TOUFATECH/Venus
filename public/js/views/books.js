@@ -5,9 +5,11 @@ import { h, icon, img, placeholder, sheet, toast, isBack } from '../ui.js';
 import { go, setTitle, showSlug } from '../core.js';
 import { playList } from '../audio.js';
 
+// Avancement de lecture d'un livre en pourcentage
 const pct = (b) => (b.progress && b.progress.duration ? Math.min(100, Math.round((b.progress.watched ? 1 : b.progress.position / b.progress.duration) * 100)) : 0);
 const FORMAT = { epub: 'EPUB', pdf: 'PDF', cbz: 'BD', audiobook: 'Livre audio' };
 
+// Page Livres : bibliothèque, auteur ou liseuse
 export async function render(main, { view = 'all', id } = {}) {
   if (view === 'read') return reader(main, Number(id));
   setTitle('Livres');

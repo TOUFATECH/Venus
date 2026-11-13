@@ -12,6 +12,7 @@ import { notifyNewVersion } from './update.js';
 let started = false;
 process.on('unhandledRejection', (e) => { console.error('[erreur non gérée]', e && e.stack ? e.stack : e); });
 process.on('uncaughtException', (e) => { console.error('[erreur fatale évitée]', e && e.stack ? e.stack : e); if (!started) process.exit(1); });
+// Le serveur a fini de démarrer
 export const markStarted = () => { started = true; };
 import http from 'node:http';
 import https from 'node:https';
@@ -71,6 +72,7 @@ const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 let httpsPort = null;
 // HTTP/2 : en-têtes propres à HTTP/1 interdits (une erreur sinon), adresse dans « :authority »
 const HOP_HEADERS = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'proxy-connection']);
+// Rend une requête HTTP/2 compatible avec le code écrit pour HTTP/1
 function h2compat(req, res) {
   if (!req.headers.host && req.headers[':authority']) req.headers.host = req.headers[':authority'];
   const setHeader = res.setHeader.bind(res), writeHead = res.writeHead.bind(res);
@@ -81,6 +83,7 @@ function h2compat(req, res) {
   };
 }
 
+// Traite chaque requête : sécurité, API, fichiers, puis interface
 async function handle(req, res) {
   if (req.httpVersionMajor === 2) h2compat(req, res);
   const url = new URL(req.url, 'http://localhost');
@@ -144,10 +147,12 @@ server.maxHeadersCount = 100;
 
 server.keepAliveTimeout = 65000;
 
+// Adresses IP de la machine sur le réseau local
 function lanAddresses() {
   return Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address);
 }
 
+// Démarrage : base, tâches de fond, serveurs HTTP / HTTPS et interface
 async function main() {
   const where = { docker: 'Docker', lxc: `conteneur LXC ${runtime.unprivileged ? 'non privilégié' : 'privilégié'}`, machine: 'machine' }[runtime.kind];
   console.log(`[système] Venus tourne dans : ${where}${runtime.canMount ? '' : ' (montage réseau non autorisé)'}`);
@@ -287,6 +292,7 @@ async function main() {
   setTimeout(tick, Number(getSetting('scan_interval', 60)) * 60000).unref();
 }
 
+// Arrêt propre : sessions de lecture fermées, puis fin du processus
 const shutdown = () => { stopAllSessions(); server.close(); setTimeout(() => process.exit(0), 300); };
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);

@@ -8,6 +8,7 @@ import { focusFirst, focusEl } from './nav.js';
 let pairing = null; // { code, close }
 let codeListeners = [];
 
+// Simule l'appui sur une touche (commande de la télécommande)
 function key(k) {
   document.documentElement.classList.add('keys');
   const ev = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true });
@@ -21,6 +22,7 @@ function key(k) {
 let lastFocus = null;
 document.addEventListener('focusin', (e) => { if (!e.target.closest || !e.target.closest('.phone-sim')) lastFocus = e.target; });
 
+// Exécute une commande reçue du téléphone
 function run(c) {
   switch (c.cmd) {
     case 'hello': toast('Téléphone connecté : vous pouvez piloter Venus'); break;
@@ -59,6 +61,7 @@ function run(c) {
   }
 }
 
+// Affiche un code d'appairage et attend le téléphone
 export function startPairing() {
   if (pairing) return pairing;
   let saved = null;
@@ -75,8 +78,10 @@ export function startPairing() {
   });
   return pairing;
 }
+// Arrête l'appairage
 export function stopPairing() { if (pairing) { pairing.close(); pairing = null; } }
 
+// Lien à ouvrir sur le téléphone
 export function remoteLink(code) { return `${location.origin}/telecommande?code=${code}`; }
 
 // Fenêtre « Piloter avec votre téléphone » : QR code + code à 6 chiffres

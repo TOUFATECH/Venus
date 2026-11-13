@@ -4,10 +4,14 @@
 import path from 'node:path';
 import { all, run, tx } from './db.js';
 
+// Lecture JSON tolérante
 const parseJson = (s) => { try { return JSON.parse(s); } catch { return null; } };
+// Qualité d'une version (définition, HDR, débit) pour choisir la meilleure
 const quality = (r) => { const p = parseJson(r.probe) || {}; const v = p.video || {}; return [(v.height || 0) * (v.hdr ? 1.05 : 1), p.bitrate || 0, -r.id]; };
+// La version a est-elle meilleure que b ?
 const better = (a, b) => { const qa = quality(a), qb = quality(b); for (let i = 0; i < qa.length; i++) if (qa[i] !== qb[i]) return qa[i] > qb[i] ? a : b; return a; };
 
+// Regroupe les versions d'un même film sous la meilleure
 export function groupVersions() {
   const rows = all("SELECT id, tmdb_id, title, year, path, probe, version_of FROM items WHERE type = 'movie' AND path IS NOT NULL");
   const groups = new Map();

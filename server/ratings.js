@@ -17,12 +17,17 @@ import { traktId, traktFind, downloadTraktImage, posterSource } from './trakt.js
 
 const DAY = 86400000;
 const UA = { 'User-Agent': 'Venus/1.0 (serveur multimédia personnel)', Accept: 'application/json' };
+// Pause de quelques millisecondes
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Lecture JSON tolérante (valeur par défaut si invalide)
 const parseJson = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
 
+// Clé OMDb
 export const omdbKey = () => getSetting('omdb_key', '') || process.env.OMDB_API_KEY || '';
+// Identifiant client Simkl
 export const simklId = () => getSetting('simkl_client_id', '') || process.env.SIMKL_CLIENT_ID || '';
 
+// Requête JSON (délai maximal, nouvelle tentative si le service est occupé)
 async function getJson(url, opts = {}) {
   const res = await fetch(url, { ...opts, headers: { ...UA, ...(opts.headers || {}) }, signal: AbortSignal.timeout(15000) });
   if (res.status === 429) { await wait(2500); return getJson(url, opts); }
@@ -43,6 +48,7 @@ export function pickTrailer(videos = []) {
 const ANILIST_Q = `query ($search: String) { Page(perPage: 6) { media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
   id idMal averageScore meanScore popularity siteUrl seasonYear format startDate { year }
   title { romaji english native } trailer { id site } } } }`;
+// Requête GraphQL vers AniList
 export async function anilist(query, variables) {
   const res = await fetch('https://graphql.anilist.co', {
     method: 'POST', headers: { ...UA, 'Content-Type': 'application/json' },
@@ -52,7 +58,9 @@ export async function anilist(query, variables) {
   if (!res.ok) throw new Error(`AniList ${res.status}`);
   return (await res.json()).data;
 }
+// Texte simplifié pour comparer des titres
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+// Retrouve un animé sur AniList
 async function findAnime(item) {
   for (const q of [item.original_title, item.title].filter(Boolean)) {
     const d = await anilist(ANILIST_Q, { search: q });
@@ -70,7 +78,9 @@ async function findAnime(item) {
 // ------------------------------------------------------------------ distribution, équipe, studios
 // Photos : chemins TMDB, téléchargés à la demande par /img (nom « t_w185_… »)
 const photo = (p) => (p ? `t_w185_${p.replace(/^\//, '').replace(/[^\w.]/g, '')}` : null);
+// Retire les personnes en double
 const uniq = (a) => [...new Map(a.filter((x) => x && x.name).map((x) => [x.name, x])).values()];
+// Distribution et équipe principales d'une fiche TMDB
 export function creditsOf(d, kind) {
   const c = (kind === 'tv' ? d.aggregate_credits : d.credits) || d.credits || {};
   const cast = (c.cast || []).slice(0, 30).map((p) => ({
@@ -101,6 +111,7 @@ export function creditsOf(d, kind) {
 // ------------------------------------------------------------------ collecte pour un titre
 const isAnime = (item, d) => item.category === 'anime' || !!(d && d.original_language === 'ja' && (d.genres || []).some((g) => g.id === 16));
 
+// Complète un titre : notes des sites, bande-annonce, distribution
 export async function enrich(item) {
   const r = {};
   let trailer = parseJson(item.trailer, null);
@@ -234,11 +245,14 @@ async function applyTraktImages(item, t, d) {
 // ------------------------------------------------------------------ file d'attente
 const queue = [];
 let busy = false;
+// Nombre de titres en attente de notes
 export const ratingsPending = () => queue.length + (busy ? 1 : 0);
+// Ajoute des titres à la file des notes
 export function scheduleRatings(ids, urgent = false) {
   for (const id of ids) if (!queue.includes(id)) (urgent ? queue.unshift(id) : queue.push(id));
   pump();
 }
+// Traite la file des notes, un titre à la fois
 async function pump() {
   if (busy) return;
   busy = true;

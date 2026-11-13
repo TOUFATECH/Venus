@@ -12,13 +12,17 @@ const Ctx = createContext(null);
 // Le code partagé commence à se charger dès l'arrivée de ce fichier, sans attendre le premier affichage React
 if (typeof window !== 'undefined') loadShared().catch(() => {});
 let statusAt = 0;
+// Les deux adresses sont-elles identiques (accents encodés ou non) ?
 const sameUrl = (a, b) => { try { return decodeURI(a) === decodeURI(b); } catch { return a === b; } };
+// Accès au contexte de l'application (adresse, paramètres)
 export const useVenus = () => useContext(Ctx);
 
+// Application Venus (chargement différé du contenu)
 export default function Venus({ children }) {
   return <Suspense fallback={null}><App>{children}</App></Suspense>;
 }
 
+// Démarrage : session, profil, écrans d'entrée, puis pages et navigation
 function App({ children }) {
   const router = useRouter();
   const path = usePathname() || '/';
@@ -159,6 +163,7 @@ function PageKey({ children, url }) {
   return children;
 }
 
+// Écran d'erreur quand le démarrage échoue
 function StartError({ error, retry }) {
   useEffect(() => { const L = shared(); if (L) L.app.hideBoot(); else { const b = document.querySelector('.boot'); if (b) b.style.display = 'none'; } }, []);
   return (

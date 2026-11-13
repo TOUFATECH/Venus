@@ -6,10 +6,12 @@ import { state } from './core.js';
 export const REACTIONS = ['😂', '😮', '❤️', '👏', '😱', '🔥'];
 const clientId = Math.random().toString(36).slice(2, 10);
 
+// Lien d'invitation à une séance
 export function inviteLink(code) {
   return `${location.origin}/seance?code=${code}`;
 }
 
+// Fenêtre d'invitation à une séance (lien et QR code)
 export function showInvite(code, title) {
   const link = inviteLink(code);
   sheet('Inviter à la séance', h('div', { class: 'invite' },

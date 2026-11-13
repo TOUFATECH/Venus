@@ -6,9 +6,11 @@ import { useTitle, api, toast, img, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
 
+// Taille lisible en Go ou Mo
 const fmtSize = (b) => (!b ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
 const STATE = { queued: 'En attente', working: 'Préparation', ready: 'Prêt', error: 'Échec' };
 
+// Page Téléchargements : vidéos préparées pour regarder sans réseau
 export default function Downloads() {
   useTitle('Téléchargements');
   const { tick } = useVenus();

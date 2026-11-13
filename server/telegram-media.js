@@ -14,12 +14,19 @@ db.exec(`CREATE TABLE IF NOT EXISTS tg_posts (
   key TEXT PRIMARY KEY, chat TEXT, message_id INTEGER, photo INTEGER DEFAULT 0, state TEXT, caption TEXT, info TEXT, created_at INTEGER, updated_at INTEGER
 )`);
 
+// Réglages Telegram
 const conf = () => ({ token: getSetting('telegram_token', ''), chat: getSetting('telegram_chat', ''), publicUrl: String(getSetting('public_url', '') || '').replace(/\/+$/, '') });
+// Les fiches Telegram des nouveautés sont-elles activées ?
 export const tgMediaOn = () => { const c = conf(); return !!(c.token && c.chat) && String(getSetting('tg_media', '1')) !== '0'; };
+// Le suivi des téléchargements sur Telegram est-il activé ?
 const tgDownloadsOn = () => tgMediaOn() && String(getSetting('tg_downloads', '1')) !== '0';
+// Titre simplifié pour comparer
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+// Échappe un texte pour le HTML de Telegram
 const esc = (t) => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// Lecture JSON tolérante
 const parse = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
+// Date lisible en français
 const fmtDate = (iso) => { if (!iso) return null; const d = new Date(`${String(iso).slice(0, 10)}T12:00:00Z`); return Number.isNaN(+d) ? null : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }); };
 
 // ------------------------------------------------------------------ API Telegram
@@ -45,6 +52,7 @@ const STATE = {
   downloaded: () => '📦 <b>Téléchargé</b> : arrive dans Venus',
   available: () => '✅ <b>Disponible sur Venus</b>',
 };
+// Texte de la fiche Telegram d'un titre
 function caption(i) {
   const icon = i.kind === 'movie' ? '🎬' : i.kind === 'anime' ? '🌸' : '📺';
   const lines = [`${icon} <b>${esc(i.title)}</b>${i.year ? ` (${i.year})` : ''}`];
@@ -110,16 +118,19 @@ async function upsert(key, info, posterFile, posterUrl) {
   run('INSERT OR REPLACE INTO tg_posts(key, chat, message_id, photo, state, caption, info, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
     key, String(c.chat), msg.message_id, photo, info.state, cap, JSON.stringify(info), Date.now(), Date.now());
 }
+// Fusionne deux listes d'épisodes sans doublon
 function mergeEps(a = [], b = []) {
   const seen = new Set(), out = [];
   for (const e of [...(a || []), ...(b || [])]) { const k = `${e.s}:${e.e}`; if (!seen.has(k)) { seen.add(k); out.push(e); } }
   return out;
 }
+// Clé unique d'un titre (type + titre simplifié)
 const keyOf = (kind, title) => `${kind === 'movie' ? 'm' : 's'}:${norm(title)}`;
 
 // ------------------------------------------------------------------ téléchargements (file de Radarr / Sonarr)
 const pick = (images, t) => ((images || []).find((x) => x.coverType === t) || {}).remoteUrl || null;
 let lastQueue = new Map(); // clé → info (pour repérer ceux qui viennent de finir)
+// Suit les téléchargements de Radarr / Sonarr et met à jour les fiches Telegram
 export async function pollDownloads() {
   if (!tgDownloadsOn()) return 'Fiches Telegram désactivées';
   const now = new Map();
@@ -199,6 +210,7 @@ export async function announceArrivals() {
   setSetting('tg_arrivals_at', until);
   return n ? `${n} fiche(s) envoyée(s) sur Telegram` : 'Rien de nouveau';
 }
+// Publie ou met à jour la fiche Telegram d'un titre
 async function post(it, { kind, episodes }) {
   const info = {
     kind, title: it.title, year: it.year || null, genres: parse(it.genres, []).slice(0, 3), overview: it.overview || '',

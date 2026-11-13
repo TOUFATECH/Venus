@@ -10,7 +10,9 @@ import { renderUpcoming } from './upcoming.js';
 
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés', clip: 'Clips', mylist: 'Ma liste' };
 const PATHS = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips', mylist: '/liste' };
+// Date de sortie (ou 1er janvier de l'année)
 const rel = (i) => i.released || (i.year ? `${i.year}-01-01` : '');
+// Tri alphabétique à la française
 const cmpTitle = (a, b) => a.title.localeCompare(b.title, 'fr', { sensitivity: 'base', numeric: true });
 // [id, libellé, comparaison (ordre naturel), libellés du sens]
 const SORTS = [
@@ -24,6 +26,7 @@ const SORTS = [
   ['age', 'Classification', (a, b) => (a.age ?? 99) - (b.age ?? 99), ['Tous publics d’abord', 'Adultes d’abord']],
   ['random', 'Aléatoire', null, ['Nouveau tirage', 'Nouveau tirage']],
 ];
+// Données d'un titre préparées pour les tris et filtres
 const norm = (i, src) => {
   const r = i.ratings || {};
   if (!src) return r.score || (i.vote ? i.vote * 10 : 0);
@@ -40,11 +43,13 @@ const store = {
   get(k, d, ls = false) { try { return JSON.parse((ls ? localStorage : sessionStorage).getItem(k)) ?? d; } catch { return d; } },
   set(k, v, ls = false) { try { (ls ? localStorage : sessionStorage).setItem(k, JSON.stringify(v)); } catch { /* */ } },
 };
+// Ordre aléatoire stable pour n éléments
 const shuffleSeed = (n) => { const a = Array.from({ length: n }, (_, i) => i); for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
 // Grandes médiathèques (2 000 films) : on affiche d'abord ce qui tient à l'écran, le reste arrive par paquets
 // quand on approche du bas, au lieu de construire 2 000 cartes d'un coup (la page restait figée plusieurs secondes)
 let chunkObs = null;
+// Affiche une longue grille par morceaux (la suite au fil du défilement)
 function renderChunked(grid, list, make, { first = 72, chunk = 72 } = {}) {
   if (chunkObs) { chunkObs.disconnect(); chunkObs = null; }
   grid.replaceChildren(...list.slice(0, first).map(make));
@@ -67,6 +72,7 @@ function renderChunked(grid, list, make, { first = 72, chunk = 72 } = {}) {
   idle(step, { timeout: 1500 });
 }
 
+// Page d'une bibliothèque (Films, Séries, Animés, Clips, Ma liste) avec tris et filtres
 export async function render(main, { kind, query }) {
   const upcomingTab = (kind === 'show' || kind === 'anime' || kind === 'movie') && query && query.get('vue') === 'avenir';
   const wishTab = kind === 'mylist' && query && query.get('vue') === 'envies';
@@ -254,6 +260,7 @@ export function listRow(i) {
 
 // Menu déroulant ancré sous un bouton (fermeture : clic à côté, Échap)
 let openDropdown = null;
+// Menu déroulant attaché à un bouton
 export function dropdown(anchor, build, { wide = false } = {}) {
   if (anchor.__dd) { anchor.__dd(); return; }
   if (openDropdown) openDropdown();
@@ -284,6 +291,7 @@ export function dropdown(anchor, build, { wide = false } = {}) {
 
 // ---------------------------------------------------------------- Mes envies (favoris pas encore dans Venus, suivis dans Seerr)
 const WISH_STATE = { none: 'Pas encore demandé', pending: 'Demandé, en attente de validation', processing: 'Demandé : téléchargé dès sa sortie', partial: 'Disponible en partie', available: 'Disponible, arrive dans Venus', blocked: 'Bloqué dans Seerr', deleted: 'Supprimé de Seerr', error: 'Seerr injoignable' };
+// Onglet « Mes envies »
 export async function renderWishes(page, tabs) {
   const [d, wanted] = await Promise.all([api('/api/wishlist'), api('/api/wanted').catch(() => [])]);
   const today = new Date().toISOString().slice(0, 10);

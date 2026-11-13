@@ -10,15 +10,22 @@ import { tintFrom } from '../ambiance.js';
 import { compressNote } from '../convert.js';
 
 const LIB = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips' };
+// Bibliothèque d'un titre (pour le retour)
 const libOf = (d) => LIB[d.category] || LIB[d.type] || '/films';
+// Heure lisible (« 20:30 »)
 const hhmm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+// Taille lisible en Go ou Mo
 const fmtSize = (b) => (!b ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
+// Débit lisible en Mb/s ou kb/s
 const fmtRate = (b) => (!b ? '' : b >= 1e6 ? `${(b / 1e6).toFixed(1).replace('.', ',')} Mb/s` : `${Math.round(b / 1e3)} kb/s`);
+// Nom d'une configuration audio (Stéréo, 5.1, 7.1…)
 const chLabel = (n) => (n >= 8 ? '7.1' : n >= 6 ? '5.1' : n === 2 ? 'Stéréo' : n === 1 ? 'Mono' : `${n} canaux`);
 const STATUS = { 'Returning Series': 'En cours de diffusion', Ended: 'Terminée', Canceled: 'Annulée', 'In Production': 'En production', Planned: 'Prévue', Released: 'Sorti', 'Post Production': 'En post-production' };
 let regionNames = null;
+// Nom d'un pays en français
 const country = (c) => { try { regionNames = regionNames || new Intl.DisplayNames(['fr'], { type: 'region' }); return regionNames.of(c); } catch { return c; } };
 
+// Fiche d'un titre : infos, saisons et épisodes, distribution, actions
 export async function render(main, { id, query }) {
   const from = currentUrl();
   const d = await api(`/api/items/${id}`);
@@ -528,6 +535,7 @@ function backdropTrailer(d, bg, root) {
 // Photos manquantes (équipe surtout) : demandées au serveur par lots, qui les cherche sur TVmaze et Wikidata
 const photoQueue = new Map();
 let photoTimer = 0;
+// Demande la photo d'une personne (demandes groupées)
 function wantPhoto(name, face) {
   if (!photoQueue.has(name)) photoQueue.set(name, []);
   photoQueue.get(name).push(face);
@@ -543,6 +551,7 @@ function wantPhoto(name, face) {
     }
   }, 60);
 }
+// Affiche la photo d'une personne dans sa vignette
 function setFace(face, src) {
   if (face.querySelector('img')) return;
   const im = h('img', { src: img(src), alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
@@ -550,6 +559,7 @@ function setFace(face, src) {
   im.addEventListener('error', () => im.remove(), { once: true });
   face.append(im);
 }
+// Carte d'une personne de la distribution
 function personCard(p) {
   const initials = p.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('');
   const face = h('div', { class: 'face', style: { '--h': hueOf(p.name) } }, initials);
@@ -668,6 +678,7 @@ async function editInfo(d) {
     h('button', { class: 'btn btn-play f', type: 'submit' }, 'Enregistrer'))), { wide: true });
 }
 
+// Fenêtre de choix de l'affiche, du fond et du logo
 async function chooseImages(d) {
   const body = h('div', { class: 'img-pick' }, h('p', { class: 'muted' }, h('span', { class: 'mini-spin' }), ' Recherche des images…'));
   const s = sheet('Choisir les images', body, { wide: true });
@@ -703,6 +714,7 @@ async function chooseImages(d) {
   // Séries : le fond et le logo peuvent aussi venir d'une adresse, l'onglet courant décide
 }
 
+// Fenêtre « Identifier » : corriger le titre reconnu
 export function fixMatch(item) {
   const input = h('input', { class: 'input', value: item.title });
   const year = h('input', { class: 'input', value: item.year || '', inputmode: 'numeric', style: { maxWidth: '110px' } });

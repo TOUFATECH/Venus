@@ -16,9 +16,12 @@ import {
 
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
 const SECTION_TAB = { menu: 'affichage', sources: 'infos', seerr: 'demandes', arr: 'demandes', ratings: 'notes', affiches: 'infos', subtitles: 'lecture', notifications: 'alertes', backups: 'sauvegardes', iptv: 'tv' };
+// Redémarre l'interface (après un changement important)
 const reboot = () => window.dispatchEvent(new CustomEvent('vn:reboot'));
+// Message de confirmation d'une préférence
 const saved = () => toast('Préférence enregistrée pour cet appareil');
 
+// Page Réglages : sections et contenu
 export default function Settings() {
   useTitle('Réglages');
   const L = shared();

@@ -8,8 +8,10 @@ import { shared } from '../lib/shared';
 import { Icon, LogoMark, Brand, Avatar } from './Icon';
 import { useLayout } from '../lib/hooks';
 
+// Ce lien correspond-il à la page en cours ?
 const isActive = (href, path) => (href === '/' ? path === '/' : path.startsWith(href));
 
+// Lien du menu
 function NavLink({ href, label, icon, path, className = '' }) {
   const on = isActive(href, path);
   return (
@@ -19,6 +21,7 @@ function NavLink({ href, label, icon, path, className = '' }) {
   );
 }
 
+// Élément du menu : lien, ou bouton pour la télécommande
 function ItemLink({ it, path, className = '' }) {
   const { menu, app } = shared();
   if (it.action === 'remote') {
@@ -30,10 +33,12 @@ function ItemLink({ it, path, className = '' }) {
 // Badge de l'administrateur : lectures en cours sur le serveur (caché quand personne ne regarde).
 // Un seul suivi pour tous les badges (rail et mobile), en pause quand l'onglet est caché.
 const live = { n: 0, subs: new Set(), timer: 0 };
+// Interroge le serveur sur le nombre de lectures en cours
 function pollLive() {
   if (document.hidden) return;
   shared().api.api('/api/admin/live').then((r) => { live.n = r.playing || 0; live.subs.forEach((fn) => fn(live.n)); }).catch(() => {});
 }
+// Pastille des lectures en cours (administrateur)
 function LiveBadge({ cls }) {
   const [n, setN] = useState(live.n);
   useEffect(() => {
@@ -53,6 +58,7 @@ function LiveBadge({ cls }) {
   );
 }
 
+// Temps d'écran restant aujourd'hui (profil enfant)
 function TimeLeft({ p, rail }) {
   if (p.dailyLeft == null) return null;
   const low = p.dailyLeft <= 10 ? ' low' : '';
@@ -62,6 +68,7 @@ function TimeLeft({ p, rail }) {
     : <span className={`time-left pill${low}`}><Icon name="clock" />{txt}</span>;
 }
 
+// Coque de l'application : menu (rail, menu en haut, dock, onglets) et contenu
 export default function Shell({ path, bare, children }) {
   const L = shared();
   const { app, menu } = L;

@@ -9,7 +9,9 @@ let popped = false;
 let current = null;
 let restoring = 0;
 
+// Rangées défilantes de la page
 const rowsOf = () => [...document.querySelectorAll('main .row-scroll, main .season-bar')];
+// Enregistre la position de défilement de la page et des rangées
 function save() {
   if (!current || restoring) return;
   store[current] = { y: Math.round(window.scrollY), rows: rowsOf().map((r) => Math.round(r.scrollLeft)), at: Date.now() };
@@ -19,6 +21,7 @@ function save() {
   try { sessionStorage.setItem(KEY, JSON.stringify(store)); } catch { /* */ }
 }
 let saveT = null;
+// Enregistrement différé de la position
 const soon = () => { clearTimeout(saveT); saveT = setTimeout(save, 120); };
 
 if (typeof window !== 'undefined') {

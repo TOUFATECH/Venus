@@ -18,8 +18,11 @@ const srv = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 's
 let logs = ''; srv.stdout.on('data', (d) => { logs += d; }); srv.stderr.on('data', (d) => { logs += d; });
 
 const results = [];
+// Enregistre et affiche le résultat d'un contrôle
 const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); console.log(`${ok ? '✅' : '❌'} ${name}${detail ? ` — ${detail}` : ''}`); };
+// Requête vers le serveur de test (sans suivre les redirections)
 const req = (p, o = {}) => fetch(B + p, { redirect: 'manual', ...o, headers: { 'content-type': 'application/json', ...(o.headers || {}) } });
+// Pause de quelques millisecondes
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 try {

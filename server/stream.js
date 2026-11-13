@@ -53,6 +53,7 @@ export function decide(probe, { caps = {}, audioOrder = 0, quality = 'auto', bur
   return { mode: 'transcode', reason: why, audio, copyVideo: false, limitHeight, limitBitrate };
 }
 
+// Taille de l'image après conversion (hauteur limitée, proportions gardées)
 function targetSize(v, limitHeight) {
   let h = v.height, w = v.width;
   const maxH = limitHeight || 2160;
@@ -60,6 +61,7 @@ function targetSize(v, limitHeight) {
   const even = (n) => Math.max(2, Math.round(n / 2) * 2);
   return { width: even(w), height: even(h) };
 }
+// Débit vidéo cible selon la hauteur et la limite choisie
 function targetBitrate(probe, height, limit) {
   const base = height >= 2000 ? 20e6 : height >= 1000 ? 8e6 : height >= 700 ? 4e6 : height >= 470 ? 1.6e6 : 0.8e6;
   let b = base;
@@ -83,6 +85,7 @@ export function sessionRoot(need = 0) {
   }
   return config.transcodeDir;
 }
+// Dossier des conversions (mémoire vive si disponible, sinon disque)
 export function transcodePlace() {
   const fast = config.fastTranscodeDir;
   let ram = null;
@@ -288,6 +291,7 @@ class HlsSession {
   }
 }
 
+// Ouvre une session de lecture (nombre de sessions simultanées limité)
 export function startSession(opts) {
   const max = Number(getSetting('max_sessions', 6));
   // Une seule session par profil et par média : on remplace l'ancienne
@@ -313,10 +317,13 @@ setInterval(() => {
   }
 }, 3000).unref();
 
+// Ferme toutes les sessions de lecture
 export function stopAllSessions() { for (const s of sessions.values()) s.stop(); }
 
+// Pause de quelques millisecondes
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Sert la liste de lecture HLS d'une session
 export async function servePlaylist(res, sid) {
   const s = sessions.get(sid);
   if (!s) throw new HttpError(404, 'Session expirée');
@@ -337,6 +344,7 @@ export async function servePlaylist(res, sid) {
   res.end(text);
 }
 
+// Sert un segment HLS (attend qu'il soit écrit si besoin)
 export async function serveSegment(req, res, sid, name) {
   const s = sessions.get(sid);
   if (!s) throw new HttpError(404, 'Session expirée');
@@ -363,10 +371,12 @@ const subsCache = path.join(config.dataDir, 'cache', 'subs');
 fs.mkdirSync(subsCache, { recursive: true });
 const inflight = new Map();
 
+// Ce contenu est-il du texte UTF-8 valide ?
 function isUtf8(buf) {
   try { new TextDecoder('utf-8', { fatal: true }).decode(buf); return true; } catch { return false; }
 }
 
+// Sous-titres d'une piste convertis en WebVTT (encodage corrigé, en cache)
 export function subtitleVtt(item, probe, subId) {
   const sub = probe.subs.find((s) => s.id === subId);
   if (!sub) throw new HttpError(404, 'Sous-titre introuvable');
@@ -475,6 +485,7 @@ export function channelSnapshot(item, { wait = false, maxWait = 0, urgent = fals
   return Promise.race([p.catch(() => null), new Promise((r) => setTimeout(() => r(null), maxWait))]);
 }
 const SHOT_QUEUE_MAX = 40;
+// Capture une image de la vidéo (vignette)
 function captureShot(item, out, urgent = false) {
   if (shotInflight.has(out)) return shotInflight.get(out);
   // File pleine : on ne garde que les demandes de la page (les préparations d'avance attendront la prochaine fois)
@@ -506,6 +517,7 @@ function captureShot(item, out, urgent = false) {
 }
 // Page TV ouverte : on prépare les captures de toutes les chaînes d'avance (au plus une fois toutes les 3 min)
 let warmAt = 0;
+// Prépare à l'avance les vignettes des titres affichés
 export function warmSnapshots(items) {
   if (Date.now() - warmAt < 180000) return; warmAt = Date.now();
   // Les 40 premières seulement : avec des centaines de chaînes, ffmpeg tournerait sans arrêt et ralentirait la chaîne regardée

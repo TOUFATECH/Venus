@@ -8,10 +8,12 @@ import { getSetting, setSetting } from './db.js';
 // Fuseau donné par la machine ou le conteneur (variable TZ, /etc/localtime), avant tout réglage dans Venus
 export const systemZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
+// Fuseau horaire valide (ex. Indian/Mayotte) ?
 export function validZone(tz) {
   if (typeof tz !== 'string' || !tz || tz.length > 64 || !/^[A-Za-z0-9_+\-/]+$/.test(tz)) return false;
   try { new Intl.DateTimeFormat('fr-FR', { timeZone: tz }); return true; } catch { return false; }
 }
+// Fuseau horaire utilisé en ce moment
 export const serverZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 // Décalage par rapport à UTC, en minutes (Mayotte : 180), à un instant donné pour un fuseau donné
 export function zoneOffset(tz, t = Date.now()) {
@@ -23,6 +25,7 @@ export function zoneOffset(tz, t = Date.now()) {
 
 // Fuseau choisi dans Venus : appliqué tout de suite (Node relit TZ à chaud) et à chaque démarrage
 export const chosenZone = () => { const z = getSetting('timezone', ''); return validZone(z) ? z : ''; };
+// Change le fuseau horaire du serveur (vide = celui du système)
 export function setZone(tz) {
   if (tz === '' || tz == null) { setSetting('timezone', ''); process.env.TZ = systemZone; return serverZone(); }
   if (!validZone(tz)) throw Object.assign(new Error('Fuseau horaire inconnu'), { status: 400 });
@@ -37,6 +40,7 @@ export function setZone(tz) {
 
 // Jour local « AAAA-MM-JJ » (et non le jour UTC : à Mayotte, entre minuit et 3 h, ce n'est pas le même)
 const pad = (n) => String(n).padStart(2, '0');
+// Jour local (AAAA-MM-JJ) d'une date
 export function localDay(t = Date.now()) {
   const d = new Date(t);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -48,4 +52,5 @@ export function localDayPlus(n, t = Date.now()) {
   d.setDate(d.getDate() + n);
   return localDay(d.getTime());
 }
+// Informations d'heure pour les réglages
 export const clockInfo = () => ({ zone: serverZone(), system: systemZone, chosen: !!chosenZone(), offset: -new Date().getTimezoneOffset(), now: Date.now() });

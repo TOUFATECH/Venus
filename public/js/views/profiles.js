@@ -2,6 +2,7 @@
 import { api, auth } from '../api.js';
 import { h, icon, avatar, sheet } from '../ui.js';
 
+// Écran « Qui regarde ? »
 export async function render(main, { done }) {
   const profiles = await api('/api/profiles');
 
@@ -25,6 +26,7 @@ export async function render(main, { done }) {
       } }, icon('exit'), 'Déconnecter cet appareil')))));
 }
 
+// Demande le code PIN d'un profil
 export function askPin(profile, onSubmit) {
   let code = '';
   const dots = h('div', { class: 'pin-dots' }, [0, 1, 2, 3].map(() => h('span')));

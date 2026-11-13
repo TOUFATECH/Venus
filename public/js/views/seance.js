@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { h, icon } from '../ui.js';
 import { go } from '../core.js';
 
+// Page Séance : créer ou rejoindre une séance à plusieurs
 export async function render(main, { query }) {
   const input = h('input', { class: 'input code-input', id: 'room-code', maxlength: 4, placeholder: 'ABCD', autocomplete: 'off', autocapitalize: 'characters', 'aria-label': 'Code de la séance', value: (query.get('code') || '').toUpperCase() });
   const err = h('p', { class: 'error-text' });

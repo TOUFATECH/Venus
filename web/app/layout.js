@@ -8,6 +8,7 @@ import { inlineScripts } from '../lib/inline';
 export const dynamic = 'force-dynamic';
 export const viewport = { width: 'device-width', initialScale: 1, viewportFit: 'cover', themeColor: '#0d1016' };
 
+// Mise en page racine : structure HTML commune à toutes les pages (langue, nonce CSP, métadonnées)
 export default async function RootLayout({ children }) {
   const h = await headers();
   const nonce = h.get('x-venus-nonce') || undefined;

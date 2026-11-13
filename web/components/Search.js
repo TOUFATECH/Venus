@@ -9,14 +9,18 @@ import Card from './Card';
 import { Icon } from './Icon';
 import { openPerson as openPersonSheet } from './Person';
 
+// Type d'un titre pour les filtres de recherche
 const kindOf = (i) => (i.type === 'clip' ? 'clip' : i.type === 'movie' ? 'movie' : i.category === 'anime' ? 'anime' : 'show');
+// Texte simplifié pour la recherche
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const KINDS = [['all', 'Tout'], ['movie', 'Films'], ['show', 'Séries'], ['anime', 'Animés'], ['clip', 'Clips']];
 
+// Section de résultats avec son titre
 function Section({ title, children }) {
   return <section className="search-sec"><h2 className="section-title">{title}</h2>{children}</section>;
 }
 
+// Page Recherche : chargement du catalogue
 export default function Search() {
   const L = shared();
   const { api, app } = L;
@@ -38,6 +42,7 @@ export default function Search() {
   );
 }
 
+// Recherche : champ, filtres, résultats et recherches récentes
 function SearchView({ all, initial, initialKind }) {
   const L = shared();
   const { api, app, ui, components } = L;

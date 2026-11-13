@@ -5,6 +5,7 @@ import { back } from '../core.js';
 
 const buzz = () => { try { navigator.vibrate && navigator.vibrate(8); } catch { /* */ } };
 
+// Page Télécommande (sur le téléphone)
 export async function render(main, { query }) {
   // Le code de la TV ne sert qu'une fois : en échange, ce téléphone reçoit un lien personnel vers l'écran
   const qrCode = (query.get('code') || '').replace(/\D/g, '');

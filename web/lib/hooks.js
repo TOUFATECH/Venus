@@ -52,6 +52,7 @@ export function useLayout() {
   return st;
 }
 
+// Change le titre de l'onglet du navigateur
 export function useTitle(t) {
   useEffect(() => { if (t !== undefined) shared().app.setTitle(t || undefined); }, [t]);
 }
@@ -75,7 +76,11 @@ export function useMounted() {
   return alive;
 }
 
+// Va à une page
 export const go = (p, o) => shared().app.go(p, o);
+// Affiche un message temporaire
 export const toast = (m, o) => shared().ui.toast(m, o);
+// Appel à l'API de Venus
 export const api = (p, o) => shared().api.api(p, o);
+// Adresse d'une image du serveur
 export const img = (n, w) => shared().ui.img(n, w);

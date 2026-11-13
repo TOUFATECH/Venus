@@ -6,6 +6,7 @@
 // Les anciennes adresses en Majuscules.Avec.Des.Points restent comprises (comparaison sans casse ni ponctuation).
 import { all, itemsVersion } from './db.js';
 
+// Nombre sur deux chiffres (01, 02…)
 const pad = (n) => String(n ?? 0).padStart(2, '0');
 // Un titre devient une adresse lisible : minuscules, sans accents, mots séparés par des tirets
 //   « Sword of the Demon Hunter - Kijin Gentosho » → sword-of-the-demon-hunter-kijin-gentosho
@@ -19,6 +20,7 @@ export function cleanName(s) {
     .replace(/^-+|-+$/g, '');
 }
 
+// Adresse lisible de base d'un titre (« inception-2010 », « breaking-bad/S01E02 »)
 function baseSlug(i, showTitles) {
   const show = i.show_id ? showTitles.get(i.show_id) : null;
   switch (i.type) {
@@ -33,6 +35,7 @@ function baseSlug(i, showTitles) {
 }
 
 let bySlug = new Map(), byId = new Map(), builtAt = 0, sig = '', checkedV = -1;
+// Recalcule les adresses lisibles quand la bibliothèque change (doublons numérotés)
 function ensure() {
   const now = Date.now();
   // Rien n'a été écrit dans la table des titres depuis la dernière vérification : rien à refaire. (Avant, toutes
@@ -86,7 +89,9 @@ export function resolveEpisode(showSlug, ep) {
   for (const [id, m] of meta) if (m.type === 'episode' && m.show === sid && m.s === Number(mm[1]) && m.e === Number(mm[2])) return id;
   return null;
 }
+// Adresse lisible d'un titre
 export function slugFor(id) { ensure(); return byId.get(id) || String(id); }
+// Titre correspondant à une adresse lisible (anciennes adresses comprises)
 export function resolveSlug(slug) {
   const s = String(slug || '').trim();
   if (/^\d+$/.test(s)) return Number(s);

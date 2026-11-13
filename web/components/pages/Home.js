@@ -11,6 +11,7 @@ import { Placeholder } from '../Card';
 
 const ROTATE_MS = 3000; // une affiche toutes les 3 secondes
 
+// Page d'accueil
 export default function Home() {
   const { data, error } = useApi('/api/home', { keep: true });
   useTitle(null);
@@ -46,6 +47,7 @@ export default function Home() {
   );
 }
 
+// Squelette de l'accueil pendant le chargement
 function HomeSkeleton() {
   const bar = (w, hgt = 14) => <i className="sk" style={{ width: w, height: hgt }} />;
   return (
@@ -148,6 +150,7 @@ function Hero({ items, apiRef }) {
   );
 }
 
+// Image de fond du bandeau d'accueil
 function HeroLayer({ item, on }) {
   const [failed, setFailed] = useState(false);
   const cls = on ? 'on' : '';
@@ -158,6 +161,7 @@ function HeroLayer({ item, on }) {
   return <img src={`/api/items/${item.id}/thumb?size=big`} alt="" className={cls} decoding="async" onError={() => setFailed(true)} />;
 }
 
+// Lance la lecture d'un titre (épisode à suivre pour une série)
 async function playItem(item) {
   const { components } = shared();
   if (item.type === 'movie') return go(components.playPath(item.id));
@@ -166,6 +170,7 @@ async function playItem(item) {
   else go(`/titre/${item.id}`);
 }
 
+// Ligne d'informations du bandeau
 function Meta({ item }) {
   const { ui } = shared();
   const age = ui.ageBadge(item);
@@ -182,6 +187,7 @@ function Meta({ item }) {
   );
 }
 
+// Texte et boutons du bandeau d'accueil
 function HeroBody({ item, bodyRef, swap }) {
   const { components } = shared();
   const ref = bodyRef;
@@ -280,6 +286,7 @@ function NoPosters() {
   );
 }
 
+// Accueil vide : aide pour ajouter les premières vidéos
 function Empty({ data }) {
   const { app } = shared();
   const p = app.state.profile;

@@ -18,12 +18,15 @@ const ARCH = { x64: 'amd64', arm64: 'arm64', arm: 'arm', ia32: '386' };
 const st = { running: false, url: null, connected: false, error: null, log: [], startedAt: null, mode: 'off' };
 let proc = null;
 
+// Réglages de l'accès hors de la maison
 export const remoteConf = () => { const c = getSetting('remote_access', null); return c && typeof c === 'object' ? c : { mode: 'off' }; };
+// Chemin du programme cloudflared
 function binPath() {
   if (process.env.VENUS_CLOUDFLARED_BIN) return process.env.VENUS_CLOUDFLARED_BIN;
   if (fs.existsSync(BIN)) return BIN;
   try { return execFileSync('sh', ['-c', 'command -v cloudflared'], { encoding: 'utf8' }).trim() || null; } catch { return null; }
 }
+// Télécharge le programme officiel cloudflared pour cette machine
 async function install() {
   const a = ARCH[os.arch()];
   if (process.platform !== 'linux' || !a) throw new Error(`Téléchargement automatique prévu pour Linux seulement (ici : ${process.platform} ${os.arch()}) : installez cloudflared vous-même`);
@@ -38,6 +41,7 @@ async function install() {
   return BIN;
 }
 
+// État de l'accès hors de la maison (et si la visite arrive par un tunnel)
 export function remoteStatus(req) {
   const host = String((req && (req.headers.host || req.headers[':authority'])) || '').replace(/:\d+$/, '');
   const viaTailscale = /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+$/.test(host) || /\.ts\.net$/i.test(host);
@@ -45,11 +49,13 @@ export function remoteStatus(req) {
   return { ...st, log: st.log.slice(-12), mode: remoteConf().mode, hasToken: !!remoteConf().token, installed: !!binPath(), viaTailscale, viaTunnel, host };
 }
 
+// Arrête le tunnel en cours
 function stopProc() {
   if (proc) { try { proc.kill('SIGTERM'); } catch { /* */ } proc = null; }
   Object.assign(st, { running: false, url: null, connected: false });
 }
 
+// Démarre le tunnel choisi (lien rapide ou tunnel personnel)
 export async function startRemote(mode, token) {
   stopProc();
   st.error = null; st.log = [];
@@ -93,5 +99,6 @@ export function resumeRemote() {
   const c = remoteConf();
   if (c.mode && c.mode !== 'off') startRemote(c.mode).catch((e) => { st.error = e.message; console.warn('[accès distant]', e.message); });
 }
+// Coupe l'accès hors de la maison
 export function stopRemote() { stopProc(); }
 process.on('exit', () => { if (proc) { try { proc.kill('SIGTERM'); } catch { /* */ } } });

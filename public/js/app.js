@@ -32,19 +32,23 @@ const GATES = {
   profiles: () => import('./views/profiles.js'), invitation: () => import('./views/invitation.js'),
 };
 
+// Lien du menu (actif si c'est la page en cours)
 function navLink(href, label, ic, path) {
   const active = isActive(href, path);
   return h('a', { href, class: `f${active ? ' active' : ''}`, 'aria-current': active ? 'page' : null }, ic ? icon(ic) : null, h('span', {}, label));
 }
 
+// Ce lien correspond-il à la page en cours ?
 const isActive = (href, path) => (href === '/' ? path === '/' : path.startsWith(href));
 
+// Élément du menu : lien, ou bouton pour la télécommande
 const itemLink = (it, path) => (it.action === 'remote'
   ? h('button', { class: 'rail-item f', onclick: openRemote }, icon(iconOf(it)), h('span', {}, labelOf(it)))
   : navLink(it.href, labelOf(it), iconOf(it), path));
 
 // Badge de l'administrateur : lectures en cours sur le serveur, rafraîchi toutes les 30 s (caché quand personne ne regarde)
 let liveTimer = null;
+// Pastille des lectures en cours (administrateur)
 function liveBadge(cls) {
   const el = h('a', { href: '/dashboard', class: `${cls} f`, hidden: true, title: 'Lectures en cours' }, icon('play'), h('span', {}, ''));
   const tick = async () => {
@@ -90,7 +94,9 @@ function shell(path) {
 
 // La coque (menu) reste en place d'une page à l'autre : seul le contenu change, sans clignotement
 let chrome = null;
+// Signature de la coque : la reconstruire seulement si le thème ou le profil change
 const shellSig = () => JSON.stringify([currentPlanet(), state.profile.id, state.profile.isAdmin, state.profile.name, state.profile.avatar, state.profile.dailyLeft, state.profile.isKids, state.categories, menuPrefs(state.profile.id), dayPart()]);
+// Construit (ou garde) la coque de navigation pour la page affichée
 function ensureShell(path) {
   const sig = shellSig();
   if (!chrome || chrome.sig !== sig || !app.contains(chrome.rail)) {
@@ -105,6 +111,7 @@ function ensureShell(path) {
   }
   return chrome;
 }
+// Retire la coque de navigation
 function dropShell() { if (chrome) { chrome.cleanup(); chrome = null; } }
 // Menu modifié : redessiné une seule fois par image (plusieurs interrupteurs basculés vite = un seul rendu),
 // sans rejouer les animations d'entrée (sinon tout le menu clignote)
@@ -142,6 +149,7 @@ function skeleton(path) {
   return h('main', { class: 'with-nav sk-page', 'aria-busy': 'true', 'aria-label': 'Chargement' }, body);
 }
 
+// Affiche une page (module de vue) dans la coque
 async function mount(viewModule, params, { withNav, path }) {
   const ticket = ++mountTicket;
   // Barre de chargement fine en haut de l'écran pendant la préparation de la page suivante
@@ -227,6 +235,7 @@ let mountTicket = 0;
 async function route() {
   try { return await showRoute(); } catch (e) { startFailed(e); }
 }
+// Écran d'erreur quand le démarrage échoue
 function startFailed(e) {
   console.error(e);
   if (isBooted() && app.querySelector(':scope > main')) { toast(e && e.message ? e.message : 'Erreur inattendue', true); return; }
@@ -245,6 +254,7 @@ async function repairAndReload() {
   try { sessionStorage.clear(); } catch { /* */ }
   location.replace('/');
 }
+// Affiche la page correspondant à l'adresse
 async function showRoute() {
   if (!state.profile) return;
   // Profil enfant : interface simplifiée (grandes tuiles, menu réduit) ; temps d'écran restant affiché
@@ -274,6 +284,7 @@ async function showRoute() {
   return mount(VIEWS[r.view](), params, { withNav: !r.bare, path });
 }
 
+// Affiche un écran d'entrée (installation, connexion, profils)
 async function showGate(kind) {
   if (current) { try { current.destroy && current.destroy(); } catch { /* */ } current = null; }
   dropShell();
@@ -292,9 +303,11 @@ async function showGate(kind) {
   requestAnimationFrame(() => focusFirst());
 }
 
+// Démarre l'interface classique
 async function boot() {
   try { await startApp(); } catch (e) { startFailed(e); }
 }
+// Démarrage : état du serveur, session, profil, puis première page
 async function startApp() {
   try {
     state.status = await api('/api/status');

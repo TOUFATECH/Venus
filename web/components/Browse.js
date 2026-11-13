@@ -14,11 +14,14 @@ import { isBackNav } from '../lib/scroll';
 const PAGE = 72; // cartes dessinées par paquet
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés', clip: 'Clips', mylist: 'Ma liste' };
 const PATHS = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips', mylist: '/liste' };
+// Date de sortie (ou 1er janvier de l'année)
 const rel = (i) => i.released || (i.year ? `${i.year}-01-01` : '');
 // Un seul comparateur pour tous les tris par titre (localeCompare en recréait un à chaque comparaison : sur
 // 5 000 films, le tri alphabétique prenait plusieurs dixièmes de seconde)
 const collator = new Intl.Collator('fr', { sensitivity: 'base', numeric: true });
+// Tri alphabétique à la française
 const cmpTitle = (a, b) => collator.compare(a.title || '', b.title || '');
+// Données d'un titre préparées pour les tris et filtres
 const norm = (i, src) => {
   const r = i.ratings || {};
   if (!src) return r.score || (i.vote ? i.vote * 10 : 0);
@@ -48,8 +51,10 @@ const store = {
   get(k, d, ls = false) { try { return JSON.parse((ls ? localStorage : sessionStorage).getItem(k)) ?? d; } catch { return d; } },
   set(k, v, ls = false) { try { (ls ? localStorage : sessionStorage).setItem(k, JSON.stringify(v)); } catch { /* */ } },
 };
+// Ordre aléatoire stable pour n éléments
 const shuffleSeed = (n) => { const a = Array.from({ length: n }, (_, i) => i); for (let i = n - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
 
+// Page d'une bibliothèque (Films, Séries, Animés, Clips, Ma liste) avec ses onglets
 export default function Browse({ kind }) {
   const { search } = useVenus();
   const vue = search ? search.get('vue') : null;
@@ -74,6 +79,7 @@ export default function Browse({ kind }) {
   );
 }
 
+// Onglet principal d'une bibliothèque : chargement de la liste par morceaux
 function Library({ kind, tabs }) {
   const L = shared();
   const { api, app, ui, components, queue: Q } = L;
@@ -120,6 +126,7 @@ function Library({ kind, tabs }) {
   return <LibraryView kind={kind} items={items} total={total} tabs={tabs} wantGenre={search ? search.get('genre') : null} storeKey={key} back={back} />;
 }
 
+// Grille d'attente pendant le chargement
 function SkeletonGrid() {
   return (
     <div className="page" aria-busy="true" aria-label="Chargement">
@@ -130,6 +137,7 @@ function SkeletonGrid() {
   );
 }
 
+// Grille d'une bibliothèque avec tris, filtres et affichage (affiches, vignettes, liste)
 function LibraryView({ kind, items, total = 0, tabs, wantGenre, storeKey, back }) {
   const L = shared();
   const { app, components, queue: Q } = L;

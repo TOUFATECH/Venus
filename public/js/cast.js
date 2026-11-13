@@ -2,10 +2,12 @@
 import { auth } from './api.js';
 let ready = null;
 
+// Le Chromecast est-il utilisable dans ce navigateur ?
 export function castSupported() {
   return !window.__VN_NO_CAST && window.isSecureContext && /Chrome|CriOS|Edg/.test(navigator.userAgent) && !/iPhone|iPad/.test(navigator.userAgent);
 }
 
+// Charge la bibliothèque Google Cast (une seule fois)
 export function loadCast() {
   if (ready) return ready;
   ready = new Promise((resolve) => {
@@ -25,6 +27,7 @@ export function loadCast() {
   return ready;
 }
 
+// Contexte Google Cast
 export function castContext() { return window.cast && cast.framework ? cast.framework.CastContext.getInstance() : null; }
 
 // Envoie un média au Chromecast. info = réponse de /api/play obtenue avec les capacités du Chromecast
@@ -52,6 +55,7 @@ export async function castMedia(info) {
   return (dev && dev.friendlyName) || 'Chromecast';
 }
 
+// Lecteur distant (Chromecast) et son contrôleur
 export function remote() {
   const player = new cast.framework.RemotePlayer();
   const controller = new cast.framework.RemotePlayerController(player);

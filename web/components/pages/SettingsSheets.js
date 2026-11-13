@@ -7,12 +7,17 @@ import { api, toast, go, openSheet } from '../../lib/hooks';
 import { Icon, Avatar } from '../Icon';
 import { Field, Select } from '../Field';
 
+// Fenêtre de confirmation
 export const confirm = (m, l) => shared().ui.confirmSheet(m, l);
+// Taille lisible en Go ou Mo
 export const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
+// Nombre et mot au pluriel si besoin
 const plural = (n, w) => `${n} ${w}${n > 1 ? 's' : ''}`;
 
 export { Field, Select };
+// Rangée de boutons d'un formulaire
 export const Actions = ({ children, wrap, end }) => <div className="form-actions" style={end ? undefined : { justifyContent: 'flex-start', ...(wrap ? { flexWrap: 'wrap' } : {}) }}>{children}</div>;
+// Lien externe (nouvel onglet)
 export const Ext = ({ href, children }) => <a href={href} target="_blank" rel="noopener" style={{ textDecoration: 'underline' }}>{children}</a>;
 
 // Bouton qui patiente pendant son action (désactivé, libellé d'attente)
@@ -40,6 +45,7 @@ export function Switch({ label, hint, checked, onChange, disabled, mini, style }
 
 // Interrupteur d'un réglage du serveur
 export const putSettings = (body) => api('/api/admin/settings', { method: 'PUT', body });
+// Interrupteur enregistré dans les réglages du serveur
 export function SetSwitch({ label, hint, k, checked, msg = 'Préférence enregistrée', style }) {
   return <Switch label={label} hint={hint} checked={checked} style={style} onChange={async (e) => { const on = e.target.checked; try { await putSettings({ [k]: on }); toast(typeof msg === 'function' ? msg(on) : msg); } catch (err) { toast(err.message, true); e.target.checked = !on; } }} />;
 }
@@ -90,6 +96,7 @@ function Loaded({ load, children, deps = [] }) {
 export function inviteSheet(existing, onDone) {
   openSheet(existing ? `Renvoyer l’invitation de ${existing.name}` : 'Inviter par e-mail', (close) => <Invite existing={existing} onDone={onDone} />);
 }
+// Formulaire d'invitation par e-mail
 function Invite({ existing, onDone }) {
   const [err, setErr] = useState('');
   const [res, setRes] = useState(null);
@@ -129,9 +136,11 @@ function Invite({ existing, onDone }) {
 const AGES = [['', 'Aucune limite'], ['3', '3 ans et +'], ['7', '7 ans et +'], ['10', '10 ans et +'], ['12', '12 ans et +'], ['16', '16 ans et +']];
 const DAYS = [[1, 'L'], [2, 'M'], [3, 'M'], [4, 'J'], [5, 'V'], [6, 'S'], [0, 'D']];
 const DAY_NAMES = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+// Ouvre la fenêtre de création ou de modification d'un profil
 export function editProfile(p, self, onDone) {
   openSheet(!p ? 'Nouveau profil' : `Modifier ${p.name}`, (close) => <ProfileForm p={p} self={self} onDone={onDone} close={close} />);
 }
+// Formulaire d'un profil (nom, PIN, enfant, droits)
 function ProfileForm({ p, self, onDone, close }) {
   const isNew = !p;
   const me = shared().app.state.profile;
@@ -236,6 +245,7 @@ function ProfileForm({ p, self, onDone, close }) {
 export function choosePoster(it, onDone) {
   openSheet(`Affiche de « ${it.title} »`, (close) => <PosterPick it={it} close={close} onDone={onDone} />, { wide: true });
 }
+// Choix d'une affiche pour un titre
 function PosterPick({ it, close, onDone }) {
   const [q, setQ] = useState(it.title);
   const [y, setY] = useState(it.year ? String(it.year) : '');
@@ -311,6 +321,7 @@ export function openDuplicates() {
 export function openRename() {
   openSheet('Renommer les fichiers', (close) => <div className="ren-list"><Loaded load={() => api('/api/admin/rename')}>{({ plan }) => <Rename plan={plan} close={close} />}</Loaded></div>, { wide: true });
 }
+// Renommage des fichiers : propositions cochables
 function Rename({ plan, close }) {
   const [on, setOn] = useState(() => new Set(plan.filter((p) => !p.exists).map((p) => p.id)));
   const [busy, setBusy] = useState(false);

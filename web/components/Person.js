@@ -7,6 +7,7 @@ import { api, toast, img, openSheet } from '../lib/hooks';
 import Card from './Card';
 import { Icon } from './Icon';
 
+// Ouvre la fiche d'une personne
 export function openPerson(p) {
   const s = openSheet(p.name, (close) => <PersonSheet p={p} close={close} />, { wide: true });
   const onNav = () => s.close();
@@ -14,6 +15,7 @@ export function openPerson(p) {
   return s;
 }
 
+// Fiche d'une personne : photo, filmographie, titres présents dans Venus
 function PersonSheet({ p, close }) {
   const [inLib, setInLib] = useState(null);
   const [libErr, setLibErr] = useState(null);
@@ -91,6 +93,7 @@ export function OutFilm({ x, f }) {
 // Photos manquantes (équipe surtout) : demandées au serveur par lots (TVmaze, Wikidata)
 const queue = new Map();
 let timer = 0;
+// Demande la photo d'une personne (demandes groupées)
 export function wantPhoto(name, cb) {
   if (!queue.has(name)) queue.set(name, []);
   queue.get(name).push(cb);

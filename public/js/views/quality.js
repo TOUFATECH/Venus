@@ -4,9 +4,11 @@ import { api } from '../api.js';
 import { h, icon, img, toast } from '../ui.js';
 import { go, state } from '../core.js';
 
+// Taille lisible (Go, To)
 const fmtBytes = (b) => (b >= 1e12 ? `${(b / 1e12).toFixed(2).replace('.', ',')} To` : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
 const FILTERS = [['improve', 'À améliorer'], ['all', 'Tout'], ['4K', '4K'], ['1080p', '1080p'], ['720p', '720p'], ['SD', 'SD'], ['hdr', 'HDR']];
 
+// Page Qualité : définitions, HDR, débits de la médiathèque
 export async function render(main) {
   if (!state.profile.isAdmin) { main.append(h('div', { class: 'empty' }, h('h2', {}, 'Réservé à l’administrateur'))); return; }
   const d = await api('/api/admin/quality');

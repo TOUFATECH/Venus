@@ -6,12 +6,14 @@ import os from 'node:os';
 import path from 'node:path';
 import dns from 'node:dns/promises';
 import { execFile, execFileSync } from 'node:child_process';
+// Liste des partages montés (commande mount)
 const require_mount = () => execFileSync('mount', [], { timeout: 3000 }).toString();
 import { config } from './config.js';
 import { all, run, sealText, unsealText } from './db.js';
 import { runtime, mountAdvice } from './env.js';
 
 const PLATFORM = process.platform; // linux | darwin | win32
+// Dossier où sont montés les partages selon le système
 function defaultMountRoot() {
   if (PLATFORM === 'linux') {
     try { fs.mkdirSync('/mnt/venus', { recursive: true }); fs.accessSync('/mnt/venus', fs.constants.W_OK); return '/mnt/venus'; } catch { /* pas root */ }
@@ -22,11 +24,13 @@ export const MOUNT_ROOT = process.env.MOUNT_ROOT || defaultMountRoot();
 const credDir = path.join(config.dataDir, 'net');
 fs.mkdirSync(credDir, { recursive: true, mode: 0o700 });
 
+// Lance une commande et renvoie sa sortie
 const sh = (cmd, args, timeout = 20000) => new Promise((resolve) => {
   execFile(cmd, args, { timeout, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
     resolve({ ok: !err, code: err && err.code, out: String(stdout), err: String(stderr || (err && err.message) || '') });
   });
 });
+// Ce programme est-il installé ?
 const which = async (bin) => (PLATFORM === 'win32' ? (await sh('where', [bin], 3000)).ok : (await sh('sh', ['-c', `command -v ${bin}`], 3000)).ok);
 const unc = (host, share) => `\\\\${host}\\${share.replace(/\//g, '\\')}`;
 
@@ -41,6 +45,7 @@ function probe(host, port, timeout = 450) {
   });
 }
 
+// Réseaux locaux de la machine (ex. 192.168.1)
 function localSubnets() {
   const out = new Set();
   for (const [name, list] of Object.entries(os.networkInterfaces())) {
@@ -55,6 +60,7 @@ function localSubnets() {
   return [...out];
 }
 
+// Nom d'un appareil du réseau
 async function hostName(ip) {
   try {
     const names = await Promise.race([dns.reverse(ip), new Promise((_, rej) => setTimeout(() => rej(new Error('délai')), 800))]);
@@ -63,6 +69,7 @@ async function hostName(ip) {
 }
 
 let lastScan = { at: 0, hosts: [] };
+// Recherche les NAS et PC qui partagent des fichiers (SMB, NFS) sur le réseau local
 export async function discover({ force = false } = {}) {
   if (!force && Date.now() - lastScan.at < 60000) return lastScan.hosts;
   // LAN_SUBNET=192.168.1 (Docker Desktop : le conteneur ne voit pas le réseau de la maison tout seul)
@@ -123,12 +130,14 @@ export async function listShares({ proto, host, user, pass }) {
 // ------------------------------------------------------------------ montage
 function cleanHost(h) { return String(h || '').trim().replace(/^(smb|nfs|cifs):\/\//i, '').replace(/^\\\\/, '').replace(/[\\/].*$/, ''); }
 
+// Description lisible d'un partage (smb://nas/films)
 export function describe(remote) {
   if (!remote) return null;
   return remote.proto === 'nfs' ? `nfs://${remote.host}${remote.share.startsWith('/') ? '' : '/'}${remote.share}` : `\\\\${remote.host}\\${remote.share.replace(/\//g, '\\')}`;
 }
 
 let macMounts = { at: 0, text: '' };
+// Ce dossier est-il un partage monté ?
 function isMounted(target) {
   if (PLATFORM === 'win32') { try { fs.readdirSync(target); return true; } catch { return false; } }
   if (PLATFORM === 'darwin') {
@@ -143,6 +152,7 @@ function isMounted(target) {
   } catch { return false; }
 }
 
+// Arguments de la commande mount pour un partage SMB ou NFS
 export function mountArgs(id, remote, target) {
   const uid = process.getuid ? process.getuid() : 0;
   const gid = process.getgid ? process.getgid() : 0;
@@ -159,6 +169,7 @@ export function mountArgs(id, remote, target) {
   return ['-t', 'cifs', `//${remote.host}/${remote.share}`, target, '-o', opts];
 }
 
+// Connecte un partage sous Windows (net use)
 async function mountWindows(id, remote) {
   if (remote.proto === 'nfs') return { ok: false, error: 'Sous Windows, utilisez un partage SMB (le client NFS de Windows n’est pas pris en charge par Venus).' };
   const root = unc(remote.host, remote.share);
@@ -171,6 +182,7 @@ async function mountWindows(id, remote) {
   catch { return { ok: false, path: root, error: explain(r.err + r.out, remote) }; }
 }
 
+// Monte un partage sous macOS
 async function mountMac(id, remote, target) {
   if (isMounted(target)) return { ok: true, path: target };
   let r;
@@ -183,6 +195,7 @@ async function mountMac(id, remote, target) {
   return r.ok ? { ok: true, path: target } : { ok: false, path: target, error: explain(r.err, remote) };
 }
 
+// Monte un partage réseau (selon le système)
 export async function mountRemote(id, remote) {
   if (PLATFORM === 'win32') return mountWindows(id, remote);
   const target = path.join(MOUNT_ROOT, String(id));
@@ -204,6 +217,7 @@ export async function mountRemote(id, remote) {
   return { ok: false, path: target, error: explain(last, remote) };
 }
 
+// Message d'erreur clair quand le montage échoue
 function explain(err, remote) {
   if (/Operation not permitted|must be superuser|only root|permission denied.*mount/i.test(err) || !runtime.canMount) {
     const a = mountAdvice();
@@ -216,6 +230,7 @@ function explain(err, remote) {
   return `Montage impossible : ${err.trim().split('\n').pop() || 'erreur inconnue'}`;
 }
 
+// Démonte un partage réseau
 export async function unmountRemote(id, remote) {
   if (PLATFORM === 'win32') { if (remote) await sh('net', ['use', unc(remote.host, remote.share), '/delete', '/y'], 15000); return; }
   const target = path.join(MOUNT_ROOT, String(id));
@@ -231,6 +246,7 @@ export function remoteReady(lib) {
   return isMounted(path.join(MOUNT_ROOT, String(lib.id)));
 }
 
+// Réglages du partage d'une bibliothèque (mot de passe déchiffré)
 export function remoteOf(lib) {
   if (!lib || !lib.remote) return null;
   try {
@@ -264,6 +280,7 @@ try {
 // État des sources réseau (pour les réglages)
 export const netState = new Map(); // id -> { ok, error, at }
 
+// Monte tous les partages au démarrage
 export async function mountAll() {
   for (const lib of all('SELECT * FROM libraries WHERE remote IS NOT NULL')) {
     const r = remoteOf(lib);

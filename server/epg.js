@@ -10,8 +10,11 @@ import { db, all, get, run, tx, getSetting, setSetting } from './db.js';
 db.exec(`CREATE TABLE IF NOT EXISTS epg (channel_id INTEGER REFERENCES items(id) ON DELETE CASCADE, start INTEGER, stop INTEGER, title TEXT, sub TEXT, descr TEXT, cat TEXT, icon TEXT, ep TEXT);
 CREATE INDEX IF NOT EXISTS idx_epg ON epg(channel_id, start);`);
 
+// Nom de chaîne simplifié pour rapprocher le guide des chaînes (sans « HD », « FHD »…)
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\b(hd|fhd|uhd|4k|sd|fr|\|)\b/g, '').replace(/[^a-z0-9]+/g, '');
+// Décode le texte XML (CDATA et entités)
 const decode = (s) => String(s || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, '&').trim();
+// Contenu d'une balise XML
 const tag = (xml, name) => { const m = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]*?)</${name}>`, 'i').exec(xml); return m ? decode(m[1]) : ''; };
 // « 20261103183000 +0100 » → millisecondes
 export function xmltvTime(s) {
@@ -28,6 +31,7 @@ export function epgSources() {
   const auto = Object.values(getSetting('epg_auto', {}) || {}).flat().filter(Boolean);
   return [...new Set([...manual, ...auto])];
 }
+// Retient l'adresse du guide trouvée dans une liste M3U ou un abonnement Xtream
 export function rememberEpgUrl(libId, urls) {
   const auto = getSetting('epg_auto', {}) || {};
   auto[libId] = urls;
@@ -38,6 +42,7 @@ export function rememberEpgUrl(libId, urls) {
 // Plusieurs adresses possibles (compressée, complète, TNT seule) : la première qui répond est prise.
 export const FREE_GUIDE = 'venus:guide-fr';
 const FREE_GUIDE_URLS = (process.env.VENUS_GUIDE_FR || 'https://xmltvfr.fr/xmltv/xmltv.xml.gz https://xmltvfr.fr/xmltv/xmltv.xml https://xmltvfr.fr/xmltv/xmltv_tnt.xml').split(/\s+/).filter(Boolean);
+// Ouvre une source de guide (fichier .xml ou .xml.gz) en flux
 async function openSource(src) {
   if (src === FREE_GUIDE) {
     let last = null;
@@ -108,6 +113,7 @@ async function importSource(src, channels, from, to, rows) {
   return { kept, total };
 }
 
+// Recharge toutes les sources du guide et enregistre les programmes
 export async function refreshEpg(progress = () => {}) {
   const sources = epgSources();
   if (!sources.length) return 'Aucune adresse de guide (EPG) : ajoutez-en une dans Réglages → TV en direct';
@@ -133,9 +139,13 @@ export async function refreshEpg(progress = () => {}) {
   return `${rows.length} programmes, ${new Set(rows.map((r) => r[0])).size} chaînes (${report.join(' ; ')})`;
 }
 
+// Efface les programmes terminés depuis plus de 6 heures
 export const pruneEpg = () => run('DELETE FROM epg WHERE stop < ?', Date.now() - 6 * 3600e3);
+// Programmes entre deux dates (pour la grille du guide)
 export const programsBetween = (from, to, ids = null) => all(`SELECT rowid AS id, channel_id AS channel, start, stop, title, sub, descr, cat, icon, ep FROM epg WHERE stop > ? AND start < ?${ids ? ` AND channel_id IN (${ids.map(() => '?').join(',') || 'NULL'})` : ''} ORDER BY channel_id, start`, from, to, ...(ids || []));
+// Un programme par son identifiant
 export const programById = (id) => get('SELECT rowid AS id, channel_id AS channel, start, stop, title, sub, descr, cat, icon, ep FROM epg WHERE rowid = ?', Number(id));
+// Programme en cours et suivant de chaque chaîne
 export function nowNext(ids) {
   const now = Date.now();
   const list = programsBetween(now, now + 6 * 3600e3, ids);
@@ -143,4 +153,5 @@ export function nowNext(ids) {
   for (const p of list) { const o = (out[p.channel] ||= []); if (o.length < 2) o.push(p); }
   return out;
 }
+// État du guide pour les réglages
 export const epgState = () => ({ sources: epgSources(), last: getSetting('epg_last', null), manual: String(getSetting('epg_urls', '') || '') });

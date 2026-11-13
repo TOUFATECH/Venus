@@ -8,6 +8,7 @@ const TVMAZE = process.env.VENUS_TVMAZE_API || 'https://api.tvmaze.com';
 const FRESH = 3 * 864e5;
 const busy = new Map();
 
+// Identifiant TVmaze d'une série (cherché par titre et année)
 async function findId(show) {
   if (show.tvmaze_id) return show.tvmaze_id;
   const d = await getJson(`${TVMAZE}/search/shows?q=${encodeURIComponent(show.title)}`);

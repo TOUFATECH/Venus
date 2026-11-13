@@ -5,6 +5,7 @@ import os from 'node:os';
 
 const env = process.env;
 
+// Cherche ffmpeg / ffprobe : variable d'environnement, emplacements connus, sinon le PATH
 function findFfmpeg(name) {
   const explicit = env[`${name.toUpperCase()}_PATH`];
   if (explicit) return explicit;
@@ -57,6 +58,7 @@ export const config = {
   version: '1.0.0',
 };
 
+// Crée un dossier de données s'il manque, avec un message clair en cas d'échec
 function ensureDir(dir, what) {
   try {
     fs.mkdirSync(dir, { recursive: true });

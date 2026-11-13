@@ -7,15 +7,22 @@ import { go } from './core.js';
 const DEFS = [['0', 'D’origine (garde le 4K)'], ['1440', '1440p'], ['1080', '1080p (recommandé)'], ['720', '720p (très compact)']];
 const QUALS = [['max', 'Maximale'], ['high', 'Haute'], ['balanced', 'Équilibrée']];
 const LANGS = [['fre', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['ger', 'Allemand'], ['ita', 'Italien'], ['ara', 'Arabe'], ['kor', 'Coréen'], ['chi', 'Chinois'], ['por', 'Portugais']];
+// Taille lisible en Go ou Mo
 const fmtGo = (b) => (!b ? '0 Mo' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
+// Pourcentage de place gagnée
 const pct = (a, b) => (a && b ? Math.round((1 - b / a) * 100) : 0);
 // Écart de taille en clair : « −35 % » quand la copie est plus légère, « +13 % » quand elle serait plus lourde (une
 // vidéo déjà très légère, proposée parce que son format oblige à la convertir à chaque lecture), jamais « −-13 % »
 const delta = (p) => (p > 0 ? `−${p} %` : p < 0 ? `+${-p} %` : 'même taille');
+// Message après validation (place libérée)
 const freed = (r, later) => (r.saved > 0 ? `Validé : ${fmtGo(r.saved)} libérés${later ? ' dans 7 jours (corbeille)' : ''}` : 'Validé : la copie remplace l’original');
+// Nom lisible d'une vidéo (épisode avec sa série)
 const epLabel = (x) => (x.type === 'episode' && x.show ? `${x.show} · S${x.season} É${x.episode} · ${x.title}` : `${x.title}${x.year ? ` (${x.year})` : ''}`);
+// Champ de formulaire avec son libellé et son aide
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('small', {}, hint) : null);
+// Liste déroulante
 const select = (opts, value, onchange) => h('select', { class: 'f', onchange }, opts.map(([v, l]) => h('option', { value: v, selected: String(v) === String(value) }, l)));
+// Interrupteur enregistré dès qu'il change
 const toggle = (label, hint, on, onchange) => h('label', { class: 'switch' }, h('span', {}, label, h('small', { class: 'muted', style: { display: 'block' } }, hint)),
   h('input', { type: 'checkbox', class: 'f', checked: on, onchange: async (e) => { try { await onchange(e.target.checked); } catch (err) { toast(err.message, true); e.target.checked = !e.target.checked; } } }));
 
@@ -35,6 +42,7 @@ export function validateSheet(c, reload) {
   });
 }
 
+// Encadré « Compression des vidéos » des réglages
 export function convertBox() {
   const box = h('section', { class: 'box', id: 'convert' }, h('h2', {}, 'Compression des vidéos'), h('p', { class: 'muted' }, 'Chargement…'));
   let st = null, sug = null, showAll = false;

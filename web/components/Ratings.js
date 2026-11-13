@@ -2,6 +2,7 @@
 // Notes des sites (IMDb, Rotten Tomatoes, Metacritic, TMDB, AniList…) et liens vers ceux sans note publique
 import { shared } from '../lib/shared';
 
+// Pastilles des notes des sites (IMDb, Rotten Tomatoes…)
 export default function Ratings({ ratings, links = {} }) {
   const { components } = shared();
   const r = ratings || {};

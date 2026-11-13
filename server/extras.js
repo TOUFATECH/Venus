@@ -19,6 +19,7 @@ export function setOpinion(profileId, itemId, liked) {
   if (liked == null) run('DELETE FROM opinions WHERE profile_id = ? AND item_id = ?', profileId, itemId);
   else run('INSERT INTO opinions(profile_id, item_id, liked, at) VALUES(?, ?, ?, ?) ON CONFLICT(profile_id, item_id) DO UPDATE SET liked = excluded.liked, at = excluded.at', profileId, itemId, liked ? 1 : -1, Date.now());
 }
+// Avis d'un profil sur un titre (aimé, bof, rien)
 export const opinionOf = (profileId, itemId) => { const r = get('SELECT liked FROM opinions WHERE profile_id = ? AND item_id = ?', profileId, itemId); return r ? r.liked : null; };
 // Genres aimés / boudés par un profil : { Comédie: 2, Horreur: -1 }
 export function genreTaste(profileId) {
@@ -29,6 +30,7 @@ export function genreTaste(profileId) {
   }
   return taste;
 }
+// Score de goût d'un titre selon les genres aimés par le profil
 export const tasteScore = (taste, genres) => (genres || []).reduce((n, g) => n + (taste[g] || 0), 0);
 
 // ------------------------------------------------------------------ stockage : relevé quotidien et prévision
@@ -54,6 +56,7 @@ export function logTranscode({ device, reason, itemId, codec, container }) {
   run('INSERT INTO transcode_log(at, device, reason, item_id, codec, container) VALUES(?, ?, ?, ?, ?, ?)', Date.now(), String(device || '').slice(0, 80), String(reason || '').slice(0, 120), itemId || null, codec || null, container || null);
   run('DELETE FROM transcode_log WHERE at < ?', Date.now() - 90 * 864e5);
 }
+// Résumé des conversions des 30 derniers jours (par appareil et par cause)
 export function transcodeSummary() {
   const since = Date.now() - 30 * 864e5;
   const byDevice = all('SELECT device, COUNT(*) n FROM transcode_log WHERE at > ? GROUP BY device ORDER BY n DESC LIMIT 8', since);

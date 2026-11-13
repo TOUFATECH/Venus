@@ -12,6 +12,7 @@ for (const proto of [Element.prototype, DocumentFragment.prototype]) {
   }
 }
 
+// Crée un élément HTML (attributs, événements, enfants)
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -117,6 +118,7 @@ const P = {
 };
 // Dessin d'une icône (contenu du <svg>), pour l'interface React
 export const iconMarkup = (name) => P[name] || '';
+// Icône SVG
 export function icon(name) {
   const span = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   span.setAttribute('viewBox', '0 0 24 24');
@@ -127,12 +129,15 @@ export function icon(name) {
 
 // Logo : la planète du thème choisi, dont la surface tourne (voir themes.js)
 export function logoMark() { const t = document.createElement('template'); t.innerHTML = planetMarkup().trim(); return t.content.firstChild; }
+// Logo et nom de Venus
 export function brand(cls = '') { return h('span', { class: `brand ${cls}` }, logoMark(), h('span', { class: 'brand-name' }, brandName())); }
 
 // Image du serveur ; w = largeur voulue (342 affiches, 780 vignettes) : le serveur l'envoie déjà réduite, bien plus légère
 // Écrans haute densité (iPhone, Mac Retina) : l'image réduite d'un cran au-dessus, pour rester nette
 const HIDPI = { 185: 342, 342: 500, 500: 780, 780: 1280 };
+// Largeur d'image adaptée aux écrans haute définition
 const sharp = (w) => (w && typeof devicePixelRatio === 'number' && devicePixelRatio >= 1.5 && HIDPI[w] ? HIDPI[w] : w);
+// Adresse d'une image du serveur (redimensionnée à la largeur demandée)
 export const img = (name, w) => (!name ? null : /^(data:|blob:|https?:)/.test(name) ? name : `/img/${encodeURIComponent(name)}${w ? `?w=${sharp(w)}` : ''}`);
 // Largeur d'image de fond adaptée à l'écran (1280, 1920, 2560 ou 3840 px) : HD sur un ordinateur, 4K sur une grande télé
 export function bgWidth() {
@@ -142,6 +147,7 @@ export function bgWidth() {
     return px <= 1280 ? 1280 : px <= 1920 || lite ? 1920 : px <= 2560 ? 2560 : 3840;
   } catch { return 1920; }
 }
+// Teinte de couleur stable tirée d'un texte
 export const hueOf = (s) => { let x = 0; for (const c of String(s)) x = (x * 31 + c.charCodeAt(0)) % 360; return x; };
 
 // Image absente : fond coloré (couleur tirée du titre), sans texte quand le nom est déjà écrit à côté
@@ -156,6 +162,7 @@ export function fadeIn(el) {
   if (el.complete && el.naturalWidth) ok(); else el.addEventListener('load', ok, { once: true });
   requestAnimationFrame(() => { if (el.complete && el.naturalWidth) ok(); });
 }
+// Image avec affiche de remplacement si elle manque
 export function picture(src, title, { cls = '', lazy = true } = {}) {
   if (!src) return placeholder(title);
   const el = h('img', { src, alt: '', class: lazy ? `${cls} fade`.trim() : cls, loading: lazy ? 'lazy' : 'eager', decoding: 'async' });
@@ -165,6 +172,7 @@ export function picture(src, title, { cls = '', lazy = true } = {}) {
 }
 
 export const AVATAR_HUES = [12, 38, 145, 190, 215, 265, 300, 340];
+// Avatar d'un profil (image ou initiale)
 export function avatar(profile, cls = '') {
   const el = h('div', { class: `avatar ${cls}` }, (profile.name || '?').trim().charAt(0).toUpperCase());
   el.style.setProperty('--hue', AVATAR_HUES[(profile.avatar || 0) % AVATAR_HUES.length]);
@@ -177,12 +185,14 @@ export function avatar(profile, cls = '') {
 // toast('Texte'), toast('Erreur', true), toast('Texte', { type: 'success'|'info'|'error', action: { label, onClick }, duration })
 let toastEl = null, toastTimer = null, toastLeft = 0, toastStart = 0;
 const TOAST_ICON = { success: 'check', error: 'info', info: 'info' };
+// Type de message (succès, erreur, information)
 function toastType(msg) {
   const m = String(msg);
   if (/erreur|impossible|refus|introuvable|injoignable|échec|invalide|trop de/i.test(m)) return 'error';
   if (/^(ajouté|marqué|enregistr|bienvenue|relié|copié|code copié|nouveau code|message envoyé|lecture arrêtée|téléphone relié|préférence|seerr relié|fiche mise à jour|appareil déconnecté)|vue? en entier|est dans vos envies|demandé à seerr| vu$/i.test(m)) return 'success';
   return 'info';
 }
+// Ferme le message en cours
 function dismissToast() {
   clearTimeout(toastTimer);
   const el = toastEl;
@@ -191,6 +201,7 @@ function dismissToast() {
   el.classList.add('leave');
   setTimeout(() => el.remove(), 260);
 }
+// Affiche un message temporaire en bas de l'écran
 export function toast(msg, opt = false) {
   const o = opt && typeof opt === 'object' ? opt : { type: opt ? 'error' : null };
   const type = o.type || toastType(msg);
@@ -281,16 +292,19 @@ export function sheet(title, content, { onClose, keepBackspace = false, wide = f
   return { close, box };
 }
 
+// Touche « Retour » (Échap, Retour arrière, bouton de la télécommande) ?
 export function isBack(e) {
   return e.key === 'Escape' || e.key === 'Backspace' && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName || '') ||
     e.key === 'GoBack' || e.key === 'BrowserBack' || e.keyCode === 10009 || e.keyCode === 461;
 }
 
+// Durée lisible (« 1:02:03 »)
 export function fmtTime(s) {
   s = Math.max(0, Math.floor(s || 0));
   const hh = Math.floor(s / 3600), mm = Math.floor((s % 3600) / 60), ss = s % 60;
   return hh ? `${hh}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}` : `${mm}:${String(ss).padStart(2, '0')}`;
 }
+// Durée lisible en heures et minutes (« 1 h 45 »)
 export function fmtRuntime(min) {
   if (!min) return '';
   const hh = Math.floor(min / 60), mm = Math.round(min % 60);
@@ -299,6 +313,7 @@ export function fmtRuntime(min) {
 
 const LANG3 = { fre: 'fr', fra: 'fr', eng: 'en', spa: 'es', ger: 'de', deu: 'de', ita: 'it', por: 'pt', jpn: 'ja', kor: 'ko', chi: 'zh', zho: 'zh', ara: 'ar', rus: 'ru', dut: 'nl', nld: 'nl', pol: 'pl', tur: 'tr', hin: 'hi', swe: 'sv', nor: 'no', dan: 'da', fin: 'fi', heb: 'he', gre: 'el', ell: 'el' };
 let dn;
+// Nom d'une langue en français
 export function langName(code) {
   if (!code || code === 'und') return 'Inconnue';
   const c = LANG3[code] || code;
@@ -306,6 +321,7 @@ export function langName(code) {
   catch { return code; }
 }
 
+// Pastille d'âge minimum
 export function ageBadge(item) {
   if (item.age == null && !item.cert) return null;
   const label = item.age === 0 ? 'Tous publics' : item.age != null ? `${item.age}+` : item.cert;
@@ -332,6 +348,7 @@ export function fmtDate(iso, withYear = true) {
   if (isNaN(d)) return '';
   return d.toLocaleDateString('fr-FR', withYear ? { day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' });
 }
+// Nombre de jours depuis une date
 export function daysSince(iso) {
   if (!iso) return Infinity;
   return Math.floor((Date.now() - new Date(`${iso.slice(0, 10)}T12:00:00`).getTime()) / 864e5);
@@ -339,6 +356,7 @@ export function daysSince(iso) {
 
 // QR code en SVG (lien d'invitation, appairage de la télécommande)
 import qrcode from './qrcode.mjs';
+// QR code en SVG d'un texte (lien)
 export function qrSvg(text, size = 220) {
   const qr = qrcode(0, 'M');
   qr.addData(text);
@@ -355,6 +373,7 @@ export function qrSvg(text, size = 220) {
   return el;
 }
 
+// Copie un texte dans le presse-papiers
 export async function copyText(text) {
   try { await navigator.clipboard.writeText(text); toast('Lien copié'); return true; }
   catch { toast('Copiez le lien affiché à la main'); return false; }
@@ -362,6 +381,7 @@ export async function copyText(text) {
 
 // Mot de passe : mêmes règles que le serveur (vérifiées des deux côtés), avec une jauge de solidité
 const COMMON_PW = ['password', 'motdepasse', 'azerty', 'azertyuiop', 'qwerty', '123456', '12345678', '123456789', '1234567890', 'admin', 'venus', 'soleil', 'bonjour', 'iloveyou', 'jetaime', 'famille', 'netflix'];
+// Problème d'un mot de passe (trop court, trop simple, trop courant), ou null s'il convient
 export function passwordProblem(pw) {
   const s = String(pw || '');
   if (s.length < 10) return '10 caractères minimum';
@@ -371,6 +391,7 @@ export function passwordProblem(pw) {
   if (kinds < 2 && s.length < 16) return 'Mélangez lettres et chiffres (ou une phrase de 16 caractères et plus)';
   return '';
 }
+// Jauge de solidité d'un mot de passe sous le champ
 export function passwordMeter(input) {
   const bar = h('i');
   const txt = h('small', { class: 'pw-text' });

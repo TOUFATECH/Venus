@@ -7,6 +7,7 @@ import { parseVtt } from './scenes.js';
 db.exec(`CREATE TABLE IF NOT EXISTS dialogue_index (item_id INTEGER PRIMARY KEY, mtime INTEGER, sub_id TEXT, lang TEXT, n INTEGER, indexed_at INTEGER)`);
 db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS dialogues USING fts5(text, item_id UNINDEXED, start UNINDEXED, stop UNINDEXED, tokenize = 'unicode61 remove_diacritics 2')`);
 
+// Choisit la piste de sous-titres à indexer (français de préférence, hors sous-titres forcés)
 const pickSub = (probe) => {
   const subs = (probe.subs || []).filter((s) => s.text && !s.forced);
   return subs.find((s) => /^fr/.test(s.lang || '')) || subs.find((s) => /^en/.test(s.lang || '')) || subs[0] || null;
@@ -42,12 +43,15 @@ export async function indexDialogues(item, subtitleVtt) {
 // File d'attente (les plus récents d'abord), un titre à la fois
 const queue = [];
 let busy = false, subtitleVttFn = null;
+// Fonction qui fournit les sous-titres au format WebVTT (fournie au démarrage)
 export function setSubtitleVtt(fn) { subtitleVttFn = fn; }
+// Ajoute un titre à la file d'indexation des dialogues
 export function scheduleDialogues(itemId, urgent = false) {
   if (!itemId || queue.includes(itemId)) return;
   if (urgent) queue.unshift(itemId); else queue.push(itemId);
   pump();
 }
+// Traite la file d'indexation, un titre à la fois
 async function pump() {
   if (busy || !subtitleVttFn) return;
   busy = true;
@@ -59,6 +63,7 @@ async function pump() {
   }
   busy = false;
 }
+// Ajoute à la file les titres dont les dialogues ne sont pas encore indexés
 export function schedulePendingDialogues(limit = 500) {
   const rows = all(`SELECT i.id FROM items i LEFT JOIN dialogue_index d ON d.item_id = i.id
     WHERE i.type IN ('movie', 'episode') AND i.path IS NOT NULL AND i.probe LIKE '%"text":true%' AND (d.item_id IS NULL OR d.mtime IS NOT i.mtime)
@@ -66,6 +71,7 @@ export function schedulePendingDialogues(limit = 500) {
   rows.forEach((r) => scheduleDialogues(r.id));
   return rows.length;
 }
+// Statistiques de l'index des dialogues
 export const dialogueStats = () => ({ items: (get('SELECT COUNT(*) n FROM dialogue_index') || {}).n || 0, lines: (get('SELECT SUM(n) n FROM dialogue_index') || {}).n || 0, pending: queue.length });
 
 /** Recherche : une requête libre → répliques classées, 3 au plus par titre */

@@ -9,10 +9,12 @@ import { getSetting } from './db.js';
 
 const API = 'https://api.trakt.tv';
 const imagesDir = path.join(config.dataDir, 'images');
+// Identifiant client Trakt
 export const traktId = () => String(getSetting('trakt_client_id', '') || process.env.TRAKT_CLIENT_ID || '').trim();
 // Source des affiches : tmdb (Trakt seulement si TMDB n'en a pas) | trakt (Trakt d'abord)
 export const posterSource = () => String(getSetting('poster_source', 'tmdb'));
 
+// Requête vers l'API publique de Trakt
 export async function traktGet(pathname, params = {}, id = traktId()) {
   const u = new URL(API + pathname);
   for (const [k, v] of Object.entries(params)) if (v != null && v !== '') u.searchParams.set(k, String(v));
@@ -26,6 +28,7 @@ export async function traktGet(pathname, params = {}, id = traktId()) {
   return res.json();
 }
 
+// Vérifie qu'un identifiant client Trakt fonctionne
 export async function testTrakt(id) {
   await traktGet('/movies/trending', { limit: 1 }, id);
   return true;

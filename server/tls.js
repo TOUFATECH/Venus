@@ -8,8 +8,10 @@ import { execFile } from 'node:child_process';
 import { config } from './config.js';
 import { getSetting } from './db.js';
 
+// Lance une commande (openssl) et renvoie sa sortie
 const run = (cmd, args) => new Promise((resolve, reject) => execFile(cmd, args, { timeout: 30000 }, (e, out, err) => (e ? reject(new Error(String(err || e.message).trim())) : resolve(out))));
 
+// Options HTTPS : certificat fourni, sinon certificat auto-signé créé ou renouvelé
 export async function tlsOptions(addresses = []) {
   if (process.env.HTTPS === '0' || getSetting('https_enabled', true) === false) return null;
   if (process.env.TLS_CERT && process.env.TLS_KEY) {

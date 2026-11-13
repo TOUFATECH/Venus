@@ -5,6 +5,7 @@
 let S = null;
 let loading = null;
 
+// Code partagé chargé (core, api, ui…)
 export const shared = () => S;
 
 // Modules chargés à la demande (bande-annonce, direct, lecteur…)
@@ -20,11 +21,13 @@ const LAZY = {
   'voice.js': () => import('../partage/js/voice.js'),
   'screensaver.js': () => import('../partage/js/screensaver.js'),
 };
+// Charge un module partagé à la demande
 const imp = (file) => {
   const load = LAZY[file];
   return load ? load() : Promise.reject(new Error(`Module inconnu : ${file}`));
 };
 
+// Charge le code partagé (public/js) une seule fois
 export function loadShared() {
   if (S) return Promise.resolve(S);
   if (!loading) {

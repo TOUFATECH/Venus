@@ -1,6 +1,7 @@
 // « Que regarder ce soir ? » : trois questions, trois idées argumentées
 import { api } from '../api.js';
 import { dayPart, todayIcon } from '../menu.js';
+// Salutation selon l'heure
 const greeting = () => { const hr = new Date().getHours(); return hr >= 18 || hr < 4 ? 'Bonsoir' : 'Bonjour'; };
 import { h, icon, img, picture, placeholder, fmtRuntime } from '../ui.js';
 import { go, state } from '../core.js';
@@ -27,14 +28,17 @@ const WHO = [
   ['amis', 'Entre amis', 'Ambiance, rires, sensations'],
 ];
 const WHO_BONUS = { duo: ['romance', 'drame', 'comedie', 'thriller'], famille: ['animation', 'famil', 'comedie', 'aventure'], amis: ['comedie', 'action', 'horreur', 'thriller'] };
+// Texte en minuscules sans accents
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
+// Durée d'un titre en minutes (estimée pour une série)
 function lengthOf(i) {
   if (i.type === 'movie') return i.runtime || 110;
   if (i.type === 'clip') return Math.max(3, i.runtime || 4);
   return i.category === 'anime' ? 24 : 45; // un épisode
 }
 
+// Score d'un titre selon les réponses (durée, humeur, compagnie)
 function score(i, a) {
   if (i.type === 'clip' && a.time !== '30') return null; // un clip n'occupe pas une soirée
   const g = (i.genres || []).map(norm).join(' ');
@@ -70,11 +74,13 @@ function score(i, a) {
   return { item: i, score: s + Math.random() * 1.5, reasons: [...new Set(reasons.filter(Boolean))].slice(0, 4) };
 }
 
+// Heure de fin si on commence maintenant
 function finishAt(min) {
   const d = new Date(Date.now() + min * 60000);
   return `${d.getHours()} h ${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+// Page « Ce soir » : trois questions, trois idées à regarder
 export async function render(main) {
   const items = (await api('/api/library')).filter((i) => i.type !== 'clip' || true);
   const answers = {};

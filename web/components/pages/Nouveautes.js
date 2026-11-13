@@ -19,6 +19,7 @@ const STATE_LABEL = {
 const statusCache = new Map();
 const wishCache = new Map();
 
+// Page Nouveautés
 export default function Nouveautes() {
   useTitle('Nouveautés');
   const { search } = useVenus();
@@ -30,6 +31,7 @@ export default function Nouveautes() {
   return <NewView key={kind} data={data} kind={kind} />;
 }
 
+// Sections des nouveautés (films, séries ou animés)
 function NewView({ data, kind }) {
   const L = shared();
   const admin = L.app.state.profile.isAdmin;
@@ -197,6 +199,7 @@ function WishButton({ x, onRequest }) {
   );
 }
 
+// Boutons d'un titre (demander, envie, bande-annonce)
 function Actions({ x, data }) {
   const L = shared();
   const p = L.app.state.profile;

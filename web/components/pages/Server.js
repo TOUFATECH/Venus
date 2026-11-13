@@ -6,11 +6,15 @@ import { useTitle, api, toast, go, openSheet } from '../../lib/hooks';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
 
+// Date et heure lisibles (ou « jamais »)
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'jamais');
+// Durée lisible (ms, s, min)
 const dur = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60000)} min`);
 const TABS = [['maj', 'Mise à jour'], ['taches', 'Tâches planifiées'], ['journal', 'Journal du serveur'], ['cles', 'Clés API'], ['webhooks', 'Webhooks'], ['perso', 'Personnalisation']];
+// Fenêtre de confirmation
 const confirm = (m, l) => shared().ui.confirmSheet(m, l);
 
+// Page Serveur (administrateur) : onglets
 export default function Server() {
   useTitle('Serveur');
   const { search } = useVenus();
@@ -52,8 +56,10 @@ function useTab(path, every = 0) {
   }, [d, every]);
   return { d, err, reload: () => setN((x) => x + 1) };
 }
+// Message de chargement
 const Loading = () => <p className="muted"><span className="mini-spin" /> Chargement…</p>;
 
+// Onglet Tâches planifiées
 function TasksTab() {
   const [fast, setFast] = useState(false);
   const { d: list, err, reload } = useTab('/api/admin/tasks', fast ? 3000 : 0);
@@ -80,6 +86,7 @@ function TasksTab() {
   );
 }
 
+// Onglet Journal du serveur
 function LogsTab() {
   const [level, setLevel] = useState('all');
   const [q, setQ] = useState('');
@@ -103,6 +110,7 @@ function LogsTab() {
   );
 }
 
+// Onglet Clés API
 function KeysTab() {
   const { d: keys, err, reload } = useTab('/api/admin/apikeys');
   const [name, setName] = useState('');
@@ -145,6 +153,7 @@ function KeysTab() {
   );
 }
 
+// Onglet Webhooks
 function HooksTab() {
   const { d, err, reload } = useTab('/api/admin/webhooks');
   if (err) return <p className="error-text">{err}</p>;
@@ -175,6 +184,7 @@ function HooksTab() {
   );
 }
 
+// Formulaire d'un webhook (adresse, événements, secret)
 function HookForm({ hk, events, close }) {
   const [url, setUrl] = useState(hk ? hk.url : '');
   const [name, setName] = useState(hk ? hk.name : '');
@@ -207,6 +217,7 @@ function HookForm({ hk, events, close }) {
   );
 }
 
+// Onglet Personnalisation (CSS, message d'accueil)
 function BrandTab() {
   const { d, err } = useTab('/api/admin/branding');
   const msg = useRef(null);

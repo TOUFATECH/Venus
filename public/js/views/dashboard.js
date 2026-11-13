@@ -5,6 +5,7 @@ import { api } from '../api.js';
 import { h, icon, img, toast, sheet, fmtTime, avatar, confirmSheet } from '../ui.js';
 import { go, state } from '../core.js';
 
+// Taille lisible (o, Ko, Mo, Go, To)
 const fmtBytes = (b) => {
   if (!b) return '0 o';
   const u = ['o', 'Ko', 'Mo', 'Go', 'To', 'Po'];
@@ -12,6 +13,7 @@ const fmtBytes = (b) => {
   return `${(b / 1024 ** i).toFixed(i >= 3 ? 1 : 0).replace('.', ',')} ${u[i]}`;
 };
 const nf = new Intl.NumberFormat('fr-FR');
+// Temps écoulé lisible (« il y a 5 min »)
 const ago = (t) => {
   if (!t) return '—';
   const s = Math.max(0, (Date.now() - t) / 1000);
@@ -21,13 +23,16 @@ const ago = (t) => {
   const d = Math.round(s / 86400);
   return d < 30 ? `il y a ${d} j` : new Date(t).toLocaleDateString('fr-FR');
 };
+// Durée de fonctionnement lisible
 const fmtUptime = (s) => {
   const d = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), mm = Math.floor((s % 3600) / 60);
   return d ? `${d} j ${hh} h` : hh ? `${hh} h ${mm} min` : `${mm} min`;
 };
+// Jauge en pourcentage (orange puis rouge quand elle se remplit)
 const meter = (pct, cls = '') => h('div', { class: `meter ${cls}${pct > 90 ? ' hot' : pct > 75 ? ' warm' : ''}` }, h('i', { style: { width: `${Math.max(0, Math.min(100, pct))}%` } }));
 const ACT_ICON = { play: 'play', stop: 'stop', login: 'key', message: 'chat', control: 'pause', device: 'exit', server: 'power', scan: 'refresh', seerr: 'down' };
 
+// Page Tableau de bord (administrateur)
 export async function render(main, { query } = {}) {
   if (!state.profile.isAdmin) { main.append(h('div', { class: 'empty' }, h('h2', {}, 'Réservé à l’administrateur'))); return; }
   let d = await api('/api/admin/dashboard');

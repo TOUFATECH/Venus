@@ -9,10 +9,15 @@ import { Icon } from '../Icon';
 import { PageError, PageLoading } from '../PageState';
 
 const PX = 5; // pixels par minute dans le guide
+// Heure lisible
 const hm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+// Date lisible
 const day = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+// Texte en minuscules sans accents
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+// Initiales d'une chaîne (logo de remplacement)
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
+// Adresse du lecteur pour une chaîne
 const playPath = (id) => shared().components.playPath(id);
 // Ordre des catégories (le serveur les déduit du nom de la chaîne et de son groupe)
 const CAT_ORDER = ['Outre-mer', 'Info', 'Généraliste', 'Films', 'Séries', 'Animé / Manga', 'Jeunesse', 'Documentaire', 'Histoire', 'Culture', 'Sport', 'Musique', 'Cuisine & maison', 'Japon', 'Autres'];
@@ -20,14 +25,17 @@ const FAV = '★';
 const RECENT = '↺';
 // Onglet à part pour Pluto TV (128 chaînes gratuites) : elles ne se mêlent plus aux autres catégories
 const PLUTO = 'pluto';
+// Chaîne de la famille Pluto TV ?
 const isPluto = (c) => /pluto ?tv/i.test(`${c.title} ${c.group || ''}`);
 // Arrêt d'une lecture en cours (le jeton accompagne la demande : une suppression sans lui serait refusée)
 const stopSession = (id, relay) => {
   const t = shared().api.auth.token;
   fetch(relay ? `/api/live/${id}` : `/api/hls/${id}`, { method: 'DELETE', keepalive: true, credentials: 'same-origin', headers: t ? { Authorization: `Bearer ${t}` } : {} }).catch(() => {});
 };
+// Fenêtre de confirmation
 const confirm = (m, l) => shared().ui.confirmSheet(m, l);
 
+// Page TV en direct : chaînes, guide, enregistrements, multi-écran
 export default function Tv() {
   const { search } = useVenus();
   const vue = search && search.get('vue');
@@ -38,6 +46,7 @@ export default function Tv() {
   return <Channels />;
 }
 
+// Onglets de la TV
 function TvTabs({ current }) {
   return (
     <div className="seg tv-tabs" role="tablist">
@@ -54,6 +63,7 @@ const recordIt = async (body, msg, close, after) => {
   catch (e) { toast(e.message, true); }
 };
 
+// Fiche d'un programme (regarder, rappel, enregistrer)
 export function programSheet(p, ch, onChange = () => {}) {
   openSheet(p.title, (close) => {
     const now = Date.now();
@@ -96,6 +106,7 @@ export function recordSheet(ch, progs = []) {
   openSheet(`Enregistrer ${ch.title}`, (close) => <RecordMenu ch={ch} progs={progs} close={close} />);
 }
 
+// Menu d'enregistrement d'une chaîne (programme en cours, suivant, série)
 function RecordMenu({ ch, progs, close }) {
   const [cur, nxt] = progs;
   const now = Date.now();
@@ -147,6 +158,7 @@ function Channels() {
   return <ChannelsView all={all} nn={nn} admin={!!L.app.state.profile.isAdmin} />;
 }
 
+// Liste des chaînes avec catégories, favoris et programme en cours
 function ChannelsView({ all, nn, admin }) {
   const L = shared();
   const [channels, setChannels] = useState(() => all.filter((c) => !c.down));
@@ -313,12 +325,14 @@ function ShotImg({ src }) {
   return gone ? null : <img className="tile-shot" src={tries ? `${src}&r=${tries}` : src} alt="" loading="lazy" decoding="async" onError={() => setGone(true)} />;
 }
 
+// Image masquée si elle ne se charge pas
 function HideOnError({ src, className }) {
   const [gone, setGone] = useState(false);
   useEffect(() => setGone(false), [src]);
   return gone ? null : <img className={className} src={src} alt="" decoding="async" onError={() => setGone(true)} />;
 }
 
+// Chaînes hors ligne : bouton pour les retester
 function DownNote({ down }) {
   const [busy, setBusy] = useState(false);
   const check = async () => {
@@ -595,11 +609,13 @@ function Guide() {
   );
 }
 
+// Ouvre les réglages du guide
 async function guideSettings(onDone) {
   const d = await api('/api/admin/livetv');
   openSheet('Guide des programmes et enregistrements', (close) => <GuideSettings d={d} close={close} onDone={onDone} />, { wide: true });
 }
 
+// Réglages du guide (sources, dossier et marges des enregistrements)
 function GuideSettings({ d, close, onDone }) {
   const [v, setV] = useState({ urls: d.epg.manual, dir: d.dvrPath, pre: d.pre, post: d.post, all: !!d.everyone });
   const [err, setErr] = useState('');
@@ -689,6 +705,7 @@ function Recordings() {
   );
 }
 
+// Carte d'un enregistrement terminé
 function DoneCard({ r, onDelete }) {
   const pct = r.progress && r.progress.duration && !r.progress.watched ? Math.min(100, (r.progress.position / r.progress.duration) * 100) : 0;
   const mins = r.duration ? Math.round(r.duration / 60) : Math.round((r.stop - r.start) / 60000);
@@ -744,6 +761,7 @@ function MultiView() {
   );
 }
 
+// Case du multi-écran (une chaîne)
 function MultiCell({ index, channels, id, onPick, sound, onSound }) {
   const L = shared();
   const box = useRef(null);

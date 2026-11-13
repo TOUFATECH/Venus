@@ -2,7 +2,9 @@
 // au lieu de laisser l'image figée. Et la compression de fond se met en pause pendant une lecture.
 import { test, expect, etat } from './outils.mjs';
 
+// Pause de quelques millisecondes
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Nombre de segments dans une liste HLS
 const segs = (txt) => (txt.match(/^seg\d+\.(ts|m4s)$/gm) || []).length;
 
 test('conversion interrompue : reprise automatique après le dernier segment', async ({ api, request }) => {

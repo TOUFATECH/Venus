@@ -12,6 +12,7 @@ import { queueAround, toggleShuffle } from '../queue.js';
 import { startMini, closeMini } from '../mini.js';
 
 let hlsLib = null;
+// Charge hls.js à la demande
 function loadHls() {
   if (window.Hls) return Promise.resolve(window.Hls);
   if (hlsLib) return hlsLib;
@@ -47,6 +48,7 @@ function parseVtt(text) {
   return cues.sort((x, y) => x.start - y.start);
 }
 
+// Lecteur vidéo : films, épisodes, clips et chaînes
 export async function render(main, { id, query }) {
   const fromUrl = currentUrl();
   closeMini(); // une seule vidéo à la fois : le mini-lecteur s'arrête

@@ -8,11 +8,16 @@ import { traktId } from './trakt.js';
 
 const API = process.env.VENUS_TRAKT_API || 'https://api.trakt.tv';
 const UA = 'Venus/1.0 (mediatheque personnelle)';
+// Secret client Trakt
 export const traktSecret = () => String(getSetting('trakt_client_secret', '') || process.env.TRAKT_CLIENT_SECRET || '').trim();
+// La synchronisation Trakt est-elle possible (identifiant et secret) ?
 export const traktSyncReady = () => !!(traktId() && traktSecret());
+// Jetons Trakt d'un profil
 const authOf = (pid) => getSetting(`trakt_auth:${pid}`, null);
+// Enregistre les jetons Trakt d'un profil (chiffrés)
 const saveAuth = (pid, a) => setSetting(`trakt_auth:${pid}`, a);
 
+// Appel à l'API Trakt
 async function call(pathname, { method = 'GET', body, token } = {}) {
   const res = await fetch(`${API}${pathname}`, {
     method,
@@ -27,6 +32,7 @@ async function call(pathname, { method = 'GET', body, token } = {}) {
 
 // ---------------------------------------------------------------- liaison du compte
 const pending = new Map(); // profil → { device_code, interval, expires }
+// Commence la liaison d'un compte Trakt (code à saisir sur trakt.tv)
 export async function startLink(pid) {
   if (!traktSyncReady()) throw new Error('Trakt n’est pas configuré : ajoutez le Client ID et le Client Secret dans Réglages → Notes des sites');
   const r = await call('/oauth/device/code', { method: 'POST', body: { client_id: traktId() } });
@@ -51,11 +57,13 @@ export async function pollLink(pid) {
   pending.delete(pid);
   return { expired: r.status === 410, denied: r.status === 418, error: r.status };
 }
+// Délie le compte Trakt d'un profil
 export async function unlink(pid) {
   const a = authOf(pid);
   saveAuth(pid, null);
   if (a && a.access) await call('/oauth/revoke', { method: 'POST', body: { token: a.access, client_id: traktId(), client_secret: traktSecret() } }).catch(() => {});
 }
+// État de la liaison Trakt d'un profil
 export function linkState(pid) {
   const a = authOf(pid);
   return { ready: traktSyncReady(), linked: !!(a && a.access), user: a ? a.user : null, lastImport: a ? a.lastImport || null : null, lastPush: a ? a.lastPush || null : null, imported: a ? a.imported || null : null };
@@ -79,6 +87,7 @@ const idsOf = (it) => {
   if (it.imdb_id) ids.imdb = it.imdb_id;
   return Object.keys(ids).length ? ids : null;
 };
+// Historique au format attendu par Trakt (films et épisodes par série)
 function historyBody(rows) {
   const movies = [], shows = new Map();
   for (const r of rows) {
@@ -114,6 +123,7 @@ export function traktWatched(pid, itemIds, watched) {
   clearTimeout(flushT);
   flushT = setTimeout(() => flushTrakt().catch((e) => console.warn('[trakt] envoi :', e.message)), Number(process.env.VENUS_TRAKT_FLUSH_MS || 20000));
 }
+// Envoie à Trakt ce que chaque profil a vu depuis le dernier envoi
 export async function flushTrakt() {
   for (const [pid, q] of [...queue]) {
     queue.delete(pid);
@@ -198,4 +208,5 @@ export async function traktSyncAll() {
     await importTrakt(p.id).catch((e) => console.warn(`[trakt] import du profil ${p.id} :`, e.message));
   }
 }
+// Active ou coupe l'envoi automatique vers Trakt
 export function setTraktPush(pid, on) { const a = authOf(pid); if (a) { a.push = !!on; saveAuth(pid, a); } }

@@ -10,6 +10,7 @@ const REPEAT_DELAY = 380, REPEAT_EVERY = 110;
 let running = false;
 const held = new Map(); // touche → { since, last }
 
+// Simule l'appui sur une touche du clavier
 function press(key) {
   const target = document.activeElement && document.activeElement !== document.body ? document.activeElement : document;
   const ev = new KeyboardEvent('keydown', { key, code: key === ' ' ? 'Space' : key, keyCode: CODES[key], which: CODES[key], bubbles: true, cancelable: true });
@@ -19,6 +20,7 @@ function press(key) {
   target.dispatchEvent(new KeyboardEvent('keyup', { key, keyCode: CODES[key], bubbles: true }));
 }
 
+// Boutons appuyés sur une manette
 function keysOf(gp) {
   const out = new Set();
   gp.buttons.forEach((b, i) => { if ((b.pressed || b.value > 0.5) && MAP[i]) out.add(MAP[i]); });
@@ -29,6 +31,7 @@ function keysOf(gp) {
   return out;
 }
 
+// Boucle de lecture des manettes (à chaque image)
 function loop() {
   const pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter(Boolean);
   if (!pads.length) { running = false; held.clear(); return; }
@@ -46,6 +49,7 @@ function loop() {
   for (const k of [...held.keys()]) if (!down.has(k)) held.delete(k);
   requestAnimationFrame(loop);
 }
+// Démarre la lecture des manettes
 function start() { if (!running) { running = true; requestAnimationFrame(loop); } }
 
 if (typeof window !== 'undefined' && 'getGamepads' in navigator) {
@@ -56,5 +60,6 @@ if (typeof window !== 'undefined' && 'getGamepads' in navigator) {
   // Manette déjà branchée au chargement (certains navigateurs ne la signalent qu'au premier bouton)
   try { if ([...navigator.getGamepads()].some(Boolean)) start(); } catch { /* */ }
 }
+// Une manette est-elle utilisée ?
 export const gamepadActive = () => running;
 export { press as pressKey };

@@ -24,8 +24,11 @@ const SOURCE_TYPES = [
   ['books', 'Livres', 'EPUB, PDF, bandes dessinées CBZ, et livres audio (un dossier par livre, ou un fichier .m4b).'],
   ['iptv', 'TV en direct (IPTV)', 'Collez l’adresse M3U fournie par votre abonnement IPTV, ou le chemin d’un fichier .m3u sur le serveur.'],
 ];
+// Taille lisible en Go
 const fmtBytes = (b) => `${(b / 1073741824).toFixed(1).replace('.', ',')} Go`;
+// Date et heure courtes
 const when = (t, o = { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) => new Date(t).toLocaleString('fr-FR', o);
+// Nom affiché d'une bibliothèque
 const libLabel = (l) => (String(l.path).startsWith('venus:') ? l.name : l.path);
 
 // Petit chargement propre à un bloc (données qui ne viennent pas de /api/admin)
@@ -50,7 +53,9 @@ async function reconnect(l, refresh) {
     if (now && now.network && now.network.askLogin) shareLogin(now, refresh);
   }
 }
+// Ouvre la fenêtre des identifiants d'un partage réseau
 const shareLogin = (l, refresh) => openSheet('Identifiants du partage', (close) => <ShareLogin l={l} close={close} refresh={refresh} />);
+// Identifiants d'un partage réseau (utilisateur, mot de passe)
 function ShareLogin({ l, close, refresh }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -74,6 +79,7 @@ function ShareLogin({ l, close, refresh }) {
   );
 }
 
+// Médiathèques ou TV en direct : emplacements, analyse, outils
 export function LibraryBox({ a, refresh, iptv }) {
   const s = a.scan;
   const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
@@ -167,6 +173,7 @@ function IptvTools({ libs, refresh }) {
 
 // Chaînes du monde (iptv-org) : listes par pays, langue ou catégorie, réunies sans doublon
 const LIST_LABEL = { countries: 'Pays', languages: 'Langue', categories: 'Catégorie', regions: 'Région', subdivisions: 'Région', cities: 'Ville' };
+// Listes de chaînes du monde
 function WorldLists({ refresh }) {
   const d = useLoad('/api/admin/iptv-org');
   const [lists, setLists] = useState(null);
@@ -207,7 +214,9 @@ function WorldLists({ refresh }) {
 // ---------------------------------------------------------------- performances (s'active tout seul selon le matériel et la place)
 let perfCache = null;
 const GB = 1024 ** 3;
+// Taille lisible en Go
 const go1 = (n) => `${(n / GB).toFixed(n >= 10 * GB ? 0 : 1).replace('.', ',')} Go`;
+// Performances : copies optimisées, conversions en mémoire, compression
 export function PerfBoxes() {
   const [d, setD] = useState(perfCache);
   const [error, setError] = useState(null);
@@ -432,6 +441,7 @@ function Invites({ refresh, sig }) {
   );
 }
 
+// Nom lisible d'un appareil
 const deviceName = (ua = '') => {
   if (/Tizen/i.test(ua)) return 'TV Samsung';
   if (/Web0S|webOS/i.test(ua)) return 'TV LG';
@@ -445,6 +455,7 @@ const deviceName = (ua = '') => {
   if (/Linux/i.test(ua)) return 'Linux';
   return 'Appareil';
 };
+// Appareils connectés
 export function DevicesBox({ a }) {
   return (
     <section className="box">
@@ -468,6 +479,7 @@ function KeyRow({ label, hint, placeholder, k, configured, save }) {
     </>
   );
 }
+// Notes des sites (OMDb, Simkl, Trakt)
 export function RatingsBox({ a, refresh }) {
   const [err, setErr] = useState('');
   const S = a.settings;
@@ -521,6 +533,7 @@ export function ArrBox() {
     </section>
   );
 }
+// Réglage d'un service (Radarr, Sonarr ou Lidarr)
 function ArrOne({ app, conf, name, port, reload }) {
   const [on, setOn] = useState(!!conf.on);
   const [opts, setOpts] = useState(null);
@@ -616,6 +629,7 @@ export function SeerrBox({ a, refresh }) {
     </section>
   );
 }
+// Correspondance entre profils et utilisateurs Seerr
 function SeerrAuto() {
   const { data: u, error } = useLoad('/api/admin/seerr/users');
   if (error) return <div className="seerr-auto"><p className="error-text">{error.message}</p></div>;
@@ -857,6 +871,7 @@ export function SubtitlesBox({ a, refresh }) {
 // copies optimisées, sauvegardes) et « Aujourd'hui / Demain » la suivent. Sous Docker, elle vaut l'heure de Paris
 // tant qu'on ne l'a pas réglée : le fuseau de cet appareil est proposé d'un clic.
 const offsetLabel = (min) => `UTC${min < 0 ? '−' : '+'}${Math.floor(Math.abs(min) / 60)}${Math.abs(min) % 60 ? `:${String(Math.abs(min) % 60).padStart(2, '0')}` : ''}`;
+// Choix du fuseau horaire
 function ZoneField({ clock }) {
   const [c, setC] = useState(clock);
   const device = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; } })();
@@ -884,6 +899,7 @@ function ZoneField({ clock }) {
   );
 }
 
+// Réglages du serveur (nom, mot de passe du foyer, analyse)
 export function ServerBox({ a }) {
   const [pass, setPass] = useState('');
   const name = useRef(null);

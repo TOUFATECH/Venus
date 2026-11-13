@@ -8,6 +8,7 @@ import { go, state, currentPath, hasCat, openAll } from '../core.js';
 import { tintFrom } from '../ambiance.js';
 import { sections } from '../menu.js';
 
+// Page d'accueil : reprendre, nouveautés, suggestions, rangées
 export async function render(main) {
   const data = await api('/api/home');
   if (data.empty) return renderEmpty(main, data);
@@ -248,6 +249,7 @@ export async function render(main) {
   return { destroy: () => { clearTimeout(timer); stopTrailer(); ro.disconnect(); document.removeEventListener('visibilitychange', onVis); } };
 }
 
+// Lance la lecture d'un titre (épisode à suivre pour une série)
 export async function playItem(item) {
   if (item.type === 'movie') return go(playPath(item.id));
   const d = await api(`/api/items/${item.id}`);
@@ -255,6 +257,7 @@ export async function playItem(item) {
   else go(`/titre/${item.id}`);
 }
 
+// Accueil vide : aide pour ajouter les premières vidéos
 function renderEmpty(main, data) {
   const admin = state.profile && state.profile.isAdmin;
   main.append(h('div', { class: 'page' }, h('div', { class: 'empty' },

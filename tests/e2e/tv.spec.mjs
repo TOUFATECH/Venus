@@ -3,7 +3,9 @@
 import path from 'node:path';
 import { test, expect, ouvrir, etat } from './outils.mjs';
 
+// Attend que la vidéo avance (lecture effective)
 const lit = (loc) => expect.poll(() => loc.evaluate((v) => v.currentTime), { timeout: 20_000 }).toBeGreaterThan(0.3);
+// Ouvre une chaîne par son nom
 async function chaine(page, nom) {
   await page.locator('#tv-search').fill(nom);
   await page.locator('.tiles .tile', { hasText: nom }).first().click();

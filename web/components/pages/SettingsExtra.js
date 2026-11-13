@@ -6,6 +6,7 @@ import { api, toast } from '../../lib/hooks';
 import { Icon } from '../Icon';
 import { Field, Select, Actions, Busy, Switch, Ext, confirm } from './SettingsSheets';
 
+// Date et heure lisibles
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' }) : 'jamais');
 
 // ---------------------------------------------------------------- Trakt (par profil)

@@ -20,6 +20,7 @@ const FR = `EXISTS(SELECT 1 FROM json_each(probe, '$.audio') a WHERE lower(json_
 const HAS_FR = `CASE WHEN json_valid(probe) AND ${FR} THEN 1 ELSE 0 END`;
 
 let cache = { v: -1, shows: new Map(), movies: new Map() };
+// Index des titres disponibles en VF (en cache)
 export function vfIndex() {
   if (cache.v === itemsVersion) return cache;
   const shows = new Map(all(`SELECT show_id AS id, COUNT(*) AS n, SUM(${HAS_FR}) AS vf FROM items WHERE type = 'episode' AND probe IS NOT NULL AND show_id IS NOT NULL GROUP BY show_id`).map((r) => [r.id, { n: r.n, vf: r.vf }]));
@@ -44,6 +45,7 @@ export const vfEpisodes = (showId) => new Set(all(`SELECT id FROM items WHERE sh
 const FORMAT = 'VF (Venus)';
 const FRENCH = 2; // identifiant de la langue française dans Radarr et Sonarr
 const TITLE_RX = '\\b(VFF|VFQ|VFI|VF2|VF|TRUEFRENCH|FRENCH|MULTI)\\b';
+// Crée une fois le format « VF (Venus) » dans Radarr / Sonarr
 async function ensureFormat(app) {
   const list = await call(app, '/api/v3/customformat').catch((e) => { throw new HttpError(502, /404/.test(e.message) ? `${app === 'sonarr' ? 'Sonarr' : 'Radarr'} est trop ancien (formats personnalisés : Sonarr 4 ou Radarr 3 au moins)` : e.message); }) || [];
   const have = list.find((f) => f.name === FORMAT);
@@ -68,6 +70,7 @@ async function vfProfile(app, baseId, formatId) {
   if (exist) { await call(app, `/api/v3/qualityprofile/${exist.id}`, { method: 'PUT', body: { ...want, id: exist.id } }); return exist.id; }
   return (await call(app, '/api/v3/qualityprofile', { method: 'POST', body: want })).id;
 }
+// Texte simplifié pour comparer
 const n = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
 /** « Chercher en VF » : le titre passe sur le profil qui préfère la VF, puis Radarr / Sonarr le cherchent. */

@@ -17,12 +17,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS music_albums (key TEXT PRIMARY KEY, mb_rg TE
 CREATE TABLE IF NOT EXISTS music_artists (name TEXT PRIMARY KEY, mb_id TEXT, type TEXT, country TEXT, begin TEXT, disambiguation TEXT, discography TEXT, status TEXT, checked_at INTEGER);
 CREATE TABLE IF NOT EXISTS music_fingerprints (item_id INTEGER PRIMARY KEY, mtime INTEGER, mb_rg TEXT, title TEXT, artist TEXT, album TEXT, status TEXT, at INTEGER)`);
 
+// Titre simplifié (sans accents ni mentions entre parenthèses)
 export const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\b(deluxe|edition|remaster(ed)?|bonus|disc \d|cd ?\d|version|explicit|expanded|anniversary|\d{4})\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+// Deux titres désignent-ils le même album ?
 const same = (a, b) => { const x = norm(a), y = norm(b); return x && y && (x === y || x.startsWith(y) || y.startsWith(x)); };
 
 // ------------------------------------------------------------------ appels, au plus un par seconde (règle MusicBrainz)
 let lastCall = 0, chain = Promise.resolve();
 export const musicState = { running: false, phase: '', done: 0, total: 0, lastRun: 0, error: null };
+// Requête MusicBrainz (une par seconde, comme le demande le service)
 function mb(path) {
   const p = chain.then(async () => {
     const wait = Math.max(0, 1100 - (Date.now() - lastCall));
@@ -38,6 +41,7 @@ function mb(path) {
   chain = p.catch(() => {});
   return p;
 }
+// Texte nettoyé pour une recherche MusicBrainz
 const q = (s) => String(s || '').replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, ' ').trim();
 
 // ------------------------------------------------------------------ pochettes
@@ -51,9 +55,12 @@ export async function coverFor(rgId) {
 export function nasAlbums() {
   return all("SELECT key, original_title AS artist, grp AS album, MIN(year) AS year, MIN(poster) AS cover, COUNT(*) AS n, MAX(mtime) AS mtime FROM items WHERE type = 'track' AND category = 'music' GROUP BY key");
 }
+// Fiche MusicBrainz d'un album
 export const albumMeta = (key) => { const r = get('SELECT * FROM music_albums WHERE key = ?', key); if (!r) return null; return { ...r, tracks: parse(r.tracks) }; };
+// Lecture d'une liste JSON (vide si invalide)
 const parse = (s) => { try { return JSON.parse(s || '[]'); } catch { return []; } };
 
+// Identifie un album sur MusicBrainz (date, type, titres, pochette)
 async function identifyAlbum(a) {
   const r = await mb(`/release-group?query=${encodeURIComponent(`releasegroup:"${q(a.album)}" AND artist:"${q(a.artist)}"`)}&limit=5`);
   const list = (r && r['release-groups']) || [];
@@ -127,7 +134,9 @@ export function fpcalcBin() {
   for (const p of ['/usr/bin/fpcalc', '/usr/local/bin/fpcalc', '/opt/homebrew/bin/fpcalc']) if (fs.existsSync(p)) return p;
   return null;
 }
+// Clé AcoustID
 export const acoustidKey = () => String(getSetting('acoustid_key', '') || process.env.ACOUSTID_KEY || '');
+// Empreinte sonore d'un fichier (fpcalc)
 function fingerprint(file) {
   return new Promise((resolve, reject) => {
     const p = spawn(fpcalcBin(), ['-json', '-length', '120', file]);
@@ -142,6 +151,7 @@ function untaggedTracks(limit) {
   return all(`SELECT i.* FROM items i LEFT JOIN music_fingerprints f ON f.item_id = i.id AND f.mtime = i.mtime
     WHERE i.type = 'track' AND i.category = 'music' AND f.item_id IS NULL AND (i.original_title IN ('Artiste inconnu','Unknown Artist','') OR i.grp IN ('Album inconnu','Unknown Album','') OR i.original_title IS NULL OR i.grp IS NULL) LIMIT ?`, limit);
 }
+// Identifie un morceau sans étiquette grâce à son empreinte sonore
 async function identifyTrack(t) {
   const fp = await fingerprint(t.path);
   const url = `${ACOUSTID}/lookup?client=${encodeURIComponent(acoustidKey())}&meta=recordings+releasegroups+compress&duration=${Math.round(fp.duration)}&fingerprint=${encodeURIComponent(fp.fingerprint)}`;
@@ -236,6 +246,7 @@ export function musicUpcoming() {
   missing.sort((x, y) => y.date.localeCompare(x.date));
   return { upcoming, missing, artists: all("SELECT COUNT(*) n FROM music_artists WHERE status = 'ok'")[0].n, pending: all("SELECT COUNT(*) n FROM music_artists WHERE status IS NULL OR status = 'new'")[0].n };
 }
+// État de l'identification de la musique (tableau de bord)
 export function musicMetaStatus() {
   const albums = nasAlbums().length;
   const ok = get("SELECT COUNT(*) n FROM music_albums WHERE status = 'ok'").n;

@@ -7,8 +7,10 @@ import { shared } from '../../lib/shared';
 import Details from './Details';
 import Player from './Player';
 
+// Décode un paramètre d'adresse
 const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
 
+// Fiche d'un titre à partir de son adresse lisible (ou de son identifiant)
 export default function TitleRoute({ param = 'slug' }) {
   const params = useParams();
   const raw = dec(String(params[param] || ''));

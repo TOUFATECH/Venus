@@ -9,10 +9,14 @@ const API = 'https://api.themoviedb.org/3';
 const IMG = 'https://image.tmdb.org/t/p';
 const imagesDir = path.join(config.dataDir, 'images');
 
+// Clé TMDB (réglages, sinon variable d'environnement)
 export function tmdbKey() { return getSetting('tmdb_key') || config.tmdbKey || ''; }
+// Langue des fiches (français par défaut)
 export const lang = () => getSetting('metadata_lang', 'fr-FR');
+// Pays utilisé pour les classifications d'âge
 const region = () => (lang().split('-')[1] || 'FR').toUpperCase();
 
+// Appel à l'API TMDB
 export async function tmdb(endpoint, params = {}) {
   const key = tmdbKey();
   if (!key) throw new Error('Clé TMDB manquante');
@@ -30,6 +34,7 @@ export async function tmdb(endpoint, params = {}) {
   throw new Error('TMDB : trop de requêtes');
 }
 
+// Vérifie qu'une clé TMDB fonctionne
 export async function testKey(key) {
   const url = new URL(API + '/configuration');
   const headers = {};
@@ -49,7 +54,9 @@ export async function upgradeBackdrops(limit = 40) {
   }
   return n;
 }
+// Nombre de fonds d'écran encore en basse définition
 export const pendingBackdropUpgrades = () => get("SELECT COUNT(*) n FROM items WHERE type IN ('movie','show') AND backdrop LIKE 't_w1280_%'").n;
+// Télécharge une image TMDB dans le cache
 export async function downloadImage(tmdbPath, size) {
   if (!tmdbPath) return null;
   const name = `t_${size}_${tmdbPath.replace(/^\//, '').replace(/[^\w.]/g, '')}`;
@@ -65,6 +72,7 @@ export async function downloadImage(tmdbPath, size) {
   } catch { return null; }
 }
 
+// Copie une image locale (rangée à côté des vidéos) dans le cache
 export function copyLocalImage(src) {
   try {
     const st = fs.statSync(src);
@@ -83,6 +91,7 @@ const AGE = {
   DE: { '0': 0, '6': 6, '12': 12, '16': 16, '18': 18 },
   GB: { U: 0, PG: 8, '12': 12, '12A': 12, '15': 15, '18': 18 },
 };
+// Âge minimum d'après la classification d'un pays
 function toAge(country, cert) {
   if (!cert) return null;
   const c = cert.trim().toUpperCase();
@@ -90,6 +99,7 @@ function toAge(country, cert) {
   const n = parseInt(c.replace(/\D/g, ''), 10);
   return Number.isFinite(n) && n <= 21 ? n : null;
 }
+// Classification d'âge du pays le plus pertinent
 function pickCert(list, getCert) {
   const order = [region(), 'FR', 'US', 'GB', 'DE'];
   for (const country of order) {
@@ -100,16 +110,19 @@ function pickCert(list, getCert) {
   return null;
 }
 
+// Logo du titre (français de préférence)
 function pickLogo(images) {
   const logos = (images && images.logos) || [];
   const l = lang().split('-')[0];
   return (logos.find((x) => x.iso_639_1 === l) || logos.find((x) => x.iso_639_1 === 'en') || logos[0] || {}).file_path;
 }
 
+// Ressemblance entre deux titres (0 à 1)
 function similarity(a, b) {
   const n = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
   return n(a) === n(b) ? 1 : 0;
 }
+// Meilleur résultat de recherche TMDB selon le titre et l'année
 function bestResult(results, title, year, dateField) {
   if (!results || !results.length) return null;
   const scored = results.slice(0, 10).map((r, i) => {
@@ -135,6 +148,7 @@ async function nfoTmdbId(item, kind) {
 
 // Modifications faites à la main (Modifier les infos, Choisir l'affiche) : réappliquées après chaque mise à jour
 const CUSTOM_COLS = { title: 'title', originalTitle: 'original_title', year: 'year', overview: 'overview', tagline: 'tagline', genres: 'genres', age: 'age', poster: 'poster', backdrop: 'backdrop', logo: 'logo' };
+// Applique les modifications faites à la main par l'administrateur
 export function applyCustom(id) {
   const row = get('SELECT custom FROM items WHERE id = ?', id);
   const c = (() => { try { return JSON.parse((row && row.custom) || 'null'); } catch { return null; } })();
@@ -148,6 +162,7 @@ export function applyCustom(id) {
   if (sets.length) run(`UPDATE items SET ${sets.join(', ')} WHERE id = ?`, ...args, id);
 }
 
+// Identifie un film sur TMDB et enregistre sa fiche
 export async function matchMovie(item, forcedId) {
   let id = forcedId || await nfoTmdbId(item, 'movie');
   if (!id) {
@@ -177,6 +192,7 @@ export async function matchMovie(item, forcedId) {
   return true;
 }
 
+// Identifie une série sur TMDB et enregistre sa fiche et ses saisons
 export async function matchShow(show, forcedId) {
   let id = forcedId || await nfoTmdbId(show, 'tv');
   if (!id) {
@@ -228,6 +244,7 @@ export async function matchShow(show, forcedId) {
 
 // Liste des saisons et épisodes connus de TMDB : sert à montrer les épisodes manquants
 const episodesJson = (sd) => JSON.stringify((sd.episodes || []).map((e) => ({ n: e.episode_number, title: e.name || '', air: e.air_date || null, still: e.still_path || null, overview: (e.overview || '').slice(0, 400) })));
+// Enregistre les saisons TMDB d'une série
 export function saveTmdbSeasons(showId, d) {
   if (!d || !Array.isArray(d.seasons)) return;
   run('UPDATE items SET tmdb_seasons = ? WHERE id = ?', JSON.stringify(d.seasons.map((x) => ({ n: x.season_number, name: x.name || '', count: x.episode_count || 0, air: x.air_date || null, poster: x.poster_path || null }))), showId);
@@ -240,6 +257,7 @@ export async function refreshSeasonLists(show, d) {
   }
 }
 
+// Recherche TMDB (pour « Identifier » un titre)
 export async function searchTmdb(type, query, year) {
   const s = await tmdb(type === 'movie' ? '/search/movie' : '/search/tv', {
     query, language: lang(), [type === 'movie' ? 'year' : 'first_air_date_year']: year,
@@ -270,4 +288,5 @@ export async function refreshMissing(onProgress) {
   for (const s of shows) { try { await matchShow(s, s.tmdb_id); } catch (e) { console.warn(e.message); } }
 }
 
+// Un titre par son identifiant
 export function itemById(id) { return get('SELECT * FROM items WHERE id = ?', id); }

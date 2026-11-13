@@ -3,8 +3,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 
+// Lecture d'un fichier système (vide s'il est absent)
 const read = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch { return ''; } };
 
+// Détecte où tourne Venus : Docker, LXC (privilégié ou non), machine classique
 function detect() {
   const env1 = read('/proc/1/environ').replace(/\0/g, '\n');
   const cgroup = read('/proc/1/cgroup');
@@ -54,6 +56,7 @@ export function mountAdvice() {
   return { title: 'Partages réseau : droits insuffisants', text: 'Lancez Venus en tant que root (le service installé par scripts/install-native.sh le fait), ou montez le partage vous-même puis ajoutez-le comme « Dossier de ce serveur ».', command: 'sudo bash scripts/install-native.sh' };
 }
 
+// Conseil affiché quand la carte graphique n'est pas accessible
 export function gpuAdvice() {
   const r = runtime;
   if (r.gpuDevices.length || r.nvidia) return null;

@@ -4,6 +4,7 @@ import { api, auth } from '../api.js';
 import { h, brand } from '../ui.js';
 import { state } from '../core.js';
 
+// Écran de connexion (mot de passe du foyer ou code à 6 chiffres)
 export function render(main, { done }) {
   let mode = 'password';
   const err = h('p', { class: 'error-text', role: 'alert' });

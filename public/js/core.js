@@ -15,6 +15,7 @@ export const state = { status: null, profile: null, categories: null };
 // Interface hôte : navigation (Next.js : son routeur), actualisation de la page, écrans d'entrée, redémarrage,
 // et quelques fenêtres qu'elle sait mieux afficher (ajout à une liste, téléchargement)
 const host = { next: false, go: null, refresh: () => {}, gate: () => {}, reboot: () => {}, addToList: null, download: null };
+// Branche les fonctions propres à l'interface (Next.js ou classique)
 export function setHost(impl) { Object.assign(host, impl); }
 export const hostHooks = host;
 
@@ -26,6 +27,7 @@ function idOrSlug(raw) {
   const v = dec(raw);
   return /^\d+$/.test(v) ? { id: Number(v) } : { slug: v };
 }
+// Lecture en cours sur cette page (historique du navigateur)
 export const playingHere = () => (!window.__VN_MEMORY_ROUTER && history.state && history.state.vnPlay) || null;
 export const ROUTES = [
   [/^\/$/, 'home'],
@@ -81,6 +83,7 @@ export function matchRoute(path) {
   return null;
 }
 const slugIds = new Map();
+// Complète les paramètres d'une adresse lisible avec l'identifiant du titre
 export async function resolveParams(params) {
   if (params.id || !params.slug) return params;
   const k = `${params.slug}|${params.ep || ''}`.toLowerCase();
@@ -90,6 +93,7 @@ export async function resolveParams(params) {
 }
 // Écrans plein écran, sans navigation
 const BARE = ['/lecture', '/telecommande', '/vote'];
+// Page affichée sans menu (lecteur, liseuse…) ?
 export const isBare = (p) => BARE.some((b) => p.startsWith(b)) || (!!playingHere() && /^\/(films|clips)\/[^/]+$/.test(p)) || /^\/(films|clips)\/[^/]+\/lecture$/.test(p) || /^\/(series|animes)\/[^/]+\/S\d+E\d+/i.test(p);
 
 // ---------------------------------------------------------------- navigation
@@ -97,27 +101,34 @@ export const isBare = (p) => BARE.some((b) => p.startsWith(b)) || (!!playingHere
 export const memory = !!window.__VN_MEMORY_ROUTER;
 const stack = ['/'];
 const ss = { get: (k) => { try { return sessionStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* */ } } };
+// Prévient l'interface que l'adresse a changé
 export const notify = () => window.dispatchEvent(new HashChangeEvent('hashchange'));
 // Les anciens liens en « #/… » (favoris, QR codes, notifications) sont convertis au chargement
 if (!memory && location.hash.startsWith('#/')) history.replaceState(history.state, '', location.hash.slice(1));
+// Adresse actuelle (chemin et paramètres)
 const here = () => `${location.pathname}${location.search}`;
+// Chemin et paramètres de l'adresse actuelle
 export function parseHash() {
   const raw = memory ? stack[stack.length - 1] : here() || '/';
   const [path, qs] = raw.split('?');
   return { path, query: new URLSearchParams(qs || '') };
 }
+// Chemin actuel
 export const currentPath = () => parseHash().path;
+// Adresse complète actuelle
 export const currentUrl = () => (memory ? stack[stack.length - 1] : here());
 
 // Plein écran au lancement d'une vidéo (Réglages → Cet appareil) : demandé pendant le clic sur « Lecture »,
 // seul moment où le navigateur l'accepte (après le changement de page, il le refuserait)
 const isPlayerPath = (p) => /^\/(lecture|tv\/\d+-)/.test(p) || /^\/(films|clips)\/[^/]+\/lecture$/.test(p) || /\/S\d{1,3}E\d{1,4}$/i.test(p.split('?')[0]);
+// Passe en plein écran à l'ouverture du lecteur si l'option est active
 function fullscreenForPlayer(path) {
   if (!isPlayerPath(path) || !prefs.get('fullscreenOnPlay') || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
   if (navigator.userActivation && !navigator.userActivation.isActive) return;
   window.__vnFsAt = Date.now();
   document.documentElement.requestFullscreen({ navigationUI: 'hide' }).then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
 }
+// Va à une page
 export function go(path, { replace = false } = {}) {
   ss.set('vn_nav', '1');
   fullscreenForPlayer(path);
@@ -128,6 +139,7 @@ export function go(path, { replace = false } = {}) {
   notify();
 }
 let lastBack = 0;
+// Revient à la page précédente (ou à la page de secours)
 export function back(fallback = '/') {
   // Une seule touche Retour = un seul pas en arrière (le lecteur et la navigation peuvent la recevoir tous les deux)
   if (Date.now() - lastBack < 500) return;
@@ -139,6 +151,7 @@ export function back(fallback = '/') {
 // Adresse propre sans recharger la page : le numéro remplacé par le nom (/titre/12 → /films/Inception.2010).
 // window.__vnSilent prévient l'interface hôte que ce n'est pas une nouvelle page.
 const encSeg = (s) => s.split('').map((c) => (/[\p{L}\p{N}.~-]/u.test(c) ? c : encodeURIComponent(c))).join('');
+// Remplace l'adresse par l'adresse lisible du titre
 export function showSlug(kind, slug, keep = []) {
   if (memory || !slug) return;
   const { path, query } = parseHash();
@@ -176,9 +189,11 @@ export function hasCat(cat) {
   if (!c || !Object.keys(c).length) return cat === 'movie' || cat === 'show';
   return (c[cat] || 0) > 0 || (c[`${cat}_lib`] || 0) > 0;
 }
+// Recharge les catégories présentes (films, séries, TV…)
 export async function refreshCategories() {
   try { state.categories = await api('/api/categories'); } catch { /* garde l'ancienne liste */ }
 }
+// Ce lien correspond-il à la page en cours ?
 const isActive = (href, path) => (href === '/' ? path === '/' : path.startsWith(href));
 // Grille « Tout » : toutes les sections en grandes tuiles (avec le nombre de titres), puis les outils
 export function openAll(extra = []) {
@@ -233,6 +248,7 @@ document.addEventListener('pointerover', (e) => {
 // Auto : télé, box, vieux téléphone, économie de données ou animations réduites → flous et effets coupés.
 // Sinon on mesure la fluidité réelle quelques secondes après l'ouverture : si les images sautent, mode léger.
 export function liteSetting() { try { return localStorage.getItem('vn_lite') || 'auto'; } catch { return 'auto'; } }
+// Applique le mode léger (moins d'effets) selon le réglage et l'appareil
 export function applyLite() {
   const set = liteSetting();
   let on = set === 'on';
@@ -273,6 +289,7 @@ if (!document.querySelector('.tint-glow')) document.body.prepend(h('div', { clas
 // Présent dès le HTML ; masqué une fois le premier écran prêt (Next.js le garde dans sa page, l'interface
 // classique le retire)
 let bootDone = false;
+// Retire l'écran de chargement
 export function hideBoot() {
   if (bootDone) return;
   bootDone = true;
@@ -288,11 +305,14 @@ export function hideBoot() {
     setTimeout(() => { if (host.next) el.style.display = 'none'; else el.remove(); document.documentElement.classList.remove('first-open'); }, first ? 500 : 200);
   }, wait);
 }
+// L'écran de chargement a-t-il été retiré ?
 export const isBooted = () => bootDone;
+// Texte affiché sous l'écran de chargement
 export function bootNote(text) { const n = document.querySelector('.boot-note'); if (n) n.textContent = text; }
 
 // ---------------------------------------------------------------- nouveautés et messages en temps réel
 let events = null;
+// Écoute les événements du serveur (nouveautés, commandes, notifications)
 export function listenEvents() {
   if (events || !window.EventSource || window.__VN_MEMORY_ROUTER) return;
   events = new EventSource('/api/events'); // session : cookie protégé (jamais le jeton dans l'adresse)
@@ -308,8 +328,10 @@ export function listenEvents() {
   });
   events.onerror = () => { /* le navigateur se reconnecte tout seul */ };
 }
+// Arrête l'écoute des événements du serveur
 export function stopEvents() { if (events) { events.close(); events = null; } }
 window.addEventListener('vn:library', (e) => onLibrary(e.detail));
+// Nouveautés ajoutées : prévient le profil et rafraîchit les listes
 async function onLibrary(d) {
   if (!state.profile || !d || !d.added || !d.added.length) return;
   clearApiCache();
@@ -355,6 +377,7 @@ export async function openRemote() {
   const m = await import('./remote-screen.js');
   m.showPairing();
 }
+// Quitte le profil pour revenir au choix « Qui regarde ? »
 export async function switchProfile() {
   await api('/api/profiles/leave', { method: 'POST' }).catch(() => {});
   state.profile = null;

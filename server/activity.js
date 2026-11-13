@@ -13,14 +13,17 @@ export const deviceId = (token) => (String(token).startsWith('h1:') ? String(tok
 
 // ------------------------------------------------------------------ journal
 const log = [];
+// Ajoute une ligne au journal d'activité (connexion, lecture, administration…)
 export function logActivity(kind, text, extra = {}) {
   log.unshift({ at: Date.now(), kind, text, ...extra });
   if (log.length > 120) log.length = 120;
 }
+// Les n dernières lignes du journal d'activité
 export const recentActivity = (n = 40) => log.slice(0, n);
 
 // ------------------------------------------------------------------ lectures en cours (signal envoyé par le lecteur toutes les 10 s)
 const playing = new Map(); // token -> état
+// Signal régulier d'un lecteur : met à jour la lecture en cours de cet appareil
 export function heartbeat(token, data) {
   const prev = playing.get(token);
   const startedNew = !prev || prev.itemId !== data.itemId;
@@ -33,6 +36,7 @@ export function heartbeat(token, data) {
   playing.set(token, entry);
   return entry;
 }
+// Fin de lecture : retire l'appareil de la liste des lectures en cours
 export function stopHeartbeat(token) {
   const e = playing.get(token);
   if (!e) return;
@@ -41,11 +45,13 @@ export function stopHeartbeat(token) {
   logActivity('stop', `${e.profile} a arrêté ${e.label}${mins >= 1 ? ` après ${mins} min` : ''}`, { itemId: e.itemId, device: e.device });
   emitHook('playback.stop', { profile: e.profile, title: e.label, itemId: e.itemId, minutes: mins });
 }
+// Lectures en cours (signal reçu récemment)
 export function nowPlaying() {
   const now = Date.now();
   for (const [k, e] of playing) if (now - e.seen > 45000) { playing.delete(k); }
   return [...playing.values()].sort((a, b) => a.since - b.since);
 }
+// Jeton de session de l'appareil qui lit en ce moment (pour lui envoyer une commande)
 export const tokenOfDevice = (id) => [...playing.values()].find((e) => e.device === id)?.token || null;
 
 // ------------------------------------------------------------------ code de connexion à 6 chiffres
@@ -53,12 +59,15 @@ export const tokenOfDevice = (id) => [...playing.values()].find((e) => e.device 
 // Il expire au bout de 15 minutes, et change aussi après 5 essais faux (contre les essais au hasard).
 const CODE_TTL = 15 * 60000;
 let current = null;
+// Nouveau code de connexion à 6 chiffres, avec sa date d'expiration
 const fresh = () => ({ code: String(crypto.randomInt(0, 1000000)).padStart(6, '0'), expires: Date.now() + CODE_TTL, fails: 0, created: Date.now() });
+// Code de connexion affiché sur le tableau de bord (renouvelé s'il a expiré ou sur demande)
 export function loginCode({ renew = false } = {}) {
   if (renew || !current || Date.now() > current.expires) current = fresh();
   return { code: current.code, expires: current.expires, ttl: CODE_TTL, uses: usedCount };
 }
 let usedCount = 0;
+// Vérifie un code de connexion saisi ; il ne sert qu'une fois
 export function useLoginCode(input) {
   const code = String(input || '').replace(/\D/g, '');
   if (!current || Date.now() > current.expires) return false;
@@ -72,4 +81,5 @@ export function useLoginCode(input) {
   if (++current.fails >= 5) current = fresh();
   return false;
 }
+// Un code de connexion est-il valable en ce moment ?
 export const loginCodeActive = () => !!current && Date.now() <= current.expires;

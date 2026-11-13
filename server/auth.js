@@ -18,11 +18,13 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32 octets en base64url
 // ------------------------------------------------------------------ mots de passe et codes PIN
 // scrypt (résistant aux cartes graphiques) avec un sel unique ; paramètres renforcés (N = 32768)
 const SCRYPT = { N: 32768, r: 8, p: 1, maxmem: 64 * 1024 * 1024 };
+// Empreinte scrypt d'un mot de passe ou d'un code PIN (sel unique)
 export function hashSecret(secret) {
   const salt = crypto.randomBytes(16);
   const hash = crypto.scryptSync(String(secret).normalize('NFC'), salt, 32, SCRYPT);
   return `s2$${SCRYPT.N}$${salt.toString('hex')}$${hash.toString('hex')}`;
 }
+// Vérifie un mot de passe contre son empreinte (comparaison en temps constant)
 export function verifySecret(secret, stored) {
   if (!stored || typeof stored !== 'string') return false;
   let salt, expected, opts;
@@ -42,6 +44,7 @@ export const needsRehash = (stored) => !String(stored || '').startsWith(`s2$${SC
 
 // ------------------------------------------------------------------ jetons de session
 export const tokenKey = (token) => `h1:${crypto.createHash('sha256').update(String(token)).digest('hex')}`;
+// Crée une session : jeton aléatoire de 256 bits, seule son empreinte est gardée
 export function createToken(device = '', ip = '') {
   const token = crypto.randomBytes(32).toString('base64url');
   const now = Date.now();
@@ -56,9 +59,11 @@ export function migrateTokens() {
   }
   run('DELETE FROM tokens WHERE created_at < ? OR last_seen < ?', Date.now() - TOKEN_TTL, Date.now() - TOKEN_IDLE);
 }
+// Supprime une session (déconnexion)
 export const revokeToken = (token) => run('DELETE FROM tokens WHERE token = ?', tokenKey(token));
 // Après un changement du mot de passe du foyer : tous les autres appareils sont déconnectés
 export const revokeOtherTokens = (token) => run('DELETE FROM tokens WHERE token != ?', tokenKey(token));
+// Associe un profil à la session de cet appareil
 export const setTokenProfile = (token, profileId) => run('UPDATE tokens SET profile_id = ? WHERE token = ?', profileId, tokenKey(token));
 
 // Le jeton vient de l'en-tête Authorization ; le cookie (HttpOnly) et le paramètre ?token= ne sont acceptés
@@ -74,6 +79,7 @@ export function tokenFromReq(req, url) {
 }
 
 const seenThrottle = new Map();
+// Identifie la requête : clé API, en-tête Authorization ou cookie de session
 export function authenticate(req, url, ip) {
   // Clé API (scripts, domotique) : en-tête X-Api-Key uniquement
   const apiKey = req.headers['x-api-key'];
@@ -98,10 +104,12 @@ export function authenticate(req, url, ip) {
   return { token, key, profile, via: found.via, device: row.device || '' };
 }
 
+// Exige un appareil connecté (sinon erreur 401)
 export function requireDevice(ctx) {
   if (!ctx.auth) throw new HttpError(401, 'Connexion requise');
   return ctx.auth;
 }
+// Exige un profil choisi sur cet appareil
 export function requireProfile(ctx) {
   const a = requireDevice(ctx);
   if (!a.profile) throw new HttpError(403, 'Choisissez un profil');
@@ -109,19 +117,23 @@ export function requireProfile(ctx) {
   if (why) throw new HttpError(403, why);
   return a.profile;
 }
+// Exige un profil administrateur
 export function requireAdmin(ctx) {
   const p = requireProfile(ctx);
   if (!p.is_admin) throw new HttpError(403, 'Réservé à l’administrateur');
   return p;
 }
 
+// Venus a-t-il déjà été installé (mot de passe du foyer défini) ?
 export function isSetup() {
   return !!getSetting('household_password');
 }
 
 // Anti-force brute (voir security.js) : checkRate avant l'essai, failRate en cas d'échec, resetRate si réussi
 export function checkRate(kind, ip) { guardAttempt(kind, ip); }
+// Compte un échec (mot de passe, PIN…) pour la limitation des tentatives
 export function failRate(kind, ip, detail) { failAttempt(kind, ip, detail); }
+// Remet à zéro les échecs après une réussite
 export function resetRate(kind, ip) { okAttempt(kind, ip); }
 
 // Minutes d'écran restantes aujourd'hui (profils avec une limite quotidienne), sinon null
@@ -131,6 +143,7 @@ function dailyLeftOf(p) {
   const row = get('SELECT seconds FROM watch_time WHERE profile_id = ? AND day = ?', p.id, localDay());
   return Math.max(0, Math.round(r.dailyMinutes - Number(row ? row.seconds : 0) / 60));
 }
+// Profil tel qu'envoyé à l'interface (sans code PIN ni donnée sensible)
 export function publicProfile(p) {
   if (!p) return null;
   return {

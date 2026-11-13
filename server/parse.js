@@ -3,6 +3,7 @@ import path from 'node:path';
 
 const JUNK = /\b(2160p|1080p|1080i|720p|576p|480p|4k|uhd|hdr10\+?|hdr|dv|dovi|sdr|bluray|blu-ray|bdrip|brrip|bdremux|remux|webrip|web-dl|webdl|web|hdtv|hdrip|dvdrip|dvd|dvdscr|cam|ts|x264|x265|h\.?264|h\.?265|hevc|avc|av1|xvid|divx|aac\d?|ac3|eac3|dd5|ddp5|dts|dts-hd|truehd|atmos|flac|5\.1|7\.1|2\.0|multi|multi-?vf2?|french|truefrench|vff|vfq|vfi|vf2|vf|vostfr|vost|subfrench|vo|en|fr|extended|remastered|unrated|uncut|directors?\.?cut|theatrical|imax|proper|repack|internal|limited|complete|integrale|intégrale|10bit|8bit|hdlight|light|mhd|nf|amzn|dsnp|hmax|atvp)\b.*$/i;
 
+// Nettoie un nom de fichier : retire qualité, langue, groupe, codecs…
 export function cleanTitle(raw, { fallback = true } = {}) {
   let s = raw
     .replace(/\.[a-z0-9]{2,4}$/i, (m) => (/^\.(mkv|mp4|avi|m4v|mov|webm|ts|m2ts|wmv|flv|mpg|mpeg)$/i.test(m) ? '' : m))
@@ -27,6 +28,7 @@ export function cleanTitle(raw, { fallback = true } = {}) {
   return { title: s, year };
 }
 
+// Titre et année d'un film d'après son fichier et son dossier
 export function parseMovie(filePath, libRoot) {
   const base = path.basename(filePath, path.extname(filePath));
   const parent = path.basename(path.dirname(filePath));
@@ -47,6 +49,7 @@ const EP_PATTERNS = [
   /\bSeason[ ._-]*(\d{1,2})[ ._-]*(?:Episode|Ep)[ ._-]*(\d{1,3})/i,
 ];
 
+// Série, saison et épisode d'après le chemin (S01E02, 1x02, « Saison 1 »…)
 export function parseEpisode(filePath, libRoot) {
   const rel = path.relative(libRoot, filePath);
   const parts = rel.split(path.sep);
@@ -87,10 +90,12 @@ export function parseEpisode(filePath, libRoot) {
   return { show: show.title, showYear: show.year, season, episode: episode ?? 1, episodeEnd, title: epTitle };
 }
 
+// Clé de comparaison (minuscules, sans accents ni ponctuation)
 export function normKey(s) {
   return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '');
 }
 
+// Titre pour le tri alphabétique (sans article au début)
 export function sortTitle(t) {
   return String(t || '').replace(/^(the|a|an|le|la|les|l'|un|une|des)\s+/i, '').toLowerCase();
 }

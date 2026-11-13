@@ -4,6 +4,7 @@ import { test as base, expect } from '@playwright/test';
 import { STATE, PASSWORD, PIN } from './global-setup.mjs';
 
 export { expect, PASSWORD, PIN };
+// État du Venus de test (adresse, mot de passe…)
 export const etat = () => JSON.parse(fs.readFileSync(STATE, 'utf8'));
 
 // Messages attendus, sans rapport avec une panne de l'interface
@@ -33,6 +34,7 @@ export async function ouvrir(page, url) {
   await page.goto(url);
   await pret(page);
 }
+// Attend que l'interface ait fini de démarrer
 export async function pret(page) {
   await page.waitForFunction(() => { const b = document.querySelector('.boot'); return !b || getComputedStyle(b).display === 'none'; }, null, { timeout: 30_000 });
 }

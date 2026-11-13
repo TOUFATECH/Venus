@@ -8,6 +8,7 @@ import { useVenus } from '../Venus';
 import { Icon, Avatar } from '../Icon';
 import { PageError, PageLoading } from '../PageState';
 
+// Taille lisible (o, Ko, Mo, Go, To)
 const fmtBytes = (b) => {
   if (!b) return '0 o';
   const u = ['o', 'Ko', 'Mo', 'Go', 'To', 'Po'];
@@ -15,6 +16,7 @@ const fmtBytes = (b) => {
   return `${(b / 1024 ** i).toFixed(i >= 3 ? 1 : 0).replace('.', ',')} ${u[i]}`;
 };
 const nf = new Intl.NumberFormat('fr-FR');
+// Temps écoulé lisible (« il y a 5 min »)
 const ago = (t) => {
   if (!t) return '—';
   const s = Math.max(0, (Date.now() - t) / 1000);
@@ -24,8 +26,11 @@ const ago = (t) => {
   const d = Math.round(s / 86400);
   return d < 30 ? `il y a ${d} j` : new Date(t).toLocaleDateString('fr-FR');
 };
+// Durée de fonctionnement lisible
 const fmtUptime = (s) => { const d = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), mm = Math.floor((s % 3600) / 60); return d ? `${d} j ${hh} h` : hh ? `${hh} h ${mm} min` : `${mm} min`; };
+// Durée lisible
 const fmtTime = (s) => shared().ui.fmtTime(s);
+// Jauge en pourcentage (orange puis rouge quand elle se remplit)
 const Meter = ({ pct, cls = '' }) => <div className={`meter ${cls}${pct > 90 ? ' hot' : pct > 75 ? ' warm' : ''}`}><i style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} /></div>;
 const ACT_ICON = { play: 'play', stop: 'stop', login: 'key', message: 'chat', control: 'pause', device: 'exit', server: 'power', scan: 'refresh', seerr: 'down' };
 const NAV = [
@@ -35,8 +40,10 @@ const NAV = [
 ];
 const WHERE = { playing: ['apercu', 'lectures'], code: ['apercu', 'appareils'], tasks: ['apercu', 'taches'], devices: ['appareils'], system: ['sante'], activity: ['activite'], libs: ['medias', 'sante'] };
 const TABS = NAV.flatMap(([, l]) => l).filter(([k]) => !k.startsWith('/'));
+// Fenêtre de confirmation
 const confirm = (m, l) => shared().ui.confirmSheet(m, l);
 
+// Page Tableau de bord (administrateur)
 export default function Dashboard() {
   useTitle('Tableau de bord');
   const admin = shared().app.state.profile.isAdmin;
@@ -139,9 +146,11 @@ const send = async (device, cmd, text, refresh) => {
     setTimeout(refresh, 1200);
   } catch (e) { toast(e.message, true); }
 };
+// Ouvre la fenêtre d'envoi d'un message aux appareils
 function compose(device, who, refresh) {
   openSheet(device ? `Message pour ${who || 'cet appareil'}` : 'Message à tous les appareils', (close) => <Compose device={device} refresh={refresh} close={close} />);
 }
+// Formulaire de message à un appareil ou à tous
 function Compose({ device, refresh, close }) {
   const [text, setText] = useState('');
   const input = useRef(null);
@@ -155,6 +164,7 @@ function Compose({ device, refresh, close }) {
   );
 }
 
+// En-tête du tableau de bord (serveur, version, actions)
 function Head({ ctx }) {
   const { d, refresh } = ctx;
   const sv = d.server, s = d.system;
@@ -182,6 +192,7 @@ function Head({ ctx }) {
   );
 }
 
+// Chiffres clés (titres, profils, appareils…)
 function Kpis({ d }) {
   const c = d.counts;
   const tiles = [['Films', c.movie, 'film', '/films', 'k-blue'], ['Séries', c.show, 'tv', '/series', 'k-violet'], ['Animés', c.anime, 'spark', '/animes', 'k-pink'], ['Stockage', fmtBytes(d.totals.size), 'server', null, 'k-amber']].filter(([, v], i) => i === 3 || v);
@@ -198,6 +209,7 @@ function Kpis({ d }) {
   );
 }
 
+// Lectures en cours
 function Playing({ ctx }) {
   const { d, refresh } = ctx;
   const list = d.playing;
@@ -213,6 +225,7 @@ function Playing({ ctx }) {
   );
 }
 
+// Une lecture en cours (titre, appareil, méthode, progression)
 function NowPlaying({ p, refresh }) {
   const [picOk, setPicOk] = useState(true);
   const pct = p.duration ? Math.min(100, (p.position / p.duration) * 100) : 0;
@@ -265,6 +278,7 @@ function LoginCode({ ctx }) {
   );
 }
 
+// Appareils connectés
 function Devices({ ctx }) {
   const { d, refresh } = ctx;
   const [all, setAll] = useState(false);
@@ -292,6 +306,7 @@ function Devices({ ctx }) {
   );
 }
 
+// Tâches en cours (analyse, vignettes…)
 function Tasks({ d }) {
   const t = d.tasks, sc = t.scan;
   const item = (key, ic, title, text, extra = null) => <div key={key} className="task"><span className="task-ic"><Icon name={ic} /></span><div className="grow"><b>{title}</b><span>{text}</span>{extra}</div></div>;
@@ -310,6 +325,7 @@ function Tasks({ d }) {
   );
 }
 
+// Jauge du système (processeur, mémoire, disque)
 function Gauge({ label, pct, value, sub }) {
   return (
     <div className={`gauge ${pct > 90 ? 'hot' : pct > 75 ? 'warm' : 'ok'}`}>
@@ -319,6 +335,7 @@ function Gauge({ label, pct, value, sub }) {
   );
 }
 
+// État du système (processeur, mémoire, disques, carte graphique)
 function System({ d }) {
   const s = d.system;
   const memUsed = s.memTotal - s.memFree;
@@ -348,6 +365,7 @@ function System({ d }) {
   );
 }
 
+// Journal d'activité
 function Activity({ d }) {
   return (
     <>

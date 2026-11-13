@@ -16,9 +16,12 @@ const inflight = new Map();
 let busy = false;
 
 export const trickplayMode = () => String(getSetting('trickplay', 'auto')); // auto (fond + lecture) | play (à la lecture) | off
+// Dossier des vignettes d'une vidéo
 const dirOf = (item) => path.join(root, `${item.id}_${item.mtime || 0}`);
+// Lecture JSON tolérante
 const parseJson = (s) => { try { return JSON.parse(s); } catch { return null; } };
 
+// Disposition des vignettes (taille, intervalle, nombre par planche)
 function layout(item) {
   const probe = parseJson(item.probe) || {};
   const dur = Number(item.duration || probe.duration) || 0;
@@ -29,14 +32,17 @@ function layout(item) {
   return { interval, width: WIDTH, height: h, cols: COLS, rows: ROWS, count: Math.max(1, Math.round(dur / interval)) };
 }
 
+// Informations des vignettes d'une vidéo
 export function trickplayInfo(item) {
   try { return JSON.parse(fs.readFileSync(path.join(dirOf(item), 'meta.json'), 'utf8')); } catch { return null; }
 }
+// Planche de vignettes n d'une vidéo
 export function trickplaySheet(item, n) {
   const f = path.join(dirOf(item), `sheet_${String(n).padStart(3, '0')}.jpg`);
   return fs.existsSync(f) ? f : null;
 }
 
+// Génère les planches de vignettes avec ffmpeg
 function generate(item) {
   const lay = layout(item);
   if (!lay || !item.path || !fs.existsSync(item.path)) return Promise.resolve(null);
@@ -63,6 +69,7 @@ function generate(item) {
   });
 }
 
+// Traite la file de génération, une vidéo à la fois
 function pump() {
   if (busy || !queue.length) return;
   const { item, resolve } = queue.shift();
@@ -101,6 +108,7 @@ export async function trickplayBackfill(progress) {
   return todo.length ? `${done} titre(s) préparé(s)` : 'Tout est déjà prêt';
 }
 
+// Supprime les vignettes d'une vidéo
 export function removeTrickplay(id) {
   for (const d of fs.readdirSync(root)) if (d.startsWith(`${id}_`)) fs.rmSync(path.join(root, d), { recursive: true, force: true });
 }

@@ -19,12 +19,15 @@ import { localDay } from './clock.js';
 
 const TVMAZE = process.env.VENUS_TVMAZE_API || 'https://api.tvmaze.com';
 const DAY = 864e5;
+// Titre simplifié pour comparer
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
 // Jour local d'un instant (une diffusion à 23 h 30 UTC tombe le lendemain à Mayotte)
 const iso = (t) => localDay(t);
+// Texte sans balises HTML
 const strip = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
 const cache = new Map();
+// Résultat gardé en mémoire pendant ttl millisecondes
 async function cached(key, ttl, fn) {
   const c = cache.get(key);
   if (c && Date.now() - c.at < ttl) return c.value;
@@ -32,6 +35,7 @@ async function cached(key, ttl, fn) {
   cache.set(key, { at: Date.now(), value });
   return value;
 }
+// Exécute une source sans faire échouer toute la page
 const safe = async (fn, fallback = []) => { try { return await fn(); } catch (e) { console.warn('[à venir]', e.message); return fallback; } };
 
 // ------------------------------------------------------------------ favoris des titres pas encore sur le NAS
@@ -62,7 +66,9 @@ export async function wantedArrivals() {
   return n ? `${n} favori(s) arrivé(s), notification envoyée` : 'Aucun nouveau favori arrivé';
 }
 
+// Clés des favoris « À venir » d'un profil
 export const wantedKeys = (profileId) => new Set(all('SELECT key FROM wanted WHERE profile_id = ?', profileId).map((r) => r.key));
+// Favoris « À venir » d'un profil, avec leur disponibilité
 export function wantedOf(profileId) {
   const lib = libIndex();
   return all('SELECT * FROM wanted WHERE profile_id = ? ORDER BY added_at DESC', profileId).map((r) => ({
@@ -71,6 +77,7 @@ export function wantedOf(profileId) {
     nas: (r.kind === 'movie' ? lib.movie : lib.show).get(norm(r.title)) || null,
   }));
 }
+// Service de téléchargement selon le type (Radarr ou Sonarr)
 const appOf = (kind) => (kind === 'movie' ? 'radarr' : 'sonarr');
 // Envoi à Radarr / Sonarr (profils adultes seulement)
 async function send(profile, w) {
@@ -87,6 +94,7 @@ async function send(profile, w) {
     return { error: e.message };
   }
 }
+// Ajoute un favori et lance son téléchargement si demandé
 export async function addWanted(profile, w, { download = true } = {}) {
   run(`INSERT INTO wanted(profile_id, key, kind, title, year, poster, image, date, tmdb_id, tvdb_id, anilist_id, added_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
        ON CONFLICT(profile_id, key) DO UPDATE SET title = excluded.title, poster = COALESCE(excluded.poster, poster), image = COALESCE(excluded.image, image), date = COALESCE(excluded.date, date)`,
@@ -112,6 +120,7 @@ export async function removeWanted(profileId, key) {
     return { wanted: false, removed };
   } catch (e) { return { wanted: false, removed: false, error: e.message }; }
 }
+// Lance le téléchargement d'un titre via Radarr / Sonarr
 export async function grab(profile, w) {
   if (!arrOn(appOf(w.kind))) throw Object.assign(new Error(`${w.kind === 'movie' ? 'Radarr' : 'Sonarr'} n’est pas relié (Réglages → Demandes)`), { status: 400 });
   const r = await arrGrab({ kind: w.kind, tmdb: w.tmdb, tvdb: w.tvdb, imdb: /^imdb:/.test(w.key) ? w.key.slice(5) : null, title: w.title, year: w.year });
@@ -129,6 +138,7 @@ function libIndex() {
   }
   return { movie, show, anime, tmdbMovie };
 }
+// Adresse d'une image d'un type donné
 const pick = (images, type) => ((images || []).find((i) => i.coverType === type) || {}).remoteUrl || null;
 
 // ------------------------------------------------------------------ séries et animés
@@ -142,6 +152,7 @@ async function tvmazeDay(date) {
 const ANIME_Q = `query ($from: Int, $to: Int, $page: Int) { Page(page: $page, perPage: 50) { pageInfo { hasNextPage }
   airingSchedules(airingAt_greater: $from, airingAt_lesser: $to, sort: TIME) { episode airingAt
     media { id isAdult popularity format episodes countryOfOrigin title { romaji english } coverImage { extraLarge large } bannerImage description(asHtml: false) } } } }`;
+// Animés diffusés pendant la semaine (AniList)
 async function anilistWeek(from, to) {
   return cached(`al:${iso(from)}:${iso(to)}`, 3 * 3600e3, async () => {
     const out = [];
@@ -156,8 +167,10 @@ async function anilistWeek(from, to) {
   });
 }
 
+// Cette série est-elle un animé ?
 const isAnimeShow = (s) => (s.genres || []).includes('Anime') || (s.type === 'Animation' && (s.language === 'Japanese' || ((s.network || s.webChannel || {}).country || {}).code === 'JP'));
 
+// Épisodes à venir jour par jour (NAS, TVmaze, Sonarr, AniList)
 export async function upcomingShows(profile, kind, ageSql) {
   const now = Date.now();
   const from = now - 7 * DAY, to = now + 30 * DAY;
@@ -247,6 +260,7 @@ export async function upcomingShows(profile, kind, ageSql) {
 
 // ------------------------------------------------------------------ films
 const TMDB_IMG = 'https://image.tmdb.org/t/p';
+// Films à venir jour par jour (Radarr, TMDB, Trakt, Cinemeta)
 export async function upcomingMovies(profile) {
   const now = Date.now();
   const from = now - 21 * DAY, to = now + 180 * DAY;

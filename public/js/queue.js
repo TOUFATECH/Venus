@@ -3,21 +3,25 @@
 const KEY = 'vn_queue';
 let memory = null;
 
+// Lit la file de lecture (mémoire de l'onglet)
 function load() {
   try { const v = sessionStorage.getItem(KEY); if (v) return JSON.parse(v); } catch { /* navigation privée */ }
   return memory;
 }
+// Enregistre la file de lecture
 function save(q) {
   memory = q;
   try { sessionStorage.setItem(KEY, JSON.stringify(q)); } catch { /* */ }
 }
 
+// Mélange une liste
 export function shuffled(list) {
   const a = [...list];
   for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a;
 }
 
+// Élément de file (identifiant, titre, artiste)
 const entry = (i) => ({ id: i.id, title: i.title, artist: i.originalTitle || '' });
 
 // Crée la file et renvoie le premier élément à lire
@@ -37,6 +41,7 @@ export function setQueue(items, { shuffle = false, startId = null, title = 'Clip
   return list[0] || null;
 }
 
+// Éléments précédent et suivant d'un titre dans la file
 export function queueAround(id) {
   const q = load();
   if (!q || !q.list) return null;

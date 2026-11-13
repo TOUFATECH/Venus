@@ -14,6 +14,7 @@ const STATE_LABEL = {
   available: 'Disponible, bientôt dans Venus', blocked: 'Bloqué dans Seerr', deleted: 'Supprimé de Seerr',
 };
 
+// Page Nouveautés : sorties et à venir
 export async function render(main, { query }) {
   let kind = query.get('type') || store.get('vn_new_kind', 'movie');
   if (!KINDS.some(([k]) => k === kind)) kind = 'movie';

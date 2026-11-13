@@ -18,6 +18,7 @@ export const BOOK_EXT = new Set(['.epub', '.pdf', '.cbz']);
 const SKIP = /^(\.|@eaDir$|#recycle$|\$RECYCLE|System Volume Information$|lost\+found$)/i;
 const imagesDir = path.join(config.dataDir, 'images');
 
+// Liste les fichiers d'un dossier ayant ces extensions (sous-dossiers compris)
 function walk(dir, exts, out = [], depth = 0) {
   if (depth > 12) return out;
   let entries;
@@ -33,8 +34,11 @@ function walk(dir, exts, out = [], depth = 0) {
   return out;
 }
 
+// Clés d'un objet en minuscules
 const lower = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k.toLowerCase(), String(v)]));
+// Nombre tiré d'un champ « 3/12 » (numéro de piste ou de disque)
 const num = (v) => { const n = parseInt(String(v || '').split('/')[0], 10); return Number.isFinite(n) ? n : null; };
+// Nom de fichier rendu lisible
 const cleanName = (s) => s.replace(/[._]+/g, ' ').replace(/\s+/g, ' ').trim();
 
 // Pochette d'un album : image du dossier, sinon extraite du fichier (une fois par dossier)
@@ -51,6 +55,7 @@ function albumArt(dir, file) {
   return new Promise((resolve) => execFile(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-i', file, '-an', '-frames:v', '1', '-vf', "scale='min(600,iw)':-2", '-y', out], { timeout: 20000 },
     (err) => resolve(!err && fs.existsSync(out) ? name : null)));
 }
+// Copie une image locale dans le cache des images
 function copyImage(src) {
   try {
     const st = fs.statSync(src);
@@ -61,6 +66,7 @@ function copyImage(src) {
   } catch { return Promise.resolve(null); }
 }
 
+// Étiquettes d'un fichier audio (titre, artiste, album, piste…) lues par ffprobe
 async function audioTags(file) {
   try {
     const d = await ffprobe(file, [], 30000);
@@ -145,6 +151,7 @@ export async function scanMediaLibrary(lib, onFile = () => {}) {
   return added;
 }
 
+// Enregistre une image reçue en mémoire dans le cache
 function saveBuffer(buf, ext = '.jpg') {
   if (!buf || buf.length < 200) return null;
   const name = `b_${crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16)}${/^\.(png|webp|gif)$/i.test(ext) ? ext.toLowerCase() : '.jpg'}`;
@@ -155,6 +162,7 @@ function saveBuffer(buf, ext = '.jpg') {
 
 // ------------------------------------------------------------------ EPUB
 const xmlText = (xml, re) => { const m = re.exec(xml); return m ? m[1].replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").trim() : null; };
+// Fichier OPF d'un EPUB et liste de ses ressources
 export function epubPackage(file) {
   const container = zipRead(file, 'META-INF/container.xml');
   if (!container) throw new Error('EPUB invalide');
@@ -169,6 +177,7 @@ export function epubPackage(file) {
   const spine = [...opf.matchAll(/<itemref\s[^>]*idref="([^"]+)"[^>]*>/gi)].map((m) => manifest.get(m[1])).filter((x) => x && /html/.test(x.type)).map((x) => x.href);
   return { opf, base, manifest, spine };
 }
+// Titre, auteur, résumé et couverture d'un EPUB
 export function epubInfo(file) {
   const { opf, manifest } = epubPackage(file);
   const coverId = (/<meta\s+name="cover"\s+content="([^"]+)"/i.exec(opf) || /<meta\s+content="([^"]+)"\s+name="cover"/i.exec(opf) || [])[1];
@@ -181,6 +190,7 @@ export function epubInfo(file) {
     description: (xmlText(opf, /<dc:description[^>]*>([\s\S]*?)<\/dc:description>/i) || '').slice(0, 3000) || null, cover,
   };
 }
+// Pages d'une BD au format CBZ, dans l'ordre
 export const cbzPages = (file) => [...zipEntries(file).keys()].filter((n) => /\.(jpe?g|png|webp|gif)$/i.test(n) && !/__MACOSX/.test(n)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
 // Paroles : fichier .lrc (synchronisées) ou .txt à côté du morceau, sinon étiquette du fichier

@@ -5,13 +5,18 @@ import { api } from './api.js';
 import { h, icon, img, sheet, toast } from './ui.js';
 
 let audio = null, bar = null, queue = [], index = -1, kind = 'music', bookId = null, saveTimer = null, lyrics = null, onLyrics = null;
+// Durée lisible (« 3:07 »)
 const fmt = (s) => { s = Math.max(0, Math.floor(s || 0)); const m = Math.floor(s / 60); return `${m}:${String(s % 60).padStart(2, '0')}`; };
+// Morceau en cours
 const cur = () => queue[index] || null;
 const listeners = new Set();
+// Abonnement aux changements du lecteur audio
 export const onAudioChange = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 const emit = () => listeners.forEach((fn) => { try { fn(cur(), audio && !audio.paused); } catch { /* */ } });
+// Morceau en cours et état de lecture
 export const nowPlaying = () => ({ track: cur(), playing: !!(audio && !audio.paused) });
 
+// Crée l'élément audio et la barre du lecteur au premier usage
 function ensure() {
   if (audio) return;
   audio = new Audio();
@@ -30,6 +35,7 @@ function ensure() {
   document.body.append(bar);
 }
 
+// Adresse du flux audio d'un morceau (MP3 si le format d'origine n'est pas lu)
 function src(t) { return t.mp3 ? `/api/audio/${t.id}?mp3=1` : `/api/audio/${t.id}`; }
 
 // Lance une liste de morceaux ; kind = 'music' ou 'book' (livre audio : progression gardée)
@@ -43,12 +49,14 @@ export function playList(list, start = 0, opts = {}) {
   index = Math.max(0, Math.min(start, queue.length - 1));
   load(opts.at || 0);
 }
+// Ajoute des morceaux à la file de lecture
 export function addToQueue(list) {
   if (!queue.length) return playList(list);
   queue.push(...list.map((t) => ({ ...t })));
   toast(`${list.length > 1 ? `${list.length} titres ajoutés` : `« ${list[0].title} » ajouté`} à la file`);
   paint();
 }
+// Charge et lit le morceau en cours
 function load(at = 0) {
   const t = cur();
   if (!t) return stop();
@@ -62,9 +70,13 @@ function load(at = 0) {
   clearInterval(saveTimer);
   if (kind === 'book') saveTimer = setInterval(() => saveBook(), 15000);
 }
+// Lecture / pause
 export function toggle() { if (!audio) return; if (audio.paused) audio.play().catch(() => {}); else audio.pause(); }
+// Morceau suivant
 export function next() { if (index < queue.length - 1) { index++; load(); } else { audio.pause(); audio.currentTime = 0; paint(); } }
+// Morceau précédent (ou retour au début du morceau)
 export function prev() { if (audio.currentTime > 4 || index === 0) audio.currentTime = 0; else { index--; load(); } }
+// Arrête la lecture et ferme le lecteur
 export function stop() {
   if (!audio) return;
   saveBook();
@@ -82,6 +94,7 @@ function bookPosition() {
   for (let i = 0; i < index; i++) before += queue[i].duration || 0;
   return before + (audio.currentTime || 0);
 }
+// Enregistre la position d'un livre audio
 function saveBook(done = false) {
   if (kind !== 'book' || !bookId || !audio || !cur()) return;
   const total = queue.reduce((n, t) => n + (t.duration || 0), 0);
@@ -89,6 +102,7 @@ function saveBook(done = false) {
   api('/api/progress', { method: 'POST', body: { itemId: bookId, position: Math.round(finished ? total : bookPosition()), duration: Math.round(total) || 1, watched: finished } }).catch(() => {});
 }
 
+// Informations pour les commandes du système (écran verrouillé, casque)
 function session() {
   if (!('mediaSession' in navigator)) return;
   const t = cur();
@@ -104,6 +118,7 @@ function session() {
 
 // ------------------------------------------------------------------ barre du bas
 let timeEl, fillEl, rangeEl;
+// Met à jour la barre du lecteur (titre, pochette, boutons)
 function paint() {
   const t = cur();
   if (!bar || !t) return;
@@ -126,6 +141,7 @@ function paint() {
       h('button', { class: 'p-icon f abar-close', 'aria-label': 'Arrêter', onclick: stop }, icon('close'))));
   paintTime();
 }
+// Met à jour le temps écoulé et la barre de progression
 function paintTime() {
   if (!timeEl || !audio) return;
   const d = audio.duration || cur()?.duration || 0;
@@ -156,6 +172,7 @@ async function openFull() {
   void s;
 }
 let lastLyric = -1;
+// Met en avant la ligne de paroles en cours
 function syncLyrics(force = false) {
   if (!onLyrics || !lyrics || !lyrics.synced) return;
   const t = audio.currentTime;

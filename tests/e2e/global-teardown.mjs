@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import { STATE } from './global-setup.mjs';
 
+// Après les tests : arrête le Venus jetable et efface ses fichiers
 export default async function globalTeardown() {
   let s;
   try { s = JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return; }

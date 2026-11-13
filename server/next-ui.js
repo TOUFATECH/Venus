@@ -26,6 +26,7 @@ function findBuild() {
   return null;
 }
 
+// Trouve un port libre sur la machine
 const freePort = () => new Promise((resolve, reject) => {
   const s = net.createServer();
   s.unref();
@@ -33,10 +34,14 @@ const freePort = () => new Promise((resolve, reject) => {
   s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => resolve(port)); });
 });
 
+// L'interface Next.js est-elle utilisée (construite et non désactivée) ?
 export const nextUiEnabled = () => process.env.VENUS_UI !== 'classic' && !!findBuild();
+// L'interface Next.js est-elle prête à répondre ?
 export const nextUiReady = () => state.ready;
+// État de l'interface Next.js (tableau de bord)
 export const nextUiInfo = () => ({ enabled: !!state.dir, ready: state.ready, restarts: state.restarts, error: state.error });
 
+// Démarre l'interface Next.js si elle est construite (sinon interface classique)
 export async function startNextUi(publicDir) {
   if (process.env.VENUS_UI === 'classic') { console.log('[interface] ancienne interface (VENUS_UI=classic)'); return; }
   const found = findBuild();
@@ -48,6 +53,7 @@ export async function startNextUi(publicDir) {
   process.once('exit', () => { try { state.child && state.child.kill('SIGTERM'); } catch { /* */ } });
 }
 
+// Lance le processus Next.js et le relance s'il s'arrête
 async function launch() {
   state.ready = false;
   state.lastStart = Date.now();

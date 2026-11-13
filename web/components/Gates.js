@@ -6,16 +6,20 @@ import { api, openSheet } from '../lib/hooks';
 import { Icon, Brand, Avatar } from './Icon';
 import { PasswordMeter } from './pages/SettingsSheets';
 
+// Écrans d'entrée : installation, connexion, choix du profil, invitation
 export default function Gate({ kind, done }) {
   useEffect(() => { shared().app.hideBoot(); }, []);
   const View = { setup: Setup, login: Login, profiles: Profiles, invitation: Invitation }[kind];
   return <main><div className="center-screen">{View ? <View done={done} /> : null}</div></main>;
 }
 
+// Champ de formulaire des écrans d'entrée
 const Field = ({ label, id, hint, children }) => <div className="field"><label htmlFor={id}>{label}</label>{children}{hint ? <small>{hint}</small> : null}</div>;
 // Saisie d'un code à 6 chiffres affiché « 123 456 », envoyé tout seul une fois complet
 const fmtCode = (v) => { const d = v.replace(/\D/g, '').slice(0, 6); return d.length > 3 ? `${d.slice(0, 3)} ${d.slice(3)}` : d; };
+// Garde seulement les chiffres
 const digits = (v) => v.replace(/\D/g, '');
+// Fait trembler un élément (saisie refusée)
 const shake = (el) => { if (!el) return; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); };
 
 // ---------------------------------------------------------------- première installation
@@ -184,6 +188,7 @@ function Profiles({ done }) {
 export function askPin(profile, onSubmit) {
   openSheet(`Code PIN de ${profile.name}`, (close) => <PinPad profile={profile} onSubmit={onSubmit} close={close} />, { keepBackspace: true });
 }
+// Pavé numérique du code PIN
 function PinPad({ profile, onSubmit, close }) {
   const [code, setCode] = useState('');
   const [err, setErr] = useState('');

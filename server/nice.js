@@ -5,6 +5,7 @@ import { spawn, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 
+// Chemin d'un programme système (nice, ionice), s'il existe
 const find = (name) => ['/usr/bin', '/bin', '/usr/local/bin'].map((d) => `${d}/${name}`).find((f) => { try { fs.accessSync(f, fs.constants.X_OK); return true; } catch { return false; } });
 const NICE = process.platform === 'win32' ? null : find('nice');
 const IONICE = process.platform === 'win32' ? null : find('ionice');

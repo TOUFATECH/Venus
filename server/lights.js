@@ -6,7 +6,9 @@ import { getSetting, setSetting } from './db.js';
 const DEFAULTS = { enabled: false, hueBridge: '', hueUser: '', hueLights: [], wled: [], brightness: 70, restore: true };
 const TIMEOUT = 2500;
 
+// Réglages des lumières, complétés par les valeurs par défaut
 export const lightsConf = () => ({ ...DEFAULTS, ...(getSetting('lights', null) || {}) });
+// Enregistre les réglages des lumières
 export function saveLights(patch) {
   const cur = lightsConf();
   const next = { ...cur };
@@ -40,6 +42,7 @@ export function checkHost(raw, allowEmpty = false) {
   return m[2] ? `${host}:${m[2]}` : host;
 }
 
+// Requête vers une lampe ou un pont (délai court)
 async function http(url, init = {}) {
   const r = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT), headers: { 'content-type': 'application/json', ...(init.headers || {}) } });
   const text = await r.text();
@@ -63,6 +66,7 @@ export async function huePair(bridge) {
   throw new Error(err.description || 'Réponse inattendue du pont');
 }
 
+// Lampes Philips Hue disponibles sur le pont
 export async function hueLights() {
   const c = lightsConf();
   if (!c.hueBridge || !c.hueUser) return [];
@@ -93,12 +97,15 @@ export async function wledInfo(host) {
 
 // ------------------------------------------------------------------ envoi des couleurs
 let last = 0, pending = null, timer = null, failures = 0;
+// État des lumières pour les réglages
 export const lightsStatus = () => {
   const c = lightsConf();
   return { enabled: c.enabled, brightness: c.brightness, restore: c.restore, hueBridge: c.hueBridge, huePaired: !!c.hueUser, hueLights: c.hueLights, wled: c.wled, targets: (c.hueUser ? c.hueLights.length : 0) + c.wled.length, failures, session: !!session };
 };
+// Les lumières sont-elles prêtes (activées et au moins une lampe) ?
 export const lightsReady = () => { const s = lightsStatus(); return s.enabled && s.targets > 0; };
 
+// Envoie une couleur à toutes les lampes choisies
 async function push(color) {
   const c = lightsConf();
   const bri = Math.max(1, Math.round(254 * (c.brightness / 100) * (color.bri ?? 1)));
@@ -132,10 +139,12 @@ export function setColor(color) {
     }, wait);
   });
 }
+// Valeur bornée entre 0 et 255
 const clamp8 = (v) => Math.min(255, Math.max(0, Math.round(Number(v) || 0)));
 
 // ------------------------------------------------------------------ session : mémoriser puis restaurer l'état des lampes
 let session = null;
+// Début de lecture : mémorise l'état des lampes pour le rétablir à la fin
 export async function startSession(profileId) {
   const c = lightsConf();
   if (!lightsReady()) return { active: false };
@@ -154,6 +163,7 @@ export async function startSession(profileId) {
   }
   return { active: true };
 }
+// Fin de lecture : les lampes reviennent comme avant
 export async function endSession() {
   const s = session;
   session = null;
@@ -173,6 +183,7 @@ export async function endSession() {
   const res = await Promise.allSettled(jobs);
   return { restored: res.filter((r) => r.status === 'fulfilled').length };
 }
+// Lecture qui pilote les lumières en ce moment
 export const sessionInfo = () => (session ? { profileId: session.profileId, since: session.at } : null);
 
 // Une session oubliée (onglet fermé sans prévenir) est rendue aux lampes après 3 min sans couleur.

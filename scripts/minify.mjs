@@ -8,6 +8,7 @@ const root = process.argv[2] || 'public';
 let esbuild;
 try { esbuild = await import('esbuild'); } catch { console.log('esbuild absent : interface non minifiée'); process.exit(0); }
 let before = 0, after = 0, n = 0;
+// Liste les fichiers d'un dossier (sous-dossiers compris)
 const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]));
 for (const file of walk(root)) {
   const ext = path.extname(file);

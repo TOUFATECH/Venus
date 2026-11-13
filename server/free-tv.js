@@ -27,6 +27,7 @@ const OUTREMER = [
 ];
 const LOGO_1ERE = 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/La_1%C3%A8re_logo_2018.svg/320px-La_1%C3%A8re_logo_2018.svg.png';
 
+// Télécharge un texte (liste de chaînes)
 async function text(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(30000), headers: { 'User-Agent': 'Mozilla/5.0 Venus' } });
   if (!res.ok) throw new Error(`${new URL(url).hostname} : ${res.status}`);
@@ -34,11 +35,13 @@ async function text(url) {
 }
 // Nom simplifié pour éviter les doublons (« 2. France 2 [1080p-france.tv] » = « France 2 (1080p) »)
 const key = (name) => String(name).replace(/^\d+\.\s*/, '').replace(/\s*[[(].*?[\])]/g, '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '');
+// Nom de chaîne sans numéro ni mentions techniques
 const clean = (name) => String(name).replace(/^\d+\.\s*/, '').replace(/\s*\[(SSAI|Geo-blocked|Not 24\/7)\]/gi, '').replace(/\s*\[[^\]]*\]\s*$/, '').replace(/\s*\((\d{3,4}p)\)\s*/i, ' ').trim();
 
 const NOT_FRENCH = /\b(arabic|english|espa[nñ]ol|spanish|deutsch|german|germany|italiano|italian|portugu[eê]s|portuguese|greek|hungarian|hungary|russian|russia|czechia|spain|turkiye|latina?|latin america|asia|\bAR\b|\bEN\b|\bES\b|\bDE\b)\b/i;
 // Chaînes payantes (bouquets Canal+, Orange…) : leurs flux « publics » sont des rediffusions non autorisées, on ne les reprend pas
 const PAY_TV = /canal\s*\+(?!\s*en clair)|cin[eé]\s*\+|ocs|syfy|disney|nickelodeon|\bmtv\b|eurosport|mezzo|golf\s*\+|sony one|fashion\s*tv|trace|\bmcm\b|caillou|m6 music|nrj hits|equidia|national geographic|nat\s*geo|discovery|paramount|\bbein\b|rmc sport|tcm|warner|13 ?e(me)? ?rue|sci.?fi|planete\+|ushua[iï]a|histoire tv|toute l.histoire|seasons|game one|j-one|boomerang|cartoon/i;
+// Construit la liste des chaînes gratuites (France, Outre-mer, animés…) avec leur guide
 export async function buildFreeTv() {
   // Le guide des programmes gratuit (XML-TV-Fr) est déclaré dans l'en-tête : Venus le télécharge tout seul
   const out = ['#EXTM3U url-tvg="venus:guide-fr"'];
@@ -150,11 +153,13 @@ export function iptvListName(v) {
   const m = /(countries|languages|categories|regions|subdivisions|cities)\/([a-z0-9_-]{2,40})(\.m3u)?\s*$/i.exec(String(v || '').trim());
   return m ? `${m[1].toLowerCase()}/${m[2].toLowerCase()}` : null;
 }
+// Listes de chaînes du monde choisies
 export const iptvWorldLists = () => { const v = getSetting('iptvorg_lists', null); return Array.isArray(v) && v.length ? v : IPTV_WORLD_DEFAULT; };
 // Flux non autorisés que l'on écarte aussi de ces listes : chaînes privées japonaises (leur direct n'est pas
 // diffusé hors du Japon : les flux trouvés sont des retransmissions) et bouquets sportifs payants
 const JP_PRIVATE = /fuji ?tv|tv tokyo|nippon ?tv|\bntv\b|tv asahi|\btbs\b|\bmbs\b|gaki no tsukai|nhk (general|g\b|e ?tele|educational)|\bjo[a-z]{2}-?dtv\b/i;
 const PAY_SPORT = /dazn|sky ?sport|\bespn|tnt sports|star sports|sony (ten|six|sports)|supersport|ptv sports|ten sports|willow|sportsnet|fox sports|arena sport|setanta|premier sports|viaplay|eleven sports|canal\+ sport/i;
+// Découpe une ligne CSV (champs entre guillemets acceptés)
 function parseCsvLine(line) {
   const out = []; let cur = '', q = false;
   for (let i = 0; i < line.length; i++) {
@@ -169,7 +174,9 @@ const EPG_SHARE = process.env.VENUS_EPGSHARE_URL || 'https://epgshare01.online/e
 const EPG_MJH = process.env.VENUS_EPGMJH_URL || 'https://i.mjh.nz';
 // Langue → pays dont le guide couvre le mieux ses chaînes
 const LANG_COUNTRY = { fra: 'FR', jpn: 'JP', hin: 'IN', eng: 'UK', spa: 'ES', por: 'PT', deu: 'DE', ita: 'IT', ara: 'AE', kor: 'KR', zho: 'HK', tur: 'TR', nld: 'NL' };
+// Définition d'un flux d'après son nom (720p, 1080i…)
 const RES = (n) => { const m = /\((\d{3,4})[pi]\)/i.exec(n); return m ? Number(m[1]) : 0; };
+// Construit la liste des chaînes du monde, sans doublon ni chaîne pour adultes
 export async function buildIptvWorld() {
   // Catégories et chaînes pour adultes, d'après la base d'iptv-org (identifiant de la chaîne → catégories)
   const db = new Map();
@@ -229,6 +236,7 @@ export async function buildIptvWorld() {
   return out.join('\n');
 }
 
+// Ajoute une fois les chaînes du monde au premier démarrage
 export function ensureIptvWorld() {
   if (getSetting('iptv_world_added', '0') === '1') return null;
   setSetting('iptv_world_added', '1');
@@ -257,6 +265,7 @@ export async function testOne(u) {
 // Une chaîne n'a pas marché quand quelqu'un a cliqué dessus : on la reteste aussitôt ;
 // si elle échoue encore, elle est cachée jusqu'à la prochaine vérification (elle revient si elle remarche).
 const retesting = new Set();
+// Une chaîne n'a pas pu être lue : la retester et la masquer si elle est hors ligne
 export async function reportChannelFailure(id) {
   if (retesting.has(id)) return null;
   const c = get("SELECT id, stream_url FROM items WHERE id = ? AND type = 'channel'", id);
@@ -307,4 +316,5 @@ export function ensureFreeTv() {
   if (get('SELECT 1 FROM libraries WHERE path = ?', FREE_TV)) return null;
   return Number(run('INSERT INTO libraries(name, type, path) VALUES(?, ?, ?)', 'Chaînes gratuites (France et Outre-mer)', 'iptv', FREE_TV).lastInsertRowid);
 }
+// Bilan des chaînes (en ligne, hors ligne, non testées)
 export const channelHealth = () => { const r = get("SELECT COUNT(*) n, SUM(ch_ok = 1) ok, SUM(ch_ok = 0) bad, SUM(ch_ok IS NULL) todo FROM items WHERE type = 'channel'"); return { n: r.n || 0, ok: r.ok || 0, bad: r.bad || 0, todo: r.todo || 0 }; };

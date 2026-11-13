@@ -5,9 +5,12 @@ import { go, state } from '../core.js';
 import { playPath } from '../components.js';
 
 const PX = 5; // pixels par minute
+// Heure lisible
 const hm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+// Date lisible
 const day = (t) => new Date(t).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
+// Onglets de la TV (Chaînes, Guide, Enregistrements)
 export function tvTabs(current) {
   return h('div', { class: 'seg tv-tabs', role: 'tablist' }, [['chaines', 'Chaînes', '/tv'], ['guide', 'Guide', '/tv?vue=guide'], ['enregistrements', 'Enregistrements', '/tv?vue=enregistrements']]
     .map(([k, l, href]) => h('button', { class: `seg-b f${k === current ? ' on' : ''}`, role: 'tab', 'aria-selected': String(k === current), onclick: () => k !== current && go(href) }, l)));
@@ -35,6 +38,7 @@ export function programSheet(p, ch, onChange = () => {}) {
       p.stop > now ? h('button', { class: 'btn btn-ghost f', onclick: () => rec({ programId: p.id, series: true }, `Toutes les diffusions de « ${p.title} » seront enregistrées`) }, icon('list'), 'Enregistrer toutes les diffusions') : null)));
 }
 
+// Grille du guide des programmes
 export async function renderGuide(main) {
   const page = h('div', { class: 'page guide-page' });
   main.append(page);
@@ -79,6 +83,7 @@ export async function renderGuide(main) {
   return { destroy: () => clearTimeout(timer) };
 }
 
+// Réglages du guide (sources, marges d'enregistrement)
 async function guideSettings(onDone) {
   const d = await api('/api/admin/livetv');
   const urls = h('textarea', { class: 'input mono', rows: 4, placeholder: 'https://exemple.com/guide.xml.gz' }, d.epg.manual);
@@ -104,6 +109,7 @@ async function guideSettings(onDone) {
   err, h('div', { class: 'form-actions' }, h('button', { class: 'btn btn-play f', type: 'submit' }, 'Enregistrer et mettre à jour le guide'))), { wide: true });
 }
 
+// Liste des enregistrements et des règles « série »
 export async function renderRecordings(main) {
   const page = h('div', { class: 'page rec-page' });
   main.append(page);

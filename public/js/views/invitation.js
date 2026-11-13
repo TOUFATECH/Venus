@@ -3,6 +3,7 @@
 import { api, auth } from '../api.js';
 import { h, brand, avatar, AVATAR_HUES } from '../ui.js';
 
+// Page d'acceptation d'une invitation (création du mot de passe)
 export async function render(main, { done }) {
   const token = (location.pathname.match(/^\/invitation\/([A-Za-z0-9_-]+)/) || [])[1] || '';
   const panel = h('div', { class: 'panel invite-panel' }, brand(), h('p', { class: 'muted' }, 'Ouverture de votre invitation…'));

@@ -8,6 +8,7 @@ import { Icon } from '../Icon';
 import { Field } from '../Field';
 import { PageError, PageLoading } from '../PageState';
 
+// Date et heure lisibles
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const LEVEL = { ok: 'OK', warn: 'À améliorer', bad: 'À corriger' };
 const KIND = {
@@ -17,8 +18,10 @@ const KIND = {
   'mot-de-passe': 'Mot de passe', droits: 'Droits', profil: 'Profil', pin: 'Code PIN', 'envoi-refuse': 'Fichier refusé', envoi: 'Fichier envoyé', audit: 'Audit', https: 'HTTPS',
   deconnexion: 'Déconnexion', journal: 'Journal', installation: 'Installation', 'erreur-serveur': 'Erreur serveur', 'cle-api': 'Clé API',
 };
+// Fenêtre de confirmation
 const confirm = (msg, label) => shared().ui.confirmSheet(msg, label);
 
+// Page Sécurité (administrateur)
 export default function Security() {
   useTitle('Sécurité');
   const admin = shared().app.state.profile.isAdmin;
@@ -46,6 +49,7 @@ export default function Security() {
   );
 }
 
+// Audit de sécurité et points à corriger
 function Audit({ d, set }) {
   const a = d.audit;
   const [busy, setBusy] = useState(false);
@@ -73,6 +77,7 @@ function Audit({ d, set }) {
   );
 }
 
+// Serveur d'e-mails et double authentification
 function TwoFa({ d, reload }) {
   const sm = d.smtp;
   const r = { host: useRef(), port: useRef(), secure: useRef(), user: useRef(), pass: useRef(), from: useRef(), to: useRef() };
@@ -131,6 +136,7 @@ function TwoFa({ d, reload }) {
   );
 }
 
+// Réglage HTTPS
 function Https({ d, reload }) {
   const [mode, setMode] = useState(d.https.mode);
   const change = async (e) => {
@@ -150,6 +156,7 @@ function Https({ d, reload }) {
   );
 }
 
+// Adresses bloquées
 function Bans({ d, reload }) {
   const [ip, setIp] = useState('');
   const ban = async () => {
@@ -187,6 +194,7 @@ function Bans({ d, reload }) {
   );
 }
 
+// Appareils connectés (déconnexion)
 function Devices({ d, reload }) {
   const [all, setAll] = useState(false);
   const list = [...d.devices].sort((a, b) => (b.current - a.current) || (b.lastSeen - a.lastSeen));
@@ -214,6 +222,7 @@ function Devices({ d, reload }) {
   );
 }
 
+// Journal de sécurité
 function Log({ d, reload }) {
   const [sev, setSev] = useState('all');
   const rows = d.log.filter((x) => sev === 'all' || x.severity === sev || (sev === 'warn' && x.severity === 'high'));

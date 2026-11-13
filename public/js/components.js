@@ -6,8 +6,10 @@ import { trailerPlayer, playTrailer } from './trailer.js';
 import { setQueue } from './queue.js';
 import { startMini, miniActive } from './mini.js';
 
+// Adresse du lecteur pour un titre (à une position donnée)
 export function playPath(id, t) { return `/lecture/${id}${t != null ? `?t=${Math.floor(t)}` : ''}`; }
 
+// Temps restant lisible d'une lecture en cours
 export function remaining(p) {
   if (!p || !p.duration) return null;
   const min = Math.max(1, Math.round((p.duration - p.position) / 60));
@@ -56,6 +58,7 @@ function liveHover(el, item) {
   el.addEventListener('mouseleave', stop);
   el.addEventListener('click', stop);
 }
+// Initiales d'un titre (affiche de remplacement)
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
 
 // Carte paysage (rangées) ou affiche (grilles). Le titre est écrit sous l'image, lisible de loin.
@@ -155,6 +158,7 @@ export function frameImage(id, title, { fade = true, big = false, fallback = nul
   if (fade) fadeIn(el);
   return el;
 }
+// Affiche de remplacement tirée d'une image de la vidéo
 export function framePoster(item) {
   // Pas de titre écrit sur l'image : le nom est déjà sous la carte
   return h('div', { class: 'gen-poster' }, frameImage(item.id, item.title));
@@ -162,6 +166,7 @@ export function framePoster(item) {
 
 // Aperçu vidéo au survol de la souris (une seule carte à la fois)
 let livePreview = null;
+// Arrête l'aperçu vidéo au survol
 function stopPreview() {
   if (!livePreview) return;
   clearTimeout(livePreview.timer);
@@ -190,6 +195,7 @@ function toMiniFromPreview(state, item) {
     subtitle: isEp ? `S${item.season} É${item.episode}` : item.originalTitle || '', position: () => v.currentTime || 0 });
   v.play().catch(() => { v.muted = true; v.play().catch(() => {}); });
 }
+// Lance un aperçu (bande-annonce ou extrait) au survol d'une carte
 export function attachPreview(el, item) {
   if (item.type === 'channel') return;
   el.addEventListener('mouseenter', () => {
@@ -263,6 +269,7 @@ export function scrollArrows(scroller) {
   return h('div', { class: 'row-body' }, prev, scroller, next);
 }
 
+// Rangée de cartes (avec défilement horizontal)
 export function row(r, opts = {}) {
   const ranked = r.id === 'top';
   const clips = r.items.filter((it) => it.type === 'clip');
@@ -302,6 +309,7 @@ export function row(r, opts = {}) {
   return sec;
 }
 
+// Ligne d'informations d'un titre (année, durée, âge…)
 export function metaLine(item, extra = []) {
   const bits = [];
   if (item.year) bits.push(h('span', {}, item.year));
@@ -316,6 +324,7 @@ export const RATING_SOURCES = [
   ['imdb', 'IMDb'], ['rt', 'Rotten Tomatoes'], ['mc', 'Metacritic'], ['tmdb', 'TMDB'],
   ['anilist', 'AniList'], ['mal', 'MyAnimeList'], ['simkl', 'Simkl'], ['trakt', 'Trakt'],
 ];
+// Note lisible (« 7,8 », « 92 % »)
 export const fmtScore = (x) => (x.max === 10 ? x.v.toFixed(1).replace('.', ',') : x.max === 100 && x.v <= 100 ? `${Math.round(x.v)}${['rt', 'anilist'].includes(x.src) ? ' %' : ''}` : String(x.v));
 // Note globale sur 10 (moyenne des sources), pour les cartes
 export function scoreOf(item) {
@@ -323,6 +332,7 @@ export function scoreOf(item) {
   if (r && r.score) return r.score / 10;
   return item && item.vote ? item.vote : null;
 }
+// Pastilles des notes des sites (IMDb, Rotten Tomatoes…)
 export function ratingChips(ratings, links = {}) {
   const r = ratings || {};
   const chips = RATING_SOURCES.filter(([k]) => r[k] && r[k].v).map(([k, label]) => {
@@ -369,6 +379,7 @@ export function attachQuick(el, item) {
   el.addEventListener('click', (e) => { if (fired) { fired = false; e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 }
 
+// Menu rapide d'une carte (lire, Ma liste, marquer comme vu…)
 export function quickMenu(item) {
   const isEp = item.type === 'episode';
   const titleId = isEp ? item.showId : item.id;
@@ -396,6 +407,7 @@ export function quickMenu(item) {
 
 // Administration : supprimer une vidéo (fichier effacé du disque). Confirmation obligatoire, « Annuler » par défaut.
 const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
+// Fenêtre de confirmation pour supprimer une vidéo
 export function deleteVideo({ id, what, detail = '', onDone }) {
   return new Promise((resolve) => {
     let busy = false;

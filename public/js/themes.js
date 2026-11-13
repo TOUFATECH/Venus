@@ -12,6 +12,7 @@
 //            coins très arrondis, polices Outfit et Inter (Océan ajoute des vagues animées)
 export const LAYOUTS = { rail: 'Menu d’icônes à gauche', side: 'Grand menu à gauche', dock: 'Barre flottante en bas', stream: 'Menu en haut, style streaming', tv: 'Grands onglets, pour la télé', glass: 'Surfaces givrées', lagon: 'Barre en haut et bloc « Ce soir »' };
 const LAYOUT_OF = { venus: 'rail', pluton: 'rail', uranus: 'rail', mercure: 'side', saturne: 'side', jupiter: 'side', terre: 'dock', neptune: 'dock', mars: 'stream', cinema: 'stream', noir: 'tv', blanc: 'dock', tv: 'tv', verre: 'glass', lagon: 'lagon', ocean: 'lagon', sable: 'lagon' };
+// Mise en page d'une planète
 export const layoutOf = (id) => LAYOUT_OF[id] || 'rail';
 export const PLANETS = {
   mercure: { night: '#101113', deep: '#18191d', raise: '#24262b', glow: '#b9b0a4', name: 'Mercure', accent: '#dccdb9', accent2: '#9c8c7e', dir: 'diag',
@@ -69,6 +70,7 @@ export const autoTheme = () => { try { return localStorage.getItem('vn_theme_aut
 export function setAutoTheme(m) { try { localStorage.setItem('vn_theme_auto', m); } catch { /* */ } applyTheme(); syncProfileTheme(); window.dispatchEvent(new CustomEvent('vn:theme')); }
 // Thème du profil : gardé sur le serveur, il suit la personne sur tous ses appareils
 let syncT = null;
+// Enregistre le thème dans le profil (synchronisé sur tous les appareils)
 function syncProfileTheme() {
   clearTimeout(syncT);
   syncT = setTimeout(() => { syncT = null; import('./api.js').then((m) => m.saveProfilePrefs({ theme: chosenPlanet(), themeAuto: autoTheme() })).catch(() => {}); }, 400);
@@ -91,7 +93,9 @@ export function useProfileTheme(p) {
   } catch { /* */ }
   if (changed) { applyTheme(); window.dispatchEvent(new CustomEvent('vn:theme')); }
 }
+// L'appareil est-il en mode clair ?
 const systemLight = () => { try { return matchMedia('(prefers-color-scheme: light)').matches; } catch { return false; } };
+// Planète à afficher maintenant (avec le passage automatique au clair)
 export function currentPlanet() {
   const base = chosenPlanet();
   if (PLANETS[base].glass || PLANETS[base].light) return base; // Verre gère déjà jour / nuit ; Blanc reste clair
@@ -101,7 +105,9 @@ export function currentPlanet() {
   if (m === 'sun') return sunState().state === 'day' ? day : base;
   return base;
 }
+// Réglages de la planète affichée
 export const planet = () => PLANETS[currentPlanet()];
+// Nom affiché à côté du logo
 export const brandName = () => (planet().brand || planet().name).toUpperCase();
 
 // Surface qui défile : les motifs sont dessinés deux fois (période de 48) pour une rotation sans couture
@@ -139,6 +145,7 @@ function weather(t) {
 }
 
 let markN = 0;
+// Logo SVG d'une planète
 export function planetMarkup(id = currentPlanet()) {
   const t = PLANETS[id] || PLANETS[DEFAULT_PLANET];
   const n = ++markN;
@@ -172,12 +179,16 @@ export function planetMarkup(id = currentPlanet()) {
 
 // Applique les couleurs du thème (variables CSS) et le nom
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+// Mélange de deux couleurs
 const mix = (a, b, k) => { const x = rgb(a), y = rgb(b); return `#${x.map((v, i) => Math.round(v + (y[i] - v) * k).toString(16).padStart(2, '0')).join('')}`; };
+// Couleur en « r g b » pour les variables CSS
 const trip = (hex) => rgb(hex).join(' ');
 // Texte secondaire toujours lisible : contraste WCAG entre deux couleurs, et couleur rapprochée du blanc (thème
 // sombre) ou du noir (thème clair) juste assez pour atteindre 4,5:1 sur le fond des panneaux (niveau AA)
 const lum = (hex) => { const [r, g, b] = rgb(hex).map((v) => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+// Contraste entre deux couleurs (règle WCAG)
 export const contrast = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+// Couleur lisible sur un ou plusieurs fonds (contraste minimal)
 export function legible(fg, bgs, min = 4.5) {
   const list = Array.isArray(bgs) ? bgs : [bgs];
   const to = lum(list[0]) < 0.4 ? '#ffffff' : '#000000';
@@ -193,6 +204,7 @@ const GLASS = {
   night: { '--night': '#0b0b0d', '--deep': '#1c1c1e', '--raise': '#2c2c2e', '--paper': '#f5f5f7', '--haze': '#a1a1a8', '--dim': '#6e6e75',
     '--sulfur': '#2997ff', '--dawn': '#5e5ce6', '--glow': '#2997ff', '--tint': '#5a7fb8', '--edge': 'rgb(255 255 255 / .1)' },
 };
+// Variables CSS d'une planète
 export function themeVars(id, glassState = glassNow().state) {
   const t = PLANETS[id] || PLANETS[DEFAULT_PLANET];
   if (t.glass) {
@@ -234,6 +246,7 @@ const TZ = {
   'Africa/Algiers': [36.75, 3.06], 'Africa/Casablanca': [33.57, -7.59], 'Africa/Tunis': [36.8, 10.18], 'Africa/Dakar': [14.69, -17.44], 'Africa/Abidjan': [5.36, -4.01],
   'Africa/Douala': [4.05, 9.7], 'Africa/Kinshasa': [-4.32, 15.31], 'Africa/Libreville': [0.39, 9.45], 'Africa/Bamako': [12.64, -8.0], 'Africa/Djibouti': [11.59, 43.15],
 };
+// Position approximative de l'appareil, déduite du fuseau horaire
 function coords() {
   let tz = '';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { /* */ }
@@ -257,6 +270,7 @@ function sunTimes(date, [lat, lon]) {
   const set = midnight + (720 - 4 * (lon - ha) - eqt) * 60000;
   return { rise, set };
 }
+// Mode du thème Verre (soleil, toujours clair, toujours sombre)
 export const glassMode = () => { try { return localStorage.getItem('vn_glass_mode') || 'auto'; } catch { return 'auto'; } };
 // État actuel (jour / nuit) et heure du prochain changement
 export function glassNow() {
@@ -276,11 +290,13 @@ export function sunState() {
   if (now < today.set) return { state: 'day', next: today.set };
   return { state: 'night', next: tomorrow.rise };
 }
+// Heures du lever et du coucher du soleil aujourd'hui
 export function sunInfo() { const t = sunTimes(new Date(), coords()); return t; }
 export function setGlassMode(m) { try { localStorage.setItem('vn_glass_mode', m); } catch { /* */ } applyTheme(); }
 
 // En plein jour, les fonds et traits clairs prévus pour le sombre sont convertis en foncés (feuille générée une fois)
 let lightSheet = null;
+// Feuille de style des thèmes clairs (couleurs adaptées)
 function lightOverrides() {
   if (lightSheet) return lightSheet;
   const out = [];
@@ -308,6 +324,7 @@ function lightOverrides() {
 }
 
 let glassTimer = null;
+// Applique une planète : variables CSS, mise en page, logo
 export function applyTheme(id = currentPlanet()) {
   const t = PLANETS[id] || PLANETS[DEFAULT_PLANET];
   const r = document.documentElement.style;

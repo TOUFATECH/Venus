@@ -9,6 +9,7 @@ import { Icon } from '../Icon';
 const buzz = () => { try { if (navigator.vibrate) navigator.vibrate(8); } catch { /* */ } };
 const ls = { get: (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } }, set: (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* */ } } };
 
+// Page Télécommande (sur le téléphone)
 export default function Remote() {
   useTitle('Télécommande');
   const { search } = useVenus();
@@ -38,10 +39,12 @@ export default function Remote() {
   );
 }
 
+// Barre du haut de la télécommande
 function Top({ children, back = true }) {
   return <div className="remote-top">{back ? <button className="p-icon f" aria-label="Retour" onClick={() => shared().app.back('/')}><Icon name="back" /></button> : null}{children}</div>;
 }
 
+// Saisie du code affiché sur l'écran
 function PairForm({ msg, onPair }) {
   const input = useRef(null);
   useEffect(() => { setTimeout(() => input.current && input.current.focus(), 50); }, []);
@@ -60,6 +63,7 @@ function PairForm({ msg, onPair }) {
   );
 }
 
+// Pavé de la télécommande : flèches, lecture, volume, recherche
 function Pad({ link, onLost, onChange }) {
   const [screen, setScreen] = useState(null);
   const [cont, setCont] = useState([]);

@@ -7,9 +7,11 @@ import { useApi, useTitle, api, toast, img, go } from '../../lib/hooks';
 import { Icon } from '../Icon';
 import { PageError, PageLoading } from '../PageState';
 
+// Taille lisible (Go, To)
 const fmtBytes = (b) => (b >= 1e12 ? `${(b / 1e12).toFixed(2).replace('.', ',')} To` : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
 const FILTERS = [['improve', 'À améliorer'], ['all', 'Tout'], ['4K', '4K'], ['1080p', '1080p'], ['720p', '720p'], ['SD', 'SD'], ['hdr', 'HDR']];
 
+// Page Qualité
 export default function Quality() {
   useTitle('Qualité');
   const admin = shared().app.state.profile.isAdmin;
@@ -20,6 +22,7 @@ export default function Quality() {
   return <QualityView d={d} />;
 }
 
+// Répartition des définitions, HDR et débits
 function QualityView({ d }) {
   const s = d.summary;
   const [filter, setFilter] = useState(s.toImprove ? 'improve' : 'all');
@@ -49,6 +52,7 @@ function QualityView({ d }) {
   );
 }
 
+// Ligne d'un titre à améliorer
 function QRow({ x, seerr }) {
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);

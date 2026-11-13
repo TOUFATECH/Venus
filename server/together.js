@@ -8,8 +8,10 @@ import { requireProfile, checkRate, failRate, resetRate } from './auth.js';
 export const together = new Router();
 
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sans 0/O/1/I : lisible à voix haute
+// Code aléatoire de n caractères faciles à lire
 const code = (n) => Array.from(crypto.randomBytes(n), (b) => ALPHA[b % ALPHA.length]).join('');
 
+// Ouvre un flux d'événements (SSE) vers le navigateur
 function sse(ctx) {
   ctx.res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-store', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   ctx.res.write('retry: 3000\n\n');
@@ -21,6 +23,7 @@ function sse(ctx) {
 // ------------------------------------------------------------------ séances
 const rooms = new Map();
 
+// Position de lecture actuelle d'une séance
 function roomPosition(r) {
   const s = r.state;
   return s.playing ? s.position + (Date.now() - s.at) / 1000 : s.position;
@@ -31,6 +34,7 @@ function blockedList(r) {
   for (const [pid, b] of r.blocked) if (b.until && b.until <= now) r.blocked.delete(pid);
   return [...r.blocked.values()].map((b) => ({ pid: b.pid, name: b.name, avatar: b.avatar, until: b.until || null, by: b.by }));
 }
+// Séance telle qu'envoyée aux participants
 function publicRoom(r) {
   return {
     code: r.code, itemId: r.itemId, title: r.title, host: r.host, ownerPid: r.ownerPid, blocked: blockedList(r),
@@ -38,6 +42,7 @@ function publicRoom(r) {
     state: { playing: r.state.playing, position: roomPosition(r), by: r.state.by },
   };
 }
+// Envoie un événement à tous les participants (sauf l'expéditeur)
 function broadcast(r, type, data, except) {
   for (const m of r.members.values()) if (m.id !== except) m.send(type, data);
 }
@@ -46,7 +51,9 @@ setInterval(() => {
   for (const [c, r] of rooms) if (!r.members.size && Date.now() - r.emptySince > 10 * 60000) rooms.delete(c);
 }, 60000).unref();
 
+// Heure lisible (« 20:30 »)
 const hhmm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+// Vérifie qu'un profil peut regarder le titre de la séance (âge, horaires)
 function checkBlocked(r, p) {
   blockedList(r);
   const b = r.blocked.get(p.id);
@@ -185,6 +192,7 @@ together.post('/api/rooms/:code/action', async (ctx) => {
 const remotes = new Map(); // code -> écran
 const screens = new Map(); // appareil de l'écran (jeton) -> écran
 const links = new Map();   // lien du téléphone -> { owner, at }
+// Nouveau code d'appairage de la télécommande
 const newCode = () => { let c; do { c = String(crypto.randomInt(100000, 1000000)); } while (remotes.has(c)); return c; };
 
 together.get('/api/remote/screen', (ctx) => {
@@ -222,6 +230,7 @@ together.post('/api/remote/pair', async (ctx) => {
   sendJson(ctx.res, { link, screen: scr.name });
 });
 
+// Écran relié à une télécommande
 const screenOf = (link) => {
   const l = links.get(String(link));
   if (!l) return null;
@@ -253,6 +262,7 @@ setInterval(() => { const lim = Date.now() - 30 * 86400000; for (const [k, l] of
 // ------------------------------------------------------------------ vote en famille (« Ce soir »)
 // L'écran propose 3 titres ; chacun vote sur son téléphone (QR code ou code à 4 lettres) ; le gagnant se lance.
 const votes = new Map(); // code -> vote
+// État d'un vote (titres et nombre de voix)
 function publicVote(v) {
   const tally = new Map();
   for (const itemId of v.ballots.values()) tally.set(itemId, (tally.get(itemId) || 0) + 1);
@@ -262,6 +272,7 @@ function publicVote(v) {
     voters: v.ballots.size,
   };
 }
+// Envoie l'état du vote à tous les participants
 function voteBroadcast(v) { const st = publicVote(v); for (const c of v.clients) c('state', st); }
 
 together.post('/api/vote', async (ctx) => {

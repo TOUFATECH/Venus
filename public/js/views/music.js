@@ -4,12 +4,17 @@ import { h, icon, img, placeholder } from '../ui.js';
 import { go, setTitle } from '../core.js';
 import { playList, addToQueue, onAudioChange, nowPlaying } from '../audio.js';
 
+// Durée lisible (« 3:07 »)
 const fmt = (s) => { s = Math.round(s || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+// Durée totale lisible (« 1 h 05 »)
 const total = (s) => { const m = Math.round((s || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
+// Pochette (ou image de remplacement)
 const cover = (c, title, w = 342) => (c ? h('img', { src: img(c, w), alt: '', loading: 'lazy' }) : placeholder(title));
+// Tuile d'un album
 const albumTile = (a) => h('button', { class: 'm-tile f', onclick: () => go(`/musique/album/${encodeURIComponent(a.slug)}`) },
   h('span', { class: 'm-cover' }, cover(a.cover, a.album)), h('b', {}, a.album), h('small', {}, [a.artist, a.year].filter(Boolean).join(' · ')));
 
+// Liste de morceaux cliquables
 function trackList(tracks, { showAlbum = false, showArtist = false } = {}) {
   const rows = tracks.map((t, i) => h('div', { class: 'tr-row', 'data-id': t.id },
     h('button', { class: 'tr-main f', onclick: () => playList(tracks, i) },
@@ -25,6 +30,7 @@ function trackList(tracks, { showAlbum = false, showArtist = false } = {}) {
   return list;
 }
 
+// Page Musique : accueil, albums, artistes, titres
 export async function render(main, { view = 'home', query, name } = {}) {
   const page = h('div', { class: 'page music-page' });
   main.append(page);

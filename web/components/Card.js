@@ -52,6 +52,7 @@ export function Picture({ src, title, className = '', lazy = true }) {
   );
 }
 
+// Affiche de remplacement (couleur tirée du titre)
 export function Placeholder({ title, cls = 'ph', text = false }) {
   return <div className={cls} style={{ '--h': shared().ui.hueOf(title) }}>{text ? title : null}</div>;
 }
@@ -61,10 +62,12 @@ export function FrameImage({ id, title }) {
   return <Picture src={`/api/items/${id}/thumb`} title={title} />;
 }
 
+// Affiche tirée d'une image de la vidéo
 export function FramePoster({ item }) {
   return <div className="gen-poster"><FrameImage id={item.id} title={item.title} /></div>;
 }
 
+// Carte d'un titre : affiche, progression, aperçu au survol, menu rapide
 export default function Card({ item: initial, poster = false, rank = null, queue = null, onFocus = null, children = null }) {
   const L = shared();
   const { ui, components, api, app, queue: Q } = L;

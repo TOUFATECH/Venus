@@ -10,8 +10,10 @@ import { twofaOn } from './twofa.js';
 import { smtpOn } from './smtp.js';
 import { listBackups } from './backup.js';
 
+// Contenu de package.json (version de Venus)
 const pkg = (() => { try { return JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')); } catch { return {}; } })();
 
+// Audit de sécurité : passe en revue les réglages et renvoie la liste des points à corriger
 export async function runSecurityAudit() {
   const items = [];
   const add = (level, title, detail, fix = '') => items.push({ level, title, detail, fix });
@@ -86,8 +88,10 @@ export async function runSecurityAudit() {
   return report;
 }
 
+// Résultat du dernier audit
 export const lastAudit = () => getSetting('security_audit', null);
 
+// Lance l'audit peu après le démarrage, puis chaque semaine
 export function startSecurityAudit() {
   setTimeout(() => runSecurityAudit().catch((e) => console.warn('[audit]', e.message)), 30000).unref();
   setInterval(() => runSecurityAudit().catch(() => {}), 7 * 864e5).unref();

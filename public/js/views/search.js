@@ -5,12 +5,17 @@ import { h, icon, toast } from '../ui.js';
 import { card } from '../components.js';
 import { go, state } from '../core.js';
 
+// Type d'un titre pour les filtres de recherche
 const kindOf = (i) => (i.type === 'clip' ? 'clip' : i.type === 'movie' ? 'movie' : i.category === 'anime' ? 'anime' : 'show');
+// Texte simplifié pour la recherche
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+// Clé des recherches récentes du profil
 const recentKey = () => `vn_recent_search_${state.profile ? state.profile.id : 0}`;
+// Recherches récentes du profil
 const getRecent = () => { try { return JSON.parse(localStorage.getItem(recentKey())) || []; } catch { return []; } };
 const pushRecent = (q) => { try { localStorage.setItem(recentKey(), JSON.stringify([q, ...getRecent().filter((x) => norm(x) !== norm(q))].slice(0, 8))); } catch { /* */ } };
 
+// Page Recherche
 export async function render(main, { query } = {}) {
   const all = await api('/api/library');
   const index = all.map((i) => ({ i, t: norm(i.title), o: norm(i.originalTitle), g: (i.genres || []).map(norm), p: (i.people || []).map((n) => [n, norm(n)]), y: String(i.year || '') }));
@@ -131,6 +136,7 @@ const GENRE_WORDS = [
   [/\b(fantastique|magie|dragons?)\b/, 'Fantastique'], [/\b(policier|enquete|crime|flic|detective)\b/, 'Policier'], [/\b(documentaire|docu|vrai|reel)\b/, 'Documentaire'],
   [/\b(animation|dessin anime|cartoon)\b/, 'Animation'], [/\b(famille|enfants?|gamins?|petits)\b/, 'Famille'], [/\b(guerre)\b/, 'Guerre'], [/\b(western)\b/, 'Western'], [/\b(histoire|historique)\b/, 'Histoire'], [/\b(musique|musical|comedie musicale)\b/, 'Musique'], [/\b(mystere|mysterieux)\b/, 'Mystère'],
 ];
+// Comprend une recherche en langage naturel (genre, durée, décennie, personne…)
 export function understand(raw, { genres, people }) {
   const q = norm(raw);
   const tests = [], terms = [];

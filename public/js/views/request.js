@@ -6,6 +6,7 @@ import { go, state } from '../core.js';
 
 const KINDS = [['movie', 'Films', 'film'], ['show', 'Séries', 'tv'], ['anime', 'Animés', 'spark']];
 
+// Page Nouveau : chercher un titre et l'envoyer à Radarr / Sonarr
 export async function render(main, { query } = {}) {
   const st = await api('/api/arr/status').catch(() => ({ radarr: false, sonarr: false }));
   const admin = !!(state.profile && state.profile.isAdmin);

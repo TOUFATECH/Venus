@@ -18,6 +18,7 @@ export const MODELS = { tiny: 75, base: 142, small: 466, medium: 1500 }; // Mo e
 const MODEL_URL = (m) => `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-${m}.bin`;
 const ISO3 = { fr: 'fre', en: 'eng', es: 'spa', de: 'ger', it: 'ita', pt: 'por', ja: 'jpn', ar: 'ara', nl: 'dut', ru: 'rus', zh: 'chi', ko: 'kor', pl: 'pol', tr: 'tur', sv: 'swe', hi: 'hin' };
 
+// Premier programme trouvé parmi ces noms
 function which(names) {
   for (const n of names) {
     if (path.isAbsolute(n)) { if (fs.existsSync(n)) return n; continue; }
@@ -25,16 +26,20 @@ function which(names) {
   }
   return null;
 }
+// Programme whisper-cli
 export const whisperBin = () => which([process.env.VENUS_WHISPER_BIN, path.join(binDir, 'whisper-cli'), 'whisper-cli', 'whisper-cpp', 'whisper.cpp', 'whisper'].filter(Boolean));
+// Modèle de reconnaissance vocale choisi
 export const modelName = () => String(getSetting('whisper_model', 'small'));
 export const modelPath = (m = modelName()) => path.join(modelsDir, `ggml-${m}.bin`);
 export const modelReady = (m = modelName()) => fs.existsSync(modelPath(m));
+// Service de traduction disponible (LibreTranslate ou Argos Translate)
 export const translator = () => {
   const lt = String(getSetting('libretranslate_url', '') || process.env.LIBRETRANSLATE_URL || '').trim();
   if (which(['argos-translate', 'argospm'])) return { kind: 'argos', label: 'Argos Translate (hors ligne)' };
   if (lt) return { kind: 'libre', url: lt.replace(/\/+$/, ''), key: String(getSetting('libretranslate_key', '') || ''), label: 'LibreTranslate' };
   return null;
 };
+// État de la reconnaissance vocale (programme, modèle, traduction)
 export function transcribeStatus() {
   const t = translator();
   return { bin: whisperBin(), model: modelName(), modelReady: modelReady(), models: Object.keys(MODELS).map((m) => ({ id: m, mb: MODELS[m], ready: modelReady(m) })), translator: t ? t.label : null, downloading: dl ? { model: dl.model, pct: dl.pct } : null, jobs: [...jobs.values()].map((j) => ({ id: j.id, title: j.title, phase: j.phase, pct: j.pct, error: j.error })) };
@@ -42,6 +47,7 @@ export function transcribeStatus() {
 
 // ---------------------------------------------------------------- modèle
 let dl = null;
+// Télécharge un modèle de reconnaissance vocale
 export async function downloadModel(m) {
   if (!MODELS[m]) throw new Error('Modèle inconnu');
   if (modelReady(m)) return modelPath(m);
@@ -96,6 +102,7 @@ async function translateLines(lines, from, to = 'fr') {
 
 // ---------------------------------------------------------------- SRT
 const srtTime = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = Math.floor(s % 60), ms = Math.round((s - Math.floor(s)) * 1000); return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')},${String(ms).padStart(3, '0')}`; };
+// Lit des sous-titres SRT
 export function parseSrt(txt) {
   const T = (s) => { const m = /(\d+):(\d{2}):(\d{2})[,.](\d{3})/.exec(s); return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) / 1000 : null; };
   const out = [];
@@ -109,12 +116,14 @@ export function parseSrt(txt) {
   }
   return out;
 }
+// Écrit des sous-titres SRT
 const toSrt = (cues) => cues.map((c, i) => `${i + 1}\n${srtTime(c.start)} --> ${srtTime(c.end)}\n${c.text}\n`).join('\n');
 
 // ---------------------------------------------------------------- travaux
 const jobs = new Map();
 let running = 0;
 const queue = [];
+// Travail de sous-titrage d'une vidéo
 export const jobOf = (itemId) => jobs.get(itemId) || null;
 /** Génère les sous-titres d'un titre (file d'attente, un à la fois). onDone(result) facultatif. */
 export function requestSubtitles(itemId, { lang = 'fr', onDone } = {}) {
@@ -129,6 +138,7 @@ export function requestSubtitles(itemId, { lang = 'fr', onDone } = {}) {
   pump();
   return job;
 }
+// Traite la file de sous-titrage, une vidéo à la fois
 async function pump() {
   if (running >= 1) return;
   const job = queue.shift();
@@ -138,6 +148,7 @@ async function pump() {
   catch (e) { job.error = e.message; job.phase = 'Échec'; console.warn('[sous-titres générés]', job.title, ':', e.message); }
   finally { running--; setTimeout(() => jobs.delete(job.id), 10 * 60000).unref(); pump(); }
 }
+// Génère les sous-titres d'une vidéo : extraction du son, reconnaissance, traduction
 async function runJob(job) {
   const item = get('SELECT * FROM items WHERE id = ?', job.id);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'venus-whisper-'));

@@ -5,12 +5,14 @@ import zlib from 'node:zlib';
 
 const cache = new Map(); // fichier → { mtime, entries }
 
+// Lit len octets à la position pos d'un fichier
 function readAt(fd, pos, len) {
   const b = Buffer.alloc(len);
   const n = fs.readSync(fd, b, 0, len, pos);
   return n === len ? b : b.subarray(0, n);
 }
 
+// Liste les fichiers d'une archive ZIP (répertoire central)
 export function zipEntries(file) {
   const st = fs.statSync(file);
   const c = cache.get(file);
@@ -43,6 +45,7 @@ export function zipEntries(file) {
   } finally { fs.closeSync(fd); }
 }
 
+// Lit et décompresse un fichier d'une archive ZIP
 export function zipRead(file, name, maxSize = 60e6) {
   const e = zipEntries(file).get(name);
   if (!e) return null;

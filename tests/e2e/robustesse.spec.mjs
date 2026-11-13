@@ -6,7 +6,9 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test, expect, etat, PASSWORD } from './outils.mjs';
 
+// Pause de quelques millisecondes
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Liste d'éléments d'une réponse (tableau ou objet { items })
 const listOf = (d) => (Array.isArray(d) ? d : d.items || []);
 
 // Appel brut : état HTTP et corps, sans exiger une réussite

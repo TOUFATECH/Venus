@@ -19,6 +19,7 @@ const STATUS = path.join(config.dataDir, 'update-status.json');
 const LOG = path.join(config.dataDir, 'update-log.txt');
 const ALIVE = path.join(config.dataDir, 'updater-alive');
 const NIGHT = path.join(config.dataDir, 'autoupdate-night');
+// État du compagnon de mise à jour (Docker)
 export function updaterInfo() {
   let alive = false, status = null, log = null;
   try { alive = Date.now() - fs.statSync(ALIVE).mtimeMs < 90000; } catch { /* absent */ }
@@ -26,6 +27,7 @@ export function updaterInfo() {
   try { log = fs.readFileSync(LOG, 'utf8').slice(-3000); } catch { /* */ }
   return { alive, status, log, pending: fs.existsSync(REQ), night: fs.existsSync(NIGHT), notify: String(getSetting('update_notify', '1')) !== '0' };
 }
+// Enregistre les préférences de mise à jour (nuit, notification)
 export function setUpdatePrefs({ night, notify: n }) {
   if (typeof night === 'boolean') { if (night) fs.writeFileSync(NIGHT, '1'); else fs.rmSync(NIGHT, { force: true }); }
   if (typeof n === 'boolean') setSetting('update_notify', n ? '1' : '0');
@@ -50,6 +52,7 @@ const BRANCH = process.env.VENUS_BRANCH || 'main';
 export const UPDATE_COMMAND = 'cd /opt/Venus && git pull && bash update.sh';
 let cache = { at: 0, data: null };
 
+// Lance une commande dans le dossier de Venus
 const run = (cmd, args, opts = {}) => new Promise((resolve) => {
   execFile(cmd, args, { cwd: ROOT, timeout: opts.timeout || 60000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => resolve({ ok: !err, out: String(stdout || ''), err: String(stderr || err?.message || '') }));
 });
@@ -69,6 +72,7 @@ export async function localCommit() {
   } catch { return null; }
 }
 
+// Compare la version installée à la dernière publiée (cache de 30 minutes)
 export async function checkUpdate(force = false) {
   if (!force && cache.data && Date.now() - cache.at < 30 * 60000) return cache.data;
   const local = await localCommit();
@@ -92,6 +96,7 @@ export async function checkUpdate(force = false) {
 }
 
 let updating = false;
+// Installe la mise à jour (git pull, commande personnalisée ou compagnon Docker)
 export async function runUpdate() {
   if (updating) return { ok: false, message: 'Une mise à jour est déjà en cours' };
   updating = true;

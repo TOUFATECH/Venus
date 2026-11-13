@@ -5,8 +5,11 @@ export function dayPart(d = new Date()) {
   const hr = d.getHours();
   return hr >= 17 || hr < 4 ? 'soir' : 'jour';
 }
+// Libellé du jour : « Aujourd'hui » ou « Ce soir »
 export const todayLabel = () => (dayPart() === 'soir' ? 'Ce soir' : 'Aujourd’hui');
+// Icône du jour : soleil ou lune
 export const todayIcon = () => (dayPart() === 'soir' ? 'moon' : 'sun');
+// Question d'accueil selon l'heure
 export const todayQuestion = () => (dayPart() === 'soir' ? 'Que regarder ce soir ?' : 'Que regarder aujourd’hui ?');
 
 export const NAV_ITEMS = [
@@ -39,11 +42,15 @@ export const CONTENT_IDS = ['today', 'home', 'movies', 'shows', 'anime', 'new', 
 const PREFS_VERSION = 5;
 /** Sur ordinateur, le rail montre les 6 premières sections (Accueil, Films, Séries, Animés, Clips, Nouveau) ; le reste est dans « Plus ». */
 export const RAIL_MAX = 6;
+// Libellé d'un élément du menu (texte ou fonction)
 const labelOf = (it) => (typeof it.label === 'function' ? it.label() : it.label);
+// Icône d'un élément du menu (texte ou fonction)
 const iconOf = (it) => (typeof it.icon === 'function' ? it.icon() : it.icon);
 export { labelOf, iconOf };
 
+// Clé de stockage du menu d'un profil
 const key = (pid) => `vn_menu_${pid}`;
+// Ordre et éléments masqués du menu d'un profil sur cet appareil
 export function menuPrefs(pid) {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(key(pid))); } catch { /* */ }
@@ -67,10 +74,12 @@ export function menuPrefs(pid) {
   hidden = [...new Set(hidden)];
   return { order, hidden };
 }
+// Enregistre le menu d'un profil
 export function saveMenuPrefs(pid, prefs) {
   try { localStorage.setItem(key(pid), JSON.stringify({ order: prefs.order, hidden: prefs.hidden, v: PREFS_VERSION })); } catch { /* */ }
   window.dispatchEvent(new CustomEvent('vn:menu'));
 }
+// Remet le menu par défaut
 export function resetMenuPrefs(pid) {
   try { localStorage.removeItem(key(pid)); } catch { /* */ }
   window.dispatchEvent(new CustomEvent('vn:menu'));
@@ -90,11 +99,13 @@ export function menuItems(profile, hasCat) {
 // Sections de la médiathèque (tuiles de l'accueil et grille « Tout ») avec le nombre de titres
 const COUNT_WORD = { movie: ['film', 'films'], show: ['série', 'séries'], anime: ['animé', 'animés'], clip: ['clip', 'clips'], channel: ['chaîne', 'chaînes'],
   music: ['titre', 'titres'], photo: ['photo', 'photos'], book: ['livre', 'livres'] };
+// Nombre lisible d'une catégorie (« 12 films »)
 export function countLabel(cat, n) {
   const w = COUNT_WORD[cat];
   return w && n ? `${n} ${n > 1 ? w[1] : w[0]}` : '';
 }
 export const SECTION_IDS = ['today', 'movies', 'shows', 'anime', 'tv', 'clips', 'music', 'photos', 'books', 'collections', 'mylist', 'new'];
+// Sections du menu à afficher pour un profil (droits, catégories présentes, préférences)
 export function sections(profile, hasCat, counts = {}) {
   const byId = new Map(NAV_ITEMS.map((i) => [i.id, i]));
   return SECTION_IDS.map((id) => byId.get(id))

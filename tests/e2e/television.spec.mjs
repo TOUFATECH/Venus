@@ -16,6 +16,7 @@ const selection = (page) => page.evaluate(() => {
     page: !!el.closest('main'),
   };
 });
+// Appuie n fois sur une touche (navigation à la télécommande)
 const touche = async (page, k, n = 1) => { for (let i = 0; i < n; i++) { await page.keyboard.press(k); await page.waitForTimeout(120); } };
 
 test('accueil : on se déplace aux flèches et la sélection reste à l’écran', async ({ page }) => {

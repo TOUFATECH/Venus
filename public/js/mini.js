@@ -14,6 +14,7 @@ const KEY = 'vn_mini';
 const WKEY = 'vn_mini_w';
 const remember = (data) => { try { data ? sessionStorage.setItem(KEY, JSON.stringify({ ...data, at: Date.now() })) : sessionStorage.removeItem(KEY); } catch { /* */ } };
 
+// Passe la vidéo en cours dans le mini-lecteur
 export function startMini({ video, hls, info, id, offset = 0, subtitle = '', position }) {
   closeMini();
   let cur = { info: { ...info }, id, offset, subtitle, hls, position };
@@ -212,6 +213,7 @@ export function resumeMini() {
   m.loadItem(s.id, { start: s.t || 0 });
 }
 
+// Ferme le mini-lecteur
 export function closeMini() {
   remember(null);
   if (!mini) return;
@@ -219,4 +221,5 @@ export function closeMini() {
   mini = null;
   m.close();
 }
+// Le mini-lecteur est-il ouvert ?
 export const miniActive = () => !!mini;

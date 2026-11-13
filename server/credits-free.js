@@ -8,8 +8,10 @@ import { run } from './db.js';
 
 const TVMAZE = process.env.VENUS_TVMAZE_API || 'https://api.tvmaze.com';
 const photo = (p) => (p ? `t_w185_${String(p).replace(/^\//, '').replace(/[^\w.]/g, '')}` : null);
+// Retire les personnes en double
 const uniq = (list) => { const s = new Set(); return list.filter((p) => p && p.name && !s.has(p.name) && s.add(p.name)); };
 
+// Distribution et équipe d'un titre sans clé TMDB
 export async function freeCredits(item, imdb) {
   const kind = item.type === 'movie' ? 'movie' : 'tv';
   let id = imdb || item.imdb_id || null;
@@ -60,6 +62,7 @@ export async function freeCredits(item, imdb) {
 
 // ------------------------------------------------------------------ filmographie (Wikidata)
 const cache = new Map();
+// Filmographie d'une personne (en cache)
 export async function filmography(name) {
   const key = String(name || '').trim();
   if (!key) return [];
@@ -115,6 +118,7 @@ import { db as _db, get as _get } from './db.js';
 _db.exec('CREATE TABLE IF NOT EXISTS person_photos (name TEXT PRIMARY KEY, url TEXT, at INTEGER)');
 const FILM_JOBS = ['Q33999', 'Q10800557', 'Q10798782', 'Q2405480', 'Q2526255', 'Q28389', 'Q3282637', 'Q36834', 'Q3455803', 'Q1053574', 'Q222344', 'Q245068'];
 const pending = new Map();
+// Photo d'une personne (en cache)
 export function personPhoto(name) {
   const key = String(name || '').trim().slice(0, 120);
   if (!key) return Promise.resolve(null);
@@ -146,4 +150,5 @@ export function personPhoto(name) {
   pending.set(key, job);
   return job;
 }
+// Texte simplifié pour comparer des noms
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();

@@ -5,12 +5,14 @@ import { all, getSetting, setSetting } from './db.js';
 import { notify } from './notify.js';
 import { pathFor } from './slugs.js';
 
+// Résumé des épisodes ajoutés (« S02E01 à E04 »)
 const rangeOf = (eps) => {
   const bySeason = new Map();
   for (const e of eps) { const l = bySeason.get(e.season_num) || []; l.push(e.episode_num); bySeason.set(e.season_num, l); }
   return [...bySeason].map(([s, l]) => { l.sort((a, b) => a - b); return l.length === 1 ? `S${s} É${l[0]}` : `S${s} É${l[0]} à É${l[l.length - 1]}`; }).join(', ');
 };
 
+// Prévient les profils qui suivent une série quand de nouveaux épisodes arrivent
 export async function announceNewEpisodes() {
   if (String(getSetting('notify_episodes', '1')) === '0') return 0;
   const since = Number(getSetting('new_eps_checked', 0)) || Date.now() - 3600e3;

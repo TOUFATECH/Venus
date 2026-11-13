@@ -12,7 +12,9 @@ const hue = {
 };
 let wled = { on: false, bri: 40, ps: 2, seg: [{ col: [[255, 160, 0]] }] };
 
+// Lit le corps d'une requête
 const read = (req) => new Promise((resolve) => { let b = ''; req.on('data', (d) => { b += d; }); req.on('end', () => { try { resolve(b ? JSON.parse(b) : {}); } catch { resolve({}); } }); });
+// Envoie une réponse JSON
 const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 
 http.createServer(async (req, res) => {

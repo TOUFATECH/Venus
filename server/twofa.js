@@ -9,20 +9,28 @@ import { logSecurity } from './security.js';
 
 const TTL = 10 * 60000;
 const pending = new Map(); // id -> { hash, expires, tries, ip, ua, sentAt }
+// Date du jour (AAAA-MM-JJ)
 const today = () => new Date().toISOString().slice(0, 10);
 
+// Adresse e-mail qui reçoit les codes
 export const twofaEmail = () => String(getSetting('twofa_email', '') || '');
+// La double authentification est-elle active ?
 export const twofaOn = () => process.env.VENUS_DISABLE_2FA !== '1' && getSetting('twofa_mode', 'off') === 'new_device' && !!twofaEmail() && smtpOn();
+// Adresse e-mail partiellement masquée
 export const maskEmail = (e) => String(e).replace(/^(.)(.*)(.@.*)$/, (_, a, b, c) => a + '•'.repeat(Math.min(6, b.length)) + c);
 
+// Compteurs du jour (e-mails envoyés, échecs)
 function daily() {
   let d = getSetting('twofa_daily', null);
   if (!d || d.day !== today()) d = { day: today(), sent: 0, byIp: {}, fails: {} };
   return d;
 }
+// Enregistre les compteurs du jour
 const saveDaily = (d) => setSetting('twofa_daily', d);
+// Empreinte d'un code (le code lui-même n'est pas gardé)
 const hashCode = (id, code) => crypto.createHash('sha256').update(`${id}:${code}`).digest('hex');
 
+// Envoie le code par e-mail
 async function deliver(id, entry, code) {
   const name = getSetting('server_name', 'Venus');
   const when = new Date().toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
@@ -33,6 +41,7 @@ async function deliver(id, entry, code) {
     html: `<div style="font-family:system-ui,sans-serif;max-width:480px"><h2 style="margin:0 0 12px">Code de connexion à ${escapeHtml(name)}</h2><p style="font-size:32px;letter-spacing:8px;font-weight:800;margin:16px 0">${code}</p><p>Demandé le ${escapeHtml(when)} depuis <b>${escapeHtml(entry.ip)}</b> (${escapeHtml(entry.device)}). Valable 10 minutes.</p><p style="color:#a33">Si ce n’est pas vous, ne donnez ce code à personne : quelqu’un connaît le mot de passe du foyer. Changez-le dans Réglages.</p></div>`,
   });
 }
+// Échappe un texte pour l'e-mail HTML
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Après le bon mot de passe : crée un défi et envoie le code
@@ -80,4 +89,5 @@ export function verifyChallenge(id, code, ip) {
 }
 setInterval(() => { const now = Date.now(); for (const [id, e] of pending) if (e.expires < now) pending.delete(id); }, 60000).unref();
 
+// Statistiques du jour (tableau de bord Sécurité)
 export function twofaStats() { const d = daily(); return { sentToday: d.sent, failsToday: Object.values(d.fails).reduce((a, b) => a + b, 0) }; }

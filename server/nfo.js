@@ -3,11 +3,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+// Décode le texte XML (CDATA et entités)
 const decode = (s) => String(s || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n))).replace(/&amp;/g, '&').trim();
+// Contenu d'une balise XML (taille bornée)
 const tag = (xml, name) => { const m = new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]{0,20000}?)</${name}>`, 'i').exec(xml); return m ? decode(m[1]) : ''; };
+// Contenu de toutes les balises d'un nom donné
 const tags = (xml, name) => [...xml.matchAll(new RegExp(`<${name}(?:\\s[^>]*)?>([\\s\\S]{0,500}?)</${name}>`, 'gi'))].map((m) => decode(m[1])).filter(Boolean);
 
+// Lit un fichier .nfo : identifiants TMDB / IMDb, titre, année, résumé, genres
 export function parseNfo(text) {
   const xml = String(text || '').slice(0, 200000);
   // Certains .nfo ne contiennent qu'une adresse IMDb / TMDB
@@ -32,6 +36,7 @@ export function parseNfo(text) {
   return Object.values(out).some((v) => (Array.isArray(v) ? v.length : v)) ? out : null;
 }
 
+// Lit un fichier s'il est petit (moins de 2 Mo)
 function readIfSmall(f) {
   try { const st = fs.statSync(f); if (!st.isFile() || st.size > 2e6) return null; return fs.readFileSync(f, 'utf8'); } catch { return null; }
 }

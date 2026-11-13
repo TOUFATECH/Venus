@@ -7,6 +7,7 @@ import { anilist, pickTrailer } from './ratings.js';
 
 const TMDB_IMG = 'https://image.tmdb.org/t/p';
 const cache = new Map();
+// Résultat gardé en mémoire pendant ttl millisecondes
 async function cached(key, ttl, fn) {
   const c = cache.get(key);
   if (c && Date.now() - c.at < ttl) return c.value;
@@ -17,8 +18,10 @@ async function cached(key, ttl, fn) {
 
 // ------------------------------------------------------------------ Seerr
 export const seerrConf = () => ({ url: String(getSetting('seerr_url', '') || '').replace(/\/+$/, ''), key: getSetting('seerr_key', '') || '' });
+// Seerr est-il relié ?
 export const seerrOn = () => { const c = seerrConf(); return !!(c.url && c.key); };
 
+// Appel à l'API de Seerr
 export async function seerr(path, { method = 'GET', body, conf = seerrConf(), asUser = null } = {}) {
   if (!conf.url || !conf.key) throw new Error('Seerr n’est pas configuré');
   const res = await fetch(`${conf.url}/api/v1${path}`, {
@@ -34,6 +37,7 @@ export async function seerr(path, { method = 'GET', body, conf = seerrConf(), as
   return res.status === 204 ? null : res.json();
 }
 
+// Teste la connexion à Seerr
 export async function seerrTest(conf) {
   const st = await seerr('/status', { conf });
   await seerr('/auth/me', { conf }); // vérifie la clé
@@ -42,6 +46,7 @@ export async function seerrTest(conf) {
 
 // Statut Seerr : 1 inconnu, 2 en attente, 3 en cours, 4 partiellement disponible, 5 disponible
 export const SEERR_STATUS = { 2: 'pending', 3: 'processing', 4: 'partial', 5: 'available', 6: 'blocked', 7: 'deleted' };
+// État d'un titre dans Seerr (disponible, demandé, rien)
 export function mediaState(info) {
   if (!info) return { state: 'none' };
   const dl = (info.downloadStatus || []).concat(info.downloadStatus4k || []);
@@ -54,6 +59,7 @@ export function mediaState(info) {
   };
 }
 
+// État d'un titre dans Seerr (en cache)
 export async function seerrStatus(type, tmdbId) {
   return cached(`st:${type}:${tmdbId}`, 45000, async () => {
     const d = await seerr(`/${type === 'movie' ? 'movie' : 'tv'}/${tmdbId}`);
@@ -61,6 +67,7 @@ export async function seerrStatus(type, tmdbId) {
   });
 }
 
+// Demande un film ou une série à Seerr
 export async function seerrRequest(type, tmdbId, { userId = null, seasons = null, is4k = false } = {}) {
   let body;
   if (type === 'movie') body = { mediaType: 'movie', mediaId: Number(tmdbId) };
@@ -102,6 +109,7 @@ const fromTmdb = (x, type) => ({
   anime: x.original_language === 'ja' && (x.genre_ids || []).includes(16),
 });
 
+// Liste TMDB (tendances, à venir…) avec ou sans clé
 async function tmdbList(path, type, params = {}) {
   if (tmdbKey()) {
     const d = await tmdb(path, { language: lang(), region: lang().split('-')[1] || 'FR', ...params });
@@ -119,6 +127,7 @@ async function tmdbList(path, type, params = {}) {
 }
 
 const SEASON = (d = new Date()) => ['WINTER', 'WINTER', 'SPRING', 'SPRING', 'SPRING', 'SUMMER', 'SUMMER', 'SUMMER', 'FALL', 'FALL', 'FALL', 'WINTER'][d.getMonth()];
+// Saison d'animés suivante (hiver, printemps, été, automne)
 function nextSeason(d = new Date()) {
   const order = ['WINTER', 'SPRING', 'SUMMER', 'FALL'];
   const s = SEASON(d), i = order.indexOf(s);
@@ -130,6 +139,7 @@ const ANIME_LIST = `query ($season: MediaSeason, $year: Int, $sort: [MediaSort],
     id idMal format averageScore popularity siteUrl episodes nextAiringEpisode { episode airingAt }
     title { romaji english native } description(asHtml: false) startDate { year month day }
     coverImage { extraLarge large } bannerImage trailer { id site } } } }`;
+// Animé AniList converti au format commun des nouveautés
 const fromAnilist = (m) => ({
   key: `al:${m.id}`, source: 'anilist', type: m.format === 'MOVIE' ? 'movie' : 'tv', anilistId: m.id, tmdbId: null, anime: true,
   title: m.title.english || m.title.romaji, original: m.title.romaji || m.title.native || '',
@@ -140,11 +150,13 @@ const fromAnilist = (m) => ({
   next: m.nextAiringEpisode ? { episode: m.nextAiringEpisode.episode, at: m.nextAiringEpisode.airingAt * 1000 } : null,
   trailer: m.trailer && m.trailer.site === 'youtube' ? { site: 'youtube', key: m.trailer.id } : null,
 });
+// Liste d'animés AniList (saison en cours, populaires…)
 async function animeList(vars) {
   const d = await anilist(ANIME_LIST, vars);
   return ((d && d.Page && d.Page.media) || []).map(fromAnilist);
 }
 
+// Sections de la page Nouveautés pour un type (films, séries ou animés), en cache
 export async function discover(kind) {
   const sections = await cached(`disc:${kind}:${tmdbKey() ? 1 : 0}:${seerrOn() ? 1 : 0}`, 3600000, async () => {
     const safe = async (title, fn) => { try { return { title, items: await fn() }; } catch (e) { return { title, items: [], error: e.message }; } };
@@ -201,6 +213,7 @@ export async function resolveTmdb(item) {
   });
 }
 
+// Bande-annonce YouTube d'un titre d'après TMDB
 export async function trailerFor(type, tmdbId) {
   if (!tmdbKey()) return null;
   return cached(`tr:${type}:${tmdbId}`, 86400000, async () => {
@@ -209,9 +222,11 @@ export async function trailerFor(type, tmdbId) {
   });
 }
 
+// Sources de nouveautés disponibles (TMDB, Seerr, animés)
 export function discoverAvailable() {
   return { tmdb: !!tmdbKey(), seerr: seerrOn(), anime: true };
 }
+// Titre présent dans la bibliothèque ?
 export const libraryItem = (id) => get('SELECT id FROM items WHERE id = ?', id);
 
 // ------------------------------------------------------------------ recherche en ligne (titres pas encore dans Venus)

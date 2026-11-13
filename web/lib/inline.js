@@ -4,8 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 let cache = { at: 0, v: { head: [], body: [] } };
+// Contenu des scripts intégrés d'une page HTML
 const grab = (s) => [...String(s || '').matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map((m) => m[1]);
 
+// Scripts intégrés de public/index.html (à marquer du nonce CSP)
 export function inlineScripts() {
   const dir = process.env.VENUS_PUBLIC_DIR;
   if (!dir) return cache.v;

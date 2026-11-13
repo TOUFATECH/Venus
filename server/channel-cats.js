@@ -2,6 +2,7 @@
 // L'ordre de CATEGORIES est celui des filtres de la page TV.
 export const CATEGORIES = ['Outre-mer', 'Info', 'Généraliste', 'Films', 'Séries', 'Animé / Manga', 'Jeunesse', 'Documentaire', 'Histoire', 'Culture', 'Sport', 'Musique', 'Cuisine & maison', 'Japon', 'Autres'];
 
+// Texte en minuscules sans accents
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 // Du plus précis au plus général : la première règle qui correspond l'emporte
 const RULES = [

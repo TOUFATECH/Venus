@@ -6,6 +6,7 @@ import { shared } from '../../lib/shared';
 import { useVenus } from '../Venus';
 import { Icon } from '../Icon';
 
+// Page Séance : créer ou rejoindre une séance à plusieurs
 export default function Seance() {
   useTitle('Séance');
   const { search } = useVenus();

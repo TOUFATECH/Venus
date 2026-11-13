@@ -3,10 +3,13 @@ import { api } from '../api.js';
 import { h, icon, toast, sheet, confirmSheet } from '../ui.js';
 import { go, state, setTitle } from '../core.js';
 
+// Date et heure lisibles (ou « jamais »)
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'jamais');
+// Durée lisible (ms, s, min)
 const dur = (ms) => (ms < 1000 ? `${ms} ms` : ms < 60000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60000)} min`);
 const TABS = [['maj', 'Mise à jour'], ['taches', 'Tâches planifiées'], ['journal', 'Journal du serveur'], ['cles', 'Clés API'], ['webhooks', 'Webhooks'], ['perso', 'Personnalisation']];
 
+// Page Serveur (administrateur) : onglets
 export async function render(main, { query } = {}) {
   if (!state.profile.isAdmin) { main.append(h('div', { class: 'empty' }, h('h2', {}, 'Réservé à l’administrateur'))); return; }
   setTitle('Serveur');
@@ -32,6 +35,7 @@ export async function render(main, { query } = {}) {
   window.addEventListener('hashchange', () => clearTimeout(timer), { once: true });
 }
 
+// Onglet Tâches planifiées
 async function tasksTab(body, later) {
   const list = await api('/api/admin/tasks');
   body.replaceChildren(h('p', { class: 'muted' }, 'Les travaux faits en arrière-plan. « Lancer » les démarre tout de suite.'),
@@ -44,6 +48,7 @@ async function tasksTab(body, later) {
   if (list.some((t) => t.running)) later(() => tasksTab(body, later).catch(() => {}), 3000);
 }
 
+// Onglet Journal du serveur
 async function logsTab(body, later) {
   let level = 'all', q = '';
   const out = h('div', { class: 'log-view', role: 'log' });
@@ -62,6 +67,7 @@ async function logsTab(body, later) {
   later(tick, 5000);
 }
 
+// Onglet Clés API
 async function keysTab(body) {
   const keys = await api('/api/admin/apikeys');
   const name = h('input', { class: 'input', placeholder: 'Nom de l’application (ex. : Home Assistant)', maxlength: 60 });
@@ -86,6 +92,7 @@ async function keysTab(body) {
       } }, 'Supprimer')))) : h('p', { class: 'muted' }, 'Aucune clé.'));
 }
 
+// Onglet Webhooks
 async function hooksTab(body) {
   const d = await api('/api/admin/webhooks');
   const edit = (hk = null) => {
@@ -119,6 +126,7 @@ async function hooksTab(body) {
       h('button', { class: 'btn btn-ghost btn-small f', 'aria-label': 'Supprimer', onclick: async () => { if (!(await confirmSheet('Supprimer ce webhook ?', 'Supprimer'))) return; await api(`/api/admin/webhooks/${hk.id}`, { method: 'DELETE' }); hooksTab(body); } }, icon('trash'))))) : h('p', { class: 'muted' }, 'Aucun webhook.'));
 }
 
+// Onglet Personnalisation (CSS, message d'accueil)
 async function brandTab(body) {
   const d = await api('/api/admin/branding');
   const msg = h('textarea', { class: 'input', rows: 3, maxlength: 1000, placeholder: 'Ex. : Bienvenue chez nous ! Demandez le mot de passe à Sarah.' }, d.loginMessage);

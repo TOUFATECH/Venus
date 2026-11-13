@@ -7,7 +7,9 @@ import { HttpError } from './http.js';
 
 const KINDS = { radarr: 'radarr', sonarr: 'sonarr', lidarr: 'lidarr', bookshelf: 'bookshelf' };
 const NAMES = { radarr: 'Radarr', sonarr: 'Sonarr', lidarr: 'Lidarr', bookshelf: 'Bookshelf' };
+// Version de l'API selon le service (v1 pour Lidarr et Bookshelf, v3 sinon)
 const API = (app) => (app === 'lidarr' || app === 'bookshelf' ? '/api/v1' : '/api/v3');
+// Adresse, clé et réglages enregistrés pour un service (Radarr, Sonarr, Lidarr…)
 export function arrConf(app) {
   return {
     url: String(getSetting(`${app}_url`, '') || '').replace(/\/+$/, ''),
@@ -18,9 +20,12 @@ export function arrConf(app) {
     animeRoot: String(getSetting(`${app}_anime_root`, '') || ''),
   };
 }
+// Le service est-il relié (adresse et clé renseignées) ?
 export const arrOn = (app) => { const c = arrConf(app); return !!(c.url && c.key); };
+// Service qui gère ce type de titre : Radarr pour les films, Sonarr sinon
 export const appFor = (kind) => (kind === 'movie' ? 'radarr' : 'sonarr');
 
+// Enregistre les réglages d'un service (clé chiffrée dans la base)
 export function saveArr(app, { url, key, profile, metaProfile, root, animeRoot }) {
   if (!KINDS[app]) throw new HttpError(400, 'Service inconnu');
   if (url !== undefined) {
@@ -36,6 +41,7 @@ export function saveArr(app, { url, key, profile, metaProfile, root, animeRoot }
   if (animeRoot !== undefined) setSetting(`${app}_anime_root`, String(animeRoot || '').slice(0, 500));
 }
 
+// Appel à l'API d'un service, avec délai maximal et message d'erreur clair
 export async function call(app, path, { method = 'GET', body = null, conf = null } = {}) {
   const c = conf || arrConf(app);
   if (!c.url || !c.key) throw new HttpError(400, `${NAMES[app]} n’est pas relié (Réglages → Demandes)`);
@@ -69,7 +75,9 @@ export async function arrOptions(app, conf = null) {
   };
 }
 
+// Adresse de l'affiche d'un résultat
 const posterOf = (x) => x.remotePoster || ((x.images || []).find((i) => i.coverType === 'poster') || {}).remoteUrl || null;
+// Texte simplifié (minuscules, sans accents ni ponctuation) pour comparer des titres
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
 
 // Recherche : films dans Radarr, séries et animés dans Sonarr. Indique ce qui est déjà demandé ou déjà dans Venus.
@@ -164,6 +172,7 @@ export async function arrQueue() {
 // ------------------------------------------------------------------ pour « À venir »
 // Ce que Radarr et Sonarr connaissent déjà (gardé 5 min) : sert à marquer « demandé » sans redemander.
 const known = { at: 0, movies: new Set(), series: new Set(), seriesNames: new Set() };
+// Titres déjà connus de Radarr et Sonarr (cache de 5 minutes)
 export async function arrKnown() {
   if (Date.now() - known.at < 300000) return known;
   known.at = Date.now();
@@ -175,6 +184,7 @@ export async function arrKnown() {
   } catch { /* */ }
   return known;
 }
+// Oublie le cache des titres connus (après un ajout ou une suppression)
 export const forgetKnown = () => { known.at = 0; lk.at = 0; };
 
 // Ajout à partir de ce qu'on sait du titre : identifiant TMDB (film), TVDB (série), sinon recherche par nom
@@ -220,6 +230,7 @@ export async function lidarrSearch(q) {
     albums: (albums || []).slice(0, 20).map((b) => ({ mbId: b.foreignAlbumId, title: b.title, artist: b.artist ? b.artist.artistName : null, artistMbId: b.artist ? b.artist.foreignArtistId : null, date: b.releaseDate || null, type: b.albumType || null, poster: img(b), requested: !!b.id, inVenus: b.artist ? nasAlbums.has(`${b.artist.artistName}|${b.title}`.toLowerCase()) : false })).filter((b) => b.mbId),
   };
 }
+// Profils de qualité et dossier racine par défaut de Lidarr
 async function lidarrDefaults() {
   const c = arrConf('lidarr');
   const opts = await arrOptions('lidarr');
@@ -255,6 +266,7 @@ export async function lidarrAddArtist(mbId) {
 }
 // Ce que Lidarr suit déjà (identifiants MusicBrainz), gardé 5 min
 const lk = { at: 0, albums: new Set(), artists: new Set() };
+// Artistes et albums déjà suivis par Lidarr (en cache)
 export async function lidarrKnown() {
   if (!arrOn('lidarr')) return lk;
   if (Date.now() - lk.at < 300000) return lk;

@@ -41,6 +41,7 @@ function movieTarget(it) {
   const tag = label.quality ? ` - ${label.quality}` : '';
   return { dir: base, file: `${base}${tag}${ext}` };
 }
+// Chemin proposé pour un épisode : « Série (année)/Saison 01/Série - S01E02 - Titre »
 function episodeTarget(ep, show, seasonNum) {
   const sBase = `${safeName(show.title)}${show.year ? ` (${show.year})` : ''}`;
   const code = `S${String(seasonNum).padStart(2, '0')}E${String(ep.episode_num).padStart(2, '0')}`;
@@ -101,6 +102,7 @@ export function applyRenames(ids) {
   return { done, errors };
 }
 
+// Supprime les dossiers vides laissés par les renommages
 export function removeEmptyDirs(root) {
   // Nettoyage des dossiers vides laissés par les renommages (un niveau à la fois, jamais la racine)
   let n = 0;

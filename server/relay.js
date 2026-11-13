@@ -25,21 +25,26 @@ const IDLE = 120000;
 // Direct différé : pendant une pause, Venus continue de télécharger les morceaux de la chaîne (2 h au plus)
 // et allonge la liste au lieu de la faire glisser ; on reprend là où on était, ou on revient au direct.
 const HOLD_MAX = 2 * 3600e3;
+// Dossier du direct différé (pause d'une chaîne)
 const holdDir = (id) => path.join(config.dataDir, 'cache', 'timeshift', id);
 
+// En-têtes à envoyer avec le flux (Referer, User-Agent) s'ils sont précisés
 function headersFor(url) {
   let o = {};
   try { o = JSON.parse((get('SELECT stream_opts FROM items WHERE stream_url = ? AND stream_opts IS NOT NULL LIMIT 1', url) || {}).stream_opts || '{}') || {}; } catch { /* */ }
   return { 'User-Agent': o.ua || BROWSER, ...(o.referer ? { Referer: o.referer } : {}), Accept: '*/*' };
 }
 
+// Cette chaîne peut-elle être relayée telle quelle (flux HLS) ?
 export function canRelay(url) { return /^https?:\/\/[^\s]+\.m3u8?(\?|$)/i.test(String(url || '')); }
 
+// Ouvre un relais pour une chaîne
 export function startRelay(item) {
   const id = crypto.randomBytes(16).toString('hex');
   relays.set(id, { itemId: item.id, url: item.stream_url, hosts: new Set([new URL(item.stream_url).host]), headers: headersFor(item.stream_url), touched: Date.now(), media: new Map(), cache: new Map(), servedSeq: new Map(), hold: false });
   return { id, url: `/api/live/${id}/pl.m3u8?u=${encodeURIComponent(item.stream_url)}` };
 }
+// Ferme un relais
 export function stopRelay(id) { const r = relays.get(id); if (r) dropHold(id, r); relays.delete(id); }
 // Un relais sans activité est fermé (en pause, l'enregistrement le garde ouvert jusqu'à 2 h)
 setInterval(() => { const now = Date.now(); for (const [k, r] of relays) if (now - r.touched > (r.hold ? HOLD_MAX : IDLE)) stopRelay(k); }, 30000).unref();
@@ -68,6 +73,7 @@ async function checkFinal(r, res) {
   const f = new URL(res.url);
   if (await isLocalHost(r, f.hostname) && !(await isLocalHost(r, new URL(r.url).hostname))) throw new HttpError(403, 'Adresse du réseau local refusée');
 }
+// Relais et adresse vérifiée (seuls les serveurs annoncés par la chaîne sont suivis)
 async function relayOf(id, u) {
   const r = relays.get(id);
   if (!r) throw new HttpError(404, 'Relais expiré');
@@ -126,10 +132,12 @@ export function parseMedia(text, base) {
   const td = Number((/#EXT-X-TARGETDURATION:(\d+)/i.exec(head.join('\n')) || [])[1]) || 6;
   return { head, segs, td };
 }
+// Liste de lecture HLS des segments gardés en mémoire
 function buildMedia(m) {
   const first = m.segs.length ? m.segs[0].seq : 0;
   return [...m.head.filter((l) => !/^#EXT-X-MEDIA-SEQUENCE/i.test(l)), `#EXT-X-MEDIA-SEQUENCE:${first}`, ...m.segs.flatMap((s) => [...s.tags, s.uri])].join('\n') + '\n';
 }
+// Télécharge un segment de la chaîne
 async function fetchMedia(r, key) {
   const res = await fetch(key, { headers: r.headers, redirect: 'follow', signal: AbortSignal.timeout(12000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -166,6 +174,7 @@ async function prefetch(id, r) {
     }
   } finally { r.fetching = false; }
 }
+// Met en pause (garde les segments) ou reprend une chaîne
 export function holdRelay(id, on) {
   const r = relays.get(id); if (!r) return false;
   r.touched = Date.now();
@@ -180,11 +189,13 @@ export function holdRelay(id, on) {
   } else if (!on && r.hold) dropHold(id, r);
   return true;
 }
+// Libère les segments gardés pendant la pause
 function dropHold(id, r) {
   r.hold = false; clearInterval(r.timer); r.timer = null; r.cache = new Map();
   fs.rm(holdDir(id), { recursive: true, force: true }, () => {});
 }
 
+// Sert la liste de lecture d'une chaîne relayée
 export async function servePlaylistRelay(ctx, id) {
   const { r, url } = await relayOf(id, ctx.url.searchParams.get('u'));
   const key = url.href;
@@ -212,11 +223,13 @@ export async function servePlaylistRelay(ctx, id) {
   }
   sendPl(ctx, rewritePlaylist(text, final.href, id, r.hosts));
 }
+// Envoie une liste de lecture HLS
 function sendPl(ctx, text) {
   ctx.res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl', 'Cache-Control': 'no-store' });
   ctx.res.end(text);
 }
 
+// Sert un segment d'une chaîne relayée
 export async function serveSegmentRelay(ctx, id) {
   const { r, url } = await relayOf(id, ctx.url.searchParams.get('u'));
   // Où en est le spectateur (pour savoir quoi garder pendant une pause)

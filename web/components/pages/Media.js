@@ -12,18 +12,27 @@ import { Placeholder } from '../Card';
 import { PageError, PageLoading } from '../PageState';
 import { MusicUpcoming, Discography, AlbumMeta, musicAddSheet, BooksUpcoming, Authors, booksAddSheet, dateFr } from './MediaMore';
 
+// Décode un paramètre d'adresse
 const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
+// Lecteur audio (chargé à la demande)
 const audio = () => shared().imp('audio.js');
+// Touche « Retour » ?
 const isBack = (e) => shared().ui.isBack(e);
 
 // ================================================================ MUSIQUE
 const fmt = (s) => { s = Math.round(s || 0); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+// Durée totale lisible (« 1 h 05 »)
 const total = (s) => { const m = Math.round((s || 0) / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
+// Pochette (ou image de remplacement)
 const Cover = ({ c, title, w = 342 }) => (c ? <img src={img(c, w)} alt="" loading="lazy" /> : <Placeholder title={title} />);
+// Mélange une liste
 const shuffle = (l) => [...l].sort(() => Math.random() - 0.5);
+// Lit une liste de morceaux à partir de l'un d'eux
 const play = async (list, i = 0) => (await audio()).playList(list, i);
+// Ajoute des morceaux à la file
 const queue = async (list) => (await audio()).addToQueue(list);
 
+// Tuile d'un album
 function AlbumTile({ a }) {
   return (
     <button className="m-tile f" onClick={() => go(`/musique/album/${encodeURIComponent(a.slug)}`)}>
@@ -62,6 +71,7 @@ function Tracks({ tracks, showAlbum = false, showArtist = false }) {
   );
 }
 
+// Page Musique
 export function Music() {
   useTitle('Musique');
   const { search } = useVenus();
@@ -98,6 +108,7 @@ export function Music() {
   );
 }
 
+// Page d'un album
 export function Album() {
   const { name } = useParams();
   const { data: a, error } = useApi(`/api/music/album?slug=${encodeURIComponent(dec(name || ''))}`);
@@ -126,6 +137,7 @@ export function Album() {
   );
 }
 
+// Page d'un artiste
 export function Artist() {
   const { name } = useParams();
   const { data: a, error } = useApi(`/api/music/artist?slug=${encodeURIComponent(dec(name || ''))}`);
@@ -150,6 +162,7 @@ export function Artist() {
 // ================================================================ PHOTOS
 const dateOf = (d) => (d ? new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 
+// Page Photos
 export function Photos() {
   useTitle('Photos');
   const { data: albums, error } = useApi('/api/photos');
@@ -169,6 +182,7 @@ export function Photos() {
   );
 }
 
+// Album photo et diaporama
 export function PhotoAlbum() {
   const { name } = useParams();
   const { data: a, error } = useApi(`/api/photos/album?slug=${encodeURIComponent(dec(name || ''))}`);
@@ -241,6 +255,7 @@ function Viewer({ list, start, slideshow, onClose }) {
 const pct = (b) => (b.progress && b.progress.duration ? Math.min(100, Math.round((b.progress.watched ? 1 : b.progress.position / b.progress.duration) * 100)) : 0);
 const FORMAT = { epub: 'EPUB', pdf: 'PDF', cbz: 'BD', audiobook: 'Livre audio' };
 
+// Page Livres
 export function Books() {
   useTitle('Livres');
   const { search } = useVenus();
@@ -301,6 +316,7 @@ export function Reader() {
   return <main className="with-nav"><div className="rd-spacer" /><ReaderView b={b} id={id} /></main>;
 }
 
+// Liseuse (EPUB, BD, PDF)
 function ReaderView({ b, id }) {
   const total = b.format === 'epub' ? b.chapters : b.format === 'cbz' ? b.pages : 1;
   const [n, setN] = useState(b.progress && !b.progress.watched ? Math.min(total - 1, Math.floor(b.progress.position)) : 0);

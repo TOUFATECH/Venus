@@ -15,9 +15,12 @@ import { localDay } from './clock.js';
 
 db.exec(`CREATE TABLE IF NOT EXISTS file_checks (item_id INTEGER PRIMARY KEY, checked_at INTEGER, mtime INTEGER, ok INTEGER, error TEXT)`);
 
+// Taille lisible en Go
 const fmtGo = (b) => `${(b / 1e9).toFixed(1).replace('.', ',')} Go`;
+// Durée lisible (« 2 h 05 »)
 const fmtH = (sec) => { const m = Math.round(sec / 60); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}` : `${m} min`; };
 
+// Bilan de la semaine : heures regardées, ajouts, place disque, alertes
 export function weeklyReport() {
   const since = Date.now() - 7 * 864e5;
   const added = all("SELECT title, type FROM items WHERE added_at > ? AND type IN ('movie','show') AND version_of IS NULL ORDER BY added_at DESC", since);
@@ -36,6 +39,7 @@ export function weeklyReport() {
   return { lines, text: lines.join('\n') };
 }
 
+// Envoie le bilan de la semaine aux administrateurs
 export async function sendWeeklyReport() {
   const r = weeklyReport();
   await notify({ title: 'Venus, cette semaine', body: r.lines.slice(0, 2).join(' '), url: '/dashboard', tag: 'weekly' }, { adminOnly: true });
@@ -58,6 +62,7 @@ function checkOne(file) {
     });
   });
 }
+// Vérifie que des vidéos se lisent encore (fichiers abîmés)
 export async function checkFiles(limit = 30) {
   const rows = all(`SELECT i.id, i.path, i.mtime FROM items i LEFT JOIN file_checks c ON c.item_id = i.id
     WHERE i.type IN ('movie','episode','clip') AND i.path IS NOT NULL AND i.path NOT LIKE 'http%' AND (c.item_id IS NULL OR c.mtime != i.mtime OR c.checked_at < ?) ORDER BY c.checked_at IS NOT NULL, i.added_at DESC LIMIT ?`, Date.now() - 90 * 864e5, limit);
@@ -72,4 +77,5 @@ export async function checkFiles(limit = 30) {
   if (bad && getSetting('broken_notified', 0) < Date.now() - 864e5) { setSetting('broken_notified', Date.now()); notify({ title: 'Fichiers vidéo abîmés', body: `${total} fichier${total > 1 ? 's' : ''} ne se lisent pas correctement`, url: '/reglages', tag: 'broken' }, { adminOnly: true }); }
   return `${rows.length} fichier(s) vérifié(s), ${bad} problème(s) trouvé(s), ${total} au total`;
 }
+// Vidéos signalées comme abîmées
 export const brokenFiles = () => all('SELECT c.*, i.title, i.type, i.path, s.title AS show_title, i.season_num, i.episode_num FROM file_checks c JOIN items i ON i.id = c.item_id LEFT JOIN items s ON s.id = i.show_id WHERE c.ok = 0 ORDER BY c.checked_at DESC');

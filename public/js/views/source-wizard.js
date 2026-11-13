@@ -8,8 +8,10 @@ const TYPES = [
 const NAMES = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct', music: 'Musique', photos: 'Photos', books: 'Livres' };
 // Chemins Windows (C:\\Films) ou Linux / macOS (/media/films)
 const joinPath = (base, name) => (base.includes('\\') ? `${base.replace(/\\$/, '')}\\${name}` : `${base.replace(/\/$/, '')}/${name}`);
+// Champ de formulaire avec son libellé et son aide
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', { for: input.id }, label), input, hint ? h('small', {}, hint) : null);
 
+// Assistant d'ajout d'une source (dossier, partage réseau, TV)
 export function openSourceWizard(preset = 'movies', onDone) {
   let type = preset;
   const body = h('div', { class: 'wizard' });

@@ -15,7 +15,9 @@ const jobs = new Map(); // id -> job
 const queue = [];
 let running = null;
 
+// Nom de fichier sans caractères interdits
 const safeName = (s) => String(s || 'video').normalize('NFC').replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+// Nom lisible du fichier téléchargé (« Série - S01E02 - Titre.mp4 »)
 export function niceName(item) {
   if (item.type === 'episode') {
     const show = get('SELECT title FROM items WHERE id = ?', item.show_id);
@@ -24,14 +26,18 @@ export function niceName(item) {
   return safeName(`${item.title}${item.year ? ` (${item.year})` : ''}`);
 }
 
+// Préparation telle qu'envoyée à l'interface (sans chemin interne)
 function publicJob(j) {
   let size = null;
   try { if (j.state === 'ready') size = fs.statSync(j.file).size; } catch { /* */ }
   return { id: j.id, itemId: j.itemId, title: j.title, poster: j.poster, quality: j.quality, state: j.state, progress: Math.round(j.progress), error: j.error, size, at: j.at, name: j.name };
 }
+// Téléchargements préparés pour un profil, du plus récent au plus ancien
 export const listJobs = (profileId) => [...jobs.values()].filter((j) => j.profileId === profileId).sort((a, b) => b.at - a.at).map(publicJob);
+// Préparation par son identifiant
 export const getJob = (id) => jobs.get(id) || null;
 
+// Prépare une version légère d'une vidéo pour la regarder sans réseau
 export function prepare(item, quality, profileId) {
   const q = QUAL[quality] ? quality : '720p';
   const existing = [...jobs.values()].find((j) => j.itemId === item.id && j.quality === q && j.state !== 'error');
@@ -46,6 +52,7 @@ export function prepare(item, quality, profileId) {
   return publicJob(j);
 }
 
+// Traite la file des préparations, une à la fois
 function pump() {
   if (running || !queue.length) return;
   const j = queue.shift();
@@ -74,6 +81,7 @@ function pump() {
   });
 }
 
+// Annule une préparation et efface son fichier
 export function cancelJob(id) {
   const j = jobs.get(id);
   if (!j) return;

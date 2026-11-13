@@ -13,9 +13,12 @@ export const HOOK_EVENTS = {
   'task.failed': 'Tâche planifiée en échec',
   'recording.done': 'Enregistrement TV terminé',
 };
+// Webhooks enregistrés
 export const listHooks = () => (getSetting('webhooks', []) || []);
+// Enregistre la liste des webhooks
 export const saveHooks = (list) => setSetting('webhooks', list);
 
+// Envoie un événement à un webhook (signé si un secret est réglé)
 async function send(h, event, data) {
   const body = JSON.stringify({ event, at: new Date().toISOString(), server: getSetting('server_name', 'Venus'), data });
   const headers = { 'Content-Type': 'application/json', 'User-Agent': 'Venus-Webhook/1.0', 'X-Venus-Event': event };
@@ -25,12 +28,14 @@ async function send(h, event, data) {
   return res.status;
 }
 
+// Envoie un événement à tous les webhooks abonnés
 export function emitHook(event, data = {}) {
   const hooks = listHooks().filter((h) => h.enabled !== false && (h.events || []).includes(event));
   for (const h of hooks) {
     send(h, event, data).then(() => markHook(h.id, null)).catch((e) => { markHook(h.id, e.message); console.warn(`[webhook] ${h.name || h.url} : ${e.message}`); });
   }
 }
+// Note le résultat du dernier envoi d'un webhook
 function markHook(id, error) {
   const list = listHooks();
   const h = list.find((x) => x.id === id);
@@ -38,4 +43,5 @@ function markHook(id, error) {
   h.lastAt = Date.now(); h.lastError = error;
   saveHooks(list);
 }
+// Envoie un événement de test
 export const testHook = (h) => send(h, 'test', { message: 'Test depuis Venus' });

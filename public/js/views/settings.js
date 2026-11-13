@@ -11,7 +11,9 @@ const AGES = [['', 'Aucune limite'], ['3', '3 ans et +'], ['7', '7 ans et +'], [
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
 const HW = [['auto', 'Automatique (recommandé)'], ['nvenc', 'NVIDIA (NVENC)'], ['vaapi', 'Intel / AMD (VA-API)'], ['qsv', 'Intel Quick Sync'], ['amf', 'AMD (Windows)'], ['videotoolbox', 'Apple (Mac)'], ['v4l2m2m', 'Raspberry Pi'], ['none', 'Processeur uniquement']];
 
+// Liste déroulante
 const select = (opts, value, attrs = {}) => h('select', { class: 'input', ...attrs }, opts.map(([v, l]) => h('option', { value: v, selected: String(value ?? '') === v }, l)));
+// Champ de formulaire avec son libellé et son aide
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('small', {}, hint) : null);
 const LIB_ICON = { movies: 'film', shows: 'tv', anime: 'spark', clips: 'note', iptv: 'live', music: 'note', photos: 'image', books: 'book' };
 const SOURCE_TYPES = [
@@ -38,10 +40,13 @@ function adviceBox(adv) {
       h('button', { class: 'btn btn-small f', type: 'button', 'aria-label': 'Copier la commande', onclick: copy }, icon('copy'), 'Copier')) : null,
     adv.command && adv.command.includes('<ID-du-conteneur>') ? h('small', {}, 'À lancer sur l’hôte Proxmox, dans le dossier Venus (ou via la commande curl du README). Remplacez <ID-du-conteneur> par le numéro du conteneur, par exemple 7700.') : null);
 }
+// Interrupteur lié à une préférence de l'appareil
 const prefSwitch = (key, label) => h('label', { class: 'switch' }, h('span', {}, label),
   h('input', { type: 'checkbox', class: 'f', checked: !!prefs.get(key), onchange: (e) => { prefs.set(key, e.target.checked); toast('Préférence enregistrée pour cet appareil'); } }));
+// Taille lisible en Go
 const fmtBytes = (b) => `${(b / 1073741824).toFixed(1).replace('.', ',')} Go`;
 
+// Page Réglages
 export async function render(main, { query } = {}) {
   const me = state.profile;
   const page = h('div', { class: 'page admin' });
@@ -844,6 +849,7 @@ function inviteSheet(existing, onDone) {
   return s;
 }
 
+// Fenêtre de création ou de modification d'un profil
 function editProfile(p, self, onDone) {
   const isNew = !p;
   const nameIn = h('input', { class: 'input', value: p ? p.name : '', required: true, maxlength: 30 });
@@ -924,6 +930,7 @@ function editProfile(p, self, onDone) {
   setTimeout(() => nameIn.focus(), 30);
 }
 
+// Nom lisible d'un appareil
 function deviceName(ua = '') {
   if (/Tizen/i.test(ua)) return 'TV Samsung';
   if (/Web0S|webOS/i.test(ua)) return 'TV LG';
@@ -999,6 +1006,7 @@ function pushRow() {
   return row;
 }
 
+// Choix du thème (planètes)
 function themeEditor() {
   const box = h('section', { class: 'box' });
   const paint = () => {
@@ -1055,6 +1063,7 @@ export function choosePoster(it, onDone) {
   search();
 }
 
+// Taille lisible en Go ou Mo
 const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.max(1, Math.round(b / 1e6))} Mo`);
 // Doublons : films présents plusieurs fois ; on garde la meilleure version d'un clic
 async function openDuplicates() {

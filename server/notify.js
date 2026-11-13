@@ -12,7 +12,9 @@ db.exec(`CREATE TABLE IF NOT EXISTS push_subs (
   device TEXT, created_at INTEGER
 )`);
 
+// Encodage base64url
 const b64u = (buf) => Buffer.from(buf).toString('base64url');
+// Décodage base64url
 const unb64u = (s) => Buffer.from(String(s), 'base64url');
 
 // ------------------------------------------------------------------ clés VAPID (créées une fois)
@@ -26,8 +28,10 @@ function vapid() {
   }
   return v;
 }
+// Clé publique VAPID (abonnement aux notifications du navigateur)
 export const vapidPublicKey = () => vapid().pub;
 
+// En-tête d'autorisation VAPID signé pour un service de notifications
 function vapidAuth(endpoint) {
   const v = vapid();
   const aud = new URL(endpoint).origin;
@@ -57,6 +61,7 @@ export function encrypt(sub, plaintext) {
   return Buffer.concat([head, asPub, enc]);
 }
 
+// Envoie une notification Web Push chiffrée à un appareil
 async function sendPush(sub, msg) {
   const body = encrypt(sub, JSON.stringify(msg));
   const res = await fetch(sub.endpoint, {
@@ -68,13 +73,16 @@ async function sendPush(sub, msg) {
   else if (!res.ok) throw new Error(`push ${res.status}`);
 }
 
+// Enregistre l'abonnement aux notifications d'un appareil
 export function savePushSub(profileId, sub, device) {
   if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) throw new Error('Abonnement invalide');
   run(`INSERT INTO push_subs(endpoint, p256dh, auth, profile_id, device, created_at) VALUES(?,?,?,?,?,?)
        ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth, profile_id=excluded.profile_id`,
   sub.endpoint, sub.keys.p256dh, sub.keys.auth, profileId, String(device || '').slice(0, 200), Date.now());
 }
+// Supprime un abonnement aux notifications
 export const removePushSub = (endpoint) => run('DELETE FROM push_subs WHERE endpoint = ?', endpoint);
+// Nombre d'appareils abonnés aux notifications
 export const pushCount = () => all('SELECT COUNT(*) n FROM push_subs')[0].n;
 
 // ------------------------------------------------------------------ autres canaux
@@ -85,8 +93,10 @@ export function channels() {
     publicUrl: getSetting('public_url', ''),
   };
 }
+// Lien complet vers Venus (si l'adresse publique est réglée)
 const link = (url) => { const base = String(channels().publicUrl || '').replace(/\/+$/, ''); return base && url ? `${base}${url}` : null; };
 
+// Envoie une notification par ntfy
 async function toNtfy(msg) {
   const c = channels();
   if (!c.ntfyTopic) return;
@@ -96,12 +106,14 @@ async function toNtfy(msg) {
   if (click) headers.Click = click;
   await fetch(`${String(c.ntfyServer || 'https://ntfy.sh').replace(/\/+$/, '')}/${encodeURIComponent(c.ntfyTopic)}`, { method: 'POST', body: msg.body, headers, signal: AbortSignal.timeout(15000) });
 }
+// Envoie une notification sur Discord
 async function toDiscord(msg) {
   const c = channels();
   if (!c.discord) return;
   await fetch(c.discord, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000),
     body: JSON.stringify({ username: 'Venus', embeds: [{ title: msg.title, description: msg.body, url: link(msg.url) || undefined, color: 0xf4cf9c }] }) });
 }
+// Envoie une notification sur Telegram
 async function toTelegram(msg) {
   const c = channels();
   if (!c.telegramToken || !c.telegramChat) return;
@@ -136,6 +148,7 @@ export async function notify(msg, { profileId = null, adminOnly = false } = {}) 
 
 // Nouveautés de la médiathèque, regroupées (un seul message par analyse)
 let pendingAdds = [], addTimer = null;
+// Annonce les titres ajoutés à la bibliothèque
 export function libraryAdded(names) {
   if (String(getSetting('notify_new', '1')) === '0' || !names || !names.length) return;
   pendingAdds.push(...names);

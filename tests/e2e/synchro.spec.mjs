@@ -7,7 +7,9 @@ import { test, expect, ouvrir, etat } from './outils.mjs';
 test.describe.configure({ mode: 'serial' });
 const sent = [];
 let mock;
+// Port du faux serveur distant
 const port = () => Number(new URL(etat().base).port) + 3;
+// Requête directe dans la base du Venus de test
 const sql = async (fn) => { const { DatabaseSync } = await import('node:sqlite'); const db = new DatabaseSync(path.join(etat().dir, 'data', 'venus.db')); try { return fn(db); } finally { db.close(); } };
 
 test.beforeAll(async () => {

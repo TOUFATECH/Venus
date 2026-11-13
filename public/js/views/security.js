@@ -4,7 +4,9 @@ import { api } from '../api.js';
 import { h, icon, toast, confirmSheet } from '../ui.js';
 import { state, go } from '../core.js';
 
+// Champ de formulaire avec son libellé et son aide
 const field = (label, input, hint) => h('div', { class: 'field' }, h('label', {}, label), input, hint ? h('small', {}, hint) : null);
+// Date et heure lisibles
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const LEVEL = { ok: ['ok', 'OK'], warn: ['warn', 'À améliorer'], bad: ['bad', 'À corriger'] };
 const KIND = {
@@ -15,6 +17,7 @@ const KIND = {
   deconnexion: 'Déconnexion', journal: 'Journal', installation: 'Installation', 'erreur-serveur': 'Erreur serveur', 'cle-api': 'Clé API',
 };
 
+// Page Sécurité (administrateur)
 export async function render(main) {
   if (!state.profile.isAdmin) { main.append(h('div', { class: 'empty' }, h('h2', {}, 'Réservé à l’administrateur'))); return; }
   const page = h('div', { class: 'page security' });

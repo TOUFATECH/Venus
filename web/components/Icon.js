@@ -2,6 +2,7 @@
 // Icônes et petits éléments graphiques de Venus, en React (mêmes dessins que l'interface classique)
 import { shared } from '../lib/shared';
 
+// Icône SVG
 export function Icon({ name }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true" dangerouslySetInnerHTML={{ __html: shared().ui.iconMarkup(name) }} />;
 }
@@ -11,10 +12,12 @@ export function LogoMark() {
   return <span className="mark-host" style={{ display: 'contents' }} dangerouslySetInnerHTML={{ __html: shared().themes.planetMarkup().trim() }} />;
 }
 
+// Logo et nom de Venus
 export function Brand({ cls = '' }) {
   return <span className={`brand ${cls}`}><LogoMark /><span className="brand-name">{shared().themes.brandName()}</span></span>;
 }
 
+// Avatar d'un profil (image ou initiale)
 export function Avatar({ profile, cls = '' }) {
   const { AVATAR_HUES } = shared().ui;
   return (

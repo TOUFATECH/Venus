@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS ip_bans (ip TEXT PRIMARY KEY, until INTEGER, reason T
 
 // ------------------------------------------------------------------ adresse du client
 const strip = (ip) => String(ip || '').replace(/^::ffff:/, '');
+// Adresse de la machine elle-même ?
 export function isLoopback(ip) { ip = strip(ip); return ip === '127.0.0.1' || ip === '::1' || ip.startsWith('127.'); }
+// Adresse du réseau local ?
 export function isPrivateIp(ip) {
   ip = strip(ip);
   if (isLoopback(ip)) return true;
@@ -32,6 +34,7 @@ export function isPrivateIp(ip) {
 }
 // Derrière un proxy (Caddy, Nginx) sur la même machine — ou TRUST_PROXY=1 — on lit X-Forwarded-For
 const trustProxy = (remote) => isLoopback(remote) || (process.env.TRUST_PROXY === '1' && isPrivateIp(remote));
+// Adresse IP du visiteur (proxy de confiance pris en compte)
 export function clientIp(req) {
   const remote = strip(req.socket.remoteAddress);
   // Tunnel Cloudflare (cloudflared sur la même machine) : l'adresse réelle du visiteur est dans CF-Connecting-IP ;
@@ -47,6 +50,7 @@ export function clientIp(req) {
   }
   return remote;
 }
+// La connexion est-elle en HTTPS (directement ou derrière un proxy) ?
 export function isSecure(req) {
   if (req.socket.encrypted) return true;
   if (!trustProxy(strip(req.socket.remoteAddress))) return false;
@@ -57,8 +61,10 @@ export function isSecure(req) {
 
 // ------------------------------------------------------------------ journal de sécurité
 let notifyFn = null;
+// Fonction appelée pour les alertes graves (notifications aux administrateurs)
 export function onSecurityAlert(fn) { notifyFn = fn; }
 const lastAlert = new Map();
+// Ajoute un événement au journal de sécurité
 export function logSecurity(kind, ip, detail = '', severity = 'warn') {
   try {
     run('INSERT INTO security_log(at, ip, kind, severity, detail) VALUES(?, ?, ?, ?, ?)', Date.now(), ip || '', kind, severity, String(detail).slice(0, 500));
@@ -73,12 +79,14 @@ export function logSecurity(kind, ip, detail = '', severity = 'warn') {
 setInterval(() => {
   try { run('DELETE FROM security_log WHERE id NOT IN (SELECT id FROM security_log ORDER BY id DESC LIMIT 5000)'); } catch { /* */ }
 }, 3600000).unref();
+// Derniers événements du journal de sécurité
 export function securityLog(limit = 200) {
   return all('SELECT * FROM security_log ORDER BY id DESC LIMIT ?', Math.min(1000, Math.max(1, Number(limit) || 200)));
 }
 
 // ------------------------------------------------------------------ bannissement et détection d'intrusion
 const banCache = new Map();
+// Cette adresse est-elle bloquée ?
 export function isBanned(ip) {
   if (!ip || isLoopback(ip)) return null;
   let b = banCache.get(ip);
@@ -86,6 +94,7 @@ export function isBanned(ip) {
   if (b && b.until && b.until < Date.now()) return null;
   return b;
 }
+// Bloque une adresse pour une durée
 export function banIp(ip, ms, reason) {
   if (!ip || isLoopback(ip)) return;
   const prev = get('SELECT * FROM ip_bans WHERE ip = ?', ip);
@@ -96,13 +105,16 @@ export function banIp(ip, ms, reason) {
   banCache.delete(ip);
   logSecurity('ban', ip, `Adresse bloquée ${until ? `jusqu’à ${new Date(until).toLocaleString('fr-FR')}` : 'définitivement'} : ${reason}`, 'high');
 }
+// Débloque une adresse
 export function unbanIp(ip) { run('DELETE FROM ip_bans WHERE ip = ?', ip); banCache.delete(ip); scores.delete(ip); }
+// Adresses bloquées en ce moment
 export function listBans() { return all('SELECT * FROM ip_bans WHERE until IS NULL OR until > ? ORDER BY at DESC', Date.now()); }
 
 // Score de suspicion par adresse : il baisse d'un point par minute. À 40, l'adresse est bloquée
 // 1 h, puis 6 h, 24 h et 7 jours en cas de récidive.
 const scores = new Map();
 const BAN_STEPS = [3600e3, 6 * 3600e3, 24 * 3600e3, 7 * 24 * 3600e3];
+// Ajoute des points de suspicion à une adresse ; au-delà du seuil, elle est bloquée
 export function suspicious(ip, points, reason) {
   if (!ip || isLoopback(ip)) return;
   const now = Date.now();
@@ -142,6 +154,7 @@ export function inspectRequest(req, url, ip) {
 // 20 échecs en 1 h → pause de 15 min pour tout le monde (attaque répartie sur plusieurs machines).
 const fails = new Map(); // `${kind}|${ip}` -> { list: [t], lockedUntil, locks, day, dayCount }
 const accountFails = new Map(); // kind -> [t]
+// Date du jour (AAAA-MM-JJ)
 const today = () => new Date().toISOString().slice(0, 10);
 const LIMITS = {
   login: { max: 5, perDay: 30, account: 20 },
@@ -150,6 +163,7 @@ const LIMITS = {
   '2fa': { max: 5, perDay: 15, account: 30 },
   join: { max: 10, perDay: 60, account: 0 },
 };
+// Compteur d'échecs d'une adresse pour un type d'essai
 function bucket(kind, ip) {
   const key = `${kind}|${ip}`;
   // Les adresses des jours passés (et sans blocage en cours) sont oubliées : la table ne grossit pas sans fin
@@ -158,7 +172,9 @@ function bucket(kind, ip) {
   if (!b || b.day !== today()) { b = { list: [], lockedUntil: 0, locks: b && b.day === today() ? b.locks : 0, day: today(), dayCount: 0 }; fails.set(key, b); }
   return b;
 }
+// Durée d'attente lisible
 const fmtWait = (ms) => (ms > 3600e3 ? `${Math.ceil(ms / 3600e3)} h` : `${Math.max(1, Math.ceil(ms / 60000))} min`);
+// Refuse l'essai si l'adresse est en pause après trop d'échecs
 export function guardAttempt(kind, ip) {
   const L = LIMITS[kind.split(':')[0]] || LIMITS.login;
   if (isBanned(ip)) throw new HttpError(403, 'Accès bloqué pour cette adresse. L’administrateur peut la débloquer dans le tableau de bord.');
@@ -169,6 +185,7 @@ export function guardAttempt(kind, ip) {
   const acc = (accountFails.get(kind) || []).filter((t) => now - t < 3600e3);
   if (L.account && acc.length >= L.account) throw new HttpError(429, 'Trop d’essais sur ce compte. Réessayez dans quelques minutes.');
 }
+// Compte un échec et met l'adresse en pause si nécessaire
 export function failAttempt(kind, ip, detail = '') {
   const L = LIMITS[kind.split(':')[0]] || LIMITS.login;
   const now = Date.now();
@@ -187,7 +204,9 @@ export function failAttempt(kind, ip, detail = '') {
   }
   if (L.account && acc.length === L.account) logSecurity('force-brute-repartie', ip, `${L.account} échecs en 1 h sur « ${kind} », toutes adresses confondues`, 'high');
 }
+// Remet à zéro les échecs après une réussite
 export function okAttempt(kind, ip) { const b = fails.get(`${kind}|${ip}`); if (b) { b.list = []; b.lockedUntil = 0; } }
+// Échecs du jour (tableau de bord Sécurité)
 export function attemptStats() {
   return [...fails.entries()].filter(([, b]) => b.day === today() && (b.dayCount || b.lockedUntil > Date.now()))
     .map(([k, b]) => ({ kind: k.split('|')[0], ip: k.split('|').slice(1).join('|'), failsToday: b.dayCount, lockedUntil: b.lockedUntil > Date.now() ? b.lockedUntil : null }));
@@ -195,6 +214,7 @@ export function attemptStats() {
 
 // Limite générale du nombre de requêtes à l'API par adresse (protège aussi des boucles)
 const reqCount = new Map();
+// Limite le nombre de requêtes par minute et par adresse
 export function rateLimit(ip, pathname) {
   if (!ip || isLoopback(ip)) return;
   // Flux vidéo et direct (relais), images et aperçus des chaînes : beaucoup de petites requêtes, normales
@@ -212,6 +232,7 @@ setInterval(() => { const now = Date.now(); for (const [ip, c] of reqCount) if (
 // ------------------------------------------------------------------ en-têtes de sécurité, CSP, CORS
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 let inlineHashes = { at: 0, list: [] };
+// Empreintes des scripts intégrés à index.html autorisés par la CSP
 function scriptHashes() {
   // Empreintes des petits scripts écrits directement dans index.html (seuls scripts « en ligne » autorisés)
   try {
@@ -245,6 +266,7 @@ export function contentSecurityPolicy(secure, nonce = null) {
 }
 // Fichiers lus par le Chromecast (autre origine) : seuls ces flux sont partagés entre origines, sans cookie
 export const isMediaRoute = (p) => /^\/api\/(hls|stream|subs)\//.test(p) || p.startsWith('/img/') || /^\/api\/items\/\d+\/(thumb|preview)$/.test(p) || /^\/api\/channels\/\d+\/preview\.jpg$/.test(p);
+// Ajoute les en-têtes de sécurité à chaque réponse (CSP, anti-clickjacking, HSTS…)
 export function applyHeaders(req, res, url, secure) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'same-origin');
@@ -274,6 +296,7 @@ export function handlePreflight(req, res, url, ip) {
 
 // ------------------------------------------------------------------ CSRF : origine des requêtes qui modifient quelque chose
 const UNSAFE = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+// Noms d'hôte acceptés pour cette requête
 function allowedHosts(req) {
   const hosts = new Set([String(req.headers.host || '').toLowerCase()]);
   const fwd = req.headers['x-forwarded-host'];
@@ -282,6 +305,7 @@ function allowedHosts(req) {
   if (pub) { try { hosts.add(new URL(pub).host.toLowerCase()); } catch { /* */ } }
   return hosts;
 }
+// Protection CSRF : une modification doit venir de Venus lui-même
 export function checkCsrf(req, url, ip) {
   if (!UNSAFE.has(req.method)) return;
   const origin = req.headers.origin || (req.headers.referer ? (() => { try { return new URL(req.headers.referer).origin; } catch { return 'invalid'; } })() : null);
@@ -312,6 +336,7 @@ export function checkHpp(url, ip) {
 // ------------------------------------------------------------------ HTTPS obligatoire
 // off : jamais ; remote (par défaut) : obligatoire hors du réseau local ; all : partout
 export function httpsMode() { return process.env.FORCE_HTTPS || getSetting('force_https', 'remote'); }
+// Redirige vers HTTPS selon le réglage FORCE_HTTPS
 export function requireHttps(req, res, url, ip, httpsPort) {
   const mode = httpsMode();
   if (mode === 'off' || isSecure(req)) return false;
@@ -355,6 +380,7 @@ export function safeJoin(root, rel) {
   } catch (e) { if (e instanceof HttpError) throw e; /* fichier pas encore créé */ }
   return full;
 }
+// Nom de fichier sûr (caractères interdits retirés, longueur limitée)
 export const safeFileName = (x, max = 150) => String(x || '').normalize('NFC').replace(/[\u0000-\u001f<>:"|?*\\/]/g, ' ').replace(/^[.\s]+/, '').replace(/\s+/g, ' ').trim().slice(0, max);
 
 // ------------------------------------------------------------------ validation des données reçues
@@ -421,6 +447,7 @@ export function validate(body, schema, { required = [] } = {}) {
 
 // ------------------------------------------------------------------ mots de passe
 const COMMON = new Set(['password', 'motdepasse', 'azerty', 'azertyuiop', 'qwerty', '123456', '1234567', '12345678', '123456789', '1234567890', 'admin', 'venus', 'soleil', 'bonjour', 'iloveyou', 'marseille', 'doudou', 'loulou', 'chouchou', 'password1', 'motdepasse1', '000000', '111111', 'abc123', 'football', 'jetaime', 'nicolas', 'camille', 'qwertyuiop', 'liverpool', 'princesse', 'famille', 'cinema', 'netflix', 'plex', 'jellyfin']);
+// Problème d'un mot de passe (trop court, trop simple, trop courant), ou null s'il convient
 export function passwordProblem(pw) {
   const s = String(pw || '');
   if (s.length < 10) return 'Mot de passe trop court : 10 caractères minimum';

@@ -8,6 +8,7 @@ import { isFtvFile, FTV_ARGS, liveSource } from './ftv.js';
 
 const TEXT_SUBS = new Set(['subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text', 'tx3g']);
 
+// Lance ffprobe sur un fichier ou un flux et renvoie le JSON
 export function ffprobe(file, pre = [], timeout = 90000) {
   return new Promise((resolve, reject) => {
     execFile(config.ffprobe, ['-v', 'error', ...pre, '-print_format', 'json', '-show_format', '-show_streams', '-show_chapters', file],
@@ -19,6 +20,7 @@ export function ffprobe(file, pre = [], timeout = 90000) {
   });
 }
 
+// Format du conteneur (mkv, mp4, ts…)
 function containerOf(file, formatName = '') {
   const ext = path.extname(file).slice(1).toLowerCase();
   if (['mp4', 'm4v', 'mov'].includes(ext) || formatName.includes('mp4')) return 'mp4';
@@ -31,6 +33,7 @@ function containerOf(file, formatName = '') {
 // Options réseau de ffmpeg pour une chaîne : reconnexion, et l'identité de navigateur / la page d'origine que
 // certaines chaînes exigent (lignes #EXTVLCOPT de la liste M3U, gardées dans stream_opts)
 const BROWSER = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+// Options ffmpeg d'entrée pour un flux web (délais, reconnexion)
 export const NET_INPUT = (url) => {
   // Copie rafraîchie d'une chaîne France TV (jeton neuf) : fichier local qui ne pointe que vers France TV
   if (isFtvFile(url)) return FTV_ARGS;
@@ -45,6 +48,7 @@ export const NET_INPUT = (url) => {
 // Analyse des chaînes gardée (mémoire + base) : le codec d'une chaîne change rarement. Elle sert tout de suite
 // (démarrage plus rapide) et se rafraîchit en arrière-plan au-delà d'une heure.
 const liveCache = new Map();
+// Analyse un flux web
 const probeNet = async (u) => { const url = await liveSource(u); return probeFile(url, [...NET_INPUT(url).filter((x, i, a) => !/reconnect/.test(x) && !/reconnect/.test(a[i - 1] || '')), '-analyzeduration', '3000000', '-probesize', '3000000'], 15000); };
 /** Analyse déjà connue (mémoire ou base), sans aller sur le réseau ; null sinon. */
 export function cachedProbe(url) {
@@ -52,6 +56,7 @@ export function cachedProbe(url) {
   if (!c) { try { const s = get('SELECT value FROM settings WHERE key = ?', `probe:${url}`); if (s) { c = JSON.parse(s.value); liveCache.set(url, c); } } catch { /* rien */ } }
   return c ? c.p : null;
 }
+// Analyse d'une chaîne en direct (en cache quelques minutes)
 export async function probeLive(url) {
   let c = liveCache.get(url);
   if (!c) { try { const s = get('SELECT value FROM settings WHERE key = ?', `probe:${url}`); if (s) { c = JSON.parse(s.value); liveCache.set(url, c); } } catch { /* rien */ } }
@@ -63,6 +68,7 @@ export async function probeLive(url) {
   return save(await probeNet(url));
 }
 
+// Analyse un fichier : vidéo, pistes audio, sous-titres, durée, chapitres
 export async function probeFile(file, pre = [], timeout = 90000) {
   const data = await ffprobe(file, pre, timeout);
   const streams = data.streams || [];

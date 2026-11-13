@@ -15,14 +15,17 @@ const AUTH = process.env.VENUS_FTV_AUTH || 'https://hdfauth.ftven.fr/esi/TA';
 export const isFtv = (u) => /\/ParaTV\/[^/]+\/streams\/francetv\//i.test(String(u || '')) || /^https:\/\/[a-z0-9-]+\.ftven\.fr\//i.test(String(u || ''));
 // https://simulcast-b.ftven.fr/<jeton>/simulcast/… ; jeton = base64 de « exp=…~acl=…~hmac=… »
 const SIGNED = /https:\/\/([a-z0-9-]+\.ftven\.fr)\/([A-Za-z0-9_=-]{24,})\/([^\s"]+)/gi;
+// Date d'expiration d'un jeton France TV
 export function tokenExp(tok) {
   try { const m = /exp=(\d{9,})/.exec(Buffer.from(tok.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('latin1')); return m ? Number(m[1]) * 1000 : 0; } catch { return 0; }
 }
 const DIR = path.join(config.dataDir, 'cache', 'ftv');
+// Ce fichier est-il une copie locale de chaîne France TV ?
 export const isFtvFile = (p) => typeof p === 'string' && p.startsWith(DIR + path.sep);
 /** Options ffmpeg pour lire la copie rafraîchie : le fichier local, puis seulement des adresses web. */
 export const FTV_ARGS = ['-protocol_whitelist', 'file,http,https,tcp,tls,crypto', '-user_agent', BROWSER];
 
+// Requête web avec l'en-tête d'un navigateur
 async function get(url) {
   const r = await fetch(url, { headers: { 'User-Agent': BROWSER }, redirect: 'follow', signal: AbortSignal.timeout(12000) });
   if (!r.ok) throw new Error(`${new URL(url).hostname} : ${r.status}`);

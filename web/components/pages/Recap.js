@@ -10,10 +10,13 @@ import { Icon } from '../Icon';
 import { PageError, PageLoading } from '../PageState';
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+// Nombre à la française (virgule)
 const nf = (n) => String(n).replace('.', ',');
+// Nombre d'heures lisible
 const hours = (x) => (x >= 10 ? `${Math.round(x)} h` : x >= 1 ? `${nf(Math.round(x * 10) / 10)} h` : `${Math.max(1, Math.round(x * 60))} min`);
 const SLIDE_MS = 7000;
 
+// Page Rétrospective de l'année
 export default function Recap() {
   const { search } = useVenus();
   const year = Number(search && search.get('annee')) || new Date().getFullYear();
@@ -24,10 +27,12 @@ export default function Recap() {
   return <RecapView d={d} year={year} name={shared().app.state.profile.name} />;
 }
 
+// Affiche d'un titre
 function Poster({ src, title }) {
   return src ? <img className="rc-poster" src={img(src, 342)} alt={title || ''} loading="lazy" /> : <span className="rc-poster rc-ph">{(title || '?').slice(0, 1)}</span>;
 }
 
+// Diapositives de la rétrospective
 function slidesOf(d, year, name) {
   const s = [];
   if (!d.totalHours && !d.movies && !d.episodes) {
@@ -62,6 +67,7 @@ function slidesOf(d, year, name) {
   return s;
 }
 
+// Rétrospective en diapositives
 function RecapView({ d, year, name }) {
   const slides = slidesOf(d, year, name);
   const [i, setI] = useState(0);

@@ -8,15 +8,20 @@ import { Icon } from '../Icon';
 import { Placeholder } from '../Card';
 import { PageError, PageLoading } from '../PageState';
 
+// Décode un paramètre d'adresse
 const dec = (v) => { try { return decodeURIComponent(v); } catch { return v; } };
+// Pochette ou couverture (ou image de remplacement)
 const Cover = ({ c, title, w = 342 }) => (c ? <img src={img(c, w)} alt="" loading="lazy" /> : <Placeholder title={title} />);
+// Date lisible en français
 export const dateFr = (d) => {
   if (!d) return '';
   if (d.length === 4) return d;
   if (d.length === 7) return new Date(`${d}-01`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
   return new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
 };
+// Nombre de jours avant une date
 const daysTo = (d) => Math.round((new Date(d) - Date.now()) / 86400e3);
+// Échéance lisible (« Demain », « Dans 5 jours »)
 const when = (d) => { const n = daysTo(d); return n <= 0 ? 'Aujourd’hui' : n === 1 ? 'Demain' : n < 30 ? `Dans ${n} jours` : dateFr(d); };
 
 // Bouton « Demander » générique : envoie la demande, se transforme en « Demandé »
@@ -54,6 +59,7 @@ export function ReleaseTile({ r, lidarr, showArtist = false }) {
   );
 }
 
+// Onglet « À venir » de la musique
 export function MusicUpcoming() {
   const { data: d, error, reload } = useApi('/api/music/upcoming');
   useEffect(() => { if (d && d.status && d.status.running) { const t = setTimeout(reload, 4000); return () => clearTimeout(t); } }, [d]);
@@ -114,6 +120,7 @@ export function AlbumMeta({ a }) {
 export function musicAddSheet() {
   openSheet('Ajouter de la musique', (close) => <MusicSearch close={close} />, { wide: true });
 }
+// Recherche d'un album ou d'un artiste à demander à Lidarr
 function MusicSearch({ close }) {
   const [q, setQ] = useState('');
   const [res, setRes] = useState(null);
@@ -165,6 +172,7 @@ export function WorkTile({ w, request, showAuthor = false }) {
   );
 }
 
+// Onglet « À venir » des livres
 export function BooksUpcoming() {
   const { data: d, error, reload } = useApi('/api/books/upcoming');
   useEffect(() => { if (d && d.status && d.status.running) { const t = setTimeout(reload, 4000); return () => clearTimeout(t); } }, [d]);
@@ -184,6 +192,7 @@ export function BooksUpcoming() {
   );
 }
 
+// Liste des auteurs
 export function Authors({ authors }) {
   if (!authors.length) return <p className="muted">Les auteurs apparaissent quand les livres sont rangés par dossier d’auteur ou qu’ils portent leur nom (EPUB).</p>;
   return (
@@ -193,6 +202,7 @@ export function Authors({ authors }) {
   );
 }
 
+// Page d'un auteur et sa bibliographie
 export function Author() {
   const { name } = useParams();
   const { data: a, error } = useApi(`/api/books/author?slug=${encodeURIComponent(dec(name || ''))}`);
@@ -224,9 +234,11 @@ export function Author() {
   );
 }
 
+// Ouvre la recherche d'un livre à demander
 export function booksAddSheet() {
   openSheet('Ajouter un livre', (close) => <BookSearch close={close} />, { wide: true });
 }
+// Recherche d'un livre à demander
 function BookSearch({ close }) {
   const [q, setQ] = useState('');
   const [res, setRes] = useState(null);

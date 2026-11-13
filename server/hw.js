@@ -8,12 +8,14 @@ import { getSetting } from './db.js';
 
 export const hw = { type: 'none', label: 'Processeur (logiciel)', encoder: 'libx264', device: null, tested: [], filters: new Set(), ready: false };
 
+// Lance ffmpeg et renvoie sa sortie (délai maximal)
 function run(args, timeout = 25000) {
   return new Promise((resolve) => {
     execFile(config.ffmpeg, args, { timeout, maxBuffer: 8 * 1024 * 1024 }, (err, stdout, stderr) => resolve({ ok: !err, out: String(stdout) + String(stderr) }));
   });
 }
 
+// Puce graphique Intel / AMD disponible (/dev/dri/renderD…)
 function renderNode() {
   try {
     const nodes = fs.readdirSync('/dev/dri').filter((n) => n.startsWith('renderD')).sort();
@@ -23,6 +25,7 @@ function renderNode() {
 
 const TEST_INPUT = ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=1280x720:rate=24:duration=1'];
 
+// Encodeurs matériels à essayer selon la machine
 function candidates() {
   const node = renderNode();
   const list = [];
@@ -51,6 +54,7 @@ function candidates() {
   return list;
 }
 
+// Teste chaque encodeur et retient le premier qui fonctionne vraiment
 export async function detectHardware() {
   const filt = await run(['-hide_banner', '-filters'], 10000);
   for (const name of ['zscale', 'tonemap', 'tonemap_vaapi', 'tonemap_cuda', 'tonemap_opencl', 'scale_cuda', 'scale_vaapi', 'scale_qsv', 'overlay']) {

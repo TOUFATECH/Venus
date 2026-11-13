@@ -9,14 +9,19 @@ import { Field, Select, Actions, Busy, Switch, confirm, fmtGo } from './Settings
 const DEFS = [['0', 'D’origine (garde le 4K)'], ['1440', '1440p'], ['1080', '1080p (recommandé)'], ['720', '720p (très compact)']];
 const QUALS = [['max', 'Maximale'], ['high', 'Haute'], ['balanced', 'Équilibrée']];
 const LANGS = [['fre', 'Français'], ['eng', 'Anglais'], ['jpn', 'Japonais'], ['spa', 'Espagnol'], ['ger', 'Allemand'], ['ita', 'Italien'], ['ara', 'Arabe'], ['kor', 'Coréen'], ['chi', 'Chinois'], ['por', 'Portugais']];
+// Nom d'une langue
 const langName = (c) => (LANGS.find((l) => l[0] === c) || [])[1] || (c === 'und' ? 'Langue inconnue' : c.toUpperCase());
+// Pourcentage de place gagnée
 const pct = (a, b) => (a && b ? Math.round((1 - b / a) * 100) : 0);
 // Écart de taille en clair : « −35 % » quand la copie est plus légère, « +13 % » quand elle serait plus lourde (une
 // vidéo déjà très légère, proposée parce que son format oblige à la convertir à chaque lecture), jamais « −-13 % »
 const delta = (p) => (p > 0 ? `−${p} %` : p < 0 ? `+${-p} %` : 'même taille');
+// Message après validation (place libérée)
 const freed = (r, later) => (r.saved > 0 ? `Validé : ${fmtGo(r.saved)} libérés${later ? ' dans 7 jours (corbeille)' : ''}` : 'Validé : la copie remplace l’original');
+// Nom lisible d'une vidéo (épisode avec sa série)
 const epLabel = (x) => (x.type === 'episode' && x.show ? `${x.show} · S${x.season} É${x.episode} · ${x.title}` : `${x.title}${x.year ? ` (${x.year})` : ''}`);
 
+// Encadré « Compression des vidéos » des réglages
 export function ConvertBox() {
   const [st, setSt] = useState(null);
   const [sug, setSug] = useState(null);
@@ -101,6 +106,7 @@ export function ConvertBox() {
   );
 }
 
+// Ligne d'une compression terminée, à valider
 function DoneRow({ c, reload }) {
   return (
     <div className="conv-row">
@@ -114,6 +120,7 @@ function DoneRow({ c, reload }) {
     </div>
   );
 }
+// Bouton de validation : la copie compressée remplace l'original
 export function ValidateBtn({ c, reload, label = 'Valider' }) {
   return (
     <Busy className="btn btn-small btn-play f" onClick={() => new Promise((resolve) => {

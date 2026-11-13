@@ -9,8 +9,10 @@ import { useVenus } from '../Venus';
 import { go } from '../../lib/hooks';
 
 let engine = null;
+// Moteur de lecture (chargé une seule fois)
 const loadEngine = () => (engine || (engine = shared().imp('views/player.js').catch((e) => { engine = null; throw e; })));
 
+// Page du lecteur : branche le moteur de lecture sur la page
 export default function Player() {
   const { path, search } = useVenus();
   const host = useRef(null);

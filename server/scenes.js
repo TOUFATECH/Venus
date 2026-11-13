@@ -15,6 +15,7 @@ run(`CREATE TABLE IF NOT EXISTS scenes (item_id INTEGER PRIMARY KEY, mtime INTEG
 const cacheDir = path.join(config.dataDir, 'cache', 'scenes');
 fs.mkdirSync(cacheDir, { recursive: true });
 
+// Lit des sous-titres WebVTT (début, fin, texte)
 const parseVtt = (txt) => {
   const out = [];
   const T = (s) => { const m = /(?:(\d+):)?(\d{2}):(\d{2})[.,](\d{3})/.exec(s); return m ? Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) + Number(m[4]) / 1000 : null; };
@@ -37,6 +38,7 @@ export function getScenes(item) {
   try { return JSON.parse(r.data); } catch { return null; }
 }
 const inflight = new Map();
+// Analyse les plans et le volume d'une vidéo avec ffmpeg
 export function analyzeScenes(item) {
   const have = getScenes(item);
   if (have) return Promise.resolve(have);
@@ -83,12 +85,15 @@ export function analyzeScenes(item) {
 // File d'attente (un fichier à la fois) : épisodes et films récents d'abord
 const queue = [];
 let busy = false;
+// Nombre de vidéos en attente d'analyse
 export const scenesPending = () => queue.length;
+// Ajoute une vidéo à la file d'analyse des scènes
 export function scheduleScenes(itemId, urgent = false) {
   if (!itemId || queue.includes(itemId)) return;
   if (urgent) queue.unshift(itemId); else queue.push(itemId);
   pump();
 }
+// Traite la file d'analyse, une vidéo à la fois
 async function pump() {
   if (busy) return;
   busy = true;
@@ -100,6 +105,7 @@ async function pump() {
   }
   busy = false;
 }
+// Ajoute à la file les épisodes pas encore analysés
 export function schedulePendingScenes(limit = 200) {
   const rows = all(`SELECT i.id FROM items i LEFT JOIN scenes s ON s.item_id = i.id
     WHERE i.type IN ('episode', 'movie') AND i.path IS NOT NULL AND (s.item_id IS NULL OR s.mtime IS NOT i.mtime)
@@ -127,6 +133,7 @@ export function sceneList(data, { minLen = 2 } = {}) {
   for (const s of out) s.cutsAround = data.cuts.filter((c) => c >= s.start - 15 && c <= s.end + 15).length;
   return out;
 }
+// Valeur médiane d'une liste
 const median = (a) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; };
 
 /** Fenêtres « fortes » : volume au-dessus de la normale et plans rapprochés, loin des génériques, espacées */
@@ -164,6 +171,7 @@ export function highlights(item, data, { count = 5, length = 8, dialogues = [] }
 
 // ---------------------------------------------------------------- chapitres générés
 const FILLER = /^(oui|non|ok|d'accord|hein|quoi|merci|allez|bon|ah|oh|eh|hé|hm+|euh|viens|attends|allô|salut|bonjour|au revoir|pardon|désolé|s'il te plaît|s'il vous plaît)\W*$/i;
+// Titre de chapitre tiré des dialogues
 function titleFrom(lines) {
   // La réplique la plus « parlante » : 3 à 9 mots, pas un simple « oui », avec si possible un nom propre
   let best = null, bs = -1;

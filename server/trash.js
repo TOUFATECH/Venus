@@ -41,11 +41,13 @@ export function moveToTrash(file, libRoot) {
   return moved;
 }
 
+// Enregistre un élément dans la corbeille
 export function recordTrash({ libraryId, title, kind, files, byName }) {
   const size = files.reduce((n, f) => n + (f.size || 0), 0);
   run('INSERT INTO trash(library_id, title, kind, files, size, deleted_at, by_name) VALUES(?, ?, ?, ?, ?, ?, ?)', libraryId, title, kind, JSON.stringify(files), size, Date.now(), byName || null);
 }
 
+// Contenu de la corbeille
 export const listTrash = () => all('SELECT t.*, l.name AS library FROM trash t LEFT JOIN libraries l ON l.id = t.library_id ORDER BY t.deleted_at DESC').map((t) => ({ ...t, files: JSON.parse(t.files || '[]'), expires: t.deleted_at + KEEP_DAYS * 864e5 }));
 
 // Restaure les fichiers à leur place (l'analyse suivante les remet dans Venus)
@@ -65,6 +67,7 @@ export function restoreTrash(id) {
   return back;
 }
 
+// Supprime les dossiers de corbeille devenus vides
 function cleanupBin(files) {
   for (const f of files) { try { const d = path.dirname(f.to); if (path.basename(path.dirname(d)) === TRASH_DIR && !fs.readdirSync(d).length) fs.rmdirSync(d); } catch { /* */ } }
 }

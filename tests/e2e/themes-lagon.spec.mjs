@@ -5,6 +5,7 @@ import { test, expect, ouvrir } from './outils.mjs';
 // Quoi qu'il arrive, le profil retrouve son thème d'origine (partagé avec les autres tests)
 test.afterEach(async ({ api }) => { await api('/api/profile/ui-prefs', { method: 'PUT', body: { theme: 'venus', themeAuto: 'off' } }).catch(() => {}); });
 
+// Change de planète dans la page
 const setPlanet = async (page, id) => { await page.evaluate(async (p) => { const m = await import('/js/themes.js'); m.setPlanet(p); }, id); await page.waitForTimeout(1500); };
 
 test('Lagon : barre haute, recherche, bloc « Ce soir », polices et planète', async ({ page, api }) => {

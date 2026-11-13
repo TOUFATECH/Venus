@@ -3,7 +3,9 @@
 // sous-titres générés (faux whisper) et lumières synchronisées (faux pont Hue + faux WLED).
 import { test, expect, ouvrir, etat } from './outils.mjs';
 
+// Pause de quelques millisecondes
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Série de test « Brigade Nord » et ses épisodes
 async function brigade(api) {
   const shows = await api('/api/library?type=show');
   const bn = (Array.isArray(shows) ? shows : shows.items).find((i) => i.title === 'Brigade Nord');

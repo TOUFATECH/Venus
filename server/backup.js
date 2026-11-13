@@ -8,6 +8,7 @@ import { db, getSetting, setSetting } from './db.js';
 export const backupsDir = path.join(config.dataDir, 'backups');
 const KEEP = 10;
 
+// Sauvegardes présentes, de la plus récente à la plus ancienne
 export function listBackups() {
   let files = [];
   try { files = fs.readdirSync(backupsDir).filter((f) => /^venus-.*\.db$/.test(f)); } catch { return []; }
@@ -15,6 +16,7 @@ export function listBackups() {
     .sort((a, b) => b.at - a.at);
 }
 
+// Crée une sauvegarde de la base (et la copie vers le second emplacement si réglé)
 export function makeBackup({ manual = false } = {}) {
   fs.mkdirSync(backupsDir, { recursive: true });
   const d = new Date();
@@ -40,11 +42,13 @@ export function makeBackup({ manual = false } = {}) {
   return listBackups()[0];
 }
 
+// Programme la restauration d'une sauvegarde au prochain démarrage
 export function scheduleRestore(name) {
   const f = path.join(backupsDir, path.basename(name));
   if (!fs.existsSync(f)) throw new Error('Sauvegarde introuvable');
   fs.writeFileSync(path.join(backupsDir, 'restore.pending'), path.basename(name));
 }
+// Chemin d'une sauvegarde (nom nettoyé)
 export const backupPath = (name) => path.join(backupsDir, path.basename(name));
 
 // Une fois par jour (vérifié toutes les heures), de préférence la nuit

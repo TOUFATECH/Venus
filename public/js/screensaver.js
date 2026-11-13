@@ -11,15 +11,19 @@ const BLOCK = /^\/(vote|telecommande|seance)/i;
 let last = Date.now();
 let el = null, slides = [], idx = 0, timer = null, clockT = null;
 
+// Délai avant l'écran de veille (selon le réglage et l'appareil)
 export function saverDelay() {
   const v = prefs.get('screensaver');
   if (v === undefined || v === null || v === 'auto') return document.documentElement.classList.contains('tv') ? 5 : 10;
   return Number(v) || 0;
 }
+// Une vidéo ou un son est-il en lecture ?
 const playing = () => [...document.querySelectorAll('video, audio')].some((m) => !m.paused && !m.ended && m.readyState > 1);
+// L'écran de veille est-il interdit sur cette page ?
 const blocked = () => BLOCK.test(location.pathname) || !!document.querySelector('.palette, .sheet-wrap.open, dialog[open]') || document.hidden;
 
 let hiddenAt = 0;
+// Activité de l'utilisateur : ferme l'écran de veille et relance le délai
 function wake(e) {
   last = Date.now();
   // Un mouvement de souris a pu fermer la veille juste avant le clic : ce clic-là ne compte pas non plus
@@ -34,6 +38,7 @@ function wake(e) {
   }
   hide();
 }
+// Ferme l'écran de veille
 function hide() {
   clearTimeout(timer); clearInterval(clockT);
   const x = el; el = null;
@@ -43,9 +48,12 @@ function hide() {
   setTimeout(() => x.remove(), 400);
 }
 
+// Heure lisible
 const fmtTime = () => new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+// Date lisible
 const fmtDate = () => new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
 
+// Image suivante de l'écran de veille
 function slide() {
   if (!el || !slides.length) return;
   const it = slides[idx % slides.length]; idx++;
@@ -68,6 +76,7 @@ function slide() {
   timer = setTimeout(slide, 9000);
 }
 
+// Affiche l'écran de veille
 export async function showSaver() {
   if (el) return;
   let list = [];

@@ -29,12 +29,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS optimized (
 
 const GB = 1024 ** 3;
 export const optMode = () => getSetting('optimize_mode', 'auto'); // auto | on | off
+// Lecture JSON tolérante (null si invalide)
 const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
+// Place occupée par les copies optimisées
 const dirSize = () => (all('SELECT COALESCE(SUM(size), 0) AS n FROM optimized')[0] || { n: 0 }).n;
+// Espace total et libre du disque des données
 function disk() { try { const st = fs.statfsSync(config.dataDir); return { total: st.blocks * st.bsize, free: st.bavail * st.bsize }; } catch { return null; } }
 
 // Une vidéo mérite une copie si la plupart des appareils doivent la convertir
 const WEB_AUDIO = new Set(['aac', 'mp3', 'opus']);
+// Cette vidéo doit-elle être convertie sur la plupart des appareils (et mérite une copie) ?
 export function needsOptimizing(probe) {
   const v = probe && probe.video;
   if (!v || v.dovi) return false;
@@ -50,7 +54,9 @@ export function optimizedFor(item) {
   if (o.mtime !== (item.mtime || 0) || !fs.existsSync(o.path)) { drop(item.id); return null; }
   return { path: o.path, probe: parse(o.probe) };
 }
+// Note la dernière utilisation d'une copie optimisée
 export const markUsed = (itemId) => run('UPDATE optimized SET used_at = ? WHERE item_id = ?', Date.now(), itemId);
+// Supprime la copie optimisée d'une vidéo
 function drop(itemId) {
   const o = get('SELECT path FROM optimized WHERE item_id = ?', itemId);
   if (o) { try { fs.rmSync(o.path, { force: true }); } catch { /* */ } }
@@ -80,6 +86,7 @@ export function optStatus() {
 
 // ------------------------------------------------------------------ file d'attente
 let current = null, queueLen = 0;
+// Vidéos à optimiser en priorité (les plus regardées récemment)
 function candidates() {
   const since = Date.now() - 30 * 864e5;
   const ids = [];
@@ -109,6 +116,7 @@ function candidates() {
   return out;
 }
 
+// Lance ffmpeg pour préparer une copie optimisée
 function encode(item, probe) {
   return new Promise((resolve, reject) => {
     const v = probe.video;
@@ -152,6 +160,7 @@ function encode(item, probe) {
 
 // Une passe : copie les vidéos en attente tant que les conditions le permettent
 let running = false;
+// Une passe : prépare les copies en attente tant que les conditions le permettent
 export async function runOptimize({ max = 50 } = {}) {
   if (running) return 'Déjà en cours';
   running = true;
@@ -199,4 +208,5 @@ export function cleanup() {
   // Fichiers temporaires restés après un arrêt brutal
   for (const f of fs.readdirSync(OPT_DIR)) if (f.endsWith('.part.mp4')) fs.rmSync(path.join(OPT_DIR, f), { force: true });
 }
+// Supprime toutes les copies optimisées
 export function clearAll() { for (const o of all('SELECT item_id FROM optimized')) drop(o.item_id); return { ok: true }; }

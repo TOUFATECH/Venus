@@ -6,6 +6,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { getSetting } from './db.js';
 
+// Réglages du serveur d'e-mails (mot de passe déchiffré)
 export function smtpConf() {
   return {
     host: String(getSetting('smtp_host', '') || ''),
@@ -16,13 +17,16 @@ export function smtpConf() {
     from: String(getSetting('smtp_from', '') || getSetting('smtp_user', '') || ''),
   };
 }
+// Le serveur d'e-mails est-il réglé ?
 export const smtpOn = () => { const c = smtpConf(); return !!(c.host && c.from); };
 
 // En-têtes encodés (accents) et lignes de 76 caractères maximum
 const encWord = (s) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`);
+// Texte encodé en base64, découpé en lignes de 76 caractères
 const b64lines = (s) => Buffer.from(s, 'utf8').toString('base64').replace(/.{1,76}/g, '$&\r\n');
 const clean = (s) => String(s || '').replace(/[\r\n]+/g, ' ').trim(); // pas d'injection d'en-têtes
 
+// Envoie un e-mail (texte et HTML) par SMTP
 export function sendMail({ to, subject, text, html }, conf = smtpConf()) {
   return new Promise((resolve, reject) => {
     if (!conf.host) return reject(new Error('serveur d’e-mails non configuré'));

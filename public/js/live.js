@@ -1,5 +1,6 @@
 // Lecture HLS légère (aperçus) : hls.js chargé à la demande, ou lecture native sur Safari / iOS
 let hlsLib = null;
+// Charge hls.js à la demande
 export function loadHls() {
   if (window.Hls) return Promise.resolve(window.Hls);
   if (hlsLib) return hlsLib;
@@ -13,6 +14,7 @@ export function loadHls() {
   return hlsLib;
 }
 
+// Le navigateur lit-il le HLS lui-même (Safari, iOS) ?
 const nativeHls = () => document.createElement('video').canPlayType('application/vnd.apple.mpegurl') !== '';
 const isSafari = /^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent);
 

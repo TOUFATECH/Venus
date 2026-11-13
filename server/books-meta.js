@@ -15,12 +15,17 @@ db.exec(`CREATE TABLE IF NOT EXISTS book_authors (name TEXT PRIMARY KEY, ol_key 
 CREATE TABLE IF NOT EXISTS book_meta (item_id INTEGER PRIMARY KEY, ol_key TEXT, isbn TEXT, status TEXT, checked_at INTEGER)`);
 
 export const booksState = { running: false, phase: '', done: 0, total: 0, lastRun: 0, error: null };
+// Titre simplifié (sans accents, parenthèses ni crochets)
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/\b(tome|volume|vol|t|livre|book|edition|intégrale|integrale)\b\.?\s*\d*/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+// Deux titres désignent-ils le même livre ?
 const same = (a, b) => { const x = norm(a), y = norm(b); return x && y && (x === y || (x.length > 6 && (x.startsWith(y) || y.startsWith(x)))); };
+// Lecture d'une liste JSON (vide si invalide)
 const parse = (s) => { try { return JSON.parse(s || '[]'); } catch { return []; } };
+// Texte d'un champ Open Library (chaîne simple ou objet { value })
 const text = (v) => (typeof v === 'string' ? v : v && v.value ? v.value : null);
 
 let chain = Promise.resolve(), lastCall = 0;
+// Requête JSON vers Open Library / Google Books, une à la fois
 function getJson(url) {
   // Une demande à la fois, avec un petit délai : ces services gratuits n'aiment pas les rafales
   const p = chain.then(async () => {
@@ -36,6 +41,7 @@ function getJson(url) {
   chain = p.catch(() => {});
   return p;
 }
+// Couverture Open Library enregistrée dans le cache des images
 const cover = (id, size = 'L') => (id ? saveRemoteImage(`${OL_COVERS}/b/id/${id}-${size}.jpg`).catch(() => null) : Promise.resolve(null));
 
 // ------------------------------------------------------------------ livres du NAS
@@ -94,6 +100,7 @@ async function refreshAuthor(name) {
     name, key, text(info && info.bio) ? String(text(info.bio)).slice(0, 1500) : null, photo, info && info.birth_date, JSON.stringify(works), 'ok', Date.now());
 }
 
+// Complète les couvertures manquantes des livres identifiés
 async function fillWorkCovers(limit = 15) {
   let n = 0;
   for (const a of all("SELECT name, works FROM book_authors WHERE status = 'ok'")) {
@@ -155,6 +162,7 @@ export function bibliographyOf(name, nas = nasBooks().filter((b) => b.author ===
   for (const b of nas) if (!works.some((w) => w.itemId === b.id)) works.unshift({ key: null, title: b.title, year: b.year, date: b.year ? String(b.year) : null, cover: b.poster, onNas: true, itemId: b.id, slug: cleanName(b.title), upcoming: false, source: 'nas' });
   return { name, slug: cleanName(name), ...(info || { status: 'pending', works: [] }), works: works.sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))) };
 }
+// Parutions à venir et récentes des auteurs présents sur le NAS
 export function booksUpcoming() {
   const nas = nasBooks();
   const today = new Date().toISOString().slice(0, 10);
@@ -173,6 +181,7 @@ export function booksUpcoming() {
   missing.sort((x, y) => y.date.localeCompare(x.date));
   return { upcoming, missing: missing.slice(0, 60), authors: get("SELECT COUNT(*) n FROM book_authors WHERE status = 'ok'").n, pending: get("SELECT COUNT(*) n FROM book_authors WHERE status IS NULL").n };
 }
+// État de l'identification des livres (tableau de bord)
 export function booksMetaStatus() {
   return { ...booksState, books: nasBooks().length, identified: get("SELECT COUNT(*) n FROM book_meta WHERE status = 'ok'").n, authors: get("SELECT COUNT(*) n FROM book_authors WHERE status = 'ok'").n };
 }

@@ -24,6 +24,7 @@ const TMDB_WEB = process.env.VENUS_TMDBWEB_URL || 'https://www.themoviedb.org';
 const IMP = process.env.VENUS_IMP_URL || 'https://www.impawards.com';
 const BROWSER_UA = { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', 'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.6' };
 const lastStatus = new Map(); // dernier code HTTP par service (diagnostic)
+// Télécharge une page web (délai maximal)
 async function getText(url, headers = UA) {
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(15000), redirect: 'follow' });
   if (res.status === 429) { await sleep(5000); return null; }
@@ -32,11 +33,14 @@ async function getText(url, headers = UA) {
   return t.length > 3e6 ? null : t;
 }
 const UA = { 'User-Agent': 'Venus/1.0 (+https://github.com/TOUFATECH/Venus)' };
+// Pause de quelques millisecondes
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Titre simplifié pour comparer deux résultats (accents, ponctuation, articles)
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim();
+// Texte sans balises HTML
 const stripHtml = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+// Deux titres sont-ils assez proches pour être le même ?
 export function closeEnough(a, b) {
   const x = norm(a), y = norm(b);
   if (!x || !y) return false;
@@ -51,6 +55,7 @@ export function closeEnough(a, b) {
   return common >= (short >= 4 ? short - 1 : short) && common / long >= 0.7;
 }
 
+// Requête JSON avec l'en-tête d'un navigateur
 export async function getJson(url) {
   const res = await fetch(url, { headers: { ...BROWSER_UA, Accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
   if (res.status === 429) { await sleep(5000); return null; } // trop de demandes : on réessaiera au prochain passage
@@ -63,6 +68,7 @@ export async function getJson(url) {
 // type et taille vérifiés, image réencodée telle quelle (JPEG, PNG ou WebP).
 const TEST_HTTP = !!(process.env.VENUS_ITUNES_URL || process.env.VENUS_MUSICBRAINZ_API || process.env.VENUS_OPENLIBRARY_API);
 const IMAGE_HOSTS = /(^|\.)(mzstatic\.com|tvmaze\.com|tmdb\.org|impawards\.com|wikipedia\.org|wikimedia\.org|media-amazon\.com|metahub\.space|trakt\.tv|coverartarchive\.org|archive\.org|openlibrary\.org|books\.google\.com|googleusercontent\.com)$/;
+// Télécharge une image distante dans le cache (même adresse = même fichier)
 export async function saveRemoteImage(url, { any = false } = {}) {
   if (!url) return null;
   let u;
@@ -117,6 +123,7 @@ export async function freePosterCandidates(type, title, year) {
   return out;
 }
 
+// Décode les entités HTML courantes
 const decode = (t) => String(t || '').replace(/&amp;/g, '&').replace(/&#39;|&#x27;/g, '’').replace(/&quot;/g, '"').replace(/&nbsp;/g, ' ').replace(/<[^>]+>/g, '').trim();
 
 // Site de TMDB (sans clé) : la page de recherche contient l'affiche et la date de chaque résultat
@@ -208,6 +215,7 @@ export async function findTrakt(kind, title, year) {
 // IMDb (suggestions de la barre de recherche, sans clé) : la base la plus complète, affiches officielles en
 // bonne qualité (images Amazon). Tolérant aux titres approximatifs ; on vérifie le titre et l'année.
 const IMDB = process.env.VENUS_IMDB_URL || 'https://v3.sg.media-imdb.com/suggestion';
+// Affiche et infos d'après les suggestions IMDb (sans clé)
 export async function findImdb(kind, title, year) {
   const q = String(title || '').trim();
   if (!q) return null;
@@ -225,6 +233,7 @@ export async function findImdb(kind, title, year) {
 
 // Cinemeta (catalogue public de films et séries, sans clé) : affiches IMDb via metahub, autre chemin si IMDb bloque
 export const CINEMETA = process.env.VENUS_CINEMETA_URL || 'https://v3-cinemeta.strem.io';
+// Affiche et infos d'après Cinemeta (sans clé)
 export async function findCinemeta(kind, title, year) {
   const t = kind === 'movie' ? 'movie' : 'series';
   const d = await getJson(`${CINEMETA}/catalog/${t}/top/search=${encodeURIComponent(String(title || '').trim())}.json`);
@@ -237,6 +246,7 @@ export async function findCinemeta(kind, title, year) {
   return { poster, year: yearOf(best) || year || null, genres: best.genres || [], overview: best.description || null, releaseDate: best.released ? String(best.released).slice(0, 10) : null };
 }
 
+// Affiche et infos d'après OMDb (avec une clé)
 export async function findOmdb(kind, title, year) {
   const key = getSetting('omdb_key', '') || process.env.OMDB_API_KEY || '';
   if (!key) return null;
@@ -334,6 +344,7 @@ export function redoFreePosters() {
   const r = run(`UPDATE items SET poster = NULL, poster_tried = 0 WHERE type IN ('movie','show') AND poster LIKE 'p\\_%' ESCAPE '\\' AND (custom IS NULL OR custom NOT LIKE '%"poster"%')`);
   return Number(r.changes || 0);
 }
+// Cherche les affiches manquantes sur toutes les sources disponibles
 export async function fillMissingPosters(onProgress) {
   if (Number(getSetting('poster_sources_v', 0)) < 4) {
     run("UPDATE items SET poster_tried = 0 WHERE poster IS NULL AND type IN ('movie','show')");
@@ -385,6 +396,7 @@ export async function fillMissingPosters(onProgress) {
 //   3. TVmaze (gratuit, sans clé) ;
 //   4. la page de la saison sur le site de TMDB (sans clé).
 const IMG_EXT = ['.jpg', '.jpeg', '.png', '.webp'];
+// Affiche de saison rangée à côté des vidéos
 function localSeasonImage(season) {
   const ep = get("SELECT path FROM items WHERE type = 'episode' AND parent_id = ? AND path IS NOT NULL LIMIT 1", season.id);
   if (!ep || !ep.path) return null;
@@ -411,6 +423,7 @@ function localSeasonImage(season) {
   }
   return null;
 }
+// Affiches de saison d'après TVmaze
 async function tvmazeSeasons(show) {
   let id = show.tvmaze_id;
   if (!id) {
@@ -423,6 +436,7 @@ async function tvmazeSeasons(show) {
   if (!Array.isArray(list)) return null;
   return new Map(list.filter((x) => x.image && (x.image.original || x.image.medium)).map((x) => [x.number, x.image.original || x.image.medium]));
 }
+// Affiche d'une saison d'après le site de TMDB (sans clé)
 async function tmdbWebSeason(show, n) {
   let id = show.tmdb_id;
   if (!id) {
@@ -436,8 +450,10 @@ async function tmdbWebSeason(show, n) {
   return m ? `https://image.tmdb.org/t/p/w500/${m[1]}` : null;
 }
 
+// Nombre de saisons sans affiche propre
 export const pendingSeasonPosters = () => get(`SELECT COUNT(*) n FROM items s JOIN items sh ON sh.id = s.show_id
   WHERE s.type = 'season' AND (s.poster IS NULL OR s.poster = sh.poster) AND IFNULL(s.poster_tried, 0) < 2`).n;
+// Cherche les affiches de saison manquantes
 export async function fillSeasonPosters(onProgress) {
   const seasons = all(`SELECT s.id, s.season_num, s.show_id, sh.title, sh.year, sh.category, sh.tvmaze_id, sh.tmdb_id, sh.tmdb_seasons
     FROM items s JOIN items sh ON sh.id = s.show_id

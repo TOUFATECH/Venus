@@ -3,10 +3,13 @@ import { api } from '../api.js';
 import { h, icon, img, sheet, toast } from '../ui.js';
 import { go } from '../core.js';
 
+// Taille lisible en Go ou Mo
 const fmtSize = (b) => (!b ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
+// Adresse du fichier préparé
 const fileUrl = (j) => `/api/downloads/${j.id}/file`;
 const STATE = { queued: 'En attente', working: 'Préparation', ready: 'Prêt', error: 'Échec' };
 
+// Page Téléchargements : vidéos préparées pour regarder sans réseau
 export async function render(main) {
   const list = h('div', { class: 'dl-list' });
   let timer = null;

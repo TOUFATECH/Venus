@@ -22,6 +22,7 @@ run(`CREATE TABLE IF NOT EXISTS segments (
   source TEXT, analyzed_at INTEGER
 )`);
 
+// Génériques connus d'un épisode
 export function getSegments(item) {
   const r = get('SELECT * FROM segments WHERE item_id = ?', item.id);
   if (!r || r.mtime !== item.mtime) return { intro: null, credits: null };
@@ -31,6 +32,7 @@ export function getSegments(item) {
   };
 }
 
+// Enregistre les génériques d'un épisode
 function save(ep, data, source) {
   const cur = get('SELECT * FROM segments WHERE item_id = ?', ep.id);
   const keep = cur && cur.mtime === ep.mtime ? cur : {};
@@ -48,6 +50,7 @@ function save(ep, data, source) {
 const INTRO_RE = /^\s*(op(ening)?\s*\d*|intro(duction)?|g[ée]n[ée]rique( de d[ée]but| d[’']ouverture)?|ouverture|opening credits|main titles?|theme song)\s*$/i;
 const CREDITS_RE = /^\s*(ed|ending\s*\d*|end(ing)? ?credits|credits|outro|g[ée]n[ée]rique de fin|closing( credits)?)\s*$/i;
 
+// Chapitres d'un fichier
 function chapters(file) {
   return new Promise((resolve) => {
     execFile(config.ffprobe, ['-v', 'error', '-show_chapters', '-print_format', 'json', file], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 }, (err, out) => {
@@ -59,6 +62,7 @@ function chapters(file) {
   });
 }
 
+// Génériques déduits des noms de chapitres (« Opening », « Générique »…)
 export function segmentsFromChapters(list, duration) {
   const out = { intro: null, credits: null };
   for (const c of list) {
@@ -91,6 +95,7 @@ export function fingerprint(file, start, length) {
   });
 }
 
+// Nombre de bits à 1 (comparaison des empreintes audio)
 const popcount = (x) => {
   x -= (x >>> 1) & 0x55555555;
   x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
@@ -133,8 +138,10 @@ export function commonRun(a, b, { maxBits = 6, maxGap = 3.5, minLen = INTRO_MIN 
   };
 }
 
+// Partie de l'épisode où chercher le générique de début
 const introWindow = (ep) => Math.min(600, Math.max(150, (ep.duration || 1200) * 0.3));
 
+// Repère le générique commun aux épisodes d'une saison (même musique)
 async function analyzeSeason(seasonId) {
   const eps = all("SELECT id, path, duration, mtime FROM items WHERE type='episode' AND parent_id=? AND path IS NOT NULL ORDER BY episode_num", seasonId);
   if (!eps.length) return;
@@ -184,12 +191,15 @@ const snap = (t) => (t < 3 ? 0 : t);
 // ------------------------------------------------------------------ file d'attente (une saison à la fois)
 const queue = [];
 let busy = false;
+// Nombre de saisons en attente d'analyse
 export const segmentsPending = () => queue.length;
+// Ajoute une saison à la file d'analyse des génériques
 export function scheduleSeason(seasonId, urgent = false) {
   if (!seasonId || queue.includes(seasonId)) return;
   if (urgent) queue.unshift(seasonId); else queue.push(seasonId);
   pump();
 }
+// Traite la file d'analyse des génériques, une saison à la fois
 async function pump() {
   if (busy) return;
   busy = true;

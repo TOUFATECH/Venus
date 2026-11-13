@@ -8,8 +8,11 @@ import { useVenus } from '../Venus';
 import { Icon, Qr } from '../Icon';
 import { playItem } from './Tonight';
 
+// Identifiant de cet onglet pour le vote
 const clientId = () => { try { let c = sessionStorage.getItem('vn_vote_client'); if (!c) { c = Math.random().toString(36).slice(2); sessionStorage.setItem('vn_vote_client', c); } return c; } catch { return Math.random().toString(36).slice(2); } };
+// Lien vers un vote
 const voteLink = (code) => `${location.origin}/vote?code=${code}`;
+// Flux d'événements du serveur
 const stream = (path, handlers) => shared().api.openStream(path, handlers);
 
 // ---------------------------------------------------------------- écran principal
@@ -20,6 +23,7 @@ export async function startVote(itemIds) {
   openSheet('Vote en famille', (close) => <VoteHost initial={v} close={close} onStream={(s) => { stop = s; }} />, { wide: true, onClose: () => stop() });
 }
 
+// Écran de l'organisateur du vote
 function VoteHost({ initial, close, onStream }) {
   const [st, setSt] = useState(initial);
   useEffect(() => { onStream(stream(`/api/vote/${initial.code}/stream`, { state: setSt })); }, []);

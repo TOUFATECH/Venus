@@ -4,9 +4,12 @@
 import path from 'node:path';
 import { all, get, run, tx } from './db.js';
 
+// Texte simplifié pour comparer des titres
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '');
+// Nom de fichier en minuscules, quel que soit le séparateur de chemin
 const base = (p) => path.basename(String(p || '').replace(/\\/g, '/')).toLowerCase();
 
+// Adresse du serveur nettoyée (http:// ajouté si besoin)
 function cleanUrl(u) {
   let s = String(u || '').trim().replace(/\/+$/, '');
   if (!s) throw new Error('Adresse du serveur manquante');
@@ -15,6 +18,7 @@ function cleanUrl(u) {
   if (!/^https?:$/.test(x.protocol)) throw new Error('Adresse invalide');
   return x.toString().replace(/\/+$/, '');
 }
+// Requête JSON vers le serveur distant
 async function getJson(url, headers) {
   const res = await fetch(url, { headers: { Accept: 'application/json', ...headers }, signal: AbortSignal.timeout(30000) });
   if (res.status === 401 || res.status === 403) throw new Error('Clé ou jeton refusé par le serveur');
@@ -24,11 +28,13 @@ async function getJson(url, headers) {
 
 // ---------------------------------------------------------------- Jellyfin / Emby
 const jfHeaders = (token) => ({ 'X-Emby-Token': token, Authorization: `MediaBrowser Token="${token}"` });
+// Vérifie la connexion et liste les utilisateurs du serveur distant (API de type Emby)
 async function jellyfinCheck(url, token) {
   const info = await getJson(`${url}/System/Info`, jfHeaders(token));
   const users = await getJson(`${url}/Users`, jfHeaders(token));
   return { server: `${info.ProductName || 'Jellyfin'} ${info.Version || ''}`.trim(), name: info.ServerName || '', users: (users || []).map((u) => ({ id: u.Id, name: u.Name })) };
 }
+// Titres vus et en cours d'un utilisateur du serveur distant (API de type Emby)
 async function jellyfinItems(url, token, user) {
   const q = (extra) => getJson(`${url}/Users/${encodeURIComponent(user)}/Items?Recursive=true&Fields=ProviderIds,Path,UserData&${extra}`, jfHeaders(token)).then((d) => d.Items || []);
   const [played, resum, series] = await Promise.all([
@@ -50,11 +56,13 @@ async function jellyfinItems(url, token, user) {
 
 // ---------------------------------------------------------------- Plex
 const plexHeaders = (token) => ({ 'X-Plex-Token': token, 'X-Plex-Product': 'Venus', 'X-Plex-Client-Identifier': 'venus-import' });
+// Vérifie la connexion au serveur distant (API de type Plex)
 async function plexCheck(url, token) {
   const d = await getJson(`${url}/`, plexHeaders(token));
   const mc = d.MediaContainer || {};
   return { server: `Plex ${mc.version || ''}`.trim(), name: mc.friendlyName || '', users: [] };
 }
+// Titres vus et en cours du serveur distant (API de type Plex)
 async function plexItems(url, token) {
   const secs = ((await getJson(`${url}/library/sections`, plexHeaders(token))).MediaContainer || {}).Directory || [];
   const out = [];

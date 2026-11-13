@@ -13,9 +13,12 @@ export const STATE = path.resolve(here, '..', '.venus-test.json');
 export const PASSWORD = 'Foyer-de-test-2026';
 export const PIN = '2468';
 
+// Pause de quelques millisecondes
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Lance ffmpeg (fabrication des médias de test)
 const ff = (...args) => execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
 
+// Crée les petites vidéos, musiques, photos et livres de test
 function makeMedia(dir) {
   const m = (...p) => { const f = path.join(dir, ...p); fs.mkdirSync(path.dirname(f), { recursive: true }); return f; };
   // Une vidéo de 30 s (H.264 + AAC), copiée sous plusieurs noms
@@ -81,6 +84,7 @@ function makeMedia(dir) {
   ff('-f', 'lavfi', '-i', 'mandelbrot=size=1200x800', '-frames:v', '1', m('photos', 'Vacances', 'coucher.jpg'));
 }
 
+// Avant les tests : démarre un Venus jetable avec ses médias et le configure
 export default async function globalSetup() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'venus-e2e-'));
   const media = path.join(dir, 'media');

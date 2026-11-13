@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, ouvrir, etat } from './outils.mjs';
 
+// Port du Venus de test
 const base = () => Number(new URL(etat().base).port);
 const faux = () => `http://127.0.0.1:${base() + 5}`;
 let mock, lidarr, ll;

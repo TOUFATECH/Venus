@@ -29,6 +29,7 @@ export function ScrollRow({ className = 'row-scroll', children, innerRef = null 
   );
 }
 
+// Initiales d'un titre (logo de remplacement)
 const initials = (t) => String(t || '').split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
 
 // Chaîne de TV : logo, « Direct », et l'image en direct au survol de la souris (sans le son)
@@ -82,6 +83,7 @@ export function ChannelCard({ item }) {
   );
 }
 
+// Carte adaptée au type : chaîne TV ou titre
 export function AnyCard(props) {
   return props.item.type === 'channel' ? <ChannelCard item={props.item} /> : <Card {...props} />;
 }

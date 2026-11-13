@@ -20,11 +20,13 @@ if (!PASSWORD) { console.error('Indiquez le mot de passe du foyer : --password "
 
 const stats = new Map(); // nom → { n, err, times[] }
 const errors = new Map();
+// Enregistre la durée et le résultat d'une requête dans les statistiques
 const rec = (name, ms, ok, why) => {
   const s = stats.get(name) || { n: 0, err: 0, times: [] };
   s.n++; s.times.push(ms); if (!ok) { s.err++; const k = `${name} : ${why}`; errors.set(k, (errors.get(k) || 0) + 1); }
   stats.set(name, s);
 };
+// Requête vers Venus, chronométrée
 async function req(token, method, path, body, name = path.replace(/\d+/g, ':id').replace(/\?.*$/, '')) {
   const t0 = performance.now();
   try {
@@ -39,10 +41,14 @@ async function req(token, method, path, body, name = path.replace(/\d+/g, ':id')
     return { status: 0, json: null, bytes: 0 };
   }
 }
+// Pause de quelques millisecondes
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Élément au hasard dans une liste
 const pick = (a) => a[Math.floor(Math.random() * a.length)];
+// Percentile p d'une liste de durées
 const pct = (arr, p) => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
 
+// Simule un appareil : connexion puis choix d'un profil
 async function device(i) {
   const r = await req(null, 'POST', '/api/login', { password: PASSWORD }, '/api/login');
   if (!r.json || !r.json.token) throw new Error(`connexion refusée (${r.status}${r.json && r.json.error ? ` : ${r.json.error}` : ''})`);
@@ -56,6 +62,7 @@ async function device(i) {
 }
 
 let catalog = { movie: [], show: [], channel: [] };
+// Charge le catalogue (films, séries, chaînes) pour choisir quoi lire
 async function loadCatalog(token) {
   for (const t of ['movie', 'show', 'channel']) {
     const r = await req(token, 'GET', `/api/library?type=${t}`);
@@ -83,7 +90,9 @@ async function browse(d, until) {
 
 // Une lecture : démarrage, puis morceaux téléchargés au rythme de la lecture (×1,5)
 const play = { started: 0, failed: 0, startMs: [], stalls: 0, segments: 0, segMs: [], bytes: 0, why: new Map() };
+// Compte une coupure de lecture et sa cause
 const stall = (label, why) => { play.stalls++; const k = `${label} : ${why}`; play.why.set(k, (play.why.get(k) || 0) + 1); };
+// Simule une lecture : liste HLS puis segments, au rythme de la vidéo
 async function watch(d, id, until, label) {
   const caps = { video: ['h264'], audio: ['aac', 'mp3'], containers: ['mp4', 'hls'], maxHeight: 1080 };
   const t0 = performance.now();
@@ -135,6 +144,7 @@ async function watch(d, id, until, label) {
   }
 }
 
+// Mesure l'état du serveur (mémoire, descripteurs) pendant le test
 async function serverSnapshot(token) {
   const d = (await req(token, 'GET', '/api/admin/dashboard', null, '(mesure) dashboard')).json;
   return d && d.system ? { rss: d.system.rss, load: d.system.load && d.system.load[0] } : null;

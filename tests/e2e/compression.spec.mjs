@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect, ouvrir, etat } from './outils.mjs';
 
+// Pause de quelques millisecondes
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 test('compression : proposition, conversion en français seulement, lecture, validation', async ({ page, api }) => {

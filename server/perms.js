@@ -5,6 +5,7 @@ import { isPrivateIp } from './security.js';
 export const DEFAULT_PERMS = { libraries: null, download: true, transcode: true, remote: true, schedule: [], dailyMinutes: 0 };
 const DAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
 
+// Droits d'un profil, complétés par les droits par défaut
 export function permsOf(p) {
   if (!p) return { ...DEFAULT_PERMS };
   if (p.is_admin) return { ...DEFAULT_PERMS, admin: true };
@@ -13,6 +14,7 @@ export function permsOf(p) {
   return { ...DEFAULT_PERMS, ...saved };
 }
 
+// Heure « HH:MM » convertie en minutes
 const minutes = (hm) => { const [hh, mm] = String(hm).split(':').map(Number); return hh * 60 + mm; };
 // Créneau en cours ? Les créneaux qui passent minuit (22:00 → 01:00) sont acceptés.
 export function inSchedule(schedule, d = new Date()) {
@@ -24,7 +26,9 @@ export function inSchedule(schedule, d = new Date()) {
     return (s.days.includes(day) && now >= from) || (s.days.includes((day + 6) % 7) && now < to);
   });
 }
+// Heure lisible (« 8 h 30 »)
 const fmtHm = (hm) => hm.replace(/^0/, '').replace(':00', ' h').replace(':', ' h ');
+// Horaires autorisés en texte lisible
 export function scheduleText(schedule) {
   return schedule.map((s) => {
     const d = s.days.length === 7 ? 'tous les jours' : s.days.length === 5 && [1, 2, 3, 4, 5].every((x) => s.days.includes(x)) ? 'en semaine'
@@ -52,6 +56,7 @@ export function libraryClause(p, alias = 'i') {
 
 // Vérification des droits envoyés par l'interface
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+// Vérifie les droits envoyés par l'interface
 export function validPerms(v) {
   const bad = (m) => { const e = new Error(`Droits : ${m}`); e.status = 400; throw e; };
   if (!v || typeof v !== 'object' || Array.isArray(v)) bad('format invalide');

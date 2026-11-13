@@ -12,10 +12,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS invites (
   profile_id INTEGER REFERENCES profiles(id) ON DELETE CASCADE,
   email TEXT, created_by TEXT, created_at INTEGER, expires_at INTEGER, used_at INTEGER, sent_at INTEGER, send_error TEXT
 )`);
+// Empreinte d'un jeton d'invitation (seule l'empreinte est gardée)
 const hashOf = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 export const EMAIL_RE = /^[^\s@<>,;]+@[^\s@<>,;]+\.[^\s@<>,;]+$/;
+// Échappe un texte pour l'e-mail HTML
 const esc = (s) => String(s ?? '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
 
+// Adresse publique de Venus (réglée, ou déduite de la requête)
 export function baseUrl(req) {
   const pub = String(getSetting('public_url', '') || '').replace(/\/+$/, '');
   if (pub) return pub;
@@ -52,6 +55,7 @@ export async function createInvite(profile, email, by, base) {
   return { link, sent, error };
 }
 
+// Invitation valable correspondant à un lien
 export function inviteFor(token) {
   if (!/^[A-Za-z0-9_-]{32}$/.test(String(token || ''))) return null;
   const inv = get('SELECT * FROM invites WHERE token = ?', hashOf(token));
@@ -59,7 +63,9 @@ export function inviteFor(token) {
   const p = get('SELECT * FROM profiles WHERE id = ?', inv.profile_id);
   return p ? { inv, profile: p } : null;
 }
+// Marque une invitation comme utilisée
 export const markUsed = (token) => run('UPDATE invites SET used_at = ? WHERE token = ?', Date.now(), hashOf(token));
+// Invitations envoyées (en attente, utilisées, expirées)
 export function listInvites() {
   return all(`SELECT i.profile_id, i.email, i.created_by, i.created_at, i.expires_at, i.used_at, i.sent_at, i.send_error, p.name
     FROM invites i JOIN profiles p ON p.id = i.profile_id ORDER BY i.created_at DESC LIMIT 100`).map((r) => ({
@@ -67,4 +73,5 @@ export function listInvites() {
     usedAt: r.used_at, sentAt: r.sent_at, error: r.send_error, state: r.used_at ? 'used' : r.expires_at < Date.now() ? 'expired' : 'pending',
   }));
 }
+// Annule les invitations non utilisées d'un profil
 export const cancelInvites = (profileId) => run('DELETE FROM invites WHERE profile_id = ? AND used_at IS NULL', profileId);

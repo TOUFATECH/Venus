@@ -16,6 +16,7 @@ function preloaded(path) {
   return p;
 }
 
+// Requête vers l'API (réutilise les données préchargées par la page si possible)
 async function raw(path, { method = 'GET', body, signal, keepalive = false } = {}) {
   const pre = method === 'GET' && body === undefined && !signal ? preloaded(path) : null;
   const headers = {};
@@ -44,8 +45,11 @@ async function raw(path, { method = 'GET', body, signal, keepalive = false } = {
 const CACHEABLE = /^\/api\/(home|library|items\/\d+$|mylist|categories|upcoming)/;
 const cache = new Map(); // adresse -> { t, data, p }
 const FRESH = 20000, STALE = 300000;
+// Copie indépendante d'une donnée en cache
 const copy = (d) => { try { return structuredClone(d); } catch { return JSON.parse(JSON.stringify(d)); } };
+// Vide le cache des réponses de l'API
 export function clearApiCache() { cache.clear(); }
+// Appel à l'API de Venus (réponses GET gardées en cache quelques secondes)
 export async function api(path, opts = {}) {
   const method = opts.method || 'GET';
   // Les aperçus (lecture muette sur l'accueil) ne changent rien : le cache reste valable
@@ -79,6 +83,7 @@ export function prefetch(path) {
 
 // Ce que ce navigateur sait lire sans conversion (pour décider lecture directe / remux / transcodage)
 let capsCache;
+// Formats que cet appareil sait lire (codecs, conteneurs, HDR)
 export function deviceCaps() {
   if (capsCache) return capsCache;
   const v = document.createElement('video');
@@ -112,6 +117,7 @@ export function deviceCaps() {
 // Capacités d'un Chromecast (récepteur multimédia par défaut)
 export const castCaps = { containers: ['mp4', 'webm'], video: ['h264', 'vp9'], audio: ['aac', 'mp3', 'opus', 'flac'], hdr: false, hevcHls: false };
 
+// Qualité de lecture choisie sur cet appareil
 export function preferredQuality() {
   try {
     const q = localStorage.getItem('vn_quality');
@@ -149,12 +155,14 @@ export const prefs = {
   },
 };
 let pending = {}, pendT = null;
+// Envoie au serveur les préférences du profil en attente
 const flushProfilePrefs = (keepalive = false) => {
   clearTimeout(pendT); pendT = null;
   if (!Object.keys(pending).length) return;
   const body = pending; pending = {};
   raw('/api/profile/ui-prefs', { method: 'PUT', body, keepalive }).catch(() => {});
 };
+// Enregistre des préférences du profil (envoyées groupées un peu plus tard)
 export function saveProfilePrefs(obj) {
   Object.assign(pending, obj);
   clearTimeout(pendT);

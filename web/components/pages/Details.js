@@ -17,18 +17,28 @@ import { CompressNote } from './Convert';
 import { Field as LabelledField } from '../Field';
 
 const LIB = { movie: '/films', show: '/series', anime: '/animes', clip: '/clips' };
+// Bibliothèque d'un titre (pour le retour)
 const libOf = (d) => LIB[d.category] || LIB[d.type] || '/films';
+// Heure lisible (« 20:30 »)
 const hhmm = (t) => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+// Taille lisible en Go ou Mo
 const fmtSize = (b) => (!b ? '' : b >= 1e9 ? `${(b / 1e9).toFixed(1).replace('.', ',')} Go` : `${Math.round(b / 1e6)} Mo`);
+// Débit lisible en Mb/s ou kb/s
 const fmtRate = (b) => (!b ? '' : b >= 1e6 ? `${(b / 1e6).toFixed(1).replace('.', ',')} Mb/s` : `${Math.round(b / 1e3)} kb/s`);
+// Nom d'une configuration audio (Stéréo, 5.1, 7.1…)
 const chLabel = (n) => (n >= 8 ? '7.1' : n >= 6 ? '5.1' : n === 2 ? 'Stéréo' : n === 1 ? 'Mono' : `${n} canaux`);
 const STATUS = { 'Returning Series': 'En cours de diffusion', Ended: 'Terminée', Canceled: 'Annulée', 'In Production': 'En production', Planned: 'Prévue', Released: 'Sorti', 'Post Production': 'En post-production' };
 let regionNames = null;
+// Nom d'un pays en français
 const country = (c) => { try { regionNames = regionNames || new Intl.DisplayNames(['fr'], { type: 'region' }); return regionNames.of(c); } catch { return c; } };
+// Rafraîchit la page en cours
 const refresh = () => shared().app.hostHooks.refresh();
+// Cet épisode est-il vu ?
 const isSeen = (e) => !!(e.progress && e.progress.watched);
+// Nom d'une saison (« Saison 2 », « Bonus »)
 const seasonName = (s) => s.title || (s.number === 0 ? 'Bonus' : `Saison ${s.number}`);
 
+// Page fiche d'un titre : chargement
 export default function Details({ id }) {
   const { app } = shared();
   const from = useRef(app.currentUrl());
@@ -44,11 +54,13 @@ export default function Details({ id }) {
   return <main className="with-nav page-in"><DetailsView d={d} /></main>;
 }
 
+// Squelette de la fiche pendant le chargement
 function DetailsSkeleton() {
   const bar = (w, hgt = 14) => <i className="sk" style={{ width: w, height: hgt }} />;
   return <div className="page sk-details" aria-busy="true"><i className="sk sk-poster" /><div>{bar('60%', 56)}{bar('30%')}{bar('80%')}{bar('70%')}<div className="sk-actions">{bar(170, 48)}{bar(48, 48)}</div></div></div>;
 }
 
+// Fiche d'un titre : infos, actions, saisons et épisodes, distribution
 function DetailsView({ d: initial }) {
   const L = shared();
   const { app, ui, components } = L;
@@ -244,6 +256,7 @@ function DetailsView({ d: initial }) {
   );
 }
 
+// Vignette d'épisode (image de remplacement si elle manque)
 function ThumbImg({ src, title }) {
   const [ok, setOk] = useState(true);
   return ok ? <img src={src} alt="" loading="lazy" onError={() => setOk(false)} /> : <Placeholder title={title} />;
@@ -252,6 +265,7 @@ function ThumbImg({ src, title }) {
 // Temps d'écran : prévenir avant de lancer plutôt que couper au milieu
 // Teinte de la fiche : couleur dominante de l'affiche (moyenne des pixels assez colorés, sur une petite image)
 const ambCache = new Map();
+// Couleur dominante d'une image (ambiance de la fiche)
 function useAmbient(src) {
   const [c, setC] = useState(() => (src && ambCache.get(src)) || null);
   useEffect(() => {
@@ -285,6 +299,7 @@ function useAmbient(src) {
   return c;
 }
 
+// Avertissement de temps d'écran insuffisant (profil enfant)
 function ScreenTimeNote({ d, target, isShow }) {
   const left = shared().app.state.profile.dailyLeft;
   const need = isShow ? (target && target.runtime) || (d.nextUp && d.nextUp.runtime) || 0 : d.runtime || 0;
@@ -539,8 +554,10 @@ function Cast({ cr }) {
 
 // ---------------------------------------------------------------- à propos, fiche technique, emplacement
 const Dl = ({ list }) => <dl className="info-list">{list.map(([k, v], i) => [<dt key={`t${i}`}>{k}</dt>, <dd key={`d${i}`}>{v}</dd>])}</dl>;
+// Copie un texte et affiche un message
 const copy = (txt, msg) => navigator.clipboard?.writeText(txt).then(() => toast(msg), () => {});
 
+// Section « À propos » : fichier, technique, liens
 function About({ d, cr, isShow }) {
   const { ui, app } = shared();
   const pairs = [];
@@ -671,8 +688,10 @@ async function editInfo(d) {
   openSheet('Modifier les infos', (close) => <EditInfo d={d} r={r} close={close} />, { wide: true });
 }
 
+// Champ de formulaire court
 const Field = ({ l, children }) => <LabelledField label={l}>{children}</LabelledField>;
 
+// Formulaire de modification des infos d'un titre
 function EditInfo({ d, r, close }) {
   const f = r.fields;
   const [v, setV] = useState({ title: f.title || '', orig: f.originalTitle || '', year: f.year ?? '', tagline: f.tagline || '', genres: (f.genres || []).join(', '), age: String(f.age ?? ''), overview: f.overview || '' });
@@ -708,10 +727,12 @@ function EditInfo({ d, r, close }) {
   );
 }
 
+// Ouvre la fenêtre de choix des images
 function chooseImages(d) {
   openSheet('Choisir les images', (close) => <ChooseImages d={d} close={close} />, { wide: true });
 }
 
+// Choix de l'affiche, du fond et du logo
 function ChooseImages({ d, close }) {
   const [r, setR] = useState(null);
   const [err, setErr] = useState(null);
@@ -752,10 +773,12 @@ function ChooseImages({ d, close }) {
   );
 }
 
+// Ouvre la fenêtre « Identifier »
 export function fixMatch(item) {
   openSheet('Corriger l’identification', (close) => <FixMatch item={item} close={close} />);
 }
 
+// Corrige l'identification : recherche et choix du bon titre
 function FixMatch({ item, close }) {
   const [q, setQ] = useState(item.title);
   const [year, setYear] = useState(item.year || '');

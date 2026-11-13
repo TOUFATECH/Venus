@@ -5,6 +5,7 @@ import { get, run } from './db.js';
 
 const UA = { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', 'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.6', Cookie: 'CONSENT=YES+1; SOCS=CAI' };
 
+// Lit les résultats d'une page de recherche YouTube
 function parseResults(html) {
   const out = [];
   // Les résultats sont dans ytInitialData : on cherche chaque videoRenderer, son titre et sa durée
@@ -18,6 +19,7 @@ function parseResults(html) {
   return out;
 }
 
+// Cherche la bande-annonce d'un titre sur YouTube
 export async function searchYoutubeTrailer(title, year, kind = 'movie') {
   const q = `${title}${year ? ` ${year}` : ''} ${kind === 'anime' ? 'trailer PV' : 'bande-annonce trailer'}`;
   const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&sp=EgIQAQ%253D%253D`; // vidéos seulement

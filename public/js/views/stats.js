@@ -10,11 +10,14 @@ const MONTHS_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'jui
 const DAYS = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
 const DAYS_LONG = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 const KIND = { movie: 'Films', show: 'Séries', anime: 'Animés', clip: 'Clips' };
+// Nombre à la française (virgule)
 const nf = (n) => String(n).replace('.', ',');
 // 0,05 h → « 3 min », 12,34 h → « 12,3 h »
 const fh = (x) => (!x ? '0 h' : x < 1 ? `${Math.max(1, Math.round(x * 60))} min` : `${nf(x >= 100 ? Math.round(x) : Math.round(x * 10) / 10)} h`);
+// Durée lisible (« 2 h 05 »)
 const fm = (min) => (min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}` : `${min} min`);
 
+// Page Statistiques
 export async function render(main, { query } = {}) {
   const year = Number(query && query.get('annee')) || new Date().getFullYear();
   const d = await api(`/api/stats?year=${year}`);
@@ -61,7 +64,9 @@ export async function render(main, { query } = {}) {
       top('Derniers films vus', d.lastMovies, (x) => new Date(x.at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))));
 }
 
+// Chiffre clé avec son libellé
 const kpi = (v, label) => h('div', { class: 'st-kpi' }, h('b', {}, v), h('span', {}, label));
+// Encadré avec titre
 const box = (title, body) => h('section', { class: 'dash-box st-box' }, h('div', { class: 'dash-title' }, h('h2', {}, title)), body);
 
 // Barres verticales, valeur au survol (et en clair sur la plus haute)

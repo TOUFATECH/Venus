@@ -11,10 +11,14 @@ const MONTHS_LONG = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'jui
 const DAYS = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
 const DAYS_LONG = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
 const KIND = { movie: 'Films', show: 'Séries', anime: 'Animés', clip: 'Clips' };
+// Nombre à la française (virgule)
 const nf = (n) => String(n).replace('.', ',');
+// Nombre d'heures lisible
 const fh = (x) => (!x ? '0 h' : x < 1 ? `${Math.max(1, Math.round(x * 60))} min` : `${nf(x >= 100 ? Math.round(x) : Math.round(x * 10) / 10)} h`);
+// Durée lisible (« 2 h 05 »)
 const fm = (min) => (min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}` : `${min} min`);
 
+// Page Statistiques
 export default function Stats() {
   const { search } = useVenus();
   const year = Number(search && search.get('annee')) || new Date().getFullYear();
@@ -79,9 +83,12 @@ export default function Stats() {
   );
 }
 
+// Chiffre clé avec son libellé
 const Kpi = ({ v, label }) => <div className="st-kpi"><b>{v}</b><span>{label}</span></div>;
+// Encadré avec titre
 const Box = ({ title, children }) => <section className="dash-box st-box"><div className="dash-title"><h2>{title}</h2></div>{children}</section>;
 
+// Classement (titres, genres, personnes)
 function Top({ title, list, sub }) {
   return (
     <Box title={title}>

@@ -5,15 +5,19 @@ import { all, getSetting, setSetting } from './db.js';
 import { HttpError } from './http.js';
 import { call, arrOptions, saveArr, arrConf, forgetKnown } from './arr.js';
 
+// Application de téléchargement de livres choisie (LazyLibrarian ou Bookshelf)
 export const booksApp = () => String(getSetting('books_app', '') || '');
+// Réglages de l'application de livres
 export function booksConf() {
   const app = booksApp();
   if (app === 'bookshelf') { const c = arrConf('bookshelf'); return { app, url: c.url, keySet: !!c.key, profile: c.profile, metaProfile: c.metaProfile, root: c.root, on: !!(c.url && c.key) }; }
   const url = String(getSetting('lazylibrarian_url', '') || '').replace(/\/+$/, ''), key = String(getSetting('lazylibrarian_key', '') || '');
   return { app: app || 'lazylibrarian', url, keySet: !!key, on: !!(url && key && app === 'lazylibrarian') };
 }
+// L'application de livres est-elle reliée ?
 export const booksOn = () => booksConf().on;
 
+// Enregistre (ou retire) l'application de livres
 export function saveBooksApp({ app, url, key, profile, metaProfile, root, remove }) {
   if (remove) { setSetting('books_app', ''); setSetting('lazylibrarian_url', ''); setSetting('lazylibrarian_key', ''); saveArr('bookshelf', { url: '', key: null, profile: 0, root: '' }); return; }
   if (app && !['lazylibrarian', 'bookshelf'].includes(app)) throw new HttpError(400, 'Application inconnue');
@@ -43,6 +47,7 @@ async function ll(cmd, params = {}, conf = null) {
   if (!res.ok) throw new HttpError(502, `LazyLibrarian : erreur ${res.status}`);
   try { return JSON.parse(text); } catch { return text; }
 }
+// Couverture d'un livre renvoyé par LazyLibrarian
 const llImg = (x) => (x && (x.bookimg || x.BookImg || x.cover || null)) || null;
 
 // Test de connexion (retourne version et compteurs quand disponibles)
@@ -112,4 +117,5 @@ export async function booksAdd({ id = null, title = '', author = '', isbn = null
   if (typeof q === 'string' && /error|not found|invalid/i.test(q)) throw new HttpError(502, `LazyLibrarian : ${q.slice(0, 120)}`);
   return { added: true, title: title || String(bookId), arrId: bookId };
 }
+// Texte simplifié pour comparer des titres et des auteurs
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();

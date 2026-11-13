@@ -21,11 +21,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS recordings (id INTEGER PRIMARY KEY, channel_
 CREATE TABLE IF NOT EXISTS record_rules (id INTEGER PRIMARY KEY, channel_id INTEGER, title TEXT, profile_id INTEGER, new_only INTEGER DEFAULT 0, created_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_rec_start ON recordings(status, start);`);
 
+// Dossier des enregistrements
 export const dvrDir = () => path.resolve(String(getSetting('dvr_path', '') || path.join(config.dataDir, 'recordings')));
+// Marges avant et après un programme (en millisecondes)
 const pad = () => ({ before: Number(getSetting('dvr_pre', 2)) * 60000, after: Number(getSetting('dvr_post', 5)) * 60000 });
 const running = new Map(); // id → processus ffmpeg
+// Nom de fichier sans caractères interdits
 const safe = (s) => String(s || 'Enregistrement').replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
 
+// Programme un enregistrement (programme du guide ou créneau libre)
 export function schedule({ channelId, title, sub = null, descr = null, start, stop, profileId = null, ruleId = null }) {
   if (!(stop > start) || stop < Date.now()) throw Object.assign(new Error('Ce programme est déjà terminé'), { status: 400 });
   if (stop - start > 12 * 3600e3) throw Object.assign(new Error('12 heures au plus par enregistrement'), { status: 400 });
@@ -36,6 +40,7 @@ export function schedule({ channelId, title, sub = null, descr = null, start, st
   return Number(r.lastInsertRowid);
 }
 
+// Annule un enregistrement prévu, ou arrête celui en cours
 export function cancel(id) {
   const r = get('SELECT * FROM recordings WHERE id = ?', Number(id));
   if (!r) return false;
@@ -55,11 +60,13 @@ function dvrLibrary() {
 }
 
 const starting = new Set();
+// Démarre un enregistrement (une seule fois même si appelé deux fois)
 async function start(rec) {
   if (starting.has(rec.id)) return;
   starting.add(rec.id);
   try { await startNow(rec); } finally { starting.delete(rec.id); }
 }
+// Lance ffmpeg qui copie le flux de la chaîne dans un fichier, puis l'ajoute aux vidéos à la fin
 async function startNow(rec) {
   const ch = get('SELECT * FROM items WHERE id = ?', rec.channel_id);
   if (!ch || !ch.stream_url) { run("UPDATE recordings SET status = 'failed', error = ? WHERE id = ?", 'Chaîne introuvable', rec.id); return; }
@@ -135,15 +142,19 @@ export function startDvr() {
   setTimeout(tick, 5000).unref();
 }
 
+// Enregistrements prévus, en cours et terminés
 export const listRecordings = () => all(`SELECT r.*, c.title AS channel_title, c.poster AS channel_logo FROM recordings r LEFT JOIN items c ON c.id = r.channel_id
   WHERE r.status != 'cancelled' ORDER BY CASE r.status WHEN 'recording' THEN 0 WHEN 'scheduled' THEN 1 ELSE 2 END, CASE WHEN r.status IN ('recording','scheduled') THEN r.start ELSE -r.start END LIMIT 500`);
+// Règles « série » : enregistrer chaque diffusion d'une émission
 export const listRules = () => all('SELECT r.*, c.title AS channel_title FROM record_rules r LEFT JOIN items c ON c.id = r.channel_id ORDER BY r.title');
+// Ajoute une règle « série » (sans doublon)
 export function addRule({ channelId, title, profileId, newOnly = false }) {
   const ex = get('SELECT id FROM record_rules WHERE channel_id = ? AND lower(title) = lower(?)', channelId, title);
   const id = ex ? ex.id : Number(run('INSERT INTO record_rules(channel_id, title, profile_id, new_only, created_at) VALUES(?, ?, ?, ?, ?)', channelId, title, profileId, newOnly ? 1 : 0, Date.now()).lastInsertRowid);
   applyRules();
   return id;
 }
+// Supprime une règle et annule ses enregistrements prévus
 export function removeRule(id) {
   run("UPDATE recordings SET status = 'cancelled' WHERE rule_id = ? AND status = 'scheduled'", Number(id));
   run('DELETE FROM record_rules WHERE id = ?', Number(id));

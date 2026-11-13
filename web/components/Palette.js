@@ -7,12 +7,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { shared } from '../lib/shared';
 import { Icon } from './Icon';
 
+// Texte simplifié pour la recherche
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const SETTINGS = [['profil', 'Mon profil'], ['appareil', 'Cet appareil (lecture, sous-titres)'], ['affichage', 'Thème et menu'], ['medias', 'Médiathèques', true], ['tv', 'TV en direct (listes, chaînes du monde)', true],
   ['infos', 'Infos et affiches (clé TMDB)', true], ['notes', 'Notes des sites (Trakt)', true], ['demandes', 'Demandes (Radarr, Sonarr)', true], ['famille', 'Profils et appareils', true], ['alertes', 'Notifications', true],
   ['lecture', 'Lecture et conversion', true], ['maj', 'Mise à jour', true], ['sauvegardes', 'Sauvegardes', true]];
 const KIND = { line: 'Réplique', movie: 'Film', show: 'Série', anime: 'Animé', clip: 'Clip', channel: 'Chaîne', person: 'Personne', page: 'Page', setting: 'Réglage', action: 'Action' };
 
+// Recherche rapide (Ctrl+K) : ouverture au clavier
 export default function Palette() {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function Palette() {
   return open ? <PaletteBox close={() => setOpen(false)} /> : null;
 }
 
+// Fenêtre de recherche rapide : titres, chaînes, personnes, pages, réglages
 function PaletteBox({ close }) {
   const L = shared();
   const { app, api, menu } = L;

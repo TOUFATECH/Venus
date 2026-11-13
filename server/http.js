@@ -17,6 +17,7 @@ const MIME = {
   '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.mkv': 'video/x-matroska',
   '.avi': 'video/x-msvideo',
 };
+// Type MIME d'un fichier d'après son extension
 export const mimeOf = (p) => MIME[path.extname(p).toLowerCase()] || 'application/octet-stream';
 
 export class Router {
@@ -50,12 +51,14 @@ export class Router {
 // Lecture du corps JSON d'une requête : taille et durée limitées, uniquement un objet, sans clés
 // dangereuses (__proto__, constructor, prototype : pollution de prototype), profondeur et textes bornés
 const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+// Vérifie la forme des données reçues (profondeur, clés dangereuses)
 function checkShape(v, depth = 0) {
   if (depth > 8) throw new HttpError(400, 'Données trop imbriquées');
   if (typeof v === 'string' && v.length > 200000) throw new HttpError(413, 'Texte trop long');
   if (Array.isArray(v)) { if (v.length > 5000) throw new HttpError(413, 'Liste trop longue'); v.forEach((x) => checkShape(x, depth + 1)); }
   else if (v && typeof v === 'object') { const keys = Object.keys(v); if (keys.length > 500) throw new HttpError(413, 'Trop de champs'); for (const k of keys) checkShape(v[k], depth + 1); }
 }
+// Lit le corps JSON d'une requête (taille et délai limités)
 export function readBody(req, limit = 1e6, { timeout = 20000 } = {}) {
   return new Promise((resolve, reject) => {
     const type = String(req.headers['content-type'] || '');
@@ -82,6 +85,7 @@ export function readBody(req, limit = 1e6, { timeout = 20000 } = {}) {
   });
 }
 
+// Envoie une réponse JSON (compressée si elle est grosse)
 export function sendJson(res, data, status = 200) {
   const body = JSON.stringify(data);
   const accept = res.req?.headers['accept-encoding'] || '';
@@ -152,6 +156,7 @@ function pipeFile(req, res, stream, bytes) {
 // après une mise à jour, le navigateur charge forcément les nouveaux fichiers, jamais un mélange avec
 // d'anciens fichiers gardés en cache (cause des erreurs « doesn't provide an export named »).
 let build = { at: 0, id: null };
+// Identifiant de construction de l'interface (pour le cache des fichiers)
 export function buildId(root) {
   if (build.id && Date.now() - build.at < 5000) return build.id;
   const h = crypto.createHash('sha1');
@@ -171,6 +176,7 @@ export function buildId(root) {
 
 // Fichiers statiques de l'interface, compressés en mémoire (brotli/gzip) une seule fois
 const staticCache = new Map();
+// Sert un fichier statique (compression brotli / gzip, cache, Range)
 export function serveStatic(req, res, root, pathname, { immutable = false } = {}) {
   let rel = decodeURIComponent(pathname);
   // /b/<version>/js/app.js → /js/app.js ; immuable si c'est la version en cours
@@ -221,6 +227,7 @@ export function serveStatic(req, res, root, pathname, { immutable = false } = {}
   return true;
 }
 
+// Lit les cookies d'une requête
 export function parseCookies(header = '') {
   const out = {};
   header.split(';').forEach((p) => {

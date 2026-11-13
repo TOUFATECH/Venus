@@ -18,12 +18,14 @@ export function defineTask(id, def) {
   return t;
 }
 
+// Enregistre l'état d'une tâche (dernière exécution, durée, résultat)
 function save(t) {
   const all = getSetting('tasks_state', {}) || {};
   all[t.id] = { lastRun: t.lastRun, lastDuration: t.lastDuration, lastError: t.lastError, lastResult: t.lastResult };
   setSetting('tasks_state', all);
 }
 
+// Lance une tâche planifiée tout de suite
 export async function runTask(id) {
   const t = tasks.get(id);
   if (!t) throw new Error('Tâche inconnue');
@@ -45,6 +47,7 @@ export async function runTask(id) {
   return { ok: !t.lastError };
 }
 
+// Tâches planifiées et leur état (tableau de bord)
 export function listTasks() {
   return [...tasks.values()].map((t) => ({
     id: t.id, label: t.label, description: t.description, when: t.when, every: t.every, running: t.running, progress: t.progress,
@@ -53,4 +56,5 @@ export function listTasks() {
   }));
 }
 
+// Cette tâche existe-t-elle ?
 export const hasTask = (id) => tasks.has(id);

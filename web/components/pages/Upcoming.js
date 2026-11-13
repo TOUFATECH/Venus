@@ -10,13 +10,20 @@ import { Icon } from '../Icon';
 
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés' };
 const FILTERS = [['all', 'Tout'], ['nas', 'Disponibles'], ['out', 'Pas disponibles'], ['fav', 'Mes favoris']];
+// Nombre sur deux chiffres
 const pad = (n) => String(n).padStart(2, '0');
+// Jour local (AAAA-MM-JJ)
 const localDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+// Jour d'un élément « À venir »
 const dayOf = (e) => (e.at ? localDay(e.at) : e.date);
+// Nom affiché (série ou titre)
 const nameOf = (e) => e.show || e.title;
+// Libellé d'un élément (épisode ou date de sortie)
 const epLabel = (e) => (e.kind === 'movie' ? [e.release, e.year].filter(Boolean).join(' · ') : `${e.season != null ? `S${e.season}:É${e.episode}` : `Épisode ${e.episode}`}${e.epTitle ? ` - ${e.epTitle}` : ''}`);
+// Date lisible
 const fmtDate = (d, y) => shared().ui.fmtDate(d, y);
 
+// Onglet « À venir » d'une bibliothèque
 export default function Upcoming({ kind, tabs }) {
   const { data: d, error } = useApi(`/api/upcoming?type=${kind}`);
   if (error) return <div className="page"><div className="empty"><h2>Impossible d’afficher les sorties</h2><p>{error.message}</p></div></div>;
@@ -24,6 +31,7 @@ export default function Upcoming({ kind, tabs }) {
   return <UpcomingView key={kind} d={d} kind={kind} tabs={tabs} />;
 }
 
+// Calendrier jour par jour et suggestions
 function UpcomingView({ d, kind, tabs }) {
   const kids = d.kids;
   const [filter, setFilter] = useState(() => { try { return sessionStorage.getItem(`vn_up_${kind}`) || 'all'; } catch { return 'all'; } });
@@ -123,6 +131,7 @@ function UpcomingView({ d, kind, tabs }) {
   );
 }
 
+// Image d'un élément (masquée si elle manque)
 function Pic({ e, wide }) {
   const [ok, setOk] = useState(true);
   const src = wide ? e.image || e.poster : e.poster || e.image;
@@ -132,6 +141,7 @@ function Pic({ e, wide }) {
   return wide && !e.image ? <div className="up-tall"><img src={img(src)} alt="" className="up-blur" aria-hidden="true" referrerPolicy="no-referrer" />{main}</div> : main;
 }
 
+// Bouton favori (♡)
 function FavBtn({ e, ctx, wide = false }) {
   const on = ctx.favs.has(e.key);
   return (
@@ -141,6 +151,7 @@ function FavBtn({ e, ctx, wide = false }) {
   );
 }
 
+// Bouton de téléchargement (Radarr / Sonarr)
 function DlBtn({ e, ctx, wide = false }) {
   const done = ctx.arr.has(e.key);
   const title = done ? `Déjà suivi par ${ctx.d.app} : téléchargé dès sa sortie` : ctx.d.arr ? `Télécharger avec ${ctx.d.app}` : `${ctx.d.app} n’est pas relié`;
@@ -150,6 +161,7 @@ function DlBtn({ e, ctx, wide = false }) {
   );
 }
 
+// Ouvre la fiche d'un élément à venir
 function details(e, ctx) {
   openSheet(null, () => <Details e={e} ctx={ctx} />, { wide: true });
 }
@@ -176,6 +188,7 @@ function Details({ e, ctx: initial }) {
   );
 }
 
+// Carte d'un élément du calendrier
 function UpCard({ e, ctx }) {
   const { components } = shared();
   const out = !e.nas;
@@ -196,6 +209,7 @@ function UpCard({ e, ctx }) {
   );
 }
 
+// Carte d'une suggestion
 function SugCard({ e, ctx }) {
   return (
     <div className="up-sug">
@@ -229,6 +243,7 @@ async function subscribe() {
 const WISH_STATE = { none: 'Pas encore demandé', pending: 'Demandé, en attente de validation', processing: 'Demandé : téléchargé dès sa sortie', partial: 'Disponible en partie', available: 'Disponible, arrive dans Venus', blocked: 'Bloqué dans Seerr', deleted: 'Supprimé de Seerr', error: 'Seerr injoignable' };
 const KIND = { movie: 'Film', show: 'Série', anime: 'Animé' };
 
+// Onglet « Mes envies »
 export function Wishes({ tabs }) {
   const [state, setState] = useState(null);
   const [err, setErr] = useState(null);

@@ -5,7 +5,9 @@ import { h, icon, img, qrSvg, sheet, toast } from '../ui.js';
 import { go, back } from '../core.js';
 import { playItem } from './home.js';
 
+// Identifiant de cet onglet pour le vote
 const clientId = (() => { try { let c = sessionStorage.getItem('vn_vote_client'); if (!c) { c = Math.random().toString(36).slice(2); sessionStorage.setItem('vn_vote_client', c); } return c; } catch { return Math.random().toString(36).slice(2); } })();
+// Lien vers un vote
 export const voteLink = (code) => `${location.origin}/vote?code=${code}`;
 
 // ---------------------------------------------------------------- écran principal

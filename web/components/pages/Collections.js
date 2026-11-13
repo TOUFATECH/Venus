@@ -9,15 +9,20 @@ import { Icon } from '../Icon';
 import Card, { Placeholder } from '../Card';
 import { PageError, PageLoading } from '../PageState';
 
+// Fenêtre de confirmation
 const confirm = (m, l) => shared().ui.confirmSheet(m, l);
+// Rafraîchit la page en cours
 const refresh = () => shared().app.hostHooks.refresh();
+// Durée lisible
 const runtime = (min) => shared().ui.fmtRuntime(min);
 
+// Couverture d'une collection (jusqu'à 4 affiches)
 function Cover({ x }) {
   const imgs = (x.posters || []).slice(0, 4);
   return <div className={`coll-cover n${imgs.length}`}>{imgs.length ? imgs.map((p, i) => <img key={i} src={img(p, 342)} alt="" loading="lazy" />) : <Placeholder title={x.name} />}</div>;
 }
 
+// Page Collections : collections et listes de lecture
 export default function Collections() {
   useTitle('Collections');
   const { search } = useVenus();
@@ -54,6 +59,7 @@ export default function Collections() {
   );
 }
 
+// Page d'une collection
 export function Collection() {
   const { id } = useParams();
   const { data: d, error } = useApi(`/api/collections/${encodeURIComponent(id)}`);
@@ -86,6 +92,7 @@ export function Collection() {
   );
 }
 
+// Page d'une liste de lecture
 export function Playlist() {
   const { id } = useParams();
   const { data: d, error } = useApi(`/api/playlists/${Number(id)}`);
@@ -95,6 +102,7 @@ export function Playlist() {
   return <PlaylistView d={d} />;
 }
 
+// Contenu d'une liste de lecture (ordre modifiable)
 function PlaylistView({ d }) {
   const L = shared();
   const [items, setItems] = useState(d.items);
@@ -151,6 +159,7 @@ function PlaylistView({ d }) {
   );
 }
 
+// Vignette d'un élément de liste
 function Thumb({ i }) {
   const [ok, setOk] = useState(true);
   return ok ? <img src={i.still ? img(i.still) : i.backdrop ? img(i.backdrop, 342) : `/api/items/${i.id}/thumb`} alt="" loading="lazy" onError={() => setOk(false)} /> : <Placeholder title={i.title} />;
@@ -172,10 +181,12 @@ function NameForm({ value = '', placeholder, button, note = null, onSubmit }) {
   );
 }
 
+// Fenêtre pour renommer
 function rename(title, value, save) {
   openSheet(title, (close) => <NameForm value={value} button="Enregistrer" onSubmit={async (name, setErr) => { if (!name) { setErr('Le nom est obligatoire'); return; } await save(name); close(); refresh(); }} />);
 }
 
+// Crée une liste de lecture (et y ajoute un titre si précisé)
 export function newPlaylist(itemId = null) {
   return new Promise((resolve) => {
     let done = false;
@@ -191,6 +202,7 @@ export function newPlaylist(itemId = null) {
   });
 }
 
+// Crée une collection (et y ajoute un titre si précisé)
 export function newCollection(itemId = null) {
   return new Promise((resolve) => {
     let done = false;

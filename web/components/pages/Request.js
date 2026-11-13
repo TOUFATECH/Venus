@@ -10,6 +10,7 @@ import { PageLoading } from '../PageState';
 
 const KINDS = [['movie', 'Films', 'film'], ['show', 'Séries', 'tv'], ['anime', 'Animés', 'spark']];
 
+// Page Nouveau : demander un titre
 export default function Request() {
   useTitle('Nouveau');
   const { data: st, error } = useApi('/api/arr/status');
@@ -17,6 +18,7 @@ export default function Request() {
   return <RequestView st={st || { radarr: false, sonarr: false }} />;
 }
 
+// Recherche d'un titre à envoyer à Radarr / Sonarr
 function RequestView({ st }) {
   const { search } = useVenus();
   const admin = !!shared().app.state.profile.isAdmin;
@@ -105,6 +107,7 @@ function RequestView({ st }) {
   );
 }
 
+// Carte d'un résultat (déjà dans Venus, demandé, à ajouter)
 function ReqCard({ r, kind, onAdded }) {
   const [state, setState] = useState(r.inVenus ? 'venus' : r.requested ? 'requested' : 'idle');
   const [picOk, setPicOk] = useState(!!r.poster);

@@ -5,6 +5,7 @@ import { Children, cloneElement, isValidElement, useId } from 'react';
 // Le libellé est relié au premier champ (un clic dessus y mène, les lecteurs d'écran et la commande vocale le
 // nomment), et l'aide en petit le décrit
 const NAMEABLE = new Set(['input', 'select', 'textarea']);
+// Champ de formulaire avec son libellé et son aide (accessibles)
 export function Field({ label, hint, children, style }) {
   const id = useId();
   let target = null;
@@ -15,6 +16,7 @@ export function Field({ label, hint, children, style }) {
   });
   return <div className="field" style={style}><label htmlFor={target || undefined}>{label}</label>{kids}{hint ? <small id={`${id}h`}>{hint}</small> : null}</div>;
 }
+// Liste déroulante
 export function Select({ opts, value, onChange, ...rest }) {
   return <select className="input" defaultValue={String(value ?? '')} onChange={onChange} {...rest}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
 }

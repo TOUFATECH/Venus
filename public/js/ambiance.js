@@ -42,6 +42,7 @@ export async function tintFrom(src) {
   const k = Math.min(1.6, 200 / max);
   document.documentElement.style.setProperty('--tint', `rgb(${Math.round(r * k)} ${Math.round(g * k)} ${Math.round(b * k)})`);
 }
+// Retire la teinte de couleur appliquée à l'interface
 export function clearTint() { document.documentElement.style.removeProperty('--tint'); }
 
 // Halo lumineux autour de la vidéo : 32×18 pixels, agrandis et floutés en CSS

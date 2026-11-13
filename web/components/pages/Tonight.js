@@ -7,6 +7,7 @@ import { Icon, Avatar } from '../Icon';
 import { Picture, Placeholder } from '../Card';
 import { PageError, PageLoading } from '../PageState';
 
+// Salutation selon l'heure
 const greeting = () => { const hr = new Date().getHours(); return hr >= 18 || hr < 4 ? 'Bonsoir' : 'Bonjour'; };
 const MOODS = [
   ['rire', 'Rire', 'Une comédie, quelque chose de léger', ['comedie', 'famil', 'animation']],
@@ -16,6 +17,7 @@ const MOODS = [
   ['reflechir', 'Apprendre', 'Documentaire, histoire vraie', ['documentaire', 'histoire', 'guerre', 'mystere']],
   ['surprise', 'Surprends-moi', 'Laissez Venus choisir', []],
 ];
+// Choix de durée proposés (selon l'heure)
 const times = (soir) => [
   ['30', 'Moins de 45 min', 'Un épisode, un clip', 45],
   ['90', 'Environ 1 h 30', 'Un film court ou deux épisodes', 110],
@@ -23,10 +25,14 @@ const times = (soir) => [
 ];
 const WHO = [['seul', 'Seul', 'Rien que pour moi'], ['duo', 'À deux', 'En couple ou entre amis proches'], ['famille', 'En famille', 'Avec des enfants'], ['amis', 'Entre amis', 'Ambiance, rires, sensations']];
 const WHO_BONUS = { duo: ['romance', 'drame', 'comedie', 'thriller'], famille: ['animation', 'famil', 'comedie', 'aventure'], amis: ['comedie', 'action', 'horreur', 'thriller'] };
+// Texte en minuscules sans accents
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+// Durée d'un titre en minutes (estimée pour une série)
 const lengthOf = (i) => (i.type === 'movie' ? i.runtime || 110 : i.type === 'clip' ? Math.max(3, i.runtime || 4) : i.category === 'anime' ? 24 : 45);
+// Heure de fin si on commence maintenant
 const finishAt = (min) => { const d = new Date(Date.now() + min * 60000); return `${d.getHours()} h ${String(d.getMinutes()).padStart(2, '0')}`; };
 
+// Score d'un titre selon les réponses (durée, humeur, compagnie)
 function score(i, a, TIMES) {
   if (i.type === 'clip' && a.time !== '30') return null;
   const g = (i.genres || []).map(norm).join(' ');
@@ -61,6 +67,7 @@ function score(i, a, TIMES) {
   return { item: i, score: s + Math.random() * 1.5, reasons: [...new Set(reasons.filter(Boolean))].slice(0, 4) };
 }
 
+// Lance la lecture d'un titre (épisode à suivre pour une série)
 export async function playItem(item) {
   const { components } = shared();
   if (item.type === 'movie') return go(components.playPath(item.id));
@@ -68,6 +75,7 @@ export async function playItem(item) {
   if (d.nextUp) go(components.playPath(d.nextUp.id)); else go(`/titre/${item.id}`);
 }
 
+// Page « Ce soir » : trois questions, trois idées à regarder
 export default function Tonight() {
   const { menu, app } = shared();
   const soir = menu.dayPart() === 'soir';

@@ -9,14 +9,20 @@ import { go } from '../core.js';
 
 const TITLES = { movie: 'Films', show: 'Séries', anime: 'Animés' };
 const FILTERS = [['all', 'Tout'], ['nas', 'Disponibles'], ['out', 'Pas disponibles'], ['fav', 'Mes favoris']];
+// Nombre sur deux chiffres
 const pad = (n) => String(n).padStart(2, '0');
+// Jour local (AAAA-MM-JJ)
 const localDay = (t) => { const d = new Date(t); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+// Jour d'un élément « À venir »
 const dayOf = (e) => (e.at ? localDay(e.at) : e.date);
+// Nom affiché (série ou titre)
 const nameOf = (e) => e.show || e.title;
+// Libellé d'un élément (épisode ou date de sortie)
 const epLabel = (e) => (e.kind === 'movie'
   ? [e.release, e.year].filter(Boolean).join(' · ')
   : `${e.season != null ? `S${e.season}:É${e.episode}` : `Épisode ${e.episode}`}${e.epTitle ? ` - ${e.epTitle}` : ''}`);
 
+// Onglet « À venir » d'une bibliothèque
 export async function renderUpcoming(page, kind, tabs) {
   const d = await api(`/api/upcoming?type=${kind}`);
   const kids = d.kids;

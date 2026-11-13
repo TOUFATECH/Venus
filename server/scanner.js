@@ -27,6 +27,7 @@ export const scanState = { running: false, phase: '', done: 0, total: 0, lastSca
 let added = [];
 let pendingRescan = false;
 
+// Liste les vidéos d'un dossier (sous-dossiers compris)
 function walk(dir, out = [], extra = null) {
   let entries;
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return out; }
@@ -55,6 +56,7 @@ function walk(dir, out = [], extra = null) {
   return out;
 }
 
+// Image rangée à côté d'une vidéo (poster, fanart…)
 function findArt(dir, base, names) {
   const candidates = [];
   for (const n of names) {
@@ -66,6 +68,7 @@ function findArt(dir, base, names) {
   return candidates.find((c) => fs.existsSync(c)) || null;
 }
 
+// Traite une liste en parallèle, size éléments à la fois
 async function pool(items, size, fn) {
   const q = [...items];
   await Promise.all(Array.from({ length: Math.min(size, q.length) }, async () => {
@@ -73,8 +76,10 @@ async function pool(items, size, fn) {
   }));
 }
 
+// Catégorie d'une série selon sa bibliothèque (animé ou série)
 const catOf = (lib) => (lib.type === 'anime' ? 'anime' : 'show');
 
+// Crée ou retrouve une série dans la base
 function upsertShow(lib, info, showDir) {
   const key = normKey(info.show);
   let show = get("SELECT * FROM items WHERE library_id=? AND type='show' AND key=?", lib.id, key);
@@ -105,6 +110,7 @@ function upsertShow(lib, info, showDir) {
   return { show, season };
 }
 
+// Ajoute ou met à jour un fichier vidéo dans la base
 async function processFile(lib, f, existing) {
   let probe;
   try { probe = await probeFile(f.path); }
@@ -170,6 +176,7 @@ async function processFile(lib, f, existing) {
   }
 }
 
+// Analyse toutes les bibliothèques : ajouts, modifications, suppressions
 export async function scanAll({ force = false } = {}) {
   if (scanState.running) { pendingRescan = true; return; }
   Object.assign(scanState, { running: true, phase: 'Recherche des fichiers', done: 0, total: 0, error: null });
@@ -255,14 +262,17 @@ function linkExtras() {
     run('UPDATE items SET parent_id = ?, show_id = COALESCE((SELECT o.show_id FROM items o WHERE o.id = ? AND o.type = \'episode\'), ?) WHERE id = ?', owner, owner, owner, x.id);
   }
 }
+// Échappe un texte pour une condition SQL LIKE
 const likeEsc = (s) => s.replace(/[\\%_]/g, (c) => `\\${c}`);
 
 let scheduled;
+// Programme une analyse dans quelques secondes (les demandes rapprochées n'en font qu'une)
 export function scheduleScan(ms = 5000) { clearTimeout(scheduled); scheduled = setTimeout(() => scanAll(), ms); }
 
 // Surveillance des dossiers : nouveau film copié = visible en quelques secondes
 const watchers = [];
 let debounce;
+// Surveille les dossiers : une nouvelle vidéo apparaît en quelques secondes
 export function watchLibraries() {
   watchers.splice(0).forEach((w) => w.close());
   for (const lib of all("SELECT * FROM libraries WHERE type != 'iptv' AND remote IS NULL")) {
@@ -280,6 +290,7 @@ export function watchLibraries() {
 
 // ---------------------------------------------------------------- IPTV : liste de lecture M3U (adresse ou fichier)
 import { FREE_TV, buildFreeTv, IPTV_WORLD, buildIptvWorld, checkChannels } from './free-tv.js';
+// Lit une liste M3U : nom, logo, groupe et adresse de chaque chaîne
 export function parseM3u(text) {
   const out = [];
   let cur = null;
@@ -305,6 +316,7 @@ export function parseM3u(text) {
   return out;
 }
 
+// Analyse une bibliothèque TV (M3U ou Xtream)
 async function scanIptv(lib) {
   let text;
   if (lib.path === FREE_TV) text = await buildFreeTv();

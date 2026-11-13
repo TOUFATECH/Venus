@@ -8,13 +8,17 @@ const TYPES = [['movies', 'Films'], ['shows', 'Séries'], ['anime', 'Animés'], 
 const NAMES = { movies: 'Films', shows: 'Séries', anime: 'Animés', clips: 'Clips', iptv: 'TV en direct', music: 'Musique', photos: 'Photos', books: 'Livres' };
 // Chemins Windows (C:\Films) ou Linux / macOS (/media/films)
 const joinPath = (base, name) => (base.includes('\\') ? `${base.replace(/\\$/, '')}\\${name}` : `${base.replace(/\/$/, '')}/${name}`);
+// Champ de formulaire de l'assistant
 const Field = ({ label, id, hint, children }) => <div className="field"><label htmlFor={id}>{label}</label>{children}{hint ? <small>{hint}</small> : null}</div>;
+// Message d'attente avec indicateur
 const Spin = ({ children }) => <p className="net-searching"><span className="mini-spin" />{children}</p>;
 
+// Ouvre l'assistant d'ajout d'une source
 export function openSourceWizard(preset = 'movies', onDone) {
   openSheet('Ajouter une source', (close) => <Wizard preset={preset} close={close} onDone={onDone} />);
 }
 
+// Assistant : type de source puis étapes
 function Wizard({ preset, close, onDone }) {
   const [type, setType] = useState(preset);
   const [step, setStep] = useState({ id: 'start' });
@@ -42,6 +46,7 @@ function Wizard({ preset, close, onDone }) {
   );
 }
 
+// Bouton « Retour » de l'assistant
 const Back = ({ onClick }) => <button type="button" className="row-link f wiz-back" onClick={onClick}><Icon name="back" />Retour</button>;
 
 // Bouton d'envoi qui montre l'attente et l'erreur
@@ -52,6 +57,7 @@ function useSubmit(ctx, busyLabel = 'Ajout…') {
   return { busy, err, setErr, run, label: (l) => (busy ? busyLabel : l) };
 }
 
+// Première étape : choix du type de source
 function Start({ ctx }) {
   const iptv = ctx.type === 'iptv';
   const box = useRef(null);
@@ -72,6 +78,7 @@ function Start({ ctx }) {
   );
 }
 
+// Dossier local ou partage réseau
 function Local({ ctx }) {
   const [name, setName] = useState(NAMES[ctx.type]);
   const picker = useRef(null);
@@ -207,6 +214,7 @@ function ConfirmShare({ ctx, r }) {
   );
 }
 
+// Abonnement Xtream
 function Xtream({ ctx }) {
   const [v, setV] = useState({ server: '', user: '', pass: '', name: NAMES.iptv });
   const s = useSubmit(ctx);
@@ -230,6 +238,7 @@ function Xtream({ ctx }) {
   );
 }
 
+// Liste M3U par adresse
 function M3u({ ctx }) {
   const [url, setUrl] = useState('');
   const [name, setName] = useState(NAMES.iptv);
@@ -249,6 +258,7 @@ function M3u({ ctx }) {
   );
 }
 
+// Liste M3U envoyée en fichier
 function FileStep({ ctx }) {
   const [name, setName] = useState(NAMES.iptv);
   const picker = useRef(null);

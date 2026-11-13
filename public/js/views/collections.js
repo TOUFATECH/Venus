@@ -5,13 +5,16 @@ import { card, playPath } from '../components.js';
 import { go, state, setTitle } from '../core.js';
 import { setQueue } from '../queue.js';
 
+// Couverture d'une collection (jusqu'à 4 affiches)
 const cover = (x) => {
   const imgs = (x.posters || []).slice(0, 4);
   return h('div', { class: `coll-cover n${imgs.length}` }, imgs.length ? imgs.map((p) => h('img', { src: img(p, 342), alt: '', loading: 'lazy' })) : placeholder(x.name));
 };
+// Tuile d'une collection ou d'une liste de lecture
 const tile = (x, href) => h('button', { class: 'coll-tile f', onclick: () => go(href) }, cover(x),
   h('b', {}, x.name), h('small', {}, [`${x.count} titre${x.count > 1 ? 's' : ''}`, x.auto ? 'Saga' : null, x.duration ? fmtRuntime(Math.round(x.duration / 60)) : null].filter(Boolean).join(' · ')));
 
+// Page Collections : toutes les collections et listes, ou le détail de l'une d'elles
 export async function render(main, { view = 'all', id, query } = {}) {
   if (view === 'collection') return renderCollection(main, id);
   if (view === 'playlist') return renderPlaylist(main, id);
@@ -35,6 +38,7 @@ export async function render(main, { view = 'all', id, query } = {}) {
   await paint();
 }
 
+// Détail d'une collection
 async function renderCollection(main, id) {
   const d = await api(`/api/collections/${encodeURIComponent(id)}`);
   setTitle(d.name);
@@ -62,6 +66,7 @@ async function renderCollection(main, id) {
   main.append(page);
 }
 
+// Détail d'une liste de lecture (ordre modifiable)
 async function renderPlaylist(main, id) {
   const d = await api(`/api/playlists/${Number(id)}`);
   setTitle(d.name);
@@ -108,6 +113,7 @@ async function renderPlaylist(main, id) {
   main.append(page);
 }
 
+// Fenêtre pour renommer
 function renameSheet(title, value, onSave) {
   const input = h('input', { class: 'input', value, maxlength: 80 });
   const err = h('p', { class: 'error-text' });
@@ -120,6 +126,7 @@ function renameSheet(title, value, onSave) {
   requestAnimationFrame(() => { input.focus(); input.select(); });
 }
 
+// Crée une liste de lecture (et y ajoute un titre si précisé)
 export function newPlaylist(itemId = null) {
   return new Promise((resolve) => {
     const input = h('input', { class: 'input', placeholder: 'Ex. : Marathon du dimanche', maxlength: 80 });
@@ -133,6 +140,7 @@ export function newPlaylist(itemId = null) {
     requestAnimationFrame(() => input.focus());
   });
 }
+// Crée une collection (et y ajoute un titre si précisé)
 export function newCollection(itemId = null) {
   return new Promise((resolve) => {
     const input = h('input', { class: 'input', placeholder: 'Ex. : Films de Noël', maxlength: 80 });

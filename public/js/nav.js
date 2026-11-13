@@ -7,12 +7,14 @@ const DIRS = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 
 // Codes de touches de certaines télécommandes (Tizen / webOS / Android TV)
 const KEYCODES = { 37: 'left', 38: 'up', 39: 'right', 40: 'down' };
 
+// Zone où la navigation aux flèches est possible (fenêtre ouverte, sinon la page)
 export function scope() {
   const sheets = document.querySelectorAll('.sheet-wrap');
   if (sheets.length) return sheets[sheets.length - 1];
   return document.querySelector('.player') || document.body;
 }
 
+// Éléments sélectionnables visibles à l'écran
 function visibleFocusables(root) {
   const vw = innerWidth, vh = innerHeight;
   return [...root.querySelectorAll('.f, input:not([type=hidden]), select')].filter((el) => {
@@ -24,6 +26,7 @@ function visibleFocusables(root) {
   });
 }
 
+// Élément le plus proche dans la direction de la flèche
 function best(from, dir, list) {
   const a = from.getBoundingClientRect();
   const ac = { x: a.left + a.width / 2, y: a.top + a.height / 2 };
@@ -52,6 +55,7 @@ function best(from, dir, list) {
   return winner;
 }
 
+// Sélectionne un élément (et le fait défiler à l'écran)
 export function focusEl(el, { scroll = true } = {}) {
   if (!el) return;
   el.focus({ preventScroll: true });
@@ -71,18 +75,21 @@ export function focusEl(el, { scroll = true } = {}) {
   }
 }
 
+// Sélectionne le premier élément de la zone
 export function focusFirst(root = scope()) {
   const preferred = root.querySelector('[data-autofocus]');
   const list = visibleFocusables(root);
   focusEl(preferred && list.includes(preferred) ? preferred : list[0], { scroll: false });
 }
 
+// Active ou désactive l'affichage de la sélection au clavier
 function markKeyMode(on) {
   if (keyMode === on) return;
   keyMode = on;
   document.documentElement.classList.toggle('keys', on);
 }
 
+// Branche la navigation aux flèches, à la télécommande et au bouton Retour
 export function initNav({ onBack }) {
   const ua = navigator.userAgent;
   if (/SmartTV|SMART-TV|Tizen|Web0S|webOS|NetCast|AFT[A-Z]|BRAVIA|Android TV|GoogleTV|CrKey|HbbTV|PlayStation|Xbox/i.test(ua)) {
@@ -131,4 +138,5 @@ export function initNav({ onBack }) {
   });
 }
 
+// La navigation se fait-elle au clavier en ce moment ?
 export const isKeyMode = () => keyMode;

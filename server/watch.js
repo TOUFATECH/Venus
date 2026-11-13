@@ -23,8 +23,11 @@ db.exec(`CREATE TABLE IF NOT EXISTS wishlist (
 // ------------------------------------------------------------------ réglages
 export const autoRequest = () => String(getSetting('seerr_auto', '1')) !== '0';
 export const followMode = () => getSetting('seerr_follow', 'mylist'); // off | mylist | all
+// Correspondance entre profils Venus et utilisateurs Seerr
 export function seerrUsers() { const m = getSetting('seerr_users', {}); return m && typeof m === 'object' ? m : {}; }
+// Utilisateur Seerr d'un profil
 export const seerrUserOf = (profileId) => seerrUsers()[String(profileId)] || null;
+// Associe un profil Venus à un utilisateur Seerr
 export function linkSeerrUser(profileId, seerrUserId) {
   const m = seerrUsers();
   if (seerrUserId) m[String(profileId)] = Number(seerrUserId); else delete m[String(profileId)];
@@ -57,6 +60,7 @@ export async function seerrLogin({ url, method = 'local', user, password, plexTo
   return { url, key: main.apiKey, user: { id: me.id, name: me.displayName || me.email || user } };
 }
 
+// Utilisateurs de Seerr
 export async function listSeerrUsers() {
   const d = await seerr('/user?take=200&skip=0&sort=displayname');
   return (d.results || []).map((u) => ({ id: u.id, name: u.displayName || u.username || u.plexUsername || u.jellyfinUsername || u.email, email: u.email || null, avatar: u.avatar || null, requests: u.requestCount || 0 }));
@@ -67,9 +71,12 @@ const row = (r) => ({
   type: r.media_type, tmdbId: r.tmdb_id, title: r.title, original: r.original, poster: r.poster, backdrop: r.backdrop,
   date: r.date, overview: r.overview, anime: !!r.anime, added: r.added_at, requested: r.requested_at, error: r.error,
 });
+// Envies d'un profil
 export const wishlistOf = (profileId) => all('SELECT * FROM wishlist WHERE profile_id = ? ORDER BY added_at DESC', profileId).map(row);
+// Ce titre est-il dans les envies du profil ?
 export const inWishlist = (profileId, type, tmdbId) => !!get('SELECT 1 FROM wishlist WHERE profile_id=? AND media_type=? AND tmdb_id=?', profileId, type, tmdbId);
 
+// Ajoute une envie et la demande à Seerr
 export async function addWish(profile, x) {
   const type = x.type === 'movie' ? 'movie' : 'tv';
   run(`INSERT INTO wishlist(profile_id, media_type, tmdb_id, title, original, poster, backdrop, date, overview, anime, added_at)
@@ -81,11 +88,13 @@ export async function addWish(profile, x) {
   if (seerrOn() && autoRequest() && profile.max_age == null) request = await requestWish(profile.id, type, x.tmdbId);
   return { inWishlist: true, request };
 }
+// Retire une envie
 export function removeWish(profileId, type, tmdbId) {
   run('DELETE FROM wishlist WHERE profile_id=? AND media_type=? AND tmdb_id=?', profileId, type === 'movie' ? 'movie' : 'tv', tmdbId);
   return { inWishlist: false };
 }
 
+// Demande une envie à Seerr
 async function requestWish(profileId, type, tmdbId) {
   try {
     const st = mediaState((await seerr(`/${type}/${tmdbId}`)).mediaInfo);
@@ -112,6 +121,7 @@ async function requestWish(profileId, type, tmdbId) {
 let running = false;
 export const watchState = { lastRun: null, requested: 0, followed: 0, error: null };
 
+// Suivi automatique : envies et nouvelles saisons demandées à Seerr
 export async function runWatch() {
   if (running) return watchState;
   running = true;
@@ -156,6 +166,7 @@ export async function runWatch() {
   return watchState;
 }
 
+// Demande à Seerr les nouvelles saisons d'une série suivie
 async function followShow(tmdbId, { max, profileId }) {
   const d = await seerr(`/tv/${tmdbId}`);
   const info = d.mediaInfo || {};
@@ -172,8 +183,10 @@ async function followShow(tmdbId, { max, profileId }) {
   return 1;
 }
 
+// Lance le suivi automatique peu après le démarrage
 export function startWatch() {
   setTimeout(() => runWatch().catch(() => {}), 3 * 60000).unref();
   setInterval(() => runWatch().catch(() => {}), 6 * 3600000).unref();
 }
+// Seerr est-il réglé ?
 export const seerrConfigured = () => !!seerrConf().url;

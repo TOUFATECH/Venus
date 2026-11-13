@@ -1,6 +1,7 @@
 'use client';
 // États communs d'une page : chargement (silhouette) et erreur (avec « Réessayer »)
 import { shared } from '../lib/shared';
+// Squelette affiché pendant le chargement d'une page
 export function PageLoading({ children = null }) {
   const bar = (w, hgt = 14) => <i className="sk" style={{ width: w, height: hgt }} />;
   return (
@@ -10,6 +11,7 @@ export function PageLoading({ children = null }) {
   );
 }
 
+// Message d'erreur d'une page, avec bouton pour réessayer
 export function PageError({ error, title = 'Impossible d’afficher cette page' }) {
   if (error && (error.status === 401 || error.message === 'Choisissez un profil')) return <main className="with-nav" />;
   return (

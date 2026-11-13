@@ -6,9 +6,12 @@ import { go, state } from '../core.js';
 import { toast } from '../ui.js';
 import { attachStream, numberZapper } from '../live.js';
 
+// Texte en minuscules sans accents
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+// Initiales d'une chaîne (logo de remplacement)
 const initials = (t) => t.split(/\s+/).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
 
+// Page TV en direct : chaînes, guide, enregistrements
 export async function render(main, { query } = {}) {
   const vue = query && query.get('vue');
   if (vue === 'guide' || vue === 'enregistrements') {

@@ -23,6 +23,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS conversions (
 CREATE INDEX IF NOT EXISTS idx_conv_item ON conversions(item_id, status)`);
 
 export const SUFFIX = '.venus.mp4';
+// Lecture JSON tolérante (null si invalide)
 const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 const TEXT_SUBS = new Set(['subrip', 'srt', 'ass', 'ssa', 'mov_text', 'webvtt', 'text']);
 
@@ -34,7 +35,9 @@ export const PROFILE = { crf: 20, caps: { 2160: 20e6, 1440: 14e6, 1080: 10e6, 72
 // « Maximale » est quasi sans perte visible même sur un grand écran ; « Haute » est indiscernable à distance normale ;
 // « Équilibrée » reste nette mais gagne nettement plus de place.
 export const QUALITIES = { max: { crf: 17, mul: 1.6, label: 'Maximale' }, high: { crf: 20, mul: 1, label: 'Haute (recommandée)' }, balanced: { crf: 23, mul: 0.7, label: 'Équilibrée (plus légère)' } };
+// Réglage de qualité choisi (Haute par défaut)
 const qualityOf = (o) => QUALITIES[o && o.quality] || QUALITIES.high;
+// Réglages de compression enregistrés, complétés par les valeurs par défaut
 export function convertSettings() {
   const s = getSetting('convert_opts', null) || {};
   return {
@@ -47,6 +50,7 @@ export function convertSettings() {
     night: !!s.night,                                                        // seulement entre 1 h et 7 h
   };
 }
+// Enregistre une partie des réglages de compression
 export function saveConvertSettings(patch) {
   const cur = convertSettings();
   const next = { ...cur };
@@ -60,6 +64,7 @@ export function saveConvertSettings(patch) {
   setSetting('convert_opts', next);
   return next;
 }
+// Débit maximal selon la hauteur de l'image (4K, 1440p, 1080p…)
 const capFor = (h, o = null) => (h >= 2000 ? PROFILE.caps[2160] : h >= 1300 ? PROFILE.caps[1440] : h >= 1000 ? PROFILE.caps[1080] : h >= 700 ? PROFILE.caps[720] : PROFILE.caps[480]) * qualityOf(o).mul;
 
 // Taille attendue après compression (estimation : le CRF s'adapte au contenu, un animé descend bien plus bas)
@@ -89,6 +94,7 @@ export function keptAudio(probe, opts) {
   const kept = list.filter((a) => want.has(norm3(a.lang)));
   return (kept.length ? kept : list).slice(0, 8);
 }
+// Code de langue à 3 lettres (fre, eng, jpn…) à partir des codes courants
 const norm3 = (l) => { const x = String(l || '').toLowerCase(); return { fr: 'fre', fra: 'fre', en: 'eng', ja: 'jpn', de: 'ger', deu: 'ger', es: 'spa', it: 'ita', pt: 'por', ar: 'ara', ko: 'kor', zh: 'chi', zho: 'chi', und: 'und', '': 'und' }[x] || x; };
 
 // ------------------------------------------------------------------ propositions
@@ -111,6 +117,7 @@ export function reasonFor(probe, opts = convertSettings()) {
 // est gardé en mémoire et refait seulement si l'un des deux change (0,65 s sinon à chaque ouverture de la page
 // sur une médiathèque de 38 000 vidéos). Les vidéos déjà en file ou compressées sont écartées à chaque demande.
 let sugCache = { key: '', list: [], total: 0 };
+// Vidéos qui gagneraient à être compressées (gros débit, codecs lourds), avec la place estimée
 export function suggestions({ limit = 200, libraryId = null } = {}) {
   const done = new Set(all("SELECT item_id FROM conversions WHERE status IN ('queued','running','done','validated')").map((r) => r.item_id));
   const failed = new Map(all("SELECT item_id, COUNT(*) n FROM conversions WHERE status = 'failed' GROUP BY item_id").map((r) => [r.item_id, r.n]));
@@ -154,6 +161,7 @@ export function queue(itemIds, opts = {}, byName = null) {
   if (n) setTimeout(() => runConversions().catch(() => {}), 50);
   return n;
 }
+// Annule une compression en attente ou en cours
 export function cancel(id) {
   const c = get('SELECT * FROM conversions WHERE id = ?', id); if (!c) return false;
   if (c.status === 'running' && current && current.id === c.id) { current.cancelled = true; try { current.proc.kill('SIGKILL'); } catch { /* */ } }
@@ -161,7 +169,9 @@ export function cancel(id) {
   else if (c.status === 'done' || c.status === 'failed') { if (c.out_path) try { fs.rmSync(c.out_path, { force: true }); } catch { /* */ } run('DELETE FROM conversions WHERE id = ?', id); }
   return true;
 }
+// Compression terminée d'une vidéo, s'il y en a une
 export const conversionFor = (itemId) => { const c = get("SELECT * FROM conversions WHERE item_id = ? AND status = 'done' ORDER BY id DESC LIMIT 1", itemId); return c && c.out_path && fs.existsSync(c.out_path) ? { ...c, probe: parse(c.probe), opts: parse(c.opts) } : null; };
+// État de toutes les compressions (en attente, en cours, à valider, échecs)
 export function convertStatus() {
   const rows = all(`SELECT c.*, i.title, i.type, i.poster, i.show_id, i.season_num, i.episode_num, s.title AS show_title FROM conversions c JOIN items i ON i.id = c.item_id LEFT JOIN items s ON s.id = i.show_id
     WHERE c.status IN ('queued','running','done','failed') OR c.validated_at > ? ORDER BY CASE c.status WHEN 'running' THEN 0 WHEN 'queued' THEN 1 WHEN 'done' THEN 2 WHEN 'failed' THEN 3 ELSE 4 END, c.id DESC LIMIT 300`, Date.now() - 7 * 864e5);
@@ -173,6 +183,7 @@ export function convertStatus() {
 
 // ------------------------------------------------------------------ encodage
 let current = null, running = false, pausedUntil = 0;
+// Adapte les options ffmpeg à une qualité constante (CRF) et un débit maximal
 function tune(p, { kbit, crf }) {
   // Les options propres au découpage HLS sont retirées ; la qualité passe en mode « constante » là où l'encodeur le permet
   const strip = new Set(['-force_key_frames', '-forced-idr', '-g', '-keyint_min']);
@@ -190,6 +201,7 @@ function tune(p, { kbit, crf }) {
   if (!video.includes('-maxrate')) video.push('-maxrate', `${Math.round(kbit * 1.4)}k`, '-bufsize', `${kbit * 2}k`);
   return video;
 }
+// Options audio : pistes gardées et conversion en AAC
 function audioArgs(probe, o) {
   const kept = keptAudio(probe, o);
   return kept.flatMap((a, i) => {
@@ -198,6 +210,7 @@ function audioArgs(probe, o) {
     return ['-map', `0:${a.index}`, `-c:a:${i}`, copy ? 'copy' : 'aac', ...(copy ? [] : [`-ac:a:${i}`, String(ch), `-b:a:${i}`, ch >= 6 ? '384k' : '192k']), `-metadata:s:a:${i}`, `language=${norm3(a.lang)}`, ...(a.title ? [`-metadata:s:a:${i}`, `title=${a.title}`] : []), ...(i === 0 ? [`-disposition:a:${i}`, 'default'] : [`-disposition:a:${i}`, '0'])];
   });
 }
+// Options des sous-titres : sous-titres texte conservés, les autres retirés
 function subArgs(probe, o) {
   if (!o.subs) return ['-sn'];
   const subs = (probe.subs || probe.subtitles || []).filter((s) => !s.external && TEXT_SUBS.has(String(s.codec || '').toLowerCase())).slice(0, 8);
@@ -219,6 +232,7 @@ function holdWhileWatching(proc) {
   }, 3000);
   proc.on('exit', () => clearInterval(iv));
 }
+// Lance ffmpeg pour une compression et suit sa progression
 function encode(c, item, probe, o) {
   return new Promise((resolve, reject) => {
     const v = probe.video;
@@ -260,6 +274,7 @@ function encode(c, item, probe, o) {
     tryNext();
   });
 }
+// Est-on dans la plage de nuit (1 h – 7 h) ?
 const nightOk = () => { const h = new Date().getHours(); return h >= 1 && h < 7; };
 // Une conversion à la fois, jamais pendant une lecture ; la nuit seulement si demandé
 export async function runConversions() {
@@ -300,6 +315,7 @@ export async function runConversions() {
   if (done) logActivity('task', `${done} vidéo(s) compressée(s), en attente de validation`);
   return done ? `${done} vidéo(s) compressée(s)` : 'Rien en attente';
 }
+// Taille lisible en Go ou Mo
 const fmtGo = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} Go` : `${Math.round(b / 1e6)} Mo`);
 // Une lecture commence : la conversion en cours est suspendue tout de suite (elle reprendra là où elle en était
 // dès que plus personne ne regarde, voir holdWhileWatching) ; rien ne démarre pendant ce délai
@@ -343,7 +359,9 @@ export async function validate(id, { purge = false, byName = null } = {}) {
 }
 // Radarr / Sonarr relisent le dossier : ils voient le nouveau fichier au lieu de croire l'original perdu
 let arrCall = null;
+// Fonction d'appel à Radarr / Sonarr (fournie au démarrage)
 export const setArrCall = (fn) => { arrCall = fn; };
+// Demande à Radarr / Sonarr de relire le dossier après le remplacement d'un fichier
 async function arrRescan(item) {
   if (!arrCall) return;
   if (item.type === 'movie' && item.tmdb_id) {

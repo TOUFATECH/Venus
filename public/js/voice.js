@@ -3,6 +3,7 @@
 // « Pause », « Reprends », « Plein écran », « Retour », « Accueil », « Ma liste ».
 import { api } from './api.js';
 
+// La reconnaissance vocale est-elle disponible dans ce navigateur ?
 export const voiceSupported = () => typeof window !== 'undefined' && !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
 /** Écoute une phrase ; onText(texte, fini) reçoit le texte au fur et à mesure. Renvoie une fonction d'arrêt. */
@@ -23,6 +24,7 @@ export function listen({ onText, onEnd, onError }) {
   return () => { try { r.stop(); } catch { /* */ } };
 }
 
+// Texte simplifié pour reconnaître une commande
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 const NUMS = { un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16, vingt: 20 };
 // Le meilleur titre pour ce que l'on a dit : titre exact, puis début, puis mots en commun

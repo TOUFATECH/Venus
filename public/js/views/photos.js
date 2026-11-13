@@ -4,8 +4,10 @@ import { h, icon } from '../ui.js';
 import { go, setTitle } from '../core.js';
 import { isBack } from '../ui.js';
 
+// Date lisible
 const dateOf = (d) => (d ? new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 
+// Page Photos : albums et diaporama
 export async function render(main, { view = 'albums', name } = {}) {
   const page = h('div', { class: 'page photos-page' });
   main.append(page);

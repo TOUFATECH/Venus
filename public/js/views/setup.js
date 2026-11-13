@@ -2,6 +2,7 @@
 import { api, auth } from '../api.js';
 import { h, brand, passwordProblem, passwordMeter } from '../ui.js';
 
+// Assistant de premier démarrage
 export function render(main, { done }) {
   const err = h('p', { class: 'error-text', role: 'alert' });
   const field = (label, input, hint) => h('div', { class: 'field' }, h('label', { for: input.id }, label), input, hint ? h('small', {}, hint) : null);

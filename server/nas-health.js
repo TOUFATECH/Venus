@@ -6,6 +6,7 @@ import { all, getSetting, setSetting } from './db.js';
 import { notify } from './notify.js';
 
 const MB = 1024 * 1024;
+// Mesure la vitesse de lecture d'un fichier (64 Mo au milieu)
 function timeRead(file, size) {
   return new Promise((resolve) => {
     const want = 64 * MB;
@@ -24,6 +25,7 @@ function timeRead(file, size) {
   });
 }
 
+// Vérifie chaque bibliothèque : temps de réponse et vitesse de lecture
 export async function checkNas() {
   const out = [];
   for (const lib of all("SELECT id, name, path, type FROM libraries WHERE type != 'iptv' AND path NOT LIKE 'venus:%'")) {
@@ -59,4 +61,5 @@ export async function checkNas() {
   } else if (!bad.length) setSetting('nas_warned', '');
   return result;
 }
+// Dernier bilan de santé du NAS
 export const nasHealth = () => getSetting('nas_health', null);

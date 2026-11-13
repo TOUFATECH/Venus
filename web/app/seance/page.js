@@ -1,3 +1,6 @@
+// Route /seance — page « Séance à plusieurs ».
+// Le contenu est rendu par le composant Seance (dossier web/components).
 import P from '../../components/pages/Seance';
 
+// Composant de la page, affiché par Next.js pour cette adresse
 export default function Page() { return <P />; }

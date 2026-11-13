@@ -87,6 +87,7 @@ const imagesDir = path.join(config.dataDir, 'images');
 // ------------------------------------------------------------------ utilitaires
 const parseJson = (s, d) => { if (s == null) return d; try { return JSON.parse(s) ?? d; } catch { return d; } };
 
+// Condition SQL qui cache les titres trop âgés pour un profil enfant (et les versions secondaires d'un film)
 function ageClause(profile, alias = 'i') {
   // Les autres versions d'un même film n'apparaissent pas dans les listes (choix sur la fiche) ;
   // bibliothèques limitées pour certains profils
@@ -109,7 +110,9 @@ function ageClause(profile, alias = 'i') {
 const CAT_SKIP = new Set(['probe', 'nfo', 'custom', 'tmdb_eps', 'tmdb_seasons', 'guide_eps', 'stream_opts', 'ch_error']);
 let catCols = null;
 let catalogue = { v: -1, rows: [], byId: new Map() };
+// Liste de noms (genres, studios…) réduite au champ « name »
 const names = (list) => (Array.isArray(list) ? list.filter(Boolean).map((x) => ({ name: x.name })) : []);
+// Catalogue des films et séries principaux, gardé en cache tant que la bibliothèque ne change pas
 function topItems() {
   if (catalogue.v === itemsVersion) return catalogue;
   const v = itemsVersion;
@@ -141,6 +144,7 @@ function topFilter(profile) {
 }
 // Dernier épisode arrivé et dernière diffusion de chaque série (tête d'affiche de l'accueil)
 let lastEpCache = { v: -1 };
+// Dernier épisode de chaque série (en cache)
 function lastEpisodes() {
   if (lastEpCache.v !== itemsVersion) {
     lastEpCache = { v: itemsVersion,
@@ -153,6 +157,7 @@ function lastEpisodes() {
 // Épisodes sortis ces 60 derniers jours (ou ajoutés ces 30 derniers jours), du plus récent au plus ancien : relus
 // seulement quand les titres changent, et au moins une fois par heure (la fenêtre de dates glisse)
 let recentEpsCache = { key: '' };
+// Épisodes ajoutés depuis une date (rafraîchi au plus toutes les heures)
 function recentEpisodes(since, today) {
   const key = `${itemsVersion}|${since}|${today}|${Math.floor(Date.now() / 3600e3)}`;
   if (recentEpsCache.key !== key) {
@@ -167,6 +172,7 @@ function recentEpisodes(since, today) {
 // Ce que le foyer regarde le plus (rangée « Populaires ») et les trois derniers titres regardés par un profil
 // (rangées « Parce que vous avez regardé… ») : recalculés seulement quand une lecture ou un titre a changé
 let playsCache = { iv: -1, pv: -1 };
+// Nombre de lectures de chaque titre dans le foyer (en cache)
 function householdPlays() {
   if (playsCache.iv !== itemsVersion || playsCache.pv !== progressVersion) {
     playsCache = { iv: itemsVersion, pv: progressVersion, map: new Map(all(`SELECT COALESCE(i.show_id, i.id) AS tid, COUNT(*) AS n FROM progress pr JOIN items i ON i.id = pr.item_id GROUP BY tid`).map((r) => [r.tid, r.n])) };
@@ -174,6 +180,7 @@ function householdPlays() {
   return playsCache.map;
 }
 const lastSeenCache = new Map();
+// Titres vus récemment par un profil (en cache)
 function lastSeenTitles(pid) {
   const hit = lastSeenCache.get(pid);
   if (hit && hit.iv === itemsVersion && hit.pv === progressVersion) return hit.rows;
@@ -191,8 +198,10 @@ function requireVisible(ctx, item, msg = 'Introuvable') {
   if (!item || !visible(p, item)) throw new HttpError(404, msg);
   return p;
 }
+// Préférences d'interface enregistrées dans un profil (JSON)
 const uiPrefsOf = (p) => { try { return JSON.parse((p && p.ui_prefs) || '{}') || {}; } catch { return {}; } };
 const UNRATED_TYPES = new Set(['track', 'photo', 'book', 'audiobook']);
+// Le profil a-t-il le droit de voir ce titre ? (âge, bibliothèques autorisées)
 function visible(profile, item) {
   if (!item) return false;
   const r = permsOf(profile);
@@ -208,6 +217,7 @@ function visible(profile, item) {
   return top.age <= profile.max_age;
 }
 
+// Résumé technique d'un fichier (définition, HDR, codecs, langues) tiré de l'analyse ffprobe
 function mediaSummary(probeJson) {
   const p = parseJson(probeJson, null);
   if (!p || !p.video) return null;
@@ -231,10 +241,12 @@ const CODEC = { hevc: 'HEVC', h264: 'H.264', av1: 'AV1', vp9: 'VP9', mpeg2video:
 
 // Temps d'écran : compté par jour local (remis à zéro à minuit, heure du serveur — et non à minuit UTC)
 const today = () => localDay();
+// Ajoute du temps de visionnage au compteur du jour (temps d'écran des profils enfants)
 export function addWatchTime(pid, seconds) {
   if (!(seconds > 0)) return;
   run('INSERT INTO watch_time(profile_id, day, seconds) VALUES(?, ?, ?) ON CONFLICT(profile_id, day) DO UPDATE SET seconds = seconds + excluded.seconds', pid, today(), seconds);
 }
+// Secondes regardées aujourd'hui par un profil
 export const watchedToday = (pid) => Number((get('SELECT seconds FROM watch_time WHERE profile_id = ? AND day = ?', pid, today()) || {}).seconds || 0);
 // Limite quotidienne (profils enfants) : minutes restantes, ou null si pas de limite
 export function dailyLeft(p) {
@@ -245,12 +257,14 @@ export function dailyLeft(p) {
 
 // Séries : nombre d'épisodes arrivés ces 7 derniers jours (pastille « +2 nouveaux » sur l'affiche)
 let freshCache = { at: 0, v: -1, map: new Map() };
+// Épisodes sortis récemment (cache de 10 minutes)
 function freshEpisodes() {
   if (freshCache.v !== itemsVersion || Date.now() - freshCache.at > 600e3) {
     freshCache = { at: Date.now(), v: itemsVersion, map: new Map(all("SELECT show_id, COUNT(*) n FROM items WHERE type = 'episode' AND added_at > ? GROUP BY show_id", Date.now() - 7 * 864e5).map((r) => [r.show_id, r.n])) };
   }
   return freshCache.map;
 }
+// Carte d'un titre envoyée à l'interface (titre, affiche, année, progression…)
 function card(i, prog) {
   return {
     newEps: i.type === 'show' ? freshEpisodes().get(i.id) || undefined : undefined,
@@ -268,6 +282,7 @@ function card(i, prog) {
 
 // Numéros de chaîne : numéro de la liste M3U (tvg-chno) sinon ordre des listes, sans doublon
 let chanNums = null;
+// Numéro d'une chaîne TV (numérotation calculée une fois pour toutes les chaînes)
 function channelNumber(i) {
   if (!chanNums) {
     chanNums = new Map();
@@ -286,6 +301,7 @@ events.on('library', () => { chanNums = null; });
 
 // État vu / en cours / non vu, par profil (films, clips, et séries épisode par épisode)
 const statusCache = new Map();
+// Index « vu / en cours » des titres d'un profil (en cache)
 function statusIndex(pid) {
   const hit = statusCache.get(pid);
   if (hit && hit.iv === itemsVersion && hit.pv === progressVersion) return hit.idx;
@@ -301,6 +317,7 @@ function statusIndex(pid) {
   statusCache.set(pid, { iv, pv, idx });
   return idx;
 }
+// Ajoute à une carte son état pour le profil (vu, en cours, épisodes restants)
 function withStatus(c, idx) {
   if (c.type === 'show') {
     const r = idx.shows.get(c.id);
@@ -328,24 +345,28 @@ const CATEGORY_SQL = `CASE WHEN i.type = 'movie' THEN 'movie' WHEN i.type = 'cli
   WHEN i.category = 'anime' THEN 'anime' ELSE 'show' END`;
 const TOP_TYPES = "('movie','show','clip','channel')";
 
+// Progression de lecture d'un profil pour une liste de titres
 function progressMap(profileId, ids) {
   if (!ids.length) return new Map();
   const rows = all(`SELECT * FROM progress WHERE profile_id = ? AND item_id IN (${ids.map(() => '?').join(',')})`, profileId, ...ids);
   return new Map(rows.map((r) => [r.item_id, r]));
 }
 
+// Épisode suivant dans la série (saison suivante comprise)
 function nextEpisode(ep) {
   return get(`SELECT * FROM items WHERE type='episode' AND show_id=? AND
       (season_num > ? OR (season_num = ? AND episode_num > ?)) AND season_num > 0
       ORDER BY season_num, episode_num LIMIT 1`, ep.show_id, ep.season_num, ep.season_num, ep.episode_num);
 }
 
+// Épisode précédent dans la série
 function prevEpisode(ep) {
   return get(`SELECT * FROM items WHERE type='episode' AND show_id=? AND
       (season_num < ? OR (season_num = ? AND episode_num < ?)) AND season_num > 0
       ORDER BY season_num DESC, episode_num DESC LIMIT 1`, ep.show_id, ep.season_num, ep.season_num, ep.episode_num);
 }
 
+// Mélange une liste de façon reproductible (même graine = même ordre)
 function seededShuffle(arr, seed) {
   const a = [...arr];
   let s = seed;
@@ -357,6 +378,7 @@ function seededShuffle(arr, seed) {
   return a;
 }
 
+// Pose le cookie de session (lecture des images et vidéos)
 function setCookie(ctx, token) {
   ctx.res.setHeader('Set-Cookie', sessionCookie(token, isSecure(ctx.req)));
 }
@@ -416,6 +438,7 @@ router.post('/api/setup', async (ctx) => {
   sendJson(ctx.res, { token });
 });
 
+// Crée une session pour cet appareil, pose le cookie et l'inscrit au journal
 function issueToken(ctx, how) {
   const token = createToken(ctx.req.headers['user-agent'] || '');
   logActivity('login', `Nouvel appareil connecté ${how} (${deviceLabel(ctx.req.headers['user-agent'])})`, { device: deviceId(token) });
@@ -463,6 +486,7 @@ router.post('/api/login/code', async (ctx) => {
   sendJson(ctx.res, { token: issueToken(ctx, 'avec le code à 6 chiffres') });
 });
 
+// Nom lisible de l'appareil tiré de son navigateur (« Chrome sur Windows »…)
 function deviceLabel(ua = '') {
   ua = String(ua || '');
   const os = /Android/.test(ua) ? 'Android' : /iPhone|iPad/.test(ua) ? 'iOS' : /Windows/.test(ua) ? 'Windows' : /Mac OS/.test(ua) ? 'Mac' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : '';
@@ -1292,6 +1316,7 @@ router.get('/api/items/:id', async (ctx) => {
   }
   sendJson(ctx.res, out);
 });
+// État de la compression d'une vidéo (en attente, en cours, à valider)
 function compressInfo(item) {
   const c = get("SELECT * FROM conversions WHERE item_id = ? AND status IN ('queued','running','done') ORDER BY id DESC LIMIT 1", item.id);
   if (c) return { id: c.id, status: c.status, pct: c.pct, sizeBefore: c.size_before, sizeAfter: c.size_after, error: c.error, encoder: c.encoder };
@@ -1320,6 +1345,7 @@ router.get('/api/upcoming', async (ctx) => {
 });
 // Calendrier « À venir » à ajouter au téléphone (abonnement iCal) : lien secret par profil, sans connexion
 const icalTokens = () => { const m = getSetting('ical_tokens', {}); return m && typeof m === 'object' ? m : {}; };
+// Jeton privé du calendrier iCal d'un profil (créé ou renouvelé)
 function icalTokenFor(pid, reset = false) {
   const m = icalTokens();
   let tok = Object.keys(m).find((k) => m[k] === pid);
@@ -2015,6 +2041,7 @@ function rememberRecentChannel(pid, id) {
   const list = (getSetting(`tv_recent:${pid}`, []) || []).filter((x) => x !== id);
   setSetting(`tv_recent:${pid}`, [id, ...list].slice(0, 12));
 }
+// Lecture d'une chaîne TV : relais direct si possible, sinon conversion par ffmpeg
 async function playChannel(ctx, p, item, b) {
   if (!visible(p, item)) throw new HttpError(403, 'Contenu non autorisé pour ce profil');
   // Chaîne déjà au format web (HLS) : relayée telle quelle, sans ffmpeg = démarrage quasi instantané.
@@ -2189,10 +2216,14 @@ const resizing = new Map();
 const RESIZE_MAX = Math.max(2, Math.min(4, Math.floor(os.cpus().length / 2)));
 let resizeActive = 0;
 const resizeWaiting = [];
+// Attend une place libre pour redimensionner une image (nombre limité en parallèle)
 const resizeSlot = () => new Promise((resolve) => { if (resizeActive < RESIZE_MAX) { resizeActive++; resolve(); } else resizeWaiting.push(resolve); });
+// Libère la place et réveille la demande suivante
 const resizeDone = () => { const next = resizeWaiting.shift(); if (next) next(); else resizeActive--; };
 let webpCheck = null;
+// ffmpeg sait-il écrire du WebP ? (vérifié une seule fois)
 const webpOk = () => (webpCheck ||= new Promise((resolve) => execFile(config.ffmpeg, ['-hide_banner', '-encoders'], { timeout: 10000 }, (e, out) => resolve(!e && /libwebp/.test(String(out))))));
+// Redimensionne une image avec ffmpeg (WebP si possible), écrite dans le cache
 function resizeImage(src, out, w, webp = false) {
   return new Promise((resolve) => {
     fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -2422,6 +2453,7 @@ router.get('/api/admin', (ctx) => {
 
 // Tableau de bord
 const supervised = () => runtime.kind === 'docker' || !!process.env.INVOCATION_ID || !!process.env.VENUS_SUPERVISED || (!!process.env.XPC_SERVICE_NAME && process.env.XPC_SERVICE_NAME !== '0');
+// Espace total et libre du disque qui contient ce dossier
 function diskOf(dir) {
   try { const st = fs.statfsSync(dir); return { total: st.blocks * st.bsize, free: st.bavail * st.bsize }; } catch { return null; }
 }
@@ -2499,11 +2531,13 @@ router.post('/api/admin/control', async (ctx) => {
 // Supprimer une vidéo (administrateur) : le fichier et ses sous-titres / images à côté sont effacés du disque,
 // puis retirés de Venus. Film, clip, épisode, saison entière ou série entière.
 const SIDE_EXT = /\.(srt|ass|ssa|vtt|sub|idx|sup|nfo|jpe?g|png|webp|txt)$/i;
+// Fichiers vidéo d'un titre (tous les épisodes pour une série)
 function filesOfItem(it) {
   if (it.type === 'show') return all("SELECT * FROM items WHERE show_id = ? AND type = 'episode' AND path IS NOT NULL", it.id);
   if (it.type === 'season') return all("SELECT * FROM items WHERE parent_id = ? AND type = 'episode' AND path IS NOT NULL", it.id);
   return it.path ? [it] : [];
 }
+// Supprime une vidéo avec ses fichiers associés (sous-titres, .nfo, images) ; renvoie la place libérée
 function removeFileWithSides(file, libRoot) {
   let freed = 0;
   const dir = path.dirname(file);
@@ -2733,6 +2767,7 @@ const EDIT_SCHEMA = {
   overview: V.nullable(V.str({ max: 5000, trim: false })), tagline: V.nullable(V.str({ max: 300 })), genres: V.list(V.str({ min: 1, max: 40 }), { max: 12 }),
   age: V.nullable(V.int({ min: 0, max: 21, label: 'Âge minimum' })),
 };
+// Titre modifiable par l'administrateur (sinon erreur 404)
 const editable = (id) => {
   const it = get('SELECT * FROM items WHERE id = ?', Number(id));
   if (!it || !['movie', 'show', 'clip', 'episode', 'season', 'extra'].includes(it.type)) throw new HttpError(404, 'Introuvable');
@@ -2955,6 +2990,7 @@ function diskInfo(l) {
 
 // Ne jamais renvoyer de mot de passe à l'interface
 const maskUrl = (u) => String(u).replace(/(password=)[^&]*/i, '$1••••').replace(/\/\/([^:/@]+):[^@/]+@/, '//$1:••••@');
+// Bibliothèque telle qu'envoyée à l'interface (sans mot de passe du partage)
 function publicLibrary(l) {
   const r = remoteOf(l);
   const st = netState.get(l.id);
@@ -3177,20 +3213,24 @@ function sagas(p) {
   }
   return [...map.values()].filter((x) => x.items.length > 1).map((x) => ({ ...x, items: x.items.sort((a, b) => (a.release_date || String(a.year)).localeCompare(b.release_date || String(b.year))) }));
 }
+// Image de couverture d'une collection : les premières affiches de son contenu
 const coverOf = (items) => {
   const pics = [...new Set(items.map((i) => i.poster || i.show_poster).filter(Boolean))];
   const b = items.map((i) => i.backdrop || i.show_backdrop).find(Boolean) || null;
   return { poster: pics[0] || null, backdrop: b, posters: pics.slice(0, 4) };
 };
+// Titres d'une collection visibles par le profil
 function collectionItems(cid, p) {
   const age = ageClause(p);
   return all(`SELECT i.* FROM collection_items c JOIN items i ON i.id = c.item_id WHERE c.collection_id = ? AND ${age.sql} ORDER BY c.pos, i.sort_title`, cid, ...age.args);
 }
+// Liste de lecture d'un profil (vérifie qu'elle lui appartient)
 function playlistOf(id, p) {
   const pl = get('SELECT * FROM playlists WHERE id = ?', Number(id));
   if (!pl || pl.profile_id !== p.id) throw new HttpError(404, 'Liste introuvable');
   return pl;
 }
+// Contenu d'une liste de lecture, dans l'ordre choisi
 function playlistItems(pid, p) {
   return all('SELECT i.*, s.title AS show_title, s.poster AS show_poster, s.backdrop AS show_backdrop FROM playlist_items x JOIN items i ON i.id = x.item_id LEFT JOIN items s ON s.id = i.show_id WHERE x.playlist_id = ? ORDER BY x.pos', pid).filter((i) => visible(p, i));
 }
@@ -3201,6 +3241,7 @@ function playableIds(item) {
   if (item.type === 'season') return all("SELECT id FROM items WHERE type = 'episode' AND parent_id = ? ORDER BY episode_num", item.id).map((r) => r.id);
   return [];
 }
+// Carte d'un élément de liste de lecture (avec le nom de la série pour un épisode)
 const plCard = (i, pm) => { const c = card(i, pm && pm.get(i.id)); if (i.type === 'episode') c.showTitle = i.show_title; c.duration = i.duration; return c; };
 
 router.get('/api/collections', (ctx) => {
@@ -3276,6 +3317,7 @@ router.post('/api/playlists', async (ctx) => {
   if (b.itemId) { const it = get('SELECT * FROM items WHERE id = ?', b.itemId); if (it && visible(p, it)) added = addToPlaylist(id, playableIds(it)); }
   sendJson(ctx.res, { id, added });
 });
+// Ajoute des titres à la fin d'une liste de lecture (sans doublon)
 function addToPlaylist(pid, ids) {
   let n = 0;
   tx(() => { for (const id of ids) { const r = run('INSERT OR IGNORE INTO playlist_items(playlist_id, item_id, pos) VALUES(?, ?, (SELECT COALESCE(MAX(pos), -1) + 1 FROM playlist_items WHERE playlist_id = ?))', pid, id, pid); n += r.changes; } });
@@ -3393,6 +3435,7 @@ router.put('/api/admin/branding', async (ctx) => {
   if (b.customCss !== undefined) setSetting('custom_css', b.customCss);
   sendJson(ctx.res, { ok: true });
 });
+// CSS personnalisé de l'administrateur
 export const customCss = () => String(getSetting('custom_css', '') || '');
 
 // ------------------------------------------------------------------ guide des programmes (EPG) et enregistrements
@@ -3433,6 +3476,7 @@ router.del('/api/epg/reminders/:id', (ctx) => {
   run('DELETE FROM tv_reminders WHERE id = ? AND profile_id = ?', Number(ctx.params.id), p.id);
   sendJson(ctx.res, { ok: true });
 });
+// Envoie les rappels de programmes TV qui commencent bientôt
 export async function sendTvReminders() {
   const now = Date.now();
   run('DELETE FROM tv_reminders WHERE stop < ?', now - 3600e3);
@@ -3525,7 +3569,9 @@ router.put('/api/admin/livetv', async (ctx) => {
 
 // ------------------------------------------------------------------ musique, photos, livres
 const libOk = (p) => libraryClause(p);
+// Titre simplifié (minuscules, sans accents ni parenthèses) pour comparer des morceaux
 const normTitle = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\(.*?\)|\[.*?\]/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+// Morceau de musique tel qu'envoyé à l'interface
 const trackOut = (t, pm) => ({ id: t.id, title: t.title, artist: t.original_title, album: t.grp, albumKey: t.key, disc: t.season_num, track: t.episode_num, year: t.year, duration: t.duration, cover: t.poster,
   progress: pm && pm.get(t.id) ? { position: pm.get(t.id).position, watched: !!pm.get(t.id).watched } : null });
 router.get('/api/music', (ctx) => {
@@ -3694,6 +3740,7 @@ router.get('/api/books/author', (ctx) => {
   const bib = bibliographyOf(name, mine);
   sendJson(ctx.res, { ...bib, books: mine.map((b) => ({ id: b.id, title: b.title, year: b.year, cover: b.poster, slug: slugFor(b.id) })), request: booksOn() });
 });
+// Livre demandé par l'adresse, s'il est visible par le profil
 const bookOf = (ctx) => {
   const p = requireProfile(ctx);
   const b = get("SELECT * FROM items WHERE id = ? AND type IN ('book','audiobook')", Number(ctx.params.id));
@@ -4146,6 +4193,7 @@ router.post('/api/admin/lights/test', async (ctx) => {
 
 // ---------------------------------------------------------------- scènes : « Précédemment dans… », meilleurs moments, chapitres
 const chapterCache = new Map();
+// Chapitres d'une vidéo : ceux du fichier, sinon ceux générés (en cache)
 async function chaptersFor(item, probe) {
   const key = `${item.id}:${item.mtime}`;
   if (chapterCache.has(key)) return chapterCache.get(key);
