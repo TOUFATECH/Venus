@@ -37,7 +37,6 @@ after(async () => { await odin?.close(); fs.rmSync(tmp, { recursive: true, force
 const run = (...a) => D.run(...a), get = (...a) => D.get(...a), all = (...a) => D.all(...a);
 const list = () => odin.backups.get([...odin.backups.keys()][0]) || [];
 const newest = () => list()[0] && list()[0].meta;
-const nChanges = () => list().filter((v) => v.meta.sorte === 'changements').length;
 /** Attend qu'Odin ait reçu une nouvelle version après `n` versions ; rend le délai depuis `t0`. */
 async function arrives(n, t0) { const ok = await until(() => list().length > n, 5000); assert.ok(ok, 'rien reçu par Odin'); return Date.now() - t0; }
 

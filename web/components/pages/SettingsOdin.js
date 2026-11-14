@@ -7,6 +7,8 @@ import { api, toast } from '../../lib/hooks';
 import { Field, Actions, Busy, confirm } from './SettingsSheets';
 
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+// « il y a 12 s », « il y a 3 min » : l'état de la synchronisation change à la seconde
+const ago = (t) => { const s = Math.max(0, Math.round((Date.now() - t) / 1000)); return s < 60 ? `il y a ${s} s` : s < 3600 ? `il y a ${Math.round(s / 60)} min` : `le ${when(t)}`; };
 const size = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round((b || 0) / 1024))} Ko`);
 const MODES = [
   ['odin', 'Avec Odin ou le mot de passe du foyer'],
@@ -74,7 +76,7 @@ export function OdinLinkBox() {
     clearTimeout(timer.current);
     try { const x = await api('/api/admin/odin/lien'); setS(x); setError(null); setHost((h) => h || x.host || ''); setPort((p) => (x.port && p === '7777' ? String(x.port) : p)); setEmail((e) => e || x.email || ''); }
     catch (e) { setError(e); }
-    timer.current = setTimeout(load, 15000);
+    timer.current = setTimeout(load, 5000); // l’état de la synchronisation change à la seconde
   };
   useEffect(() => { load(); return () => clearTimeout(timer.current); }, []);
 
@@ -90,7 +92,7 @@ export function OdinLinkBox() {
     const r = await api('/api/admin/odin/lien', { method: 'POST', body: { host, port, email, password: pass, code: needCode ? code : undefined } });
     if (!r.ok) { if (r.code === 'code_requis') setNeedCode(true); if (r.code === 'code_faux') setCode(''); toast(r.error, true); return; }
     setPass(''); setCode(''); setNeedCode(false); setEdit(false);
-    toast('Venus est relié à Odin : la sauvegarde commence', { type: 'success' });
+    toast('Venus est relié à Odin : la synchronisation commence', { type: 'success' });
     load();
   };
   const delier = async () => {
@@ -99,9 +101,9 @@ export function OdinLinkBox() {
   };
   const mode = async (m) => { try { await api('/api/admin/odin/mode', { method: 'PUT', body: { mode: m } }); toast('Connexion des utilisateurs réglée'); load(); } catch (e) { toast(e.message, true); } };
   const sauver = async () => { try { const r = await api('/api/admin/odin/sauvegarde', { method: 'POST' }); toast(r.inchange ? 'Odin a déjà cette sauvegarde' : 'Sauvegarde envoyée à Odin', { type: 'success' }); load(); } catch (e) { toast(e.message, true); } };
-  const versions = async () => { try { setVers((await api('/api/admin/odin/versions')).versions); } catch (e) { toast(e.message, true); } };
+  const versions = async () => { try { setVers((await api('/api/admin/odin/versions')).points); } catch (e) { toast(e.message, true); } };
   const restaurer = async (v) => {
-    if (!(await confirm(`Revenir à la sauvegarde du ${when(v.at)} ? Profils, listes, vus, envies et réglages reviendront à cet état (l’état actuel est d’abord gardé sur ce serveur).`, 'Restaurer'))) return;
+    if (!(await confirm(`Revenir à ${v.dernierEtat ? 'l’état' : 'la sauvegarde'} du ${when(v.at)} ? Profils, listes, vus, reprises, envies et réglages reviendront à cet état, à la seconde près (l’état actuel est d’abord gardé sur ce serveur).`, 'Restaurer'))) return;
     try {
       const r = await api(`/api/admin/odin/versions/${encodeURIComponent(v.id)}/restaurer`, { method: 'POST', body: {} });
       toast(r.restarting ? 'Sauvegarde restaurée : Venus redémarre…' : 'Sauvegarde restaurée. Redémarre Venus quand tu peux pour tout recharger.', { type: 'success', duration: 8000 });
@@ -162,13 +164,14 @@ export function OdinLinkBox() {
 
       {s.linked ? (
         <section className="box" id="odin-sauvegarde">
-          <h2>Sauvegarde sur Odin</h2>
-          <p>Envoyée dès qu’un changement compte (profil, favori, envie, réglage…), et vérifiée toutes les 5 minutes : si la base diffère de la dernière sauvegarde d’Odin, elle repart. Les clés et mots de passe des services partent chiffrés : Odin ne peut pas les lire, et ton mot de passe Odin les retrouve à la restauration.</p>
+          <h2>Synchronisé avec Odin</h2>
+          <p>Venus est synchronisé avec Odin à la seconde : chaque changement (profil, favori, « ma liste », reprise de lecture, téléchargement terminé, réglage, utilisateur) part chez Odin aussitôt, seulement ce qui a changé. Une sauvegarde complète part toutes les 30 minutes s’il y a eu des changements, et Venus vérifie toutes les 30 secondes qu’Odin a bien la même base. Si Odin ne répond pas, les changements attendent sur ce serveur (chiffrés) et partent dans l’ordre dès son retour. Les clés et mots de passe des services partent chiffrés : Odin ne peut pas les lire, et ton mot de passe Odin les retrouve à la restauration.</p>
           <div className="list-row">
             <div className="grow">
-              <b>{b.at ? `Dernière sauvegarde : ${when(b.at)}` : 'Pas encore de sauvegarde'}</b>
-              <span>{[b.taille ? size(b.taille) : '', b.verifie ? `vérifiée le ${when(b.verifie)}` : '', b.envois ? `${b.envois} envoi${b.envois > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</span>
+              <b>{b.horsLigne ? `Odin ne répond pas${b.attente ? ` : ${b.attente} envoi${b.attente > 1 ? 's' : ''} en attente` : ''}` : b.attente ? 'Synchronisation…' : b.at ? `Synchronisé · dernier envoi ${ago(b.at)}` : 'Pas encore de sauvegarde'}</b>
+              <span>{[b.identique && b.verifie ? `identique à Odin (vérifié ${ago(b.verifie)})` : '', b.delai != null && b.changements ? `reçu par Odin en ${(b.delai / 1000).toFixed(1).replace('.', ',')} s` : '', b.complete ? `sauvegarde complète ${ago(b.complete.at)} (${size(b.complete.taille)})` : '', b.envois ? `${b.envois} envoi${b.envois > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ')}</span>
               {b.erreur ? <span className="error-text" style={{ display: 'block' }}>{b.erreur}</span> : null}
+              {b.autrePoste ? <span className="muted" style={{ display: 'block' }}>{`Un autre serveur Venus (${b.autrePoste.appareil || 'inconnu'}) sauvegarde aussi dans ce compte Odin : chacun garde sa propre série de sauvegardes.`}</span> : null}
               {b.restaure ? <span style={{ display: 'block' }}>{`Restaurée le ${when(b.restaure.at)} (${b.restaure.label})${b.restaure.secrets === 'mot de passe différent' || b.restaure.secrets === 'sans mot de passe' ? ' : clés des services à saisir de nouveau' : ''}`}</span> : null}
             </div>
           </div>
@@ -178,10 +181,10 @@ export function OdinLinkBox() {
           </Actions>
           {vers ? (
             <div className="backup-list">
-              {!vers.length ? <p className="muted">Odin n’a encore aucune sauvegarde de Venus.</p> : vers.slice(0, 20).map((v, i) => (
+              {!vers.length ? <p className="muted">Odin n’a encore aucune sauvegarde de Venus.</p> : vers.slice(0, 20).map((v) => (
                 <div key={v.id} className="list-row">
-                  <div className="grow"><b>{when(v.at)}</b><span>{[size(v.taille), v.raison, v.appareil, i === 0 ? 'la plus récente' : ''].filter(Boolean).join(' · ')}</span></div>
-                  {v.sorte === 'complete' ? <button type="button" className="btn btn-ghost btn-small f" onClick={() => restaurer(v)}>Restaurer</button> : <small className="muted">changements</small>}
+                  <div className="grow"><b>{v.dernierEtat ? `Dernier état · ${when(v.at)}` : when(v.at)}</b><span>{[v.dernierEtat ? 'à la seconde près' : 'sauvegarde complète', v.sorte === 'complete' ? size(v.taille) : '', v.raison, v.appareil].filter(Boolean).join(' · ')}</span></div>
+                  <button type="button" className="btn btn-ghost btn-small f" onClick={() => restaurer(v)}>Restaurer</button>
                 </div>
               ))}
             </div>
@@ -246,7 +249,7 @@ export function OdinRestore({ cancel, done }) {
             <div className="backup-list">
               {list.slice(0, 12).map((v, i) => (
                 <div key={v.id} className="list-row">
-                  <div className="grow"><b>{when(v.at)}</b><span>{[size(v.taille), v.appareil, i === 0 ? 'la plus récente' : ''].filter(Boolean).join(' · ')}</span></div>
+                  <div className="grow"><b>{v.dernierEtat ? `Dernier état · ${when(v.at)}` : when(v.at)}</b><span>{[v.dernierEtat ? 'à la seconde près' : 'sauvegarde complète', v.appareil].filter(Boolean).join(' · ')}</span></div>
                   <button type="button" className={`btn btn-small f${i === 0 ? ' btn-play' : ' btn-ghost'}`} disabled={!!busy} onClick={() => restore(v)}>{busy && i === 0 ? busy : 'Restaurer'}</button>
                 </div>
               ))}
