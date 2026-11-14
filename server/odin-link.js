@@ -129,7 +129,7 @@ async function openPoste(r) {
   const x = await odinRequest(`${r.base}/sso/poste`, { method: 'POST', pin: r.fingerprint, headers: { authorization: `Bearer ${r.tokens.access_token}` }, body: { appareil: { ...device(), id: d }, utilisateur: os.userInfo().username } });
   const j = x.json() || {};
   if (x.status !== 200 || !j.jeton_poste) return false;
-  await vault.store(`Odin SSO ${r.url}`, String(j.jeton_poste), r.url);
+  await vault.store(`Odin SSO ${r.url}`, String(j.jeton_poste));
   return true;
 }
 

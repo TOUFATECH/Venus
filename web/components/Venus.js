@@ -56,7 +56,11 @@ function App({ children }) {
       history.replaceState(null, '', location.pathname + location.search);
       if (h.get('odin_erreur')) window.__vnOdinError = h.get('odin_erreur');
       if (h.get('odin')) {
-        try { const r = await api.api('/api/odin/ticket', { method: 'POST', body: { ticket: h.get('odin') } }); api.auth.token = r.token; window.__vnOdinError = ''; }
+        try {
+          const r = await api.api('/api/odin/ticket', { method: 'POST', body: { ticket: h.get('odin') } });
+          api.auth.token = r.token; window.__vnOdinError = '';
+          if (window.__vnPre) delete window.__vnPre['/api/status']; // état lu avant la connexion : à relire
+        }
         catch (e) { window.__vnOdinError = e.message; }
       }
     }

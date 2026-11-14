@@ -13,7 +13,6 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import { get, all, run, getSetting, setSetting } from './db.js';
 import { linkConf, call, APP, odinMessage } from './odin-link.js';
-import { odinRequest } from './odin-net.js';
 import * as vault from './odin-vault.js';
 
 const b64u = (b) => Buffer.from(b).toString('base64url');
@@ -179,17 +178,17 @@ export const isLoopback = (ip) => LOOP.test(String(ip || ''));
 export async function posteAvailable(ip) {
   if (!isLoopback(ip) || !ssoOn()) return false;
   const c = linkConf();
-  return Boolean(await vault.read(`Odin SSO ${c.issuer}`, c.issuer).catch(() => null));
+  return Boolean(await vault.read(`Odin SSO ${c.issuer}`).catch(() => null));
 }
 export async function posteLogin(ip) {
   if (!isLoopback(ip)) throw err(403, 'Connexion du poste : seulement depuis cette machine');
   const c = linkConf();
-  const jeton = await vault.read(`Odin SSO ${c.issuer}`, c.issuer).catch(() => null);
+  const jeton = await vault.read(`Odin SSO ${c.issuer}`).catch(() => null);
   if (!jeton) throw err(404, 'Pas de session Odin sur ce poste', 'pas_de_poste');
   const appareil = { id: await vault.deviceId(), nom: `Venus (${os.hostname()})`.slice(0, 60), plateforme: { win32: 'windows', darwin: 'mac', linux: 'linux' }[process.platform] || 'autre' };
   const r = await call('/sso/echange', { method: 'POST', timeout: 10000, body: { jeton_poste: jeton, appli: APP, appareil, utilisateur: os.userInfo().username } });
   const j = r.json() || {};
-  if (r.status === 401 && j.code === 'jeton_poste_invalide') { await vault.clear(`Odin SSO ${c.issuer}`, c.issuer).catch(() => {}); throw err(401, odinMessage(r, 'La session Odin de ce poste n’est plus valable.'), j.code); }
+  if (r.status === 401 && j.code === 'jeton_poste_invalide') { await vault.clear(`Odin SSO ${c.issuer}`).catch(() => {}); throw err(401, odinMessage(r, 'La session Odin de ce poste n’est plus valable.'), j.code); }
   if (r.status === 403) throw err(403, odinMessage(r, 'Tu n’as pas accès à Venus.'), 'refuse');
   if (r.status !== 200 || !j.access_token) throw err(502, odinMessage(r, `Odin refuse l’échange (${r.status})`));
   const person = await whoIs(j.access_token);
@@ -214,4 +213,3 @@ export function takeTicket(t) {
   return v.token;
 }
 
-export { odinRequest };

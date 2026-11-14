@@ -9,9 +9,9 @@ import { Field, Actions, Busy, confirm } from './SettingsSheets';
 const when = (t) => (t ? new Date(t).toLocaleString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 const size = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1).replace('.', ',')} Mo` : `${Math.max(1, Math.round((b || 0) / 1024))} Ko`);
 const MODES = [
-  ['odin', 'Avec Odin, et aussi avec le mot de passe du foyer'],
-  ['odin-seul', 'Avec Odin seulement (le mot de passe du foyer sert si Odin ne répond pas)'],
-  ['local', 'Sans Odin (mot de passe du foyer seulement)'],
+  ['odin', 'Avec Odin ou le mot de passe du foyer'],
+  ['odin-seul', 'Avec Odin seulement'],
+  ['local', 'Sans Odin'],
 ];
 
 // Adresse d'Odin : IP, port, « Trouver Odin sur le réseau »
@@ -122,7 +122,7 @@ export function OdinLinkBox() {
           <div className="list-row">
             <div className="grow">
               <b>{s.state && s.state.ok === false ? 'Relié, mais Odin refuse' : 'Relié à Odin'}</b>
-              <span>{`${s.host} · port ${s.port}${s.who && s.who.nom ? ` · compte de ${s.who.nom}` : ''}${s.pinned ? ' · certificat vérifié' : ''}`}</span>
+              <span style={{ wordBreak: 'normal' }}>{`${s.host} · port ${s.port}${s.who && s.who.nom ? ` · compte de ${s.who.nom}` : ''}${s.pinned ? ' · certificat vérifié' : ''}`}</span>
               {s.state && s.state.ok === false && s.state.message ? <span className="error-text" style={{ display: 'block' }}>{s.state.message}</span> : null}
             </div>
             {!edit ? <button type="button" className="btn btn-ghost btn-small f" onClick={() => setEdit(true)}>Changer</button> : null}
@@ -154,7 +154,7 @@ export function OdinLinkBox() {
           <div className="field">
             <label htmlFor="odin-mode">On se connecte</label>
             <select id="odin-mode" className="input" defaultValue={s.mode} key={s.mode} onChange={(e) => mode(e.target.value)}>{MODES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-            <small>{`Adresse de retour à déclarer dans Odin si Venus est servi à une autre adresse : ${typeof location !== 'undefined' ? location.origin : ''}/auth/odin/retour`}</small>
+            <small>{s.mode === 'odin-seul' ? 'Le mot de passe du foyer ne sert que si Odin ne répond pas. ' : ''}{`Adresse de retour à déclarer dans Odin si Venus est servi à une autre adresse : ${typeof location !== 'undefined' ? location.origin : ''}/auth/odin/retour`}</small>
           </div>
           {s.profilsLies ? <p className="muted">{`${s.profilsLies} profil${s.profilsLies > 1 ? 's' : ''} lié${s.profilsLies > 1 ? 's' : ''} à un compte Odin.`}</p> : null}
         </section>
