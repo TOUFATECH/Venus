@@ -8,8 +8,8 @@ import { db } from './db.js';
 
 const quote = (s) => `"${String(s).replace(/"/g, '""')}"`;
 const raw = (sql, params = []) => db.pg.rowsOf(db.pg.call({ op: 'query', sql, params }));
-const tablesNow = () => raw("SELECT table_name AS t FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' ORDER BY table_name").map((r) => r.t);
-const colsOf = (t) => raw('SELECT column_name AS c, data_type AS d, is_generated AS g FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 ORDER BY ordinal_position', [t]).filter((r) => r.g !== 'ALWAYS');
+export const tablesNow = () => raw("SELECT table_name AS t FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' ORDER BY table_name").map((r) => r.t);
+export const colsOf = (t) => raw('SELECT column_name AS c, data_type AS d, is_generated AS g FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 ORDER BY ordinal_position', [t]).filter((r) => r.g !== 'ALWAYS');
 
 /** Toutes les tables et leurs lignes (sans les colonnes calculées). `skip` : tables laissées de côté (caches, journaux). */
 export function snapshot({ skip = [] } = {}) {

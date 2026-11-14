@@ -169,11 +169,16 @@ export async function fauxOdin({ tls = false, owner = 'Awa' } = {}) {
         const want = String(req.headers['x-odin-empreinte'] || '');
         if (want !== sha(buf)) return bad(res, 400, 'empreinte_fausse', 'L’empreinte ne correspond pas au contenu.');
         if (buf.length > S.maxSize) return bad(res, 413, 'trop_gros', 'Sauvegarde trop grosse.', { limite: S.maxSize });
+        // Comme Odin (src/valhalla/sso/sauvegardes.ts) : sorte complete | changements, base = une complète gardée
+        const sorte = String(req.headers['x-odin-sorte'] || 'complete'), base = String(req.headers['x-odin-base'] || '');
+        if (sorte !== 'complete' && sorte !== 'changements') return bad(res, 400, 'requete_invalide', 'x-odin-sorte : complete ou changements.');
+        if (sorte === 'changements' && !list.some((v) => v.meta.id === base && v.meta.sorte === 'complete')) return bad(res, 400, 'requete_invalide', 'x-odin-base : la version complète sur laquelle s’appliquent ces changements.');
         const last = list[0];
-        if (last && last.empreinte === want) return json(res, 200, { ok: true, inchange: true, version: last.meta });
+        if (last && last.empreinte === want && last.meta.sorte === sorte) return json(res, 200, { ok: true, inchange: true, version: last.meta });
         const id = `v${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '')}-${crypto.randomBytes(2).toString('hex')}`;
-        const meta = { id, date: Date.now(), taille: buf.length, empreinte: want, sorte: String(req.headers['x-odin-sorte'] || 'complete'), raison: decodeURIComponent(String(req.headers['x-odin-raison'] || '')), nom: decodeURIComponent(String(req.headers['x-odin-nom'] || '')), base: null, appareil: 'Serveur Vénus' };
+        const meta = { id, date: Date.now(), taille: buf.length, empreinte: want, sorte, raison: decodeURIComponent(String(req.headers['x-odin-raison'] || '')), nom: decodeURIComponent(String(req.headers['x-odin-nom'] || '')), base: sorte === 'changements' ? base : null, appareil: 'Serveur Vénus' };
         list.unshift({ meta, buf, empreinte: want });
+        S.recus = (S.recus || 0) + 1;
         return json(res, 201, { ok: true, inchange: false, version: meta });
       }
       if (!m[2] && req.method === 'GET') return json(res, 200, { ok: true, appli: m[1], versions: list.map((v) => v.meta), derniere: list[0] ? list[0].meta : null, taille_totale: list.reduce((n, v) => n + v.buf.length, 0), taille_max: S.maxSize, restaurer: S.restaurer });
@@ -188,7 +193,8 @@ export async function fauxOdin({ tls = false, owner = 'Awa' } = {}) {
   }
 
   let server, tmp;
-  const handler = (req, res) => { route(req, res).catch((e) => { try { json(res, 500, { ok: false, code: 'erreur', message: e.message }); } catch { /* */ } }); };
+  // S.coupe = true : coupure réseau (toute connexion est fermée aussitôt, comme un câble débranché)
+  const handler = (req, res) => { if (S.coupe) { req.socket.destroy(); return; } route(req, res).catch((e) => { try { json(res, 500, { ok: false, code: 'erreur', message: e.message }); } catch { /* */ } }); };
   if (tls) {
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'faux-odin-'));
     execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-nodes', '-keyout', path.join(tmp, 'k.pem'), '-out', path.join(tmp, 'c.pem'), '-days', '2', '-subj', '/CN=odin-essai'], { stdio: 'ignore' });

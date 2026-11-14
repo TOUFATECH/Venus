@@ -8,7 +8,7 @@ import { logActivity } from './activity.js';
 import { runtime } from './env.js';
 import { discover } from './odin-net.js';
 import { status as linkStatus, link, unlink, setMode, testAddress, login, keepLink, withToken, linkConf, check as checkLink, linked } from './odin-link.js';
-import { sendNow, versions, download, restoreBuffer, rememberKeyWrap, state as backupState, baseEmpty, startOdinBackup, SKIP } from './odin-backup.js';
+import { sendNow, versions, restorePoints, restoreVersion, rememberKeyWrap, state as backupState, baseEmpty, startOdinBackup, forgetSync, SKIP } from './odin-backup.js';
 import { ssoOn, localBlocked, authorizeUrl, finish, issueTicket, takeTicket, posteAvailable, posteLogin, forgetOdinCache, linkedProfiles } from './odin-sso.js';
 
 const supervised = () => runtime.kind === 'docker' || !!process.env.INVOCATION_ID || !!process.env.VENUS_SUPERVISED || (!!process.env.XPC_SERVICE_NAME && process.env.XPC_SERVICE_NAME !== '0');
@@ -99,7 +99,7 @@ router.post('/api/odin/premiere/versions', async (ctx) => {
   try { r = await login(input); } catch (e) { if (e.status === 401 && e.code !== 'code_requis') failRate('odin-premiere', ctx.ip, 'Restauration depuis Odin : connexion refusée'); return refused(ctx, e); }
   resetRate('odin-premiere', ctx.ip);
   keepLink(r, input); // Venus reste relié à ce compte : la sauvegarde continue ensuite
-  try { sendJson(ctx.res, { ok: true, versions: (await versions(withToken(r.base, r.fingerprint, r.tokens.access_token))).filter((v) => v.sorte === 'complete'), personne: { nom: r.personne.name || '', email: r.personne.email || '' }, odin: r.nom }); }
+  try { sendJson(ctx.res, { ok: true, versions: restorePoints(await versions(withToken(r.base, r.fingerprint, r.tokens.access_token))), personne: { nom: r.personne.name || '', email: r.personne.email || '' }, odin: r.nom }); }
   catch (e) { refused(ctx, e); }
 });
 router.post('/api/odin/premiere/restaurer', async (ctx) => {
@@ -108,7 +108,7 @@ router.post('/api/odin/premiere/restaurer', async (ctx) => {
   const b = await readBody(ctx.req, 8192);
   const version = str(b.version, 120), password = pass(b.password);
   let r;
-  try { r = restoreBuffer(await download(version), { password, label: `première installation (${version})` }); }
+  try { r = await restoreVersion(version, { password, label: `première installation (${version})` }); }
   catch (e) { throw fail(e); }
   if (password) rememberKeyWrap(password, linkConf().email);
   logSecurity('installation', ctx.ip, `Venus restauré depuis Odin (sauvegarde ${version}, ${r.lignes} lignes)`, 'info');
@@ -141,6 +141,7 @@ router.post('/api/admin/odin/lien', async (ctx) => {
     const s = await link(input, { onPassword: (pw, email) => rememberKeyWrap(pw, email) });
     resetRate('odin-lien', ctx.ip);
     forgetOdinCache();
+    forgetSync(); // nouvelle série : une complète d'abord, puis les changements à la seconde
     logSecurity('odin', ctx.ip, `${me.name} a relié Venus à Odin (${input.host}:${input.port})`, 'info');
     sendNow({ force: true, why: 'manuelle' }).catch(() => {});
     sendJson(ctx.res, { ok: true, ...s });
@@ -152,6 +153,7 @@ router.post('/api/admin/odin/lien', async (ctx) => {
 router.del('/api/admin/odin/lien', async (ctx) => {
   const me = requireAdmin(ctx);
   const s = await unlink();
+  forgetSync();
   logSecurity('odin', ctx.ip, `${me.name} a délié Venus d’Odin`, 'info');
   sendJson(ctx.res, s);
 });
@@ -170,14 +172,14 @@ router.post('/api/admin/odin/sauvegarde', async (ctx) => {
 });
 router.get('/api/admin/odin/versions', async (ctx) => {
   requireAdmin(ctx);
-  try { sendJson(ctx.res, { versions: await versions() }); } catch (e) { throw fail(e); }
+  try { const list = await versions(); sendJson(ctx.res, { versions: list.slice(0, 200), points: restorePoints(list), total: list.length }); } catch (e) { throw fail(e); }
 });
 router.post('/api/admin/odin/versions/:id/restaurer', async (ctx) => {
   const me = requireAdmin(ctx);
   const b = await readBody(ctx.req, 4096);
   const password = pass(b.password);
   let r;
-  try { r = restoreBuffer(await download(ctx.params.id), { password, label: `Réglages → Odin (${ctx.params.id})` }); }
+  try { r = await restoreVersion(ctx.params.id, { password, label: `Réglages → Odin (${ctx.params.id})` }); }
   catch (e) { throw fail(e); }
   if (password) rememberKeyWrap(password, linkConf().email);
   logSecurity('odin', ctx.ip, `${me.name} a restauré la sauvegarde ${ctx.params.id} depuis Odin`, 'warn');

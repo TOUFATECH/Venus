@@ -139,8 +139,14 @@ test('restauration : base effacée, nouvelle clé (nouvelle machine) → restaur
   assert.equal(D.getSetting('server_name'), 'Venus du salon');
   for (const [t, v] of Object.entries(keep)) assert.equal(snapshot(t), v, `table ${t} identique`);
   assert.equal(B.fingerprint(), before1, 'même empreinte qu’avant l’effacement');
-  // Le lien d'aujourd'hui est gardé (pas celui de la sauvegarde), la sauvegarde continue
+  assert.equal(r.identique, true, 'empreinte de la base restaurée = celle notée dans la sauvegarde');
+  // Le lien d'aujourd'hui est gardé (pas celui de la sauvegarde), la sauvegarde continue : une complète repart (nouvelle
+  // base des changements de cette installation), puis tout est à l'identique
   assert.equal(L.linked(), true);
+  const c = await B.checkNow();
+  assert.equal(c.ok, true);
+  assert.ok(c.version, 'sauvegarde complète renvoyée après la restauration');
+  assert.equal((await B.versions())[0].raison, 'après restauration');
   assert.equal((await B.checkNow()).skipped, 'à l’identique');
   // Une nouvelle ligne après restauration prend un numéro libre (compteurs remis)
   run('INSERT INTO profiles(name, created_at) VALUES(?, ?)', 'Nouveau', 3);
