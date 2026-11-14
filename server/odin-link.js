@@ -159,7 +159,16 @@ export async function appToken({ fresh = false } = {}) {
   renewing = (async () => {
     const t = refreshToken();
     if (!t) throw err(400, 'Odin n’est pas relié : Réglages → Odin');
-    const r = await call('/sso/jeton', { method: 'POST', timeout: 15000, body: { grant_type: 'refresh_token', refresh_token: t, client_id: APP, appareil: device().id } });
+    // Réponse perdue en route (réseau coupé, délai dépassé) : on représente le MÊME jeton ; Odin le tolère 60 s et rend
+    // la même réponse (§ 4). Au-delà, il croirait à un vol et couperait la session : on n'insiste donc pas plus de 15 s.
+    let r, perdue;
+    for (const pause of [0, 1000, 4000, 10000]) {
+      if (pause) await new Promise((ok) => setTimeout(ok, pause));
+      try { r = await call('/sso/jeton', { method: 'POST', timeout: 10000, body: { grant_type: 'refresh_token', refresh_token: t, client_id: APP, appareil: device().id } }); }
+      catch (e) { r = null; perdue = e; if (e.code === 'ODIN_PIN') break; continue; }
+      if (r.status < 500) break;
+    }
+    if (!r) throw perdue;
     const j = r.json() || {};
     if (r.status !== 200 || !j.access_token) {
       const e = failure(r, 'Renouvellement');

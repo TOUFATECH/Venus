@@ -114,6 +114,7 @@ export function OdinLinkBox() {
   if (error && !s) return <section className="box" id="odin-lien"><h2>Odin</h2><p className="error-text">{error.message}</p></section>;
   if (!s) return <section className="box" id="odin-lien"><h2>Odin</h2><p className="muted">Chargement…</p></section>;
   const b = s.sauvegarde || {};
+  const f = s.fiches || {};
   const showForm = !s.linked || edit;
   return (
     <>
@@ -165,7 +166,7 @@ export function OdinLinkBox() {
       {s.linked ? (
         <section className="box" id="odin-sauvegarde">
           <h2>Synchronisé avec Odin</h2>
-          <p>Venus est synchronisé avec Odin à la seconde : chaque changement (profil, favori, « ma liste », reprise de lecture, téléchargement terminé, réglage, utilisateur) part chez Odin aussitôt, seulement ce qui a changé. Une sauvegarde complète part toutes les 30 minutes s’il y a eu des changements, et Venus vérifie toutes les 30 secondes qu’Odin a bien la même base. Si Odin ne répond pas, les changements attendent sur ce serveur (chiffrés) et partent dans l’ordre dès son retour. Les clés et mots de passe des services partent chiffrés : Odin ne peut pas les lire, et ton mot de passe Odin les retrouve à la restauration.</p>
+          <p>Venus est synchronisé avec Odin à la seconde : chaque changement (profil, favori, « ma liste », reprise de lecture, téléchargement terminé, réglage, utilisateur) part chez Odin aussitôt, seulement ce qui a changé. Une sauvegarde complète part toutes les 30 minutes s’il y a eu des changements, et Venus vérifie toutes les 30 secondes qu’Odin a bien la même base. Si Odin ne répond pas, les changements attendent sur ce serveur (chiffrés) et partent dans l’ordre dès son retour. Les clés et mots de passe des services partent chiffrés : Odin ne peut pas les lire, et ton mot de passe Odin les retrouve à la restauration. D’autres serveurs Venus reliés au même compte Odin ? Les profils liés à Odin, leurs réglages, favoris, « ma liste » et reprises se retrouvent sur chacun en moins de 2 secondes (le changement le plus récent gagne) ; pas les vidéos ni la bibliothèque, propres à chaque serveur.</p>
           <div className="list-row">
             <div className="grow">
               <b>{b.horsLigne ? `Odin ne répond pas${b.attente ? ` : ${b.attente} envoi${b.attente > 1 ? 's' : ''} en attente` : ''}` : b.attente ? 'Synchronisation…' : b.at ? `Synchronisé · dernier envoi ${ago(b.at)}` : 'Pas encore de sauvegarde'}</b>
@@ -175,6 +176,15 @@ export function OdinLinkBox() {
               {b.restaure ? <span style={{ display: 'block' }}>{`Restaurée le ${when(b.restaure.at)} (${b.restaure.label})${b.restaure.secrets === 'mot de passe différent' || b.restaure.secrets === 'sans mot de passe' ? ' : clés des services à saisir de nouveau' : ''}`}</span> : null}
             </div>
           </div>
+          {f.actif ? (
+            <div className="list-row" id="odin-fiches">
+              <div className="grow">
+                <b>{f.enLigne ? (f.attente ? 'Autres serveurs Venus du compte : envoi…' : 'Partagé avec les autres serveurs Venus du compte') : `Autres serveurs Venus du compte : en attente d’Odin${f.attente ? ` (${f.attente} changement${f.attente > 1 ? 's' : ''} à envoyer)` : ''}`}</b>
+                <span>{[`profils liés à Odin, réglages, favoris, « ma liste » et reprises (${f.fiches || 0} fiche${f.fiches > 1 ? 's' : ''})`, f.identique && f.verifie ? `identiques à Odin (vérifié ${ago(f.verifie)})` : '', f.dernierRecu ? `dernier changement reçu ${ago(f.dernierRecu.at)}` : '', f.nonApplicables ? `${f.nonApplicables} pour des titres absents de ce serveur` : ''].filter(Boolean).join(' · ')}</span>
+                {f.erreur && !f.enLigne ? <span className="error-text" style={{ display: 'block' }}>{f.erreur}</span> : null}
+              </div>
+            </div>
+          ) : null}
           <Actions wrap>
             <Busy className="btn btn-small f" busy="Envoi…" onClick={sauver}>Sauvegarder maintenant</Busy>
             <Busy className="btn btn-ghost btn-small f" busy="Chargement…" onClick={versions}>Versions gardées par Odin</Busy>

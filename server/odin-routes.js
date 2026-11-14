@@ -9,6 +9,7 @@ import { runtime } from './env.js';
 import { discover } from './odin-net.js';
 import { status as linkStatus, link, unlink, setMode, testAddress, login, keepLink, withToken, linkConf, check as checkLink, linked } from './odin-link.js';
 import { sendNow, versions, restorePoints, restoreVersion, rememberKeyWrap, state as backupState, baseEmpty, startOdinBackup, forgetSync, SKIP } from './odin-backup.js';
+import { startOdinFiches, lierProfil, relancer as relancerFiches, arreter as arreterFiches, forgetFiches, state as fichesState } from './odin-fiches.js';
 import { ssoOn, localBlocked, authorizeUrl, finish, issueTicket, takeTicket, posteAvailable, posteLogin, forgetOdinCache, linkedProfiles } from './odin-sso.js';
 
 const supervised = () => runtime.kind === 'docker' || !!process.env.INVOCATION_ID || !!process.env.VENUS_SUPERVISED || (!!process.env.XPC_SERVICE_NAME && process.env.XPC_SERVICE_NAME !== '0');
@@ -123,7 +124,7 @@ async function afterRestore() {
 // ---------------------------------------------------------------- Réglages → Odin (administrateur)
 router.get('/api/admin/odin/lien', (ctx) => {
   requireAdmin(ctx);
-  sendJson(ctx.res, { ...linkStatus(), sauvegarde: backupState(), exclues: SKIP, profilsLies: linkedProfiles().length, supervise: supervised() });
+  sendJson(ctx.res, { ...linkStatus(), sauvegarde: backupState(), fiches: fichesState(), exclues: SKIP, profilsLies: linkedProfiles().length, supervise: supervised() });
 });
 router.post('/api/admin/odin/trouver', async (ctx) => { requireAdmin(ctx); sendJson(ctx.res, { odins: await discover() }); });
 router.post('/api/admin/odin/tester', async (ctx) => {
@@ -142,6 +143,8 @@ router.post('/api/admin/odin/lien', async (ctx) => {
     resetRate('odin-lien', ctx.ip);
     forgetOdinCache();
     forgetSync(); // nouvelle série : une complète d'abord, puis les changements à la seconde
+    lierProfil(me.id); // le profil de l'administrateur qui relie = sa personne d'Odin (fiches communes avec les autres serveurs)
+    relancerFiches();
     logSecurity('odin', ctx.ip, `${me.name} a relié Venus à Odin (${input.host}:${input.port})`, 'info');
     sendNow({ force: true, why: 'manuelle' }).catch(() => {});
     sendJson(ctx.res, { ok: true, ...s });
@@ -154,6 +157,7 @@ router.del('/api/admin/odin/lien', async (ctx) => {
   const me = requireAdmin(ctx);
   const s = await unlink();
   forgetSync();
+  arreterFiches(); forgetFiches();
   logSecurity('odin', ctx.ip, `${me.name} a délié Venus d’Odin`, 'info');
   sendJson(ctx.res, s);
 });
@@ -190,3 +194,4 @@ router.post('/api/admin/odin/versions/:id/restaurer', async (ctx) => {
 });
 
 startOdinBackup();
+startOdinFiches(); // plusieurs serveurs Venus sur le même compte : synchronisés entre eux par Odin

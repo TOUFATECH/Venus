@@ -28,6 +28,7 @@ Un serveur multimédia léger et auto-hébergé, avec une interface de salle de 
 | **Toute la maison** | Profils avec code PIN, comptes locaux ou **invitations par e-mail**, profils enfants (temps d'écran, âge), séances à plusieurs. |
 | **Automatique** | Affiches et résumés en français, « À venir » relié à Radarr / Sonarr / Seerr, notifications Telegram, mises à jour en un clic. |
 | **Odin dans Venus** | La mascotte d'**Odin** (l'assistant de la maison, où Venus s'appelle **Freyja**) se pose en bas de chaque page et l'explique, fait le tour de Venus et, une fois Odin relié (Réglages → Thème et menu → Odin : adresse + jeton, gardé chiffré sur le serveur), lui transmet tes questions. Jamais sur l'image pendant la lecture ; 10 touchers rapides la cachent sur l'appareil, elle revient dans les Réglages. |
+| **Plusieurs serveurs, un seul compte** | Plusieurs serveurs Venus reliés au même compte Odin se synchronisent entre eux par Odin : profils liés à Odin, réglages, favoris, « Ma liste » et reprises de lecture se retrouvent sur chacun en moins de 2 secondes (le changement le plus récent gagne, rattrapage après une coupure). Les titres se reconnaissent par TMDB / IMDb, sinon par l'empreinte du fichier ; les vidéos et la bibliothèque restent propres à chaque serveur. |
 
 ---
 

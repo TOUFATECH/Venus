@@ -30,10 +30,12 @@ import { db, get, getSetting, setSetting, onWrite, bumpItems, secretKeyId, secre
 import { dumpBuffer, parseDump, load, writeDump, insertRows, resetSequences, tablesNow, colsOf } from './db-copy.js';
 import { backupsDir } from './backup.js';
 import { config } from './config.js';
-import { authed, linked, odinMessage, APP, LINK_KEYS, setLinkState } from './odin-link.js';
+import { authed, linked, odinMessage, APP, LINK_KEYS, setLinkState, device } from './odin-link.js';
+import { forgetFiches } from './odin-fiches.js';
 
 // Tables laissées de côté : sessions des appareils, caches refaits par Venus, journaux
-export const SKIP = ['tokens', 'dialogue_index', 'dialogues', 'epg', 'security_log', 'transcode_log', 'ip_bans'];
+// (odin_fiches : l'ombre de la synchronisation entre serveurs, propre à chaque serveur)
+export const SKIP = ['tokens', 'dialogue_index', 'dialogues', 'epg', 'security_log', 'transcode_log', 'ip_bans', 'odin_fiches'];
 // Parmi elles, gardées telles quelles à la restauration (les caches, eux, sont refaits)
 const PRESERVE = ['tokens', 'security_log', 'transcode_log', 'ip_bans'];
 // Réglages qui bougent tout seuls (dates de dernière tâche, états) : ni changement à envoyer, ni dans l'empreinte
@@ -293,6 +295,7 @@ async function flushOnce() {
       r = await authed(`/api/sauvegardes/${APP}`, { method: 'POST', body: e.body, timeout: 20000, headers: {
         'content-type': 'application/octet-stream', 'x-odin-empreinte': e.meta.sha, 'x-odin-sorte': 'changements', 'x-odin-base': e.meta.base,
         'x-odin-raison': encodeURIComponent(e.meta.raison || 'changement'), 'x-odin-nom': encodeURIComponent(`venus-changements-${e.meta.seq}.json.gz`),
+        'x-odin-etat': String(e.meta.empreinte || ''),
       } });
     } catch (err) { if (offline(err)) return horsLigne(err); setState({ erreur: err.message }); return; }
     const j = r.json() || {};
@@ -357,7 +360,7 @@ export async function sendNow({ force = false, why = 'changement' } = {}) {
       try {
         r = await authed(`/api/sauvegardes/${APP}`, { method: 'POST', body: buf, timeout: 180000, headers: {
           'content-type': 'application/octet-stream', 'x-odin-empreinte': sha, 'x-odin-sorte': 'complete',
-          'x-odin-raison': encodeURIComponent(RAISONS[why] || 'changement'), 'x-odin-nom': encodeURIComponent('venus-base.json.gz'),
+          'x-odin-raison': encodeURIComponent(RAISONS[why] || 'changement'), 'x-odin-nom': encodeURIComponent('venus-base.json.gz'), 'x-odin-etat': empreinte,
         } });
       } catch (e) { if (offline(e)) { needFull = true; horsLigne(e); } throw e; }
       if (r.status === 413) throw Object.assign(new Error(odinMessage(r, `Sauvegarde trop grosse pour Odin (${(buf.length / 1048576).toFixed(1)} Mo) : augmente la taille maximale de Vénus dans Persona.`)), { status: 413 });
@@ -405,12 +408,15 @@ export function restorePoints(list) {
   if (last && last.sorte === 'changements' && out.some((v) => v.id === last.base)) out.unshift(last);
   return out.map((v, i) => (i === 0 && v === last ? { ...v, dernierEtat: true } : v));
 }
-/** Empreinte (SHA-256 du dernier envoi) gardée par Odin, et une restauration demandée dans Odin. */
+/**
+ * Empreinte (SHA-256 du dernier envoi DE CE SERVEUR : plusieurs serveurs Venus peuvent sauvegarder sur le même compte,
+ * chacun sa série) gardée par Odin, l'envoi d'un autre serveur s'il est plus récent, et une restauration demandée dans Odin.
+ */
 export async function remoteFingerprint() {
-  const r = await authed(`/api/sauvegardes/${APP}/empreinte`, { timeout: 10000 });
+  const r = await authed(`/api/sauvegardes/${APP}/empreinte?appareil=${encodeURIComponent(device().id)}`, { timeout: 10000 });
   if (r.status >= 400) throw Object.assign(new Error(odinMessage(r, `Odin ne donne pas l’empreinte (${r.status})`)), { status: r.status });
   const j = r.json() || {};
-  return { empreinte: String(j.empreinte || ''), version: String(j.version || ''), restaurer: j.restaurer ? String(j.restaurer) : '' };
+  return { empreinte: String(j.empreinte || ''), version: String(j.version || ''), etat: String(j.etat || ''), parAppareil: 'appareil_id' in j, autre: j.autre && typeof j.autre === 'object' ? { appareil: String(j.autre.appareil || ''), version: String(j.autre.version || ''), at: Number(j.autre.date) || 0 } : null, restaurer: j.restaurer ? String(j.restaurer) : '' };
 }
 /** Télécharge une version et vérifie son SHA-256 (§ 7). Rend { buf, sorte }. */
 async function fetchVersion(id, via = authed) {
@@ -527,6 +533,7 @@ function restoreDump(d, { password, label = 'odin' } = {}) {
   // base des changements : jamais des changements de cette installation ajoutés à la série d'une autre)
   const fp = fingerprint();
   qclear(); dirty = new Set(); ombre = null; needFull = true; fullWhy = 'restauration';
+  forgetFiches(); // synchronisation entre serveurs : tout est comparé de nouveau à Odin (ses fiches plus récentes gagnent)
   setState({ restaure: { at: Date.now(), de: d.at, lignes: n, label, secrets, identique: d.empreinte ? fp === d.empreinte : null }, empreinte: '', sha: '', base: '', dernier: '', attente: 0 });
   if (started) kickFull();
   return { lignes: n, de: d.at, serveur: d.serveur || '', secrets, identique: d.empreinte ? fp === d.empreinte : null, empreinte: fp };
@@ -573,14 +580,17 @@ export async function checkNow() {
     if (n) return { ok: false, attente: n, error: state().erreur || `${n} envoi(s) en attente` };
     let st = state();
     let same = remote.version === st.dernier && remote.empreinte === st.sha;
-    if (!same) {
+    // Odin à jour : il rend la dernière version de CE serveur, et celle d'un autre serveur du même compte à part
+    if (same && remote.autre) setState({ autrePoste: remote.autre });
+    if (!same && !remote.parAppareil) {
       // La dernière version d'Odin n'est pas la nôtre : un autre serveur Venus du même compte écrit aussi, ou Odin a perdu
       // notre dernier envoi
       const list = await versions();
       const mine = list.find((v) => v.id === st.dernier), base = list.find((v) => v.id === st.base && v.sorte === 'complete');
       if (mine && base && mine.empreinte === st.sha) { same = true; setState({ autrePoste: { appareil: list[0] && list[0].appareil, version: list[0] && list[0].id, at: list[0] && list[0].at } }); }
       else return await sendNow({ force: true, why: 'vérification' });
-    }
+    } else if (!same) return await sendNow({ force: true, why: 'vérification' }); // Odin n'a pas notre dernier envoi
+
     if (fullDue()) return await sendNow({ force: true, why: 'régulière' });
     st = state();
     const fp = ombreFp();

@@ -61,6 +61,56 @@ export function odinRequest(url, { method = 'GET', headers = {}, body, pin = '',
   });
 }
 
+/**
+ * Un flux en direct d'Odin (Server-Sent Events). `onEvent(event, data)` à chaque événement (data : JSON lu). Rend
+ * { close(), done } ; `done` se résout quand le flux s'arrête : { status, error? } (statut HTTP si Odin a refusé).
+ */
+export function odinStream(url, { headers = {}, pin = '', onEvent, onOpen } = {}) {
+  let req = null, closed = false;
+  const done = new Promise((resolve) => {
+    const u = new URL(url);
+    const isHttps = u.protocol === 'https:';
+    req = (isHttps ? https : http).request(u, {
+      method: 'GET', headers: { accept: 'text/event-stream', ...headers },
+      ...(isHttps ? { rejectUnauthorized: false, servername: /^[\d.]+$|:/.test(u.hostname) ? undefined : u.hostname, agent: false } : { agent: false }),
+    }, (res) => {
+      if (res.statusCode !== 200) {
+        const chunks = []; res.on('data', (c) => chunks.push(c));
+        res.on('end', () => { let j = null; try { j = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* */ } resolve({ status: res.statusCode, json: j }); });
+        return;
+      }
+      if (onOpen) onOpen();
+      res.setEncoding('utf8');
+      let buf = '';
+      res.on('data', (c) => {
+        buf += c;
+        if (buf.length > 8 * 1024 * 1024) { req.destroy(new Error('flux trop gros')); return; }
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const bloc = buf.slice(0, i); buf = buf.slice(i + 2);
+          let ev = 'message'; const data = [];
+          for (const l of bloc.split('\n')) { if (l.startsWith('event:')) ev = l.slice(6).trim(); else if (l.startsWith('data:')) data.push(l.slice(5).replace(/^ /, '')); }
+          if (!data.length) continue; // signe de vie
+          let d = null; try { d = JSON.parse(data.join('\n')); } catch { continue; }
+          try { onEvent(ev, d); } catch (e) { console.warn(`[odin] flux : ${e.message}`); }
+        }
+      });
+      res.on('end', () => resolve({ status: 200 }));
+      res.on('error', (e) => resolve({ status: 0, error: e }));
+      res.on('close', () => resolve({ status: 200 }));
+    });
+    if (isHttps) {
+      req.on('socket', (sock) => sock.once('secureConnect', () => {
+        const f = fp(sock.getPeerCertificate());
+        if (pin && f !== pin && sock.authorized !== true) req.destroy(Object.assign(new Error('Le certificat d’Odin a changé depuis le premier contact.'), { code: 'ODIN_PIN' }));
+      }));
+    }
+    req.on('error', (e) => resolve({ status: 0, error: closed ? null : explain(e, u) }));
+    req.end();
+  });
+  return { close() { closed = true; try { req.destroy(); } catch { /* */ } }, done };
+}
+
 function explain(e, u) {
   if (e.code === 'ODIN_PIN' || e.status) return e;
   const where = `${u.hostname}:${u.port || (u.protocol === 'https:' ? 443 : 80)}`;
