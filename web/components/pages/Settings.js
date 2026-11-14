@@ -3,6 +3,7 @@
 // Une rubrique à la fois : colonne à gauche sur ordinateur, bande défilante sur téléphone.
 import { TraktLinkBox, ImportBox, RemoteBox, TranscribeBox, LightsBox } from './SettingsExtra';
 import { ConvertBox } from './Convert';
+import { OdinLinkBox } from './SettingsOdin';
 import { odinShown, setOdinShown } from '../OdinGuide';
 import { useEffect, useRef, useState } from 'react';
 import { shared } from '../../lib/shared';
@@ -16,7 +17,7 @@ import {
 } from './SettingsAdmin';
 
 const LANGS = [['fr', 'Français'], ['en', 'Anglais'], ['es', 'Espagnol'], ['de', 'Allemand'], ['it', 'Italien'], ['pt', 'Portugais'], ['ja', 'Japonais'], ['ar', 'Arabe']];
-const SECTION_TAB = { menu: 'affichage', sources: 'infos', seerr: 'demandes', arr: 'demandes', ratings: 'notes', affiches: 'infos', subtitles: 'lecture', notifications: 'alertes', backups: 'sauvegardes', iptv: 'tv' };
+const SECTION_TAB = { 'odin-lien': 'odin', menu: 'affichage', sources: 'infos', seerr: 'demandes', arr: 'demandes', ratings: 'notes', affiches: 'infos', subtitles: 'lecture', notifications: 'alertes', backups: 'sauvegardes', iptv: 'tv' };
 const reboot = () => window.dispatchEvent(new CustomEvent('vn:reboot'));
 const saved = () => toast('Préférence enregistrée pour cet appareil');
 
@@ -30,7 +31,7 @@ export default function Settings() {
     ...(me.isAdmin ? [
       ['Médias', [['medias', 'Médiathèques', 'folder'], ['tv', 'TV en direct', 'live'], ['infos', 'Infos et affiches', 'spark'], ['notes', 'Notes des sites', 'heart'], ['demandes', 'Demandes', 'download']]],
       ['Foyer', [['famille', 'Profils et appareils', 'people'], ['alertes', 'Notifications', 'chat']]],
-      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['perf', 'Performances', 'spark'], ['maj', 'Mise à jour', 'download'], ['serveur', 'Serveur', 'server'], ['distance', 'Accès hors de la maison', 'live'], ['import', 'Importer (Plex, Jellyfin)', 'download'], ['sauvegardes', 'Sauvegardes', 'copy']]],
+      ['Serveur', [['lecture', 'Lecture et conversion', 'gauge'], ['perf', 'Performances', 'spark'], ['maj', 'Mise à jour', 'download'], ['serveur', 'Serveur', 'server'], ['distance', 'Accès hors de la maison', 'live'], ['import', 'Importer (Plex, Jellyfin)', 'download'], ['sauvegardes', 'Sauvegardes', 'copy'], ['odin', 'Odin', 'link']]],
     ] : []),
   ];
   const TABS = NAV.flatMap(([, items]) => items);
@@ -89,6 +90,7 @@ export default function Settings() {
     sauvegardes: () => <BackupBox {...ctx} />,
     import: () => <ImportBox {...ctx} />,
     distance: () => <RemoteBox />,
+    odin: () => <OdinLinkBox />,
   };
   let content;
   if (tab === 'profil') content = <><MyBox me={me} /><TraktLinkBox /></>;
@@ -147,7 +149,7 @@ function MyBox({ me }) {
       <Actions>
         <button className="btn btn-small f" onClick={() => editProfile(me, true, reboot)}>Modifier nom, couleur et code PIN</button>
         <button className="btn btn-small f" onClick={() => L.app.switchProfile()}>Changer de profil</button>
-        <button className="btn btn-small btn-danger f" onClick={async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); L.api.auth.token = null; reboot(); }}>Déconnecter l’appareil</button>
+        <button className="btn btn-small btn-danger f" onClick={async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); L.api.auth.token = null; try { sessionStorage.setItem('vn_odin_essai', '1'); } catch { /* */ } reboot(); }}>Déconnecter l’appareil</button>
       </Actions>
     </section>
   );

@@ -12,7 +12,9 @@ import { sendNow, versions, download, restoreBuffer, rememberKeyWrap, state as b
 import { ssoOn, localBlocked, authorizeUrl, finish, issueTicket, takeTicket, posteAvailable, posteLogin, forgetOdinCache, linkedProfiles } from './odin-sso.js';
 
 const supervised = () => runtime.kind === 'docker' || !!process.env.INVOCATION_ID || !!process.env.VENUS_SUPERVISED || (!!process.env.XPC_SERVICE_NAME && process.env.XPC_SERVICE_NAME !== '0');
-const fail = (e, def = 502) => new HttpError(e.status && e.status >= 400 && e.status < 600 ? e.status : def, e.message);
+// Une erreur d'Odin n'est jamais rendue en 401 (la page croirait que la session de Venus est finie)
+const fail = (e, def = 502) => new HttpError(e.status === 401 ? 409 : e.status && e.status >= 400 && e.status < 600 ? e.status : def, e.message);
+const refused = (ctx, e) => sendJson(ctx.res, { ok: false, error: e.message, code: e.code || null });
 const str = (v, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const pass = (v) => (typeof v === 'string' && v.length <= 200 ? v : '');
 const portOf = (v) => Number(v) || 7777;
@@ -82,7 +84,7 @@ router.post('/api/odin/poste', async (ctx) => {
     setTokenProfile(token, r.profile.id);
     logSecurity('connexion', ctx.ip, `« ${r.profile.name} » connecté par la session Odin du poste`, 'info');
     sendJson(ctx.res, { token });
-  } catch (e) { throw fail(e, 401); }
+  } catch (e) { throw fail(e, 409); }
 });
 
 // ---------------------------------------------------------------- première installation : restaurer depuis Odin
@@ -94,11 +96,11 @@ router.post('/api/odin/premiere/versions', async (ctx) => {
   checkRate('odin-premiere', ctx.ip);
   const input = { host: str(b.host, 253), port: portOf(b.port), email: str(b.email), password: pass(b.password), code: str(b.code, 8) };
   let r;
-  try { r = await login(input); } catch (e) { if (e.status === 401 && e.code !== 'code_requis') failRate('odin-premiere', ctx.ip, 'Restauration depuis Odin : connexion refusée'); return sendJson(ctx.res, { error: e.message, code: e.code || null }, e.status && e.status < 600 ? e.status : 502); }
+  try { r = await login(input); } catch (e) { if (e.status === 401 && e.code !== 'code_requis') failRate('odin-premiere', ctx.ip, 'Restauration depuis Odin : connexion refusée'); return refused(ctx, e); }
   resetRate('odin-premiere', ctx.ip);
   keepLink(r, input); // Venus reste relié à ce compte : la sauvegarde continue ensuite
-  try { sendJson(ctx.res, { versions: (await versions(withToken(r.base, r.fingerprint, r.tokens.access_token))).filter((v) => v.sorte === 'complete'), personne: { nom: r.personne.name || '', email: r.personne.email || '' }, odin: r.nom }); }
-  catch (e) { throw fail(e); }
+  try { sendJson(ctx.res, { ok: true, versions: (await versions(withToken(r.base, r.fingerprint, r.tokens.access_token))).filter((v) => v.sorte === 'complete'), personne: { nom: r.personne.name || '', email: r.personne.email || '' }, odin: r.nom }); }
+  catch (e) { refused(ctx, e); }
 });
 router.post('/api/odin/premiere/restaurer', async (ctx) => {
   firstInstall();
@@ -141,10 +143,10 @@ router.post('/api/admin/odin/lien', async (ctx) => {
     forgetOdinCache();
     logSecurity('odin', ctx.ip, `${me.name} a relié Venus à Odin (${input.host}:${input.port})`, 'info');
     sendNow({ force: true, why: 'manuelle' }).catch(() => {});
-    sendJson(ctx.res, s);
+    sendJson(ctx.res, { ok: true, ...s });
   } catch (e) {
     if (e.status === 401 && e.code !== 'code_requis') failRate('odin-lien', ctx.ip, 'Lien avec Odin : connexion refusée');
-    sendJson(ctx.res, { error: e.message, code: e.code || null }, e.status && e.status < 600 ? e.status : 502);
+    refused(ctx, e);
   }
 });
 router.del('/api/admin/odin/lien', async (ctx) => {

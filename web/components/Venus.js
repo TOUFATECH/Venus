@@ -50,6 +50,16 @@ function App({ children }) {
     let L;
     try { L = await loadShared(); } catch (e) { setError(e); setPhase('error'); return; }
     const { app, api } = L;
+    // Retour de la connexion par Odin : ticket à usage unique (#odin=…) échangé contre la session, ou message d'Odin
+    const h = new URLSearchParams((location.hash || '').slice(1));
+    if (h.has('odin') || h.has('odin_erreur') || h.has('odin_rien')) {
+      history.replaceState(null, '', location.pathname + location.search);
+      if (h.get('odin_erreur')) window.__vnOdinError = h.get('odin_erreur');
+      if (h.get('odin')) {
+        try { const r = await api.api('/api/odin/ticket', { method: 'POST', body: { ticket: h.get('odin') } }); api.auth.token = r.token; window.__vnOdinError = ''; }
+        catch (e) { window.__vnOdinError = e.message; }
+      }
+    }
     let st;
     try { st = await api.api('/api/status'); } catch (e) { setError(e); setPhase('error'); app.hideBoot(); return; }
     app.state.status = st;

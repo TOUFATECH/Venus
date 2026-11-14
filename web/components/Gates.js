@@ -5,6 +5,10 @@ import { shared } from '../lib/shared';
 import { api, openSheet } from '../lib/hooks';
 import { Icon, Brand, Avatar } from './Icon';
 import { PasswordMeter } from './pages/SettingsSheets';
+import { OdinRestore } from './pages/SettingsOdin';
+
+// Odin : après une déconnexion voulue, pas de reconnexion automatique dans cet onglet
+export const noOdinAuto = () => { try { sessionStorage.setItem('vn_odin_essai', '1'); } catch { /* */ } };
 
 export default function Gate({ kind, done }) {
   useEffect(() => { shared().app.hideBoot(); }, []);
@@ -20,6 +24,15 @@ const shake = (el) => { if (!el) return; el.classList.remove('shake'); void el.o
 
 // ---------------------------------------------------------------- première installation
 function Setup({ done }) {
+  const [odin, setOdin] = useState(null); // « Restaurer depuis Odin » proposé tant que la base est vide
+  const [restore, setRestore] = useState(false);
+  const [restored, setRestored] = useState('');
+  useEffect(() => { api('/api/odin/connexion').then(setOdin).catch(() => {}); }, []);
+  if (restored) return <div className="panel"><Brand /><h2>Restauration faite</h2><p>{restored}</p><div className="form-actions"><button className="btn btn-play f" onClick={() => done(null)}>Continuer</button></div></div>;
+  if (restore) return <OdinRestore cancel={() => setRestore(false)} done={(msg, restarting) => { setRestored(msg); if (restarting) setTimeout(() => location.reload(), 8000); }} />;
+  return <SetupForm done={done} offerOdin={!!(odin && odin.restaurer)} onRestore={() => setRestore(true)} />;
+}
+function SetupForm({ done, offerOdin, onRestore }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [pass, setPass] = useState('');
@@ -48,6 +61,7 @@ function Setup({ done }) {
       <Brand />
       <h2>Bienvenue dans Venus</h2>
       <p>Votre cinéma à la maison. Quelques réglages et c’est prêt.</p>
+      {offerOdin ? <div className="login-msg" style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}><span>Tu avais déjà Venus, sauvegardé sur Odin ?</span><button type="button" className="btn btn-small f" onClick={onRestore}>Restaurer depuis Odin</button></div> : null}
       <Field label="Votre prénom" id="name" hint="Ce sera le profil administrateur."><input id="name" name="name" className="input" required maxLength={30} autoComplete="nickname" placeholder="Ex. : Sarah" /></Field>
       <Field label="Mot de passe du foyer" id="pass" hint="Demandé une seule fois par appareil (TV, téléphone…)."><input id="pass" name="pass" className="input" type="password" required minLength={10} maxLength={200} autoComplete="new-password" value={pass} onChange={(e) => setPass(e.target.value)} /></Field>
       <PasswordMeter value={pass} />
@@ -79,6 +93,24 @@ function Login({ done }) {
   const form = useRef(null);
   const inputs = { password: useRef(null), code: useRef(null), email: useRef(null) };
   const msg = shared().app.state.status && shared().app.state.status.loginMessage;
+  // Connexion par Odin : session du poste, puis session Odin du navigateur (sans écran), sinon le bouton
+  const [odin, setOdin] = useState(null);
+  const [odinErr, setOdinErr] = useState(() => (typeof window !== 'undefined' && window.__vnOdinError) || '');
+  useEffect(() => {
+    let tried = false;
+    try { tried = !!sessionStorage.getItem('vn_odin_essai'); } catch { /* */ }
+    api('/api/odin/connexion').then(async (o) => {
+      setOdin(o);
+      if (!o.sso || tried || window.__vnOdinError) return;
+      noOdinAuto();
+      if (o.poste) {
+        try { const r = await api('/api/odin/poste', { method: 'POST' }); shared().api.auth.token = r.token; done(null); return; }
+        catch (e) { setOdinErr(e.message); return; }
+      }
+      location.href = '/auth/odin/debut?silencieux=1';
+    }).catch(() => {});
+  }, []);
+  const local = !odin || odin.local;
   useEffect(() => { setErr(''); setTimeout(() => inputs[mode].current && inputs[mode].current.focus(), 30); }, [mode]);
   useEffect(() => { if (wait <= 0) return undefined; const t = setTimeout(() => setWait((s) => s - 1), 1000); return () => clearTimeout(t); }, [wait]);
   const submit = async (e) => {
@@ -123,6 +155,15 @@ function Login({ done }) {
       <Brand />
       {msg ? <p className="login-msg">{msg}</p> : null}
       <h2>Connecter cet appareil</h2>
+      {odin && odin.sso ? (
+        <div className="odin-login" style={{ display: 'grid', gap: 8, margin: '6px 0 14px' }}>
+          <a className="btn btn-play f" href="/auth/odin/debut" style={{ justifyContent: 'center' }}>Se connecter avec Odin</a>
+          {odinErr ? <p className="error-text" role="alert" style={{ margin: 0 }}>{odinErr}</p> : <small className="muted" style={{ textAlign: 'center' }}>Avec ton compte Odin : si Odin est déjà ouvert, c’est automatique.</small>}
+          {local ? <small className="muted" style={{ textAlign: 'center' }}>Ou, sans Odin :</small> : null}
+        </div>
+      ) : null}
+      {!local ? <p className="muted">{odin.localMessage}</p> : null}
+      <div hidden={!local}>
       <p>{mode === 'password' ? 'Entrez le mot de passe du foyer. Cet appareil s’en souviendra.' : mode === 'email' ? 'Double authentification : un code vient d’être envoyé par e-mail à l’administrateur.' : 'Entrez le code à 6 chiffres affiché dans le tableau de bord de l’administrateur.'}</p>
       <div className="field" hidden={mode !== 'password'}>
         <label htmlFor="pass">Mot de passe</label>
@@ -142,7 +183,8 @@ function Login({ done }) {
       <p className="error-text" role="alert">{err}</p>
       <div className="form-actions login-actions">
         <button className="linkish f" type="button" onClick={() => setMode(mode === 'password' ? 'code' : 'password')}>{mode === 'code' ? 'Utiliser le mot de passe' : mode === 'email' ? 'Recommencer' : 'Se connecter avec un code à 6 chiffres'}</button>
-        <button className="btn btn-play f" type="submit" disabled={busy}>{mode === 'email' ? 'Valider le code' : 'Se connecter'}</button>
+        <button className={`btn f${odin && odin.sso ? '' : ' btn-play'}`} type="submit" disabled={busy}>{mode === 'email' ? 'Valider le code' : 'Se connecter'}</button>
+      </div>
       </div>
     </form>
   );
@@ -174,7 +216,7 @@ function Profiles({ done }) {
         ))}
       </div>
       <div style={{ textAlign: 'center', marginTop: 48 }}>
-        <button className="btn btn-ghost btn-small f" onClick={async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); shared().api.auth.token = null; done(null); }}><Icon name="exit" />Déconnecter cet appareil</button>
+        <button className="btn btn-ghost btn-small f" onClick={async () => { await api('/api/logout', { method: 'POST' }).catch(() => {}); shared().api.auth.token = null; noOdinAuto(); done(null); }}><Icon name="exit" />Déconnecter cet appareil</button>
       </div>
     </div>
   );
