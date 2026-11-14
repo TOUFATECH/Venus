@@ -219,7 +219,15 @@ export const get = (sql, ...p) => q(sql).get(...p);
 export let itemsVersion = 1;
 export const bumpItems = () => { itemsVersion++; };
 const touchesItems = (sql) => /^\s*(INSERT|UPDATE|DELETE|REPLACE)\b[\s\S]*\bitems\b/i.test(sql);
-export const run = (sql, ...p) => { const r = q(sql).run(...p); if (touchesItems(sql)) itemsVersion++; return r; };
+// Écoutes des écritures (sauvegarde continue sur Odin : elle repère les changements importants)
+const writeListeners = new Set();
+export const onWrite = (fn) => { writeListeners.add(fn); return () => writeListeners.delete(fn); };
+export const run = (sql, ...p) => {
+  const r = q(sql).run(...p);
+  if (touchesItems(sql)) itemsVersion++;
+  if (writeListeners.size && r.changes !== 0) for (const fn of writeListeners) { try { fn(sql, p); } catch { /* une écoute ne gêne jamais l'écriture */ } }
+  return r;
+};
 
 export function tx(fn) {
   if (inTx) return fn(); // déjà dans une transaction : on la prolonge
@@ -231,7 +239,7 @@ export function tx(fn) {
 // Clés d'API et mots de passe des services : chiffrés dans la base (AES-256-GCM). La clé de chiffrement est
 // dans le dossier de données (secret.key, lisible seulement par Venus) ou dans VENUS_SECRET : une copie de la
 // base ou d'une sauvegarde seule ne révèle aucun secret.
-const SECRET_KEYS = new Set(['tmdb_key', 'omdb_key', 'seerr_key', 'telegram_token', 'discord_webhook', 'opensubtitles_key', 'opensubtitles_pass', 'smtp_pass', 'vapid', 'simkl_client_id', 'trakt_client_id', 'trakt_client_secret', 'remote_access', 'odin_token']);
+const SECRET_KEYS = new Set(['tmdb_key', 'omdb_key', 'seerr_key', 'telegram_token', 'discord_webhook', 'opensubtitles_key', 'opensubtitles_pass', 'smtp_pass', 'vapid', 'simkl_client_id', 'trakt_client_id', 'trakt_client_secret', 'remote_access', 'odin_token', 'odin_sso_refresh']);
 // Jetons Trakt de chaque profil : chiffrés aussi
 const isSecret = (k) => SECRET_KEYS.has(k) || k.startsWith('trakt_auth:');
 let masterKey = null;
@@ -243,6 +251,16 @@ function keyOf() {
   masterKey = crypto.randomBytes(32);
   fs.writeFileSync(f, masterKey.toString('base64'), { mode: 0o600 });
   return masterKey;
+}
+/** Clé des secrets : son identifiant (sans la révéler), la clé elle-même (pour l'emballer avant la sauvegarde sur
+ *  Odin) et son remplacement (restauration sur une nouvelle installation). */
+export const secretKeyId = () => crypto.createHash('sha256').update(keyOf()).digest('hex').slice(0, 16);
+export const secretKeyBytes = () => Buffer.from(keyOf());
+export function replaceSecretKey(buf) {
+  if (!Buffer.isBuffer(buf) || buf.length !== 32) throw new Error('Clé des secrets invalide');
+  if (process.env.VENUS_SECRET) throw new Error('La clé des secrets vient de VENUS_SECRET : remets l’ancienne valeur de VENUS_SECRET pour relire les secrets');
+  fs.writeFileSync(path.join(config.dataDir, 'secret.key'), buf.toString('base64'), { mode: 0o600 });
+  masterKey = Buffer.from(buf);
 }
 function seal(text) {
   const iv = crypto.randomBytes(12);

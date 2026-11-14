@@ -23,6 +23,7 @@ import { HttpError, sendJson, serveStatic, buildId } from './http.js';
 import { startNextUi, nextUiReady, nextStaticFile, proxyToNext } from './next-ui.js';
 import { authenticate, migrateTokens } from './auth.js';
 import { router, customCss, sendTvReminders } from './api.js';
+import './odin-routes.js'; // Odin : connexion unique, sauvegarde continue, restauration
 import { together } from './together.js';
 import { detectHardware } from './hw.js';
 import { scanAll, watchLibraries, events } from './scanner.js';
@@ -97,7 +98,7 @@ async function handle(req, res) {
     inspectRequest(req, url, ip);
     if (requireHttps(req, res, url, ip, httpsPort)) return;
 
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/img/') || url.pathname.startsWith('/cal/')) {
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/img/') || url.pathname.startsWith('/cal/') || url.pathname.startsWith('/auth/odin/')) {
       if (req.method === 'OPTIONS') return handlePreflight(req, res, url, ip);
       rateLimit(ip, url.pathname);
       checkHpp(url, ip);

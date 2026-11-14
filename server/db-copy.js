@@ -11,10 +11,10 @@ const raw = (sql, params = []) => db.pg.rowsOf(db.pg.call({ op: 'query', sql, pa
 const tablesNow = () => raw("SELECT table_name AS t FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' ORDER BY table_name").map((r) => r.t);
 const colsOf = (t) => raw('SELECT column_name AS c, data_type AS d, is_generated AS g FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 ORDER BY ordinal_position', [t]).filter((r) => r.g !== 'ALWAYS');
 
-/** Toutes les tables et leurs lignes (sans les colonnes calculées). */
-export function snapshot() {
+/** Toutes les tables et leurs lignes (sans les colonnes calculées). `skip` : tables laissées de côté (caches, journaux). */
+export function snapshot({ skip = [] } = {}) {
   const out = {};
-  for (const t of tablesNow()) { const cols = colsOf(t).map((c) => c.c); out[t] = raw(`SELECT ${cols.map(quote).join(', ')} FROM ${quote(t)}`).map((r) => cols.map((c) => (Buffer.isBuffer(r[c]) ? { b64: r[c].toString('base64') } : r[c]))); out[`${t}#cols`] = cols; }
+  for (const t of tablesNow().filter((x) => !skip.includes(x))) { const cols = colsOf(t).map((c) => c.c); out[t] = raw(`SELECT ${cols.map(quote).join(', ')} FROM ${quote(t)}`).map((r) => cols.map((c) => (Buffer.isBuffer(r[c]) ? { b64: r[c].toString('base64') } : r[c]))); out[`${t}#cols`] = cols; }
   return out;
 }
 /** Ajoute des lignes dans une table (seulement les colonnes qui existent), par paquets. Une ligne qui pointe vers
@@ -44,7 +44,7 @@ export function resetSequences() {
   }
 }
 /** Remplace tout le contenu par celui d'un instantané, dans l'ordre des liens entre tables. */
-function load(snap) {
+export function load(snap) {
   const tables = Object.keys(snap).filter((k) => !k.endsWith('#cols')), now = tablesNow();
   db.pg.call({ op: 'query', sql: `TRUNCATE ${now.map(quote).join(', ')} RESTART IDENTITY CASCADE`, params: [] });
   // Les tables sans lien d'abord (réglages, profils, bibliothèques, titres dans l'ordre), puis le reste
@@ -59,15 +59,24 @@ function load(snap) {
   return total;
 }
 
+/** La sauvegarde en mémoire (gzip) ; `extra` : champs ajoutés à côté des tables (ex. sauvegarde envoyée à Odin). */
+export function dumpBuffer({ skip, extra } = {}) {
+  return zlib.gzipSync(JSON.stringify({ format: 'venus-pg', version: 1, at: Date.now(), ...(extra || {}), tables: snapshot({ skip }) }));
+}
 export function writeDump(file) {
   const tmp = `${file}.part`;
-  fs.writeFileSync(tmp, zlib.gzipSync(JSON.stringify({ format: 'venus-pg', version: 1, at: Date.now(), tables: snapshot() })), { mode: 0o600 });
+  fs.writeFileSync(tmp, dumpBuffer(), { mode: 0o600 });
   fs.renameSync(tmp, file);
 }
+/** Lit une sauvegarde (gzip) sans la charger : { format, at, tables, … }. */
+export function parseDump(buf) {
+  let d;
+  try { d = JSON.parse(zlib.gunzipSync(buf).toString('utf8')); } catch { throw new Error('Ce fichier n’est pas une sauvegarde de Venus (illisible)'); }
+  if (!d || d.format !== 'venus-pg' || !d.tables) throw new Error('Ce fichier n’est pas une sauvegarde de Venus');
+  return d;
+}
 export function readDump(file) {
-  const d = JSON.parse(zlib.gunzipSync(fs.readFileSync(file)).toString('utf8'));
-  if (d.format !== 'venus-pg') throw new Error('Ce fichier n’est pas une sauvegarde de Venus');
-  return load(d.tables);
+  return load(parseDump(fs.readFileSync(file)).tables);
 }
 
 /** Ancienne base SQLite → PostgreSQL (une fois). Seul endroit où Venus lit encore un fichier SQLite. */

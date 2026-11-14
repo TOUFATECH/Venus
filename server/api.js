@@ -76,6 +76,7 @@ import { listBackups, makeBackup, scheduleRestore, backupPath } from './backup.j
 import { prepare as prepareDownload, listJobs, getJob, cancelJob, niceName } from './downloads.js';
 import { notify, vapidPublicKey, savePushSub, removePushSub, pushCount, channels } from './notify.js';
 import { odinConf, odinLinked, odinPing, saveOdin, askOdin, odinMascotte, forgetMascotte } from './odin.js';
+import { localBlocked } from './odin-sso.js';
 import { control, deviceId, logActivity, recentActivity, heartbeat, stopHeartbeat, nowPlaying, tokenOfDevice, loginCode, useLoginCode, loginCodeActive } from './activity.js';
 import { scheduleRatings, refreshRatings, omdbKey, simklId, ratingsPending } from './ratings.js';
 import { wishlistOf, inWishlist, addWish, removeWish, runWatch, watchState, autoRequest, followMode, seerrLogin, listSeerrUsers, seerrUsers, linkSeerrUser, seerrUserOf } from './watch.js';
@@ -324,6 +325,7 @@ function issueToken(ctx, how) {
 }
 router.post('/api/login', async (ctx) => {
   const b = validate(await readBody(ctx.req, 4096), { password: V.str({ max: 200, trim: false, label: 'Mot de passe' }) }, { required: ['password'] });
+  const odinOnly = await localBlocked(); if (odinOnly) throw new HttpError(403, odinOnly);
   checkRate('login', ctx.ip);
   const stored = getSetting('household_password');
   if (!verifySecret(b.password, stored)) { failRate('login', ctx.ip, 'Mot de passe du foyer incorrect'); throw new HttpError(401, 'Mot de passe incorrect'); }
@@ -354,6 +356,7 @@ router.post('/api/login/resend', async (ctx) => {
 // Connexion avec le code à 6 chiffres affiché dans le tableau de bord (il change à chaque connexion)
 router.post('/api/login/code', async (ctx) => {
   const b = validate(await readBody(ctx.req, 4096), { code: V.str({ max: 12, label: 'Code' }) }, { required: ['code'] });
+  const odinOnly = await localBlocked(); if (odinOnly) throw new HttpError(403, odinOnly);
   checkRate('code', ctx.ip);
   if (!loginCodeActive()) throw new HttpError(401, 'Aucun code actif. Demandez à l’administrateur d’ouvrir le tableau de bord pour afficher un code.');
   if (!useLoginCode(b.code)) { failRate('code', ctx.ip, 'Code de connexion à 6 chiffres incorrect'); throw new HttpError(401, 'Code incorrect ou expiré'); }
