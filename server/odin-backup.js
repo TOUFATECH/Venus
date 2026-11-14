@@ -46,7 +46,7 @@ const ST = 'odin_sauvegarde'; // état (réglage « volatil ») : voir state()
 // Réglables pour les essais (millisecondes)
 const ms = (k, d) => { const v = Number(process.env[k]); return Number.isFinite(v) && v > 0 ? v : d; };
 const T = {
-  calme: ms('VENUS_ODIN_LOT_MS', 250),            // regroupement : envoi 250 ms après le dernier changement…
+  calme: ms('VENUS_ODIN_LOT_MS', 150),            // regroupement : envoi 150 ms après le dernier changement…
   lot: ms('VENUS_ODIN_LOT_MAX_MS', 1000),         // … et jamais plus d'1 s après le premier
   lent: ms('VENUS_ODIN_LENT_MS', 10_000),         // tables remplies par Venus lui-même
   verif: ms('VENUS_ODIN_CHECK_MS', 30_000),       // vérification à l'identique
@@ -59,6 +59,7 @@ const T = {
 const quote = (s) => `"${String(s).replace(/"/g, '""')}"`;
 const raw = (sql, params = []) => db.pg.rowsOf(db.pg.call({ op: 'query', sql, params }));
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
+const note = (m) => { if (process.env.VENUS_ODIN_JOURNAL !== '0') console.log(`[odin] ${m}`); };
 /**
  * État de la synchronisation (affiché dans Réglages → Odin) :
  * { base (id de la complète sur laquelle partent les changements), dernier (id du dernier envoi reçu par Odin), sha (son
@@ -236,6 +237,7 @@ function lot() {
   const st = state(), seq = (Number(st.seq) || 0) + 1, at = Date.now(), empreinte = ombreFp();
   const body = zlib.gzipSync(JSON.stringify({ format: 'venus-pg-changements', version: 1, app: APP, base: ombre.base, seq, at, empreinte, serveur: getSetting('server_name', 'Venus'), venus: config.version, tables: ch }));
   qput({ seq, at, base: ombre.base, empreinte, raison: raisonOf(ch), sha: sha256(body), taille: body.length }, body);
+  if (process.env.VENUS_ODIN_JOURNAL === '2') note(`changements ${seq} : ${Object.entries(ch).map(([t, c]) => `${t} ${(c.put || c.replace || []).length} ligne(s)${c.del && c.del.length ? `, ${c.del.length} effacée(s)` : ''}`).join(' · ')}`);
   setState({ seq, local: at, etat: empreinte, attente: queueFiles().length });
   flush().catch(() => {});
   return Object.keys(ch).length;
@@ -267,6 +269,7 @@ function retry() {
 }
 function horsLigne(e) {
   const n = queueFiles().length;
+  if (!state().horsLigne) note(`Odin injoignable (${e.message}) : les changements attendent, chiffrés`);
   setState({ horsLigne: true, attente: n, erreur: `${e.message}${n ? ` ${n} envoi${n > 1 ? 's' : ''} en attente, chiffré${n > 1 ? 's' : ''} sur ce serveur : ils partiront dès qu’Odin répondra.` : ''}` });
   retry();
 }
@@ -284,7 +287,7 @@ async function flushOnce() {
   for (const f of queueFiles()) {
     if (completeEnCours) return; // la complète en cours contient déjà tout
     const e = qread(f);
-    if (!e || e.meta.base !== state().base) { qdel(f); continue; } // illisible, ou d'une ancienne base (la complète suivante le contient)
+    if (!e || e.meta.base !== state().base) { note(`envoi ${f} laissé : ${e ? 'ancienne base' : 'illisible'}`); qdel(f); continue; } // la complète suivante le contient
     let r;
     try {
       r = await authed(`/api/sauvegardes/${APP}`, { method: 'POST', body: e.body, timeout: 20000, headers: {
@@ -295,6 +298,7 @@ async function flushOnce() {
     const j = r.json() || {};
     if (r.status === 400 && j.code === 'requete_invalide') {
       // Odin ne connaît plus la base de ces changements : une complète repart (elle contient tout)
+      note(`Odin refuse les changements (${j.message || j.code}) : une sauvegarde complète repart`);
       qclear(); needFull = true; kickFull(); return;
     }
     if (r.status === 400 && j.code === 'empreinte_fausse') continue; // renvoyé au prochain passage
@@ -302,6 +306,7 @@ async function flushOnce() {
     qdel(f);
     retryWait = 0;
     if (e.meta.base !== state().base) continue;
+    if (state().horsLigne) note('Odin répond de nouveau : rattrapage des envois en attente');
     const st = state(), v = (j.version && (j.version.id || j.version)) || '';
     setState({ dernier: String(v), sha: e.meta.sha, empreinte: e.meta.empreinte, at: Date.now(), delai: Date.now() - e.meta.at, envois: (st.envois || 0) + 1, changements: (st.changements || 0) + 1,
       depuisComplete: (st.depuisComplete || 0) + 1, octetsDepuis: (st.octetsDepuis || 0) + e.body.length, attente: queueFiles().length, horsLigne: false, erreur: '', raison: e.meta.raison });
@@ -339,7 +344,10 @@ export async function sendNow({ force = false, why = 'changement' } = {}) {
   if (sending) return sending;
   const job = (async () => {
     await null; // jamais fini avant d'être noté comme « en cours »
-    if (flushing) await flushing.catch(() => {});
+    await flush().catch(() => {}); // ce qui attend part d'abord (l'historique d'Odin reste complet)
+    // Toujours injoignable : la complète attendra le rattrapage (sinon les changements en file seraient perdus pour
+    // l'historique d'Odin, remplacés par la complète)
+    if (queueFiles().length && state().horsLigne) { needFull = true; return { ok: false, error: state().erreur || 'Odin injoignable' }; }
     try {
       if (!force && ombre && !queueFiles().length && state().sha && fingerprint() === state().empreinte) return { ok: true, skipped: 'déjà à jour', empreinte: state().empreinte };
       completeEnCours = true;
@@ -363,6 +371,7 @@ export async function sendNow({ force = false, why = 'changement' } = {}) {
       setState({ base: v, dernier: v, sha, empreinte, etat: empreinte, at: Date.now(), taille: buf.length, envois: (st.envois || 0) + 1, complete: { at: Date.now(), id: v, taille: buf.length },
         depuisComplete: 0, octetsDepuis: 0, attente: 0, horsLigne: false, erreur: '', raison: RAISONS[why] || 'changement', autrePoste: null });
       setLinkState({ ok: true, message: 'Relié à Odin' });
+      note(`sauvegarde complète ${v} (${RAISONS[why] || why}, ${buf.length} octets)`);
       return { ok: true, version: v, taille: buf.length, empreinte, inchange: j.inchange === true };
     } catch (e) {
       if (!offline(e)) setState({ erreur: e.message, essai: Date.now() });
@@ -587,9 +596,25 @@ export function forgetSync() {
 }
 
 let started = false;
+/**
+ * Au démarrage, avant toute écriture : si la base est exactement celle qu'Odin peut reconstruire (dernier envoi reçu ou
+ * en file), Venus repart de là (les changements en file partiront tels quels) ; sinon une complète partira.
+ */
+function resume() {
+  const st = state();
+  if (!linked() || ombre || !st.base || !st.etat) return false;
+  try {
+    const s = sums();
+    if (fpOf(s) !== st.etat) { note('la base a changé depuis le dernier envoi : une sauvegarde complète partira'); return false; }
+    ombre = { base: st.base, tables: shadowOf(s) };
+    note(`reprise de la synchronisation sur ${st.base} (${queueFiles().length} envoi(s) en attente)`);
+    return true;
+  } catch { return false; }
+}
 export function startOdinBackup() {
   if (started) return;
   started = true;
+  resume();
   onWrite(noteWrite);
   const t = setInterval(() => { checkNow().catch(() => {}); }, T.verif);
   t.unref?.();
