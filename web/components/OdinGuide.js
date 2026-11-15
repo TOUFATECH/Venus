@@ -98,7 +98,7 @@ export default function OdinGuide({ path }) {
     const t = setInterval(check, 1500); check();
     return () => { for (const e of ev) document.removeEventListener(e, check, true); document.removeEventListener('fullscreenchange', check); removeEventListener('resize', check); clearInterval(t); };
   }, []);
-  const [day, setDay] = useState(null); // Odin d'aujourd'hui, donné par Odin (fête, couleur, pouvoirs, caché)
+  const [day, setDay] = useState(null); // Odin d'aujourd'hui, donné par Odin (fête, couleur, caché)
   useEffect(() => {
     const sync = () => setOn(odinShown());
     sync(); addEventListener('vn:odin', sync);
@@ -108,15 +108,11 @@ export default function OdinGuide({ path }) {
   useEffect(() => {
     let stop = false;
     const load = () => api('/api/odin/mascotte').then((r) => { if (stop || !r || !r.linked) return; setDay(r);
-      // Les pouvoirs d'Odin dans Venus (le script peut arriver un peu après la page).
-      const cfg = () => { if (window.OdinPowers) window.OdinPowers.configure(r.pouvoirs || { actif: false }); else setTimeout(cfg, 500); }; cfg();
       try { const k = `${new Date().toISOString().slice(0, 10)}:${r.event?.id || ''}`; if (r.event?.says && localStorage.getItem('venus.odin.fete') !== k) { setHint(r.event.says); localStorage.setItem('venus.odin.fete', k); } } catch { /* */ }
     }).catch(() => {});
     load(); const t = setInterval(load, 5 * 60_000);
     return () => { stop = true; clearInterval(t); };
   }, []);
-  // Une nouvelle page : le pouvoir d'Odin fait naître son titre (si les pouvoirs sont activés dans Odin).
-  useEffect(() => { const t = setTimeout(() => { const h = document.querySelector('main h1, main h2, .page-head, main header'); if (h) window.OdinPowers?.appear?.(h); }, 120); return () => clearTimeout(t); }, [path]);
   useEffect(() => { setAnswer(''); setHint(''); }, [path]);
   // Pas sur le lecteur vidéo : Odin ne cache jamais l'image
   if (!on || day?.cache || playing) return null;
